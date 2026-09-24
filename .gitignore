@@ -32,6 +32,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# 但样例文件要提交 —— 它不含真实凭据，是给新环境看的模板
+!.env.example
+
+# 验证脚本的输出（含真实 API 响应，不提交）
+/verify-output/
+
+# 视觉验证的临时产物（playwright 截图与快照）
+/.playwright-cli/
+/output/
 
 # vercel
 .vercel

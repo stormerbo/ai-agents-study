@@ -1,0 +1,102 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import type { CSSProperties } from 'react';
+
+import { getChaptersByStage, getStages } from '@/content/curriculum';
+import { DIFFICULTY_LABEL, formatMinutes } from '@/lib/labels';
+
+export const metadata: Metadata = {
+  title: '章节',
+  description: 'AI Agent 学习路径的全部章节，按学习阶段分组。',
+};
+
+export default function ChaptersPage() {
+  const stages = getStages();
+
+  return (
+    <main className="mx-auto max-w-6xl px-6 py-10">
+      <header className="max-w-3xl">
+        <h1 className="text-2xl font-semibold tracking-tight">章节</h1>
+        <p className="mt-3 leading-relaxed text-muted-foreground">
+          按学习阶段分组。每个阶段都有自己的定位与出阶段时应达到的状态。
+        </p>
+      </header>
+
+      <div className="mt-10 space-y-12">
+        {stages.map((stage) => {
+          const stageChapters = getChaptersByStage(stage.id);
+          const stageStyle = {
+            '--stage-color': `var(--color-${stage.colorToken})`,
+          } as CSSProperties;
+
+          return (
+            <section key={stage.id} style={stageStyle}>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span
+                  className="font-mono text-xs font-medium"
+                  style={{ color: 'var(--stage-color)' }}
+                >
+                  阶段 {stage.order}
+                </span>
+                <h2 className="text-lg font-semibold">{stage.title}</h2>
+                <span className="text-sm text-muted-foreground">{stage.tagline}</span>
+              </div>
+
+              <p className="mt-2.5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                {stage.summary}
+              </p>
+
+              {stageChapters.length > 0 ? (
+                <ul className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {stageChapters.map((chapter) => {
+                    const hasBody = chapter.lessons.some((l) => l.hasBody);
+                    const checkpointCount = chapter.lessons.reduce(
+                      (sum, l) => sum + (l.checkpoints?.length ?? 0),
+                      0,
+                    );
+
+                    return (
+                      <li key={chapter.id}>
+                        <Link
+                          href={`/chapters/${chapter.id}`}
+                          className="flex h-full flex-col rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/60"
+                        >
+                          <div className="flex items-baseline gap-2.5">
+                            <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                              {String(chapter.order).padStart(2, '0')}
+                            </span>
+                            <span className="text-sm font-medium">{chapter.title}</span>
+                            {!hasBody && (
+                              <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">
+                                大纲
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="mt-2 flex-1 text-xs leading-relaxed text-muted-foreground">
+                            {chapter.summary}
+                          </p>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">
+                            <span>{DIFFICULTY_LABEL[chapter.difficulty]}</span>
+                            <span>{formatMinutes(chapter.estimatedMinutes)}</span>
+                            <span>{chapter.lessons.length} 节</span>
+                            {checkpointCount > 0 && <span>自检 {checkpointCount}</span>}
+                          </div>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-5 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                  这一阶段的内容还在整理中
+                </p>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </main>
+  );
+}

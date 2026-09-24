@@ -1,0 +1,38 @@
+import 'server-only';
+
+import type { ComponentType } from 'react';
+
+import { bodies as llmApiBasicsBodies } from '@/content/chapters/llm-api-basics/body';
+import { bodies as whatIsAnAgentBodies } from '@/content/chapters/what-is-an-agent/body';
+
+/**
+ * 正文加载器。
+ *
+ * 各章的 body.ts 单独存在、这里集中注册，是为了让**没有正文的章节**
+ * 也能正常存在 —— 章节元数据（meta.ts）与正文（*.mdx）在物理上是分离的，
+ * 知识地图与章节页可以完整呈现一章的大纲，即使它的正文还没写。
+ *
+ * 新增一章时：写 meta.ts → 写 body.ts → 在这里注册一行。
+ */
+type BodyLoader = () => Promise<{ default: ComponentType }>;
+
+const REGISTRY: Record<string, Record<string, BodyLoader>> = {
+  'what-is-an-agent': whatIsAnAgentBodies,
+  'llm-api-basics': llmApiBasicsBodies,
+};
+
+/** 取某一节的正文组件。没写正文时返回 undefined（页面会渲染大纲占位）。 */
+export async function getLessonBody(
+  chapterId: string,
+  lessonSlug: string,
+): Promise<ComponentType | undefined> {
+  const loader = REGISTRY[chapterId]?.[lessonSlug];
+  if (!loader) return undefined;
+  const mod = await loader();
+  return mod.default;
+}
+
+/** 该章是否已经接了正文（用于一致性检查） */
+export function hasBodyRegistry(chapterId: string): boolean {
+  return chapterId in REGISTRY;
+}

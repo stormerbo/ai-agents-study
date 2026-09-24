@@ -1,1 +1,184 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+/* ---------------------------------------------------------------------------
+   Tailwind v4 是 CSS-first 配置：没有 tailwind.config.js，设计令牌写在 @theme 里。
+   --------------------------------------------------------------------------- */
+
+/* v4 没有 darkMode: 'class' 配置项，改用自定义 variant 实现 class 驱动的深色模式 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* 字体：CJK 走系统字体栈 —— 完整的中文 woff2 有数 MB，不能打包进前端 */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Noto Sans SC', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* 语义色：UI 基色。深色模式在 .dark 里覆盖同名变量。
+     注意：Tailwind 4 只会为 @theme 中定义过的 --color-* 生成工具类，
+     写一个没定义的类名不会报错，只会静默失效 —— 所以这几个必须在这里声明。 */
+  --color-background: oklch(1 0 0);
+  --color-foreground: oklch(0.21 0.006 285.9);
+  --color-card: oklch(1 0 0);
+  --color-muted: oklch(0.967 0.001 286.4);
+  --color-muted-foreground: oklch(0.552 0.016 285.9);
+  --color-border: oklch(0.922 0.004 286.3);
+  --color-accent: oklch(0.55 0.18 264);
+
+  /* 阶段配色：知识地图与阶段页靠它区分 6 个学习阶段 */
+  --color-stage-0: oklch(0.58 0.04 250);
+  --color-stage-1: oklch(0.58 0.16 250);
+  --color-stage-2: oklch(0.6 0.13 195);
+  --color-stage-3: oklch(0.56 0.18 300);
+  --color-stage-4: oklch(0.62 0.16 55);
+  --color-stage-5: oklch(0.6 0.15 150);
+}
+
+/* 深色背景上需要提亮，否则阶段色对比度不足 */
+.dark {
+  --color-background: oklch(0.145 0.005 285.8);
+  --color-foreground: oklch(0.985 0 0);
+  --color-card: oklch(0.205 0.006 285.9);
+  --color-muted: oklch(0.269 0.006 286);
+  --color-muted-foreground: oklch(0.705 0.015 286.1);
+  --color-border: oklch(1 0 0 / 12%);
+  --color-accent: oklch(0.7 0.16 264);
+
+  --color-stage-0: oklch(0.72 0.04 250);
+  --color-stage-1: oklch(0.74 0.14 250);
+  --color-stage-2: oklch(0.76 0.12 195);
+  --color-stage-3: oklch(0.74 0.15 300);
+  --color-stage-4: oklch(0.78 0.14 55);
+  --color-stage-5: oklch(0.76 0.13 150);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* 固定顶栏会遮住锚点目标，留出偏移 */
+    scroll-padding-top: 5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
+  /* 键盘可达性：只在键盘导航时显示焦点环 */
+  :focus-visible {
+    outline: 2px solid var(--color-stage-1);
+    outline-offset: 2px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   中文正文排版
+   Tailwind 的 prose 默认值是为英文调的：中文需要更大的行距，且代码块内
+   必须排除 CJK 字体，否则等宽对齐会失效。
+   --------------------------------------------------------------------------- */
+@layer components {
+  .prose {
+    line-height: 1.85;
+    text-wrap: pretty;
+  }
+
+  .prose :where(p):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+    margin-top: 1.15em;
+    margin-bottom: 1.15em;
+  }
+
+  .prose :where(code):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+
+  .prose :where(h2):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+    margin-top: 2.2em;
+    margin-bottom: 0.8em;
+  }
+
+  .prose :where(h3):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
+    margin-top: 1.7em;
+    margin-bottom: 0.6em;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Shiki 双主题（rehype-pretty-code）
+
+   构建期同时输出 light / dark 两套颜色。关键细节：rehype-pretty-code 把
+   `color: var(--shiki-light)` 作为**内联 style** 写在每个 span 上，同时把另一套
+   颜色放进 `--shiki-dark` 变量。
+
+   内联样式的优先级高于普通 CSS 规则，所以下面这两条**必须带 !important**，
+   否则深色模式下文字仍会用 light 主题的深色，撞在深色背景上直接看不见。
+   （第一版就是漏了这一点，页面上代码块在深色模式下几乎不可读。）
+
+   背景由 Tailwind 的 prose 负责（配置里 keepBackground: false），不跟随编辑器主题。
+   --------------------------------------------------------------------------- */
+[data-rehype-pretty-code-figure] code[data-theme*=' '] span {
+  color: var(--shiki-light);
+}
+
+.dark [data-rehype-pretty-code-figure] code[data-theme*=' '] span {
+  color: var(--shiki-dark) !important;
+}
+
+/* 行内代码（`code`）与代码块里的高亮行背景同样需要在深色下可读 */
+.dark [data-rehype-pretty-code-figure] code[data-theme*=' '] {
+  background-color: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   代码块背景 —— 必须显式设置，不能用 prose 的默认值
+
+   这是 `keepBackground: false` 的一个陷阱：关掉 Shiki 的背景之后，代码块会
+   落到 Tailwind typography 的 `pre` 默认背景上，而那个背景是**深色**的
+   （typography 假定代码块自带深色底）。
+
+   于是浅色模式下出现「深色文字 + 深色背景」——Shiki 的 --shiki-light 本就是
+   给浅色背景配的深色文字。结果是代码几乎不可读。
+
+   正确做法：让代码块背景跟随站点主题，与文字保持同向。
+   --------------------------------------------------------------------------- */
+.prose pre {
+  background-color: var(--color-muted);
+  /* 兜底前景色。
+     必须有这一条：Shiki 对**纯文本代码块**（```text / 无语言标记）不会输出
+     内联的 --shiki-light / --shiki-dark 变量 —— 因为没有需要高亮的 token。
+     此时上面的 `color: var(--shiki-light)` 规则取不到值而失效，文字会落回
+     Tailwind typography 的 pre 默认色（那是给深色背景配的浅色），
+     在浅色模式的浅灰背景上几乎不可见。 */
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 0.625rem;
+  /* 长行兜底：宁可横向滚动，也不要让内容被静默裁掉 */
+  overflow-x: auto;
+}
+
+/* 深色模式下比页面底色略亮一档，形成层次而不是一团黑 */
+.dark .prose pre {
+  background-color: oklch(0.205 0.006 285.9);
+  border-color: oklch(1 0 0 / 12%);
+}
+
+/* 代码块里的行内代码不应再叠一层背景 */
+.prose pre code {
+  background-color: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* 标题锚点：默认不显示，hover 时出现 */
+.heading-anchor {
+  text-decoration: none;
+  color: inherit;
+}
+
+.heading-anchor:hover::after {
+  content: '#';
+  margin-left: 0.35em;
+  opacity: 0.4;
+}
