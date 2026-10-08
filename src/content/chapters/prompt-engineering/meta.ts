@@ -101,8 +101,8 @@ export const chapter = {
         '对多步推理有效，对简单任务只是浪费 token；prefill 则能在不改 prompt 的前提下控制输出开头。',
       estimatedMinutes: 17,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['cot', 'prefill', 'reasoning'],
       checkpoints: [
         {

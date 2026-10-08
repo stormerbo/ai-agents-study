@@ -4,4 +4,181 @@ title: 思维链与 prefill：让模型先想再答
 status: drafting
 ---
 
-正文撰写中。
+「让模型一步步思考能提升准确率」——这是 prompting 领域最有名的结论之一，源自 2022 年的 CoT 论文（[arXiv:2201.11903](https://arxiv.org/abs/2201.11903)）。
+
+我在当前模型上测了一遍，**结果与那个结论不吻合**。这一节讲清楚为什么，以及现在该怎么做。
+
+## 实测：准确率没变，成本翻倍
+
+**多步推理题**（5 道 × 3 轮 = 15 次）：
+
+| 写法 | 正确 | 平均 token |
+|---|---:|---:|
+| 无 CoT：「只给出最终答案」 | **15/15** | **130** |
+| 加 CoT：「先一步步推理，最后给出答案」 | **15/15** | **241** |
+
+**准确率完全一样，成本高了 85%。**
+
+**简单题**（3 道 × 3 轮，不需要推理的常识题）：
+
+| 写法 | 正确 | 平均 token |
+|---|---:|---:|
+| 无 CoT | 6/9 | **88** |
+| 加 CoT | 6/9 | **198** |
+
+同样没有提升，成本高 **125%**。
+
+（实测数据，`deepseek-flash`，2026-10-08。简单题那组 6/9 是我的判据问题 —— 模型答「七天」而我匹配的是「7」，与 CoT 无关。）
+
+## 为什么会这样：模型已经内置了思考
+
+看一个前面章节出现过的细节。这是第 1 章采集的真实响应结构：
+
+```
+content_block_start   index=0  type=thinking      ← 模型自己的思考
+  thinking_delta     × 36
+content_block_stop    index=0
+content_block_start   index=1  type=text          ← 给用户的回答
+  text_delta         × N
+```
+
+**模型返回了两个块** —— 它先思考，再回答。而这个思考**不需要你在 prompt 里要求**，它默认就会做。
+
+当前一代模型普遍有这类机制（Anthropic 叫 adaptive thinking，由 effort 参数控制深度）。**模型内部已经在做 CoT 了**，你再加一句「请一步步思考」，只是让它把内部已经做过的事**再写一遍给你看**。
+
+写出来的那部分会进入输出 token —— 而这正是成本翻倍的来源。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["你的 prompt"] --> B{"模型内部"}
+    B --> C["adaptive thinking<br/>（默认就有）"]
+    C --> D["回答"]
+    E["+ 加一句「请一步步思考」"] -.->|"不影响 C"| C
+    E -.->|"只是要求把过程<br/>额外写进输出"| F["输出变长<br/>成本 +85%"]
+    D --> F
+`}
+/>
+
+## 那 CoT 这个技巧还有用吗
+
+有用，但**用处变了**。从「提升能力」变成了「改变输出形态」。三个仍然成立的场景：
+
+**① 你需要看到推理过程（用于排查或审计）。**
+
+这不是为了让结果更准，而是为了**知道它怎么得出这个结论**。比如模型给出了一个错误的金额，你需要看它的计算路径才能定位问题。
+
+**② 任务复杂到需要显式的中间结果。**
+
+如果一个任务有多个步骤，而中间结果本身有价值（例如要展示给用户、或要落库），那就值得让模型输出出来。但这时你需要的其实是**结构化的中间产物**，而不只是"思维链"这个概念。
+
+**③ 模型不支持内置思考时。**
+
+如果你用的是较小或较老的模型，它可能真的需要提示才能展开推理。**判断方法就是实测** —— 用本节末尾的脚本跑一遍你自己的场景。
+
+> 换个角度看：CoT 论文发表于 2022 年，当时的模型没有内置推理机制。"提示模型去推理"在那时是必要的。**现在这层能力被内置了，提示就变成了冗余。** 这是 AI 领域里很典型的「技巧被能力吸收」现象 —— 后续章节还会遇到。
+
+## prefill：一个仍然实用的技巧
+
+思维链的地位变了，但同一节的另一个技巧仍然有用：**prefill**（由你先写好 assistant 回复的开头，让模型从那儿接着生成）。
+
+两个用途：
+
+**① 强制输出格式。** 你预先写入一个左花括号，模型就只能顺着把 JSON 补完 —— 省掉了「好的，以下是 JSON：」这类开场白，也降低了格式跑偏的概率。
+
+```python
+# 伪代码示意（不同厂商的 prefill 支持方式不同）
+messages = [
+    {"role": "user", "content": "抽取下面这句话里的人名和公司：张三上周加入了字节跳动"},
+    {"role": "assistant", "content": "{"},        # ← prefill：强制从 JSON 开始
+]
+```
+
+**② 绕过模型不愿直接作答的倾向。** 有些请求模型会先加一段免责声明再回答。替它起个头，它往往就顺着进入正题了。
+
+**注意**：prefill 的支持方式与限制**因厂商而异**。Anthropic 的 Messages API 允许在 `messages` 里放最后一条 `assistant` 消息作为预填充；OpenAI 的 Chat Completions 没有等价机制，通常要靠 prompt 里的格式示例来近似。这类差异正是需要适配层的原因之一（第 8 章）。
+
+## 完整可运行代码
+
+```python
+# cot_experiment.py
+"""在**你自己的场景**上测 CoT 到底有没有用。
+
+这是本节唯一重要的交付物 —— 因为「CoT 有没有用」的答案依赖模型版本，
+别人的结论不能直接套用。
+"""
+
+import os
+import re
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY")
+    or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+PROBLEMS = [
+    ("一个班有 40 人，其中 60% 是女生，女生中又有 25% 戴眼镜。戴眼镜的女生有多少人？", "6"),
+    ("商品原价 200 元，先涨价 10%，再打 8 折，最终价格是多少元？", "176"),
+    ("甲乙两地相距 300 公里。A 车时速 60，B 车时速 40，相向而行，几小时相遇？", "3"),
+    ("一个数加 5 后乘以 2，再减 10 得到 20。这个数是多少？", "10"),
+    ("3 个工人 3 小时做 3 个零件，那么 9 个工人 9 小时做多少个？", "27"),
+]
+
+VARIANTS = {
+    "无 CoT": "回答问题。只给出最终答案，不要任何解释。",
+    "加 CoT": "回答问题。先一步步推理，最后另起一行用「答案：X」给出结果。",
+}
+
+RUNS = 3
+
+
+def ask(system: str, question: str) -> tuple[str, int]:
+    response = client.messages.create(
+        model=MODEL, max_tokens=2000, system=system,
+        messages=[{"role": "user", "content": question}],
+    )
+    text = "".join(b.text for b in response.content if b.type == "text").strip()
+    usage = response.usage
+    tokens = usage.input_tokens + usage.output_tokens
+    return text, tokens
+
+
+def is_correct(text: str, answer: str) -> bool:
+    """取「答案：X」之后的内容比对；没有该标记就全文找。"""
+    m = re.search(r"答案[：:]\s*([^\n]+)", text)
+    target = m.group(1) if m else text
+    return answer in target
+
+
+if __name__ == "__main__":
+    print(f"{'写法':<10} 正确率   平均 token")
+    print("-" * 36)
+
+    for label, system in VARIANTS.items():
+        ok = total = 0
+        for _ in range(RUNS):
+            for question, answer in PROBLEMS:
+                text, tokens = ask(system, question)
+                ok += is_correct(text, answer)
+                total += tokens
+        n = RUNS * len(PROBLEMS)
+        print(f"{label:<10} {ok}/{n}    {total // n}")
+```
+
+> **实跑状态**：本文表格里的**数据是实测的**；上面这份 Python 脚本用的 SDK 写法，字段一致但**脚本本身未在官方端点验证**。
+
+## 常见坑
+
+**无脑加「请一步步思考」。** 在带内置推理的模型上，它只增加输出长度，不提升准确率。**实测了再加。**
+
+**把 CoT 当成万能药。** 它对「需要多步推导」的任务有效，对分类、抽取、改写这类任务从来就是净亏损 —— 这一点在 CoT 论文时代就成立。
+
+**忽略输出 token 的单价。** 输出通常比输入贵 3~5 倍。CoT 增加的正是输出，所以成本影响比看起来更大。
+
+**以为 prefill 是通用能力。** 它对厂商支持的依赖很强，跨厂商时要单独验证。
+
+**把「模型给出了推理过程」当成「模型真的按这个推理」。** 输出里的推理是**生成出来的文本**，不一定是它内部真实的计算路径。两者可能不一致 —— 用它排查问题时要注意这个局限。
