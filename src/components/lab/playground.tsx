@@ -1,17 +1,20 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-
-import { useSyncExternalStore } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 
 import { useChatRelay, type TraceEntry } from '@/hooks/use-chat-relay';
 import {
-  getCredential,
+  createProfile,
+  deleteProfile,
+  getActiveProfile,
   loadByok,
   maskKey,
-  setCredential,
+  setActiveProfile,
   setMode,
+  updateProfile,
+  EMPTY_BYOK,
   type ByokState,
+  type EndpointProfile,
 } from '@/lib/byok/storage';
 import type { Lab } from '@/content/curriculum/schema';
 import { cn } from '@/lib/utils';
@@ -56,51 +59,69 @@ export function Playground({
   /** 服务端是否开放自定义端点（读 ALLOW_CUSTOM_BASE_URL 环境变量） */
   allowCustomEndpoint: boolean;
 }) {
-  const [byok, setByok] = useState<ByokState>(() => loadByok());
-
   /**
    * 是否已经挂载到客户端。
    *
-   * 依赖 localStorage 的部分（Key 表单、Key 状态条、不匹配提示）**必须**等挂载后才渲染：
-   * 服务端读不到 localStorage，直接渲染会让两端 HTML 不一致 —— 这正是
-   * 「服务端渲染不匹配提示、客户端渲染 Key 表单」那个 hydration 错误的成因。
+   * 依赖 localStorage 的部分必须等挂载后才渲染：服务端读不到 localStorage，
+   * 直接渲染会让两端 HTML 不一致（hydration mismatch）。
    */
   const mounted = useSyncExternalStore(
     subscribeNothing,
     () => true,
     () => false,
   );
-  const [providerId, setProviderId] = useState(providers[0]?.id ?? '');
-  const provider = providers.find((p) => p.id === providerId) ?? providers[0];
 
   /**
-   * 端点地址 —— 三个字段（地址 / 模型名 / Key）**始终可见、始终可改**。
+   * 用版本号触发重渲染。
    *
-   * 厂商选择只负责预填这两个值。早期版本用一个「使用自定义端点」开关来区分
-   * 两种模式，那是多余的心智负担：用户要么得先理解那个概念，要么在填错 Key
-   * 之后困惑于为什么点不动运行按钮。现在只有一套表单。
+   * 真正的数据只在 localStorage 里存一份 —— 组件内**不再保留第二份拷贝**，
+   * 避免「内存状态与存储不同步」这类经典 bug（改了一处忘了另一处）。
    */
-  const [baseUrl, setBaseUrl] = useState(provider?.defaultBaseUrl ?? '');
+  const [, bump] = useState(0);
+  const byok = mounted ? loadByok() : EMPTY_BYOK;
+  const profile = getActiveProfile(byok);
+
+  /** 所有写操作都走这里：落盘 + 触发重渲染 */
+  const mutate = (fn: (s: ByokState) => ByokState) => {
+    fn(loadByok());
+    bump((n) => n + 1);
+  };
+
+  // 当前生效的字段值：有配置就用配置里的，没有就用第一个 provider 的默认值
+  const providerId = profile?.providerId ?? providers[0]?.id ?? '';
+  const provider = providers.find((p) => p.id === providerId) ?? providers[0];
+  const baseUrl = profile?.baseUrl ?? provider?.defaultBaseUrl ?? '';
+  const model = profile?.model ?? provider?.defaultModel ?? '';
+  const apiKey = profile?.apiKey ?? '';
 
   const allowedModels = useMemo(
     () => lab.allowedModels.map((m) => m.model).filter((m) => provider?.models.includes(m)),
     [lab.allowedModels, provider],
   );
-  const [model, setModel] = useState(allowedModels[0] ?? provider?.defaultModel ?? '');
+
   const [system, setSystem] = useState(lab.system?.content ?? '');
   const [input, setInput] = useState('');
-  // 原始事件现在折叠在轨迹卡片里，不再需要单独的开关
-
-  const apiKey = provider ? (getCredential(byok, provider.id) ?? '') : '';
   const relay = useChatRelay();
 
-  // 切换厂商时，把地址与模型名重置为该厂商的默认值。
-  // 这是有意为之：切厂商意味着换端点，保留用户改过的地址只会造成困惑。
-  useEffect(() => {
-    if (!provider) return;
-    setBaseUrl(provider.defaultBaseUrl);
-    setModel(allowedModels[0] ?? provider.defaultModel);
-  }, [provider, allowedModels]);
+  /**
+   * 改字段即保存 —— 厂商、地址、模型名、Key 是**成套**的，一起存。
+   *
+   * 没有配置时**自动创建一个**：用户不该先理解「配置」这个概念才能开始用。
+   */
+  const patch = (p: Partial<Omit<EndpointProfile, 'id'>>) => {
+    mutate((s) => {
+      const active = getActiveProfile(s);
+      if (active) return updateProfile(s, active.id, p);
+      return createProfile(s, { providerId, baseUrl, model, apiKey, ...p });
+    });
+  };
+
+  /** 切换厂商：地址与模型名一并重置为该厂商默认值（切厂商即换端点） */
+  const changeProvider = (id: string) => {
+    const next = providers.find((x) => x.id === id);
+    if (!next) return;
+    patch({ providerId: id, baseUrl: next.defaultBaseUrl, model: next.defaultModel });
+  };
 
   if (!provider) {
     return (
@@ -114,7 +135,6 @@ export function Playground({
     apiKey.length > 0 &&
     input.trim().length > 0 &&
     !relay.state.running &&
-    // 地址与模型名现在由厂商预填，但仍要防止用户把任一个清空
     baseUrl.trim().length > 0 &&
     model.trim().length > 0;
 
@@ -150,14 +170,55 @@ export function Playground({
         )}
       </header>
 
-      {/* 端点配置 —— 三个字段始终可见、始终可改。
-          厂商只负责把地址与模型名预填成默认值，用户想改就改。 */}
+      {/* 端点配置 —— 厂商 / 地址 / 模型名 / Key 是**成套**保存的 */}
       <div className="border-border space-y-3 border-b px-4 py-3">
+        {/* 配置切换：可以保存多套（比如「官方」与「某中转平台」） */}
+        {mounted && byok.profiles.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground shrink-0 text-xs">配置</span>
+            <select
+              value={byok.activeId ?? ''}
+              onChange={(e) => mutate((s) => setActiveProfile(s, e.target.value))}
+              className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1.5 text-xs"
+            >
+              {byok.profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() =>
+                mutate((s) =>
+                  createProfile(s, {
+                    name: `配置 ${s.profiles.length + 1}`,
+                    providerId,
+                    baseUrl: provider.defaultBaseUrl,
+                    model: provider.defaultModel,
+                    apiKey: '',
+                  }),
+                )
+              }
+              className="border-border hover:bg-muted shrink-0 rounded-md border px-2 py-1.5 text-xs"
+            >
+              新建
+            </button>
+            <button
+              type="button"
+              onClick={() => profile && mutate((s) => deleteProfile(s, profile.id))}
+              className="border-border text-muted-foreground hover:bg-muted shrink-0 rounded-md border px-2 py-1.5 text-xs"
+            >
+              删除
+            </button>
+          </div>
+        )}
+
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="厂商（选中后自动预填下面的地址与模型）">
             <select
               value={providerId}
-              onChange={(e) => setProviderId(e.target.value)}
+              onChange={(e) => changeProvider(e.target.value)}
               className="border-border bg-background w-full rounded-md border px-2 py-1.5 text-xs"
             >
               {providers.map((p) => (
@@ -171,7 +232,7 @@ export function Playground({
           <Field label="模型名">
             <input
               value={model}
-              onChange={(e) => setModel(e.target.value)}
+              onChange={(e) => patch({ model: e.target.value })}
               list="lab-model-suggestions"
               placeholder="按你平台的叫法填"
               className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
@@ -191,7 +252,7 @@ export function Playground({
         <Field label="端点地址（用第三方中转平台时改成它的地址）">
           <input
             value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
+            onChange={(e) => patch({ baseUrl: e.target.value })}
             placeholder="https://your-platform.com/v1"
             className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
           />
@@ -213,7 +274,7 @@ export function Playground({
               <button
                 type="button"
                 className="text-muted-foreground hover:text-foreground ml-auto underline-offset-2 hover:underline"
-                onClick={() => setByok(setCredential(byok, provider.id, ''))}
+                onClick={() => patch({ apiKey: '' })}
               >
                 清除
               </button>
@@ -222,8 +283,8 @@ export function Playground({
             <ApiKeyInput
               provider={provider}
               mode={byok.mode}
-              onSave={(key) => setByok(setCredential(byok, provider.id, key))}
-              onModeChange={(m) => setByok(setMode(byok, m))}
+              onSave={(key) => patch({ apiKey: key })}
+              onModeChange={(m) => mutate((s) => setMode(s, m))}
             />
           ))}
 
