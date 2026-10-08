@@ -160,6 +160,36 @@ node scripts/check-links.mjs   # 巡检所有外链可用性
 | React 19 的 `react-hooks/set-state-in-effect` | 主题切换改用 `useSyncExternalStore` |
 | `useSearchParams` 在静态页必须包 `<Suspense>`，否则**生产构建失败**（开发环境不报） | 暂未用到，用到时注意 |
 
+### 4.7 localStorage 导致的 hydration mismatch（**重犯**）
+
+**症状**：
+
+```
+Hydration failed because the server rendered HTML didn't match the client
+...
++ className="border-b border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs"   ← 客户端
+- className="border-border border-b px-4 py-2"                               ← 服务端
+```
+
+**根因**：`useState(() => loadByok())` —— `loadByok()` 读 localStorage，
+而**服务端没有 localStorage**，返回空状态；客户端返回实际状态。两端首次渲染必然不一致。
+
+**讽刺之处**：这个项目在 `theme-toggle.tsx` 里**已经用 `useSyncExternalStore` 正确
+解决过同样的问题**，但写 Playground 时忘了。所以这条要单独记。
+
+**修复**：
+
+```ts
+const subscribeNothing = () => () => {};
+const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
+```
+
+所有依赖 localStorage 的渲染都加 `mounted &&` 门控。
+
+**规则**：**任何读 localStorage / sessionStorage 的状态，首次渲染必须与服务端一致。**
+用 `useSyncExternalStore` 的 `getServerSnapshot` 区分，或用 `mounted` 门控。
+不要用 `useEffect + setState` —— React 19 的 lint 规则会直接报错。
+
 ## 5. 已建立的机制
 
 ### 5.1 内容完整性测试

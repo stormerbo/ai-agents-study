@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+import { useSyncExternalStore } from 'react';
+
 import { useChatRelay } from '@/hooks/use-chat-relay';
 import {
   getCredential,
@@ -13,6 +15,17 @@ import {
 } from '@/lib/byok/storage';
 import type { Lab } from '@/content/curriculum/schema';
 import { cn } from '@/lib/utils';
+
+/**
+ * 一个永不触发的订阅源。
+ *
+ * 只用来回答一个问题：**当前是否已经挂载到客户端**。
+ * 服务端没有 localStorage，直接读会让两端首次渲染不一致（hydration mismatch）。
+ * getServerSnapshot 返回 false、客户端返回 true，是这个问题最干净的解法 ——
+ * 比 useEffect + setState 好，后者会触发级联渲染且被 React 19 的
+ * react-hooks/set-state-in-effect 规则禁止。
+ */
+const subscribeNothing = () => () => {};
 
 /**
  * 站内代码实验。
@@ -42,6 +55,19 @@ export function Playground({
   allowCustomEndpoint: boolean;
 }) {
   const [byok, setByok] = useState<ByokState>(() => loadByok());
+
+  /**
+   * 是否已经挂载到客户端。
+   *
+   * 依赖 localStorage 的部分（Key 表单、Key 状态条、不匹配提示）**必须**等挂载后才渲染：
+   * 服务端读不到 localStorage，直接渲染会让两端 HTML 不一致 —— 这正是
+   * 「服务端渲染不匹配提示、客户端渲染 Key 表单」那个 hydration 错误的成因。
+   */
+  const mounted = useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false,
+  );
   const [providerId, setProviderId] = useState(providers[0]?.id ?? '');
   const provider = providers.find((p) => p.id === providerId) ?? providers[0];
 
@@ -128,8 +154,8 @@ export function Playground({
         )}
       </header>
 
-      {/* Key 未填时的引导 */}
-      {!apiKey && (
+      {/* Key 未填时的引导。等挂载后再渲染 —— 见 mounted 的注释 */}
+      {mounted && !apiKey && (
         <ApiKeyForm
           providers={providers}
           providerId={providerId}
@@ -141,7 +167,7 @@ export function Playground({
         />
       )}
 
-      {apiKey && (
+      {mounted && apiKey && (
         <div className="border-border flex flex-wrap items-center gap-2 border-b px-4 py-2 text-xs">
           <span className="text-muted-foreground">
             {provider.label} · Key {maskKey(apiKey)}
@@ -159,7 +185,7 @@ export function Playground({
 
       {/* 选中的厂商没有 Key，但别的厂商填过 —— 这是最容易困惑的状态：
           填了 Key 却点不动运行按钮，而界面上没有任何解释 */}
-      {!apiKey && savedForOtherProvider && (
+      {mounted && !apiKey && savedForOtherProvider && (
         <div className="border-b border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs">
           <p className="text-muted-foreground leading-relaxed">
             当前厂商是「{provider.label}」，但你填过的是「{savedForOtherProvider.label}」的 Key。
