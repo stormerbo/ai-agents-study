@@ -27,8 +27,8 @@ export const chapter = {
       summary: '模型不会读心术。你以为说清楚了，是因为你知道自己想说什么 —— 这是最常见的失败来源。',
       estimatedMinutes: 15,
       difficulty: 'beginner',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['instruction', 'clarity'],
       checkpoints: [
         {

@@ -3,6 +3,7 @@ import 'server-only';
 import type { ComponentType } from 'react';
 
 import { bodies as llmApiBasicsBodies } from '@/content/chapters/llm-api-basics/body';
+import { bodies as promptEngineeringBodies } from '@/content/chapters/prompt-engineering/body';
 import { bodies as whatIsAnAgentBodies } from '@/content/chapters/what-is-an-agent/body';
 
 /**
@@ -19,6 +20,7 @@ type BodyLoader = () => Promise<{ default: ComponentType }>;
 const REGISTRY: Record<string, Record<string, BodyLoader>> = {
   'what-is-an-agent': whatIsAnAgentBodies,
   'llm-api-basics': llmApiBasicsBodies,
+  'prompt-engineering': promptEngineeringBodies,
 };
 
 /** 取某一节的正文组件。没写正文时返回 undefined（页面会渲染大纲占位）。 */
