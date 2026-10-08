@@ -27,8 +27,8 @@ export const chapter = {
       summary: '把历史一直留着，不是记忆方案，只是把问题推迟到窗口满了那一刻。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['working-memory', 'long-term-memory'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '记忆系统的第一道关口是写入规则，而不是检索算法。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['write-policy', 'privacy'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '召回不是越多越好 —— 不相关的记忆会改变模型的行为，而你不会收到任何提示。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['recall', 'injection'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '记忆会过期、会互相矛盾。没有处理策略，库里存的就只是一堆有时序的断言。',
       estimatedMinutes: 22,
       difficulty: 'expert',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['conflict', 'ttl', 'provenance'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '记忆读写都要钱，而它到底改善了哪个指标，必须能被说清楚。',
       estimatedMinutes: 18,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['cost', 'evaluation'],
       checkpoints: [
         {
@@ -183,7 +183,7 @@ export const chapter = {
     ],
     cost: 'high',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
