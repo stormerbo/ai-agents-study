@@ -1,0 +1,244 @@
+---
+lesson: tool-calling/what-really-happens
+title: 工具调用到底发生了什么
+status: drafting
+---
+
+「工具调用」这个说法容易让人误会。它听起来像是模型伸手去做了某件事。
+
+**实际上模型从来不执行任何东西。** 它做的唯一一件事，是生成一个结构化的调用请求，然后停下来等你。
+
+这一节把一次完整往返的原始结构抓下来看清楚，并标出**哪些环节必须由你的代码补上**。
+
+## 实测：模型到底返回了什么
+
+给模型一个工具定义，问一个需要它的的问题（「100 美元现在能换多少人民币？」）：
+
+```
+HTTP 200   stop_reason=tool_use
+usage: {"input_tokens":338, "output_tokens":78}
+
+content 数组：
+  [0] thinking   80 字
+  [1] tool_use   id=call_00_MuiJDM87LCjrfmnQRkba5824
+                 name=get_exchange_rate
+                 input={"from":"USD","to":"CNY"}
+```
+
+（实测数据，`deepseek-flash`，2026-10-08。）
+
+三件值得注意的事：
+
+**① `stop_reason` 是 `tool_use`，不是 `end_turn`。** 这是模型在告诉你「我停下来了，因为我在等一个工具的结果」。你的循环必须在这里分支 —— 这是判断「该继续还是该结束」的唯一可靠信号。
+
+**② `input` 已经是解析好的 JSON 对象，不是字符串。** 你不需要再 `json.loads`。但如果是流式响应，参数是一段段拼出来的（第 1 章采集到过 18 个分片拼成一个完整 JSON），那时才需要自己做拼接。
+
+**③ 模型什么都没做。** 上例里，它不知道汇率是多少 —— 它只是**猜**了要查 USD→CNY，然后把这个意图表达出来。汇率这个数字从头到尾不在模型手里。
+
+## 你必须补上的三个环节
+
+<Mermaid
+  chart={`
+sequenceDiagram
+    participant U as 你的代码
+    participant M as 模型 API
+    participant T as 你的函数
+    U->>M: 问题 + tools 定义
+    M-->>U: stop_reason=tool_use<br/>content=[tool_use{name, input}]
+    Note over U,M: 模型到此为止<br/>它不执行任何东西
+    U->>T: 由你执行真正的函数
+    T-->>U: 返回值
+    U->>M: 追加一条 tool_result 消息
+    M-->>U: 最终回答（stop_reason=end_turn）
+`}
+/>
+
+1. **识别调用请求** —— 从 `content` 里挑出 `type === "tool_use"` 的块
+2. **执行真正的函数** —— 这段代码和模型无关，是你自己的业务代码
+3. **把返回值作为消息追加进历史，再请求一次** —— 返回值的格式由协议规定，但**内容完全由你决定**
+
+第 3 步补上之后，实测的结果是：
+
+```
+HTTP 200   stop_reason=end_turn
+最终回答：根据当前汇率，1 美元 = 7.23 人民币，所以 100 美元 ≈ 723 人民币。
+          ⚠️ 该汇率为模拟值（由本地函数返回），实际交易时请以银行或外汇平台的实时牌价为准。
+```
+
+模型拿到了我编的 `{"rate": 7.23}`，算出了 723，还把我返回值里的 `note` 字段一起传递给了用户。
+
+## API 会强制你补齐 —— 两种硬错误
+
+「忘了把结果喂回去」是新手最常见的错误。好消息是：**它不是静默的。**
+
+### 情况一：把 `tool_use` 追加进历史，但不补 `tool_result`
+
+```json
+{
+  "error": {
+    "message": "messages.2: `tool_use` ids were found without `tool_result` blocks immediately after: call_00_MuiJDM87LCjrfmnQRkba5824. …（下略，原文更长）",
+    "type": "invalid_request_error"
+  }
+}
+```
+
+HTTP 400。报文直接告诉你是哪条消息（`messages.2`）、哪个 id 缺了对应的 `tool_result`。
+
+> 这一条其实是好消息：协议层面不允许你「假装调用过了」。模型不会在你没执行工具的情况下继续往下编。
+
+### 情况二：`tool_use_id` 写成了一个不存在的 id
+
+```json
+{
+  "error": {
+    "message": "unexpected `messages.2.content.0: tool_use_id` found in `tool_result` blocks: toolu_不存在的ID. …（下略）"
+  }
+}
+```
+
+**`tool_use_id` 是这个协议里最纯粹的「配对凭证」** —— 上一轮 `tool_use` 里给的那个 id，必须原样出现在这一轮 `tool_result` 里。写错一个字符就是 400。
+
+## 反直觉的一节：模型不会硬编参数
+
+我原以为会经常遇到「模型拿着不完整的参数去调用工具，然后失败」。为了测「工具返回的错误信息写得好不好，是否影响模型自我纠正」，我设计了三次实验 —— **三次都没能让模型走进错误分支**：
+
+| 设计 | 预期 | 实际 |
+|---|---|---|
+| 只给 `get_user(user_id)`，问「查用户张三的邮箱」 | 模型拿姓名当 id，撞 404 | 它直接说「需要 user_id」并给出格式示例 |
+| 同时给 `get_user` + `list_users` | 靠错误信息才能找到 `list_users` | **它第一次就调了 `list_users`** —— 描述本身就指明了路径 |
+| 工具描述含糊、用户没给订单号 | 模型硬编一个参数去调用 | 它先问用户「请提供订单号」 |
+
+（实测数据，`deepseek-flash`，2026-10-08。）
+
+**结论：参数缺失或有歧义时，模型倾向于先问，而不是硬编一个值。** 这意味着「错误信息设计」这件事的触发频率，比传言里低不少。
+
+它同时也解释了为什么前两个设计失败：**工具描述写得清楚，模型根本不会走错路。** 那条经验属于第 2 节。
+
+## 「工具返回值也是 prompt」—— 我测了，但没测出差异
+
+这个说法我没能复现。
+
+设计：让工具返回**同一份数据**，只改格式 —— 一种用晦涩的嵌套 JSON（键名缩写、状态用字母码），一种用清晰文本（带单位、状态可读）。看模型最终回答是否用对了数据。
+
+结果：**两种格式下，模型都完整保住了所有字段和数值，没有差异。**
+
+> 而且第一次跑的时候，我得出了「晦涩格式会让模型丢掉订单号」的结论 —— 直到我发现**是我自己的测试数据里根本没放订单号字段**（我把索引字段 `i` 当成了 id）。这是本次写作里的**第四个测量缺陷**。
+>
+> 补上字段后重跑，两边都是 4/4 全对。
+
+那这个说法错了吗？不是。**原理上它一定成立**：返回值走的是和你的指令**同一个文本通道**，模型没有机制区分「这是我的工具返回的数据」和「这是用户写的文字」。所以返回值里的内容当然会影响模型行为。
+
+只是**在这个规模上（4 条记录、几个数字），清晰与晦涩的差别不足以让模型出错**。数据量更大、字段更多、或者返回值里混了会让模型误解的文字时，差别才会显现。
+
+**所以结论是**：把返回值写清楚是**零成本的保险**，但没有必要为它牺牲正确性 —— 也不必因为「格式不够漂亮」就担心模型会崩。
+
+## 完整可运行代码
+
+```python
+# tool_loop.py
+"""一个最小可用的工具调用循环。
+
+没有框架、没有抽象 —— 只有三个必须的环节。看懂这 60 行，
+后面所有框架都只是这段代码的语法糖。
+"""
+
+import json
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+TOOLS = [
+    {
+        "name": "get_exchange_rate",
+        "description": "查询两种货币之间的当前汇率。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from": {"type": "string", "description": "源货币的三位代码，如 USD"},
+                "to": {"type": "string", "description": "目标货币的三位代码，如 CNY"},
+            },
+            "required": ["from", "to"],
+        },
+    }
+]
+
+
+def get_exchange_rate(from_currency: str, to_currency: str) -> dict:
+    """这段代码和模型完全无关 —— 它就是你自己的业务逻辑。
+
+    真实场景里，它会去查数据库或调第三方接口。
+    """
+    return {"rate": 7.23, "note": "模拟值，由本地函数返回"}
+
+
+# ② 执行：工具名 → 真正的函数
+IMPL = {"get_exchange_rate": get_exchange_rate}
+
+
+def run(question: str, max_rounds: int = 8) -> str:
+    messages = [{"role": "user", "content": question}]
+
+    for _ in range(max_rounds):          # 硬上界，防止失控循环
+        response = client.messages.create(
+            model=MODEL, max_tokens=4000, tools=TOOLS, messages=messages,
+        )
+
+        # ① 识别：不在 tool_use 上就说明结束了
+        if response.stop_reason != "tool_use":
+            return "".join(b.text for b in response.content if b.type == "text")
+
+        # 把这一轮 assistant 的回复原样追加回去（含 thinking 块，不能只挑 text）
+        messages.append({"role": "assistant", "content": response.content})
+
+        # ② 执行 + ③ 回填
+        results = []
+        for block in response.content:
+            if block.type != "tool_use":
+                continue
+            fn = IMPL.get(block.name)
+            try:
+                output = fn(**block.input) if fn else {"error": f"未知工具 {block.name}"}
+                results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,      # ← 必须原样带回，写错就是 400
+                    "content": json.dumps(output, ensure_ascii=False),
+                })
+            except Exception as exc:              # 工具内部异常不要抛出去
+                results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "is_error": True,
+                    "content": f"{type(exc).__name__}: {exc}",
+                })
+
+        messages.append({"role": "user", "content": results})
+
+    return f"达到 {max_rounds} 轮上限仍未结束"
+
+
+if __name__ == "__main__":
+    print(run("100 美元现在能换多少人民币？"))
+```
+
+> **实跑状态**：本文表格与代码块里的**报文和响应结构是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+
+## 常见坑
+
+**以为模型会执行工具。** 它只生成意图。执行、判断成败、把结果喂回去，全是你的代码。这个误解会让人把「模型没调对工具」和「工具没执行成功」混为一谈 —— 而两者的修法完全不同。
+
+**只把 `text` 块追加进历史。** 必须把整个 `content` 数组原样带回去（包括 `thinking` 块）。只挑文本会让下一轮缺少 `tool_use` 块，`tool_result` 就配不上对了 —— 直接 400。
+
+**忘了给循环设上界。** 工具调用是个循环，必须有硬性轮次上限。一个看不懂返回值、或者不断重试的模型会把你的预算烧光。
+
+**把工具内部的异常直接抛出去。** 模型看不到栈。异常要转成一条**结构化的 `tool_result`**（带 `is_error`）回填给它，它才有机会换个参数重试。
+
+**以为「返回值不完全是模型的责任」。** 返回值会作为消息进入上下文，和你的指令处在同一个文本通道里。它不只是数据，它是提示词的一部分。
