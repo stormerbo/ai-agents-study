@@ -5,4 +5,5 @@ import 'server-only';
 export const bodies = {
   'context-is-finite': () => import('./01-context-is-finite.mdx'),
   'system-prompt-altitude': () => import('./02-system-prompt-altitude.mdx'),
+  'just-in-time': () => import('./03-just-in-time.mdx'),
 } as const;

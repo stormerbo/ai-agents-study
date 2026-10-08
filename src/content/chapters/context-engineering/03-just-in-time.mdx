@@ -1,0 +1,218 @@
+---
+lesson: context-engineering/just-in-time
+title: 即时检索：不要预先塞入所有可能用到的资料
+status: drafting
+---
+
+给模型一份资料，有两条路：
+
+- **预加载** —— 把可能用到的资料先全部放进上下文
+- **按需取** —— 只给一个目录，让模型需要时自己去读
+
+「按需取更好」是这个领域里近乎默认的答案。它确实更好 —— **但有明确的边界**，而且边界的位置可以测出来。
+
+## 实测一：资料库越大，按需取越划算
+
+任务需要 60 篇资料里的 2 篇。同一个问题，两条路线各跑一次：
+
+| 资料库 | 路线 | 轮次 | 总 token |
+|---:|---|---:|---:|
+| 20 篇 | 预加载 | 1 | 2150 |
+| 20 篇 | 按需取 | 2 | **1888**（省 12%） |
+| 60 篇 | 预加载 | 1 | 6100 |
+| 60 篇 | 按需取 | 2 | **3259**（省 47%） |
+
+（实测数据，`deepseek-flash`，2026-10-08。token 为**全部轮次的三项之和**，含缓存读写与输出。）
+
+规律很清楚：**预加载的成本随资料库线性增长；按需取的成本几乎不随资料库增长** —— 因为它只加载真正用到的那两篇，目录本身很便宜。
+
+所以「资料库越大，按需取优势越大」。到这里为止，都符合直觉。
+
+## 实测二：真正决定成本的是「需要多少」，不是「有多少」
+
+我固定资料库为 40 篇，只改变**任务需要几篇**：
+
+| 需要篇数 | 预加载 token | 按需取 token | 轮次 | 按需 / 预加载 |
+|---:|---:|---:|---:|---:|
+| 2 / 40 | 3662 | 2329 | 2 | **0.64x** |
+| 8 / 40 | 3453 | 3267 | 2 | 0.95x |
+| 20 / 40 | 4638 | 11467 | 5 | **2.47x** |
+| 40 / 40 | 5059 | 18216 | 5 | **3.60x** |
+
+（实测数据，`deepseek-flash`，2026-10-08。）
+
+**结论反过来了。**
+
+- 只需要 2 篇时，按需取省 36%
+- 需要 8 篇（约占 1/5）时，两者**打平**
+- 需要 20 篇时，按需取**贵 2.5 倍**
+- 需要全部时，贵 3.6 倍
+
+预加载那边几乎没变（3453 → 5059），因为它一次就把 40 篇都放进去了，**问 2 篇还是 40 篇，输入成本一样**。而按需取要一篇篇读，成本随需求线性上涨。
+
+**交叉点大约在「需要的占全部的 20%」。**
+
+<Mermaid
+  chart={`
+flowchart TB
+    Q{"需要多少篇？<br/>占资料库的比例"} -->|"少数（&lt; 20%）"| A["按需取更省<br/>只加载用到的那几篇"]
+    Q -->|"约 20%"| B["两者持平"]
+    Q -->|"多数（&gt; 20%）"| C["预加载更省<br/>按需取要多轮往返"]
+    C --> C1["每轮都要重发全部历史<br/>成本随轮次近似平方增长"]
+    A --> A1["代价：多一轮往返<br/>且需要一套检索能力"]
+`}
+/>
+
+## 为什么按需取会变贵：轮次
+
+看那张表里的一列：**轮次从 2 变成 5**。
+
+按需取不是「读两次就完事」—— 模型每读一批就得把结果发回去，然后进行下一轮。而**每一轮都要重发之前的所有消息**（对话历史本来就该重发，模型是无状态的）。
+
+于是当需要读 20 篇时：
+
+```
+第 1 轮：目录 + 问题                      → 读 4 篇
+第 2 轮：上面全部 + 4 篇内容               → 再读 5 篇
+第 3 轮：上面全部 + 9 篇内容               → 再读 6 篇
+...
+```
+
+输入量随轮次累积，总成本近似 O(N²) —— 这正是第 0 章讲多轮对话成本时算过的那个结构。
+
+> 有个缓解手段：**prompt caching**（第 1 章）。每轮重复的前缀是可以命中缓存的，能把「重发历史」的成本大幅压低。缓存**不能**免除复杂性，但能改变上面这些数字 —— 这也是为什么第 1 章要单独讲它。
+
+## 那到底该怎么选
+
+把上面的数据整理成一条判据：
+
+| 你的情况 | 选择 | 理由 |
+|---|---|---|
+| 资料库小（十几篇以内） | **预加载** | 两者差不多，预加载少一轮往返、也不用建检索 |
+| 资料库大，但每次只用到几篇 | **按需取** | 优势最大，这正是它设计的场景 |
+| 资料库大，且每次要用很多 | **预加载 + 压缩** | 按需取的轮次成本会吃掉优势 |
+| 资料库大，每次用量不定 | **目录 + 按需**（下面这个） | 让用量在运行时决定 |
+
+### 中间形态：只给目录
+
+最后一行值得单独说，因为它是实际系统里最常见的做法，也是两个 checkpoint 里那个「文件路径模式」：
+
+**把「索引」和「内容」分开。**
+
+- **索引**（标题、路径、一句话摘要）很便宜 —— 20 篇的目录约 400 token，60 篇约 1200 token。可以常驻上下文
+- **内容**很贵 —— 每篇 250 token 起，只在被选中时才加载
+
+这个做法顺带解决了另一个问题：**模型不知道自己不知道什么**。先给它一张地图，它才会去问对的问题。本站在做代码检索类任务时用的就是这条路（[aider 的 repo-map](https://aider.chat/docs/repomap.html) 是同一思路的成熟实现）。
+
+## 完整可运行代码
+
+```python
+# preload_vs_jit.py
+"""在你的资料库与任务上，测出那条交叉点在哪。
+
+关键：按需取必须**累加所有轮次的输入 token** —— 只看单轮会得出完全错误的结论。
+"""
+
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+DOCS: list[dict] = [...]      # [{"id": "DOC-01", "title": "...", "content": "..."}]
+NEEDED_IDS: list[str] = [...] # 这个任务到底需要哪几篇
+QUESTION = "..."
+
+TOOL = {
+    "name": "read_doc",
+    "description": "按编号读取一篇资料全文。只在确定需要时读 —— 每次调用都会增加上下文占用。",
+    "input_schema": {
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "required": ["id"],
+    },
+}
+
+
+def total_tokens(u) -> int:
+    """必须用四项之和。
+
+    DeepSeek 等平台会自动缓存，input_tokens 只表示「未命中缓存的部分」——
+    只读它会把多轮对话的成本算得远低于实际（第 0 章踩过这个坑）。
+    """
+    return (
+        (u.input_tokens or 0)
+        + (u.cache_read_input_tokens or 0)
+        + (u.cache_creation_input_tokens or 0)
+        + (u.output_tokens or 0)
+    )
+
+
+def preload() -> int:
+    corpus = "\n\n".join(f"【{d['id']}】{d['title']}\n{d['content']}" for d in DOCS)
+    resp = client.messages.create(
+        model=MODEL, max_tokens=4000,
+        system=f"下面是全部资料。\n\n{corpus}",
+        messages=[{"role": "user", "content": QUESTION}],
+    )
+    return total_tokens(resp.usage)
+
+
+def on_demand() -> int:
+    catalogue = "\n".join(f"{d['id']}  {d['title']}" for d in DOCS)
+    messages = [{"role": "user", "content": f"可查阅以下资料（只给目录）：\n\n{catalogue}\n\n{QUESTION}"}]
+    total = 0
+
+    for _ in range(8):                      # 硬上界：没有上界的循环会烧光预算
+        resp = client.messages.create(
+            model=MODEL, max_tokens=4000, tools=[TOOL], messages=messages,
+        )
+        total += total_tokens(resp.usage)   # 累加，不是覆盖
+
+        if resp.stop_reason != "tool_use":
+            return total
+
+        messages.append({"role": "assistant", "content": resp.content})
+        messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": b.id,
+                    "content": next(
+                        (d["content"] for d in DOCS if d["id"] == b.input.get("id")),
+                        f"未找到 {b.input.get('id')}",
+                    ),
+                }
+                for b in resp.content if b.type == "tool_use"
+            ],
+        })
+    return total
+
+
+if __name__ == "__main__":
+    pre = preload()
+    jit = on_demand()
+    print(f"资料库 {len(DOCS)} 篇，任务需要 {len(NEEDED_IDS)} 篇")
+    print(f"  预加载：{pre:>7} token")
+    print(f"  按需取：{jit:>7} token")
+    print(f"  比值：{jit / pre:.2f}x   （<1 表示按需取更省）")
+```
+
+> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集，含真实的工具调用循环）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+
+## 常见坑
+
+**只看单轮 token 就下结论。** 按需取是多轮的，只看最后一次请求会严重低估它。必须**累加所有轮次**的三项之和。
+
+**以为「按需取一定更省」。** 实测：需要 2/40 篇时省 36%，需要 20/40 篇时**贵 2.5 倍**。交叉点约在 20%。
+
+**忽略额外一轮的延迟。** 按需取至少多一次往返。对交互式应用，这是用户直接感知的成本，而 token 表里看不出来。
+
+**只给内容不给索引。** 模型不知道自己不知道什么。要让它在需要时去取，得先给它一张地图（目录、路径、摘要）。
+
+**不给循环设上界。** 按需取是个循环，必须有硬性轮次上限 —— 否则一个找不到目标的模型会一直读下去。
