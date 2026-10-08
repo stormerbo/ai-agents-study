@@ -7,5 +7,5 @@ export const bodies = {
   'structure-and-separation': () => import('./02-structure-and-separation.mdx'),
   'few-shot': () => import('./03-few-shot.mdx'),
   'chain-of-thought': () => import('./04-chain-of-thought.mdx'),
-  reliability: () => import('./05-reliability.mdx'),
+  'reliability': () => import('./05-reliability.mdx'),
 } as const;

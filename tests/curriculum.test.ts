@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -512,3 +512,93 @@ describe('粗体标记的位置（CommonMark flanking）', () => {
     expect(failures, `Mermaid 图表里出现了 Markdown 标记：\n${failures.join('\n')}`).toEqual([]);
   });
 });
+
+
+/**
+ * 正文登记的四方一致性。
+ *
+ * 一节正文要真正出现在页面上，需要**四处**同时写对：
+ *   1. meta.ts 里 `hasBody: true`
+ *   2. 该章 body.ts 里有 `'<slug>': () => import('./NN-<slug>.mdx')`
+ *   3. 磁盘上有对应的 `.mdx` 文件
+ *   4. `src/lib/content/body.ts` 的 REGISTRY 里注册了该章
+ *
+ * 漏掉任何一处都**不会报错**：`getLessonBody` 找不到时返回 undefined，
+ * 页面静默退回「这一节的正文还在撰写中」占位 —— 构建通过、测试全绿、
+ * 只有人去点开那一页才发现。这属于 §4.1 / §4.8 的静默失效家族，
+ * 靠自律守不住，交给机器。
+ */
+describe('正文登记一致性', () => {
+  const root = join(process.cwd(), 'src/content/chapters');
+  const registrySrc = readFileSync(join(process.cwd(), 'src/lib/content/body.ts'), 'utf8');
+  const registeredChapters = new Set(
+    [...registrySrc.matchAll(/^\s*'([a-z0-9-]+)':\s*\w+Bodies,/gm)].map((m) => m[1]!),
+  );
+
+  it('每章 body.ts 的 key 与 hasBody 的节完全一一对应', () => {
+    for (const chapter of chapters) {
+      const dir = join(root, chapter.id);
+      const bodyPath = join(dir, 'body.ts');
+      const hasBodySlugs = chapter.lessons.filter((l) => l.hasBody).map((l) => l.slug);
+      const hasBodyFile = existsSync(bodyPath);
+
+      expect(
+        hasBodyFile,
+        `章 ${chapter.id} 有 ${hasBodySlugs.length} 节标了 hasBody，却没有 body.ts`,
+      ).toBe(hasBodySlugs.length > 0);
+
+      const src = hasBodyFile ? readFileSync(bodyPath, 'utf8') : '';
+      // key 允许带引号或不带引号 —— 两种写法在 JS 里等价，不能因为风格差异漏判
+      const entries = [
+        ...src.matchAll(/['"]?([a-z0-9-]+)['"]?:\s*\(\)\s*=>\s*import\('([^']+)'\)/g),
+      ].map((m) => ({ key: m[1]!, target: m[2]! }));
+
+      expect(
+        entries.map((e) => e.key).sort(),
+        `章 ${chapter.id} 的 body.ts key 与 hasBody 的节不一致`,
+      ).toEqual([...hasBodySlugs].sort());
+
+      for (const entry of entries) {
+        expect(
+          existsSync(join(dir, entry.target)),
+          `章 ${chapter.id} 的 body.ts 引用了不存在的文件 ${entry.target}`,
+        ).toBe(true);
+      }
+
+      const mdx = readdirSync(dir).filter((f) => f.endsWith('.mdx'));
+      const bySlug = new Map<string, string[]>();
+      for (const file of mdx) {
+        const m = /^\d+-([a-z0-9-]+)\.mdx$/.exec(file);
+        expect(m, `章 ${chapter.id} 的正文文件名不符合 <编号>-<slug>.mdx：${file}`).not.toBeNull();
+        const slug = m![1]!;
+        bySlug.set(slug, [...(bySlug.get(slug) ?? []), file]);
+      }
+      for (const [slug, files] of bySlug) {
+        expect(files.length, `章 ${chapter.id} 的 ${slug} 有多个正文文件`).toBe(1);
+        expect(
+          chapter.lessons.some((l) => l.slug === slug),
+          `章 ${chapter.id} 的正文文件 ${files[0]} 没有对应的节`,
+        ).toBe(true);
+      }
+      for (const slug of hasBodySlugs) {
+        expect(
+          bySlug.has(slug),
+          `节 ${chapter.id}/${slug} 标了 hasBody 但磁盘上没有 .mdx`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('有正文的章必须在 src/lib/content/body.ts 的 REGISTRY 里注册', () => {
+    for (const chapter of chapters) {
+      const hasBody = chapter.lessons.some((l) => l.hasBody);
+      expect(
+        registeredChapters.has(chapter.id),
+        hasBody
+          ? `章 ${chapter.id} 有正文，却没在 REGISTRY 里注册 —— 页面会静默显示「撰写中」`
+          : `章 ${chapter.id} 没有正文，却注册进了 REGISTRY`,
+      ).toBe(hasBody);
+    }
+  });
+});
+

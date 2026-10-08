@@ -6,6 +6,6 @@ export const bodies = {
   'context-is-finite': () => import('./01-context-is-finite.mdx'),
   'system-prompt-altitude': () => import('./02-system-prompt-altitude.mdx'),
   'just-in-time': () => import('./03-just-in-time.mdx'),
-  compaction: () => import('./04-compaction.mdx'),
+  'compaction': () => import('./04-compaction.mdx'),
   'subagent-isolation': () => import('./05-subagent-isolation.mdx'),
 } as const;
