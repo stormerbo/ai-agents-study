@@ -55,6 +55,8 @@ export interface RunOptions {
   provider: string;
   model: string;
   apiKey: string;
+  /** 自定义端点地址（第三方中转平台）。不传则用服务端注册表里的地址。 */
+  baseUrl?: string;
   system?: string;
   messages: { role: 'user' | 'assistant'; content: unknown }[];
   maxTokens?: number;
@@ -104,6 +106,7 @@ export function useChatRelay() {
         body: JSON.stringify({
           provider: opts.provider,
           model: opts.model,
+          baseUrl: opts.baseUrl,
           system: opts.system,
           messages: opts.messages,
           maxTokens: opts.maxTokens,

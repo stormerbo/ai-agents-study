@@ -8,6 +8,7 @@ import {
   type ChatParams,
   type ToolSpec,
 } from '@/lib/llm/types';
+import { isCustomBaseUrlAllowed, validateCustomBaseUrl } from '@/lib/llm/url-guard';
 
 /**
  * BYOK 中转端点 —— 本站唯一的运行时后端逻辑。
@@ -63,6 +64,13 @@ interface ParsedBody {
   tools?: ToolSpec[];
   maxTokens?: number;
   effort?: ChatParams['effort'];
+  /**
+   * 自定义端点地址（第三方中转平台）。
+   *
+   * 只在 `ALLOW_CUSTOM_BASE_URL=true` 时接受，且必须通过 url-guard 的校验。
+   * 默认关闭，因为开放它等于开放一个通用 HTTP 转发器（详见 url-guard.ts）。
+   */
+  baseUrl?: string;
 }
 
 function badRequest(requestId: string, message: string, code = 'invalid_request', status = 400) {
@@ -127,6 +135,7 @@ function parseBody(raw: unknown, requestId: string): ParsedBody | Response {
     tools: Array.isArray(b.tools) ? (b.tools.slice(0, 32) as ToolSpec[]) : undefined,
     maxTokens,
     effort: parseEffort(b.effort),
+    baseUrl: typeof b.baseUrl === 'string' ? b.baseUrl : undefined,
   };
 }
 
@@ -174,9 +183,35 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // model 必须在白名单里 —— 这是把端点从「通用 LLM 代理」收窄成
-  // 「本站课程用到的几个模型」的关键一步
-  if (!isModelAllowed(parsed.provider, parsed.model)) {
+  // 自定义端点（第三方中转平台）：仅在开关打开时接受，且必须通过 SSRF 校验。
+  //
+  // 这一步必须在模型白名单之前 —— 因为它会改变白名单的适用性（见下方注释）。
+  let customBaseUrl: string | undefined;
+  if (parsed.baseUrl) {
+    if (!isCustomBaseUrlAllowed()) {
+      return badRequest(
+        requestId,
+        '本站未开放自定义端点。需要在服务端设置 ALLOW_CUSTOM_BASE_URL=true',
+        'forbidden',
+        403,
+      );
+    }
+    const check = validateCustomBaseUrl(parsed.baseUrl);
+    if (!check.ok) {
+      return badRequest(requestId, `自定义端点被拒绝：${check.reason}`);
+    }
+    customBaseUrl = check.url;
+  }
+
+  // model 白名单。
+  //
+  // **自定义端点时跳过**：端点与模型名都由用户自己指定，且 baseUrl 已通过
+  // SSRF 校验（禁内网、禁云元数据、强制 https）。
+  //
+  // 白名单要防的是「本端点被当成到厂商官方端点的通用代理」—— 而自定义端点连的是
+  // 用户自己的第三方服务，不属于这个风险模型。若在这里强制它，用户就没法用
+  // 自己的模型名了。
+  if (!customBaseUrl && !isModelAllowed(parsed.provider, parsed.model)) {
     return badRequest(
       requestId,
       `模型 ${parsed.model} 不在允许列表中`,
@@ -199,7 +234,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const { events, meta } = await provider.adapter.streamChat({
-      creds: { apiKey, baseUrl: provider.baseUrl },
+      creds: { apiKey, baseUrl: customBaseUrl ?? provider.baseUrl },
       params: {
         model: parsed.model,
         system: parsed.system,

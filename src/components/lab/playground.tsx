@@ -31,10 +31,29 @@ interface ProviderOption {
   defaultModel: string;
 }
 
-export function Playground({ lab, providers }: { lab: Lab; providers: ProviderOption[] }) {
+export function Playground({
+  lab,
+  providers,
+  allowCustomEndpoint,
+}: {
+  lab: Lab;
+  providers: ProviderOption[];
+  /** 服务端是否开放自定义端点（读 ALLOW_CUSTOM_BASE_URL 环境变量） */
+  allowCustomEndpoint: boolean;
+}) {
   const [byok, setByok] = useState<ByokState>(() => loadByok());
   const [providerId, setProviderId] = useState(providers[0]?.id ?? '');
   const provider = providers.find((p) => p.id === providerId) ?? providers[0];
+
+  /**
+   * 自定义端点（第三方中转平台）。
+   *
+   * 开启后，厂商选择器只决定**走哪套协议**（Anthropic 还是 OpenAI 兼容），
+   * 实际的地址与模型名都由你自己填。这样以后换平台不用改代码。
+   */
+  const [useCustom, setUseCustom] = useState(false);
+  const [customBaseUrl, setCustomBaseUrl] = useState('');
+  const [customModel, setCustomModel] = useState('');
 
   const allowedModels = useMemo(
     () => lab.allowedModels.map((m) => m.model).filter((m) => provider?.models.includes(m)),
@@ -67,13 +86,22 @@ export function Playground({ lab, providers }: { lab: Lab; providers: ProviderOp
     );
   }
 
-  const canRun = apiKey.length > 0 && input.trim().length > 0 && !relay.state.running;
+  // 自定义端点时用用户填的模型名，否则用下拉选中的
+  const effectiveModel = useCustom ? customModel.trim() : model;
+
+  const canRun =
+    apiKey.length > 0 &&
+    input.trim().length > 0 &&
+    !relay.state.running &&
+    // 自定义端点时必须先填地址与模型名，否则运行必然失败
+    (!useCustom || (customBaseUrl.trim().length > 0 && effectiveModel.length > 0));
 
   const onRun = () => {
     void relay.run({
       provider: provider.id,
-      model,
+      model: effectiveModel,
       apiKey,
+      baseUrl: useCustom ? customBaseUrl.trim() : undefined,
       system: system.trim() || undefined,
       messages: [{ role: 'user', content: input.trim() }],
       maxTokens: lab.defaults?.maxTokens,
@@ -149,8 +177,24 @@ export function Playground({ lab, providers }: { lab: Lab; providers: ProviderOp
       )}
 
       {/* 配置区 */}
+      {allowCustomEndpoint && (
+        <div className="border-border border-b px-4 py-2">
+          <label className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={useCustom}
+              onChange={(e) => setUseCustom(e.target.checked)}
+            />
+            <span>使用自定义端点（第三方中转平台）</span>
+            <span className="text-muted-foreground/70">
+              勾选后，上面选的厂商只表示「走哪套协议」，地址与模型名由你填
+            </span>
+          </label>
+        </div>
+      )}
+
       <div className="border-border grid gap-3 border-b px-4 py-3 sm:grid-cols-2">
-        <Field label="厂商">
+        <Field label={useCustom ? '协议（按你平台的文档选）' : '厂商'}>
           <select
             value={providerId}
             onChange={(e) => setProviderId(e.target.value)}
@@ -164,19 +208,47 @@ export function Playground({ lab, providers }: { lab: Lab; providers: ProviderOp
           </select>
         </Field>
 
-        <Field label="模型">
-          <select
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="border-border bg-background w-full rounded-md border px-2 py-1.5 text-xs"
-          >
-            {(allowedModels.length > 0 ? allowedModels : provider.models).map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {useCustom ? (
+          <Field label="模型名（按你平台的叫法填）">
+            <input
+              value={customModel}
+              onChange={(e) => setCustomModel(e.target.value)}
+              placeholder="例如 deepseek-chat"
+              className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
+            />
+          </Field>
+        ) : (
+          <Field label="模型">
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="border-border bg-background w-full rounded-md border px-2 py-1.5 text-xs"
+            >
+              {(allowedModels.length > 0 ? allowedModels : provider.models).map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        {useCustom && (
+          <div className="sm:col-span-2">
+            <Field label="端点地址（baseUrl）">
+              <input
+                value={customBaseUrl}
+                onChange={(e) => setCustomBaseUrl(e.target.value)}
+                placeholder="https://your-platform.com/v1"
+                className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
+              />
+            </Field>
+            <p className="text-muted-foreground/70 mt-1.5 text-[11px] leading-relaxed">
+              服务端会校验：必须 https、不能指向内网或云元数据地址。
+              用 http 的话你的 Key 会明文传输，所以被拒绝了。
+            </p>
+          </div>
+        )}
 
         <div className="sm:col-span-2">
           <Field label={lab.system?.locked ? 'system 提示（本实验锁定）' : 'system 提示（可修改）'}>
@@ -273,10 +345,26 @@ export function Playground({ lab, providers }: { lab: Lab; providers: ProviderOp
               </span>
               <span className="text-muted-foreground ml-2">{relay.state.error.message}</span>
               {relay.state.error.code === 'unauthorized' && (
-                <p className="text-muted-foreground mt-1.5 leading-relaxed">
-                  常见原因：当前厂商选的是「{provider.label}」，而你填的 Key 属于另一家。
-                  不同厂商的 Key 不能混用 —— 换个厂商再试，或填入对应厂商的 Key。
-                </p>
+                <div className="text-muted-foreground mt-1.5 space-y-1 leading-relaxed">
+                  <p>两种可能，按可能性排序：</p>
+                  <ul className="ml-4 list-disc space-y-0.5">
+                    <li>
+                      <strong className="text-foreground/80 font-medium">Key 本身无效</strong>
+                      　—— 复制不完整、已被吊销、或者不是「{provider.label}」的 Key
+                    </li>
+                    <li>
+                      <strong className="text-foreground/80 font-medium">厂商选错了</strong>
+                      　—— 在别家申请的 Key 用不到这里
+                    </li>
+                  </ul>
+                  <p>
+                    你当前这把 Key 的末尾四位是{' '}
+                    <code className="bg-background rounded px-1 font-mono">
+                      {apiKey.slice(-4)}
+                    </code>
+                    ，可以拿它跟厂商后台里的 Key 核对一下。
+                  </p>
+                </div>
               )}
               {relay.state.error.code === 'model_not_allowed' && (
                 <p className="text-muted-foreground mt-1.5 leading-relaxed">
