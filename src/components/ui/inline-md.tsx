@@ -26,8 +26,12 @@ export function plainText(text?: string | null): string {
 export function InlineMd({ text }: { text?: string | null }): ReactNode {
   if (!text) return null;
 
+  // 必须返回**单个**元素，不能返回 Fragment：调用方的父容器常常是 flex/grid
+  // （例如章节日里的「可以直接迁移」列表用 flex 排版）。Fragment 的多个子节点
+  // 会各自成为一个 flex item，把一句完整的话拆成并排的几列。
+  // 这是 §4.8 的同一个静默失效家族 —— 构建通过、页面不报错，只有肉眼能看出。
   return (
-    <>
+    <span>
       {text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((token, i) => {
         if (token.length > 4 && token.startsWith('**') && token.endsWith('**')) {
           return (
@@ -48,6 +52,6 @@ export function InlineMd({ text }: { text?: string | null }): ReactNode {
         }
         return token;
       })}
-    </>
+    </span>
   );
 }
