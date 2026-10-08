@@ -49,8 +49,8 @@ export const chapter = {
         '把用户输入和你的指令混在一起的写法，会同时带来两个问题：效果不稳定，以及一个安全漏洞。',
       estimatedMinutes: 18,
       difficulty: 'beginner',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['xml-tags', 'prompt-injection'],
       checkpoints: [
         {
