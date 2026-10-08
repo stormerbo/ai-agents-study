@@ -46,6 +46,10 @@ export function Playground({ lab, providers }: { lab: Lab; providers: ProviderOp
   const [showRaw, setShowRaw] = useState(false);
 
   const apiKey = provider ? (getCredential(byok, provider.id) ?? '') : '';
+  // 别的厂商有没有存过 Key —— 用于在「选错厂商」时给出可操作的提示
+  const savedForOtherProvider = providers.find(
+    (p) => p.id !== provider?.id && getCredential(byok, p.id),
+  );
   const relay = useChatRelay();
 
   // provider 变化时，把模型切到该 provider 下可用的第一个
@@ -99,6 +103,9 @@ export function Playground({ lab, providers }: { lab: Lab; providers: ProviderOp
       {/* Key 未填时的引导 */}
       {!apiKey && (
         <ApiKeyForm
+          providers={providers}
+          providerId={providerId}
+          onProviderChange={setProviderId}
           provider={provider}
           mode={byok.mode}
           onSave={(key) => setByok(setCredential(byok, provider.id, key))}
@@ -119,6 +126,25 @@ export function Playground({ lab, providers }: { lab: Lab; providers: ProviderOp
           >
             清除
           </button>
+        </div>
+      )}
+
+      {/* 选中的厂商没有 Key，但别的厂商填过 —— 这是最容易困惑的状态：
+          填了 Key 却点不动运行按钮，而界面上没有任何解释 */}
+      {!apiKey && savedForOtherProvider && (
+        <div className="border-b border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs">
+          <p className="text-muted-foreground leading-relaxed">
+            当前厂商是「{provider.label}」，但你填过的是「{savedForOtherProvider.label}」的 Key。
+            不同厂商的 Key 不能混用 —— 可以
+            <button
+              type="button"
+              onClick={() => setProviderId(savedForOtherProvider.id)}
+              className="text-foreground mx-1 font-medium underline underline-offset-2"
+            >
+              切到 {savedForOtherProvider.label}
+            </button>
+            ，或者填入当前厂商的 Key。
+          </p>
         </div>
       )}
 
@@ -317,11 +343,17 @@ function UsageBar({
 }
 
 function ApiKeyForm({
+  providers,
+  providerId,
+  onProviderChange,
   provider,
   mode,
   onSave,
   onModeChange,
 }: {
+  providers: ProviderOption[];
+  providerId: string;
+  onProviderChange: (id: string) => void;
   provider: ProviderOption;
   mode: ByokState['mode'];
   onSave: (key: string) => void;
@@ -332,30 +364,55 @@ function ApiKeyForm({
   return (
     <div className="border-border bg-muted/30 border-b px-4 py-4">
       <p className="text-sm font-medium">填入你的 API Key 才能运行</p>
-      <p className="text-muted-foreground mt-1.5 text-xs leading-relaxed">
+
+      {/* 厂商选择放在 Key 输入**之前** —— 顺序反了会让人填错：
+          先填了 Key 才发现厂商选的是另一家，是最常见的困惑 */}
+      <label className="mt-3 block">
+        <span className="text-muted-foreground mb-1 block text-xs">
+          1. 先选你要用哪家的模型（Key 要跟这里对应）
+        </span>
+        <select
+          value={providerId}
+          onChange={(e) => onProviderChange(e.target.value)}
+          className="border-border bg-background w-full rounded-md border px-2 py-1.5 text-xs"
+        >
+          {providers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
         Key 只存在你的浏览器里。运行时它经本站服务器转发给模型厂商，
         <strong className="text-foreground font-medium">服务端不存储、不记录日志</strong>。
         建议用一把限额的、专用的 Key，用完随时吊销。
         {provider.keyHint && <> 申请地址：{provider.keyHint}</>}
       </p>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <input
-          type="password"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="粘贴 API Key"
-          className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1.5 font-mono text-xs"
-        />
-        <button
-          type="button"
-          disabled={draft.trim().length === 0}
-          onClick={() => onSave(draft.trim())}
-          className="bg-foreground text-background rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-        >
-          保存
-        </button>
-      </div>
+      <label className="mt-3 block">
+        <span className="text-muted-foreground mb-1 block text-xs">
+          2. 粘贴 {provider.label} 的 API Key
+        </span>
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="password"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="粘贴 API Key"
+            className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1.5 font-mono text-xs"
+          />
+          <button
+            type="button"
+            disabled={draft.trim().length === 0}
+            onClick={() => onSave(draft.trim())}
+            className="bg-foreground text-background rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+          >
+            保存
+          </button>
+        </div>
+      </label>
 
       <label className="text-muted-foreground mt-3 flex items-start gap-2 text-xs">
         <input
