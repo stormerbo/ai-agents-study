@@ -96,6 +96,28 @@ describe('章节结构', () => {
       ).toBeGreaterThan(0);
     }
   });
+
+  /**
+   * 章状态必须与正文完成度一致。
+   *
+   * 这个字段驱动章节页上的「正文状态」徽章，但它**要手工维护** ——
+   * 于是必然漂移：2026-10-08 发现四个已经写完的章，徽章还停在
+   * 「撰写中」甚至「大纲完成」，读者会以为正文没写完。
+   *
+   * 用规则代替自律：有几节写完了正文，就对应哪个状态。
+   */
+  it('章状态与正文完成度一致', () => {
+    for (const chapter of chapters) {
+      const total = chapter.lessons.length;
+      const written = chapter.lessons.filter((l) => l.hasBody).length;
+      const expected =
+        written === 0 ? 'outlined' : written === total ? 'published' : 'drafting';
+      expect(
+        chapter.status,
+        `章 ${chapter.id}：${written}/${total} 节有正文，status 应为 '${expected}'，实际是 '${chapter.status}'`,
+      ).toBe(expected);
+    }
+  });
 });
 
 describe('节', () => {

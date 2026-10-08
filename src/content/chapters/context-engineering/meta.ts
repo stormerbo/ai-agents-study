@@ -207,7 +207,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'drafting',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
   flagship: true,

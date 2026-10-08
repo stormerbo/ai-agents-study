@@ -218,7 +218,7 @@ export const chapter = {
     ],
     cost: 'low',
   },
-  status: 'drafting',
+  status: 'published',
   updatedAt: '2026-09-24',
   verifiedAt: '2026-09-24',
   flagship: true,

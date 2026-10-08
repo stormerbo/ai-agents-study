@@ -195,7 +195,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'drafting',
   updatedAt: '2026-09-24',
   verifiedAt: '2026-09-24',
 } satisfies Chapter;
