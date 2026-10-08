@@ -3,7 +3,7 @@ import type { Chapter } from '@/content/curriculum/schema';
 export const chapter = {
   id: 'mcp',
   stageId: 'stage-3-orchestration',
-  order: 12,
+  order: 14,
   title: 'MCP',
   subtitle: '工具生态的协议层',
   summary:

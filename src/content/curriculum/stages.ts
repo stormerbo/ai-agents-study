@@ -44,11 +44,11 @@ export const stages = [
     id: 'stage-2-primitives',
     order: 2,
     title: '核心原语',
-    tagline: '让模型能动手、能入格式、能查资料、能记事',
+    tagline: '让模型能动手、能入格式、能查资料、能记事、能看、能操作界面',
     summary:
-      '工具调用、结构化输出、检索、记忆 —— 这四个原语组合起来就是 agent 的全部零件。任何 agent 框架拆开看，都是它们在重复组合。',
+      '工具调用、结构化输出、检索、记忆、多模态输入、计算机使用 —— 这六个原语组合起来就是 agent 的全部零件。任何 agent 框架拆开看，都是它们在重复组合。',
     assumedKnowledge: ['完成阶段 1 全部内容', '能读懂 JSON Schema'],
-    capstone: '手写一个能查资料并给出带引用答案的程序，全程不依赖任何 agent 框架',
+    capstone: '手写一个能查资料、能读图并给出带引用答案的程序，全程不依赖任何 agent 框架',
     colorToken: 'stage-2',
   },
   {
@@ -68,7 +68,7 @@ export const stages = [
     title: '生产化',
     tagline: '你的主场 —— 后端经验在这里才真正值钱',
     summary:
-      '评估与可观测性、沙箱隔离、成本与延迟、部署与 prompt injection 防御。绝大多数教程止步于"跑通 demo"，而这几章决定它能不能上线。',
+      '评估与可观测性、沙箱与权限、安全与信任边界、成本与延迟、人机协作、部署与交付。绝大多数教程止步于「跑通 demo」，而这几章决定它能不能上线、以及上线之后能不能变好。',
     assumedKnowledge: ['完成阶段 3 全部内容', '有线上服务的部署与运维经验'],
     capstone: '能给一个 agent 服务加上评估、追踪、成本上限与故障恢复',
     colorToken: 'stage-4',

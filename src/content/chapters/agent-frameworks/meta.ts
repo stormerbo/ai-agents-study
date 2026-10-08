@@ -3,7 +3,7 @@ import type { Chapter } from '@/content/curriculum/schema';
 export const chapter = {
   id: 'agent-frameworks',
   stageId: 'stage-3-orchestration',
-  order: 11,
+  order: 13,
   title: '框架选型',
   subtitle: '在抽象与掌控之间',
   summary:

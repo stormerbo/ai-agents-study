@@ -166,6 +166,7 @@ export const chapter = {
     },
   ],
   resourceIds: ['memgpt-paper', 'mem0', 'letta', 'anthropic-context-engineering', 'ai-engineering-huyen'],
+  labIds: ['lab-memory-write'],
   backendMapping: {
     analogy: '记忆 ≈ 给一个无状态服务加持久化层，但写进去的是「模型得出的结论」而不是「事实」',
     transferable: [

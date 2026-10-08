@@ -3,7 +3,7 @@ import type { Chapter } from '@/content/curriculum/schema';
 export const chapter = {
   id: 'agent-paradigms',
   stageId: 'stage-3-orchestration',
-  order: 8,
+  order: 10,
   title: 'Agent 范式',
   subtitle: 'ReAct、Plan-Execute 与它们的适用边界',
   summary:

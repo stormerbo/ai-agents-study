@@ -13,6 +13,16 @@ import { chapter as agentLoop } from './agent-loop/meta';
 import { chapter as multiAgent } from './multi-agent/meta';
 import { chapter as agentFrameworks } from './agent-frameworks/meta';
 import { chapter as mcp } from './mcp/meta';
+import { chapter as multimodal } from './multimodal/meta';
+import { chapter as computerUse } from './computer-use/meta';
+import { chapter as evaluation } from './evaluation/meta';
+import { chapter as sandboxing } from './sandboxing/meta';
+import { chapter as agentSecurity } from './agent-security/meta';
+import { chapter as costAndLatency } from './cost-and-latency/meta';
+import { chapter as humanInTheLoop } from './human-in-the-loop/meta';
+import { chapter as agentDeployment } from './agent-deployment/meta';
+import { chapter as readingSource } from './reading-source/meta';
+import { chapter as capstone } from './capstone/meta';
 
 /**
  * 章节清单。
@@ -40,4 +50,14 @@ export const chapters: Chapter[] = [
   multiAgent,
   agentFrameworks,
   mcp,
+  multimodal,
+  computerUse,
+  evaluation,
+  sandboxing,
+  agentSecurity,
+  costAndLatency,
+  humanInTheLoop,
+  agentDeployment,
+  readingSource,
+  capstone,
 ].sort((a, b) => a.order - b.order);

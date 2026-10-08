@@ -3,7 +3,7 @@ import type { Chapter } from '@/content/curriculum/schema';
 export const chapter = {
   id: 'agent-loop',
   stageId: 'stage-3-orchestration',
-  order: 9,
+  order: 11,
   title: '手写一个 Agent 循环',
   subtitle: '从零实现一遍，再回头看框架',
   summary:

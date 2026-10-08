@@ -141,6 +141,7 @@ export const chapter = {
     'openai-agents-sdk-python',
     'hf-agents-course-zh',
   ],
+  labIds: ['lab-json-retry'],
   backendMapping: {
     analogy: '结构化输出 ≈ 给一个不可靠的第三方服务加一层严格的响应校验层',
     transferable: [

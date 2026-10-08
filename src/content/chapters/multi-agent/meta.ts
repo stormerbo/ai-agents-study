@@ -3,7 +3,7 @@ import type { Chapter } from '@/content/curriculum/schema';
 export const chapter = {
   id: 'multi-agent',
   stageId: 'stage-3-orchestration',
-  order: 10,
+  order: 12,
   title: '多智能体',
   subtitle: '什么时候值得那份成本',
   summary:
