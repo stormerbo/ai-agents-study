@@ -32,24 +32,26 @@ export const chapter = {
         'Lost in the Middle 与 context rot 说明：上下文窗口的标称容量，和模型实际能用好的容量，是两回事。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['context-rot', 'lost-in-the-middle'],
       checkpoints: [
         {
           id: 'middle-neglect',
           basis: 'inferred',
-          question: '如果必须在一个很长的上下文里放置一条关键约束，应该放在哪里？为什么？',
+          question: '如果必须在一个很长的上下文里放置一条关键约束，你会放在哪里？为什么？',
           answer:
-            '放在开头或结尾，绝不要放在中间。研究显示模型对长上下文各位置的利用率是 U 形的：开头和结尾最高，中间明显衰减。实践上的做法是把最重要的约束放在开头（或结尾重复一次），把大段参考资料放中间，而不是反过来。',
+            '放开头，并在结尾重复一次。但要注意理由 —— Lost in the Middle 报告的 U 形位置效应，我用四种设计、最高 22.8k token 重测，**没有复现**。所以依据不是「放中间模型就读不到」，而是**放头尾是零成本的保险**：万一效应在你的数据与模型上存在，你已经避开；即使不存在，你也没有付出任何代价。真正决定成本的是 token 总量，不是摆放顺序。',
+          note: '本节实测：400 段异质文档 + 复合条件定位任务，五个位置全部 15/15，未复现位置效应。',
           resourceIds: ['lost-in-the-middle'],
         },
         {
           id: 'context-rot-definition',
           basis: 'inferred',
-          question: 'context rot 说的是什么现象？它和“上下文窗口不够用”是同一个问题吗？',
+          question: 'context rot 说的是什么？它和「上下文窗口不够用」是同一个问题吗？',
           answer:
-            '不是同一个问题。上下文窗口不够用是容量问题，会直接报错；context rot 是**注意力稀释**——即使远未达到容量上限，随着塞入的内容增多，模型对其中每一部分的关注度也在下降，表现为遗漏约束、抓错重点。这意味着“窗口还有空间”不能作为继续塞内容的理由。',
+            '不是同一个问题。窗口不够用是容量问题，会直接报错；context rot 指的是「即使远未达到容量上限，内容变多也会让每一部分更不被重视」。我实测到 22.8k token 也没观察到性能下降 —— 但这**不构成「可以随便塞」的理由**：成本按轮次重复计费、输入越长首字节延迟越高，而且真实语料比合成文档脏得多，效应更可能出现在那里。',
+          note: '本节实测上限 22.8k token，未见容量导致的性能下降；但成本与延迟约束独立于「模型读不读得到」而成立。',
           resourceIds: ['anthropic-context-engineering'],
         },
       ],
