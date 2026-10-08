@@ -1,4 +1,5 @@
 import type { Resource } from '@/content/curriculum/schema';
+import { InlineMd } from '@/components/ui/inline-md';
 import {
   DIFFICULTY_LABEL,
   RESOURCE_KIND_LABEL,
@@ -56,7 +57,9 @@ export function ResourceCard({ resource }: { resource: Resource }) {
       </div>
 
       {/* why 是本站与"链接堆砌"的核心区别，所以给它正文级的视觉权重 */}
-      <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">{resource.why}</p>
+      <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
+        <InlineMd text={resource.why} />
+      </p>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">
         {resource.author && <span>{resource.author}</span>}

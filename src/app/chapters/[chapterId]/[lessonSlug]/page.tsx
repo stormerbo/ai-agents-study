@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { CheckpointList } from '@/components/chapter/checkpoint-list';
 import { ResourceList } from '@/components/resource/resource-card';
+import { InlineMd, plainText } from '@/components/ui/inline-md';
 import { getAdjacentLessons, getChapters, getLesson, getResources } from '@/content/curriculum';
 import { getLessonBody } from '@/lib/content/body';
 import { DIFFICULTY_LABEL } from '@/lib/labels';
@@ -23,7 +24,7 @@ export async function generateMetadata(
   const { chapterId, lessonSlug } = await props.params;
   const entry = getLesson(`${chapterId}/${lessonSlug}`);
   if (!entry) return {};
-  return { title: entry.lesson.title, description: entry.lesson.summary };
+  return { title: entry.lesson.title, description: plainText(entry.lesson.summary) };
 }
 
 export default async function LessonPage(props: PageProps<'/chapters/[chapterId]/[lessonSlug]'>) {
@@ -63,7 +64,9 @@ export default async function LessonPage(props: PageProps<'/chapters/[chapterId]
         </div>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight">{lesson.title}</h1>
         {lesson.summary && (
-          <p className="mt-3 leading-relaxed text-muted-foreground">{lesson.summary}</p>
+          <p className="mt-3 leading-relaxed text-muted-foreground">
+            <InlineMd text={lesson.summary} />
+          </p>
         )}
       </header>
 

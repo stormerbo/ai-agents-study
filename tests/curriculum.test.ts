@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { CLAIM_BASES, curriculum, getChapters, getStages } from '@/content/curriculum';
@@ -14,6 +17,44 @@ import { CLAIM_BASES, curriculum, getChapters, getStages } from '@/content/curri
 
 const chapters = getChapters();
 const stages = getStages();
+
+/**
+ * 所有**由 `<InlineMd>` 渲染**的纯文本字段。
+ *
+ * 这些字段不走 MDX 管线 —— 它们是 `meta.ts` 里的普通字符串，直接插进 JSX。
+ * 一旦里面写了 Markdown 标记，渲染层不认识，星号就会原样显示出来。
+ */
+const INLINE_MD = /\*\*[^*]+\*\*|`[^`]+`/g;
+
+type PlainField = { where: string; text: string };
+
+function plainTextFields(): PlainField[] {
+  const out: PlainField[] = [];
+  for (const c of chapters) {
+    out.push({ where: `章 ${c.id} 的 summary`, text: c.summary });
+    out.push({ where: `章 ${c.id} 的类比`, text: c.backendMapping.analogy });
+    for (const t of c.backendMapping.transferable)
+      out.push({ where: `章 ${c.id} 的可迁移项`, text: t });
+    for (const p of c.backendMapping.pitfalls)
+      out.push({ where: `章 ${c.id} 的失效直觉`, text: p });
+    for (const l of c.lessons) {
+      if (l.summary) out.push({ where: `节 ${l.id} 的 summary`, text: l.summary });
+      for (const cp of l.checkpoints ?? []) {
+        out.push({ where: `自检项 ${cp.id} 的 question`, text: cp.question });
+        out.push({ where: `自检项 ${cp.id} 的 answer`, text: cp.answer });
+        if (cp.note) out.push({ where: `自检项 ${cp.id} 的 note`, text: cp.note });
+      }
+    }
+  }
+  for (const [id, r] of Object.entries(curriculum.resources)) {
+    out.push({ where: `资源 ${id} 的 why`, text: r.why });
+  }
+  for (const [id, lab] of Object.entries(curriculum.labs)) {
+    out.push({ where: `实验 ${id} 的 goal`, text: lab.goal });
+    for (const o of lab.objectives) out.push({ where: `实验 ${id} 的目标项`, text: o });
+  }
+  return out;
+}
 
 describe('章节结构', () => {
   it('章 id 唯一', () => {
@@ -338,5 +379,94 @@ describe('术语表', () => {
       expect(term.zh.length).toBeGreaterThan(0);
       expect(term.definition.length).toBeGreaterThan(10);
     }
+  });
+});
+
+/**
+ * 纯文本字段的行内标记。
+ *
+ * `meta.ts` 里的这些字段不走 MDX 管线，由 `<InlineMd>` 渲染，只认识
+ * `**粗体**` 与 `` `代码` ``。写坏的标记不会报错 —— 它会原样显示成星号，
+ * 构建通过、页面正常、只有肉眼能看出来（AGENTS.md §4.1 的静默失效家族）。
+ *
+ * 这里做的是**渲染等价校验**：把 `InlineMd` 能消掉的部分全部消掉，剩下的
+ * 必须没有残留标记。这能拦住漏写的闭合 `**`、以及把 `**` 写在 CJK 标点
+ * 旁边的写法（MDX 里那类问题由 CommonMark 的闭合规则决定，这里是纯文本，
+ * 规则不同，所以两边都要各自防）。
+ */
+describe('纯文本字段的行内标记', () => {
+  it('每处 `**` 都有配对的闭合标记', () => {
+    for (const { where, text } of plainTextFields()) {
+      // 消掉 InlineMd 能正确渲染的部分，剩下的不应再有裸标记
+      const leftover = text.replace(INLINE_MD, '');
+      expect(leftover, `${where} 存在未配对的 ** 或反引号：${text}`).not.toMatch(/\*\*|`/);
+    }
+  });
+});
+
+/**
+ * 粗体标记的**位置**是否合法。
+ *
+ * 这一条针对 MDX 正文 —— 那里走 CommonMark 的强调规则：一个 `**` 能不能
+ * 起效，取决于它两侧紧邻的字符（"flanking" 规则）。`**` 紧贴 CJK 标点时，
+ * 至少有一端不构成合法分隔符，结果是星号被当字面量显示。
+ *
+ * 实测踩到的两种写法（都已修正）：
+ *   - `而**「独立」是关键词**`   开头 `**` 后紧跟 `「` → 开不了
+ *   - `采用**子词（subword）**方案` 结尾 `**` 前紧贴 `）` → 合不上
+ *
+ * 校验方式是先按奇偶位置认出开/闭标记（正文里的粗体不嵌套，所以交替配对
+ * 成立），再逐对套用 flanking 规则。代码块、行内代码、Mermaid 组件里的
+ * `**` 不是强调，先剔除。
+ */
+describe('粗体标记的位置（CommonMark flanking）', () => {
+  const PUNCT = /[，。：；、！？「」『』（）《》〈〉【】“”‘’—…·,.:;!?()<>[\]{}"']/;
+  const isPunct = (c?: string) => !!c && PUNCT.test(c);
+  const isWord = (c?: string) => !!c && !/\s/.test(c) && !isPunct(c);
+
+  function emphasisProblems(text: string): string[] {
+    const problems: string[] = [];
+    const marks: number[] = [];
+    for (let i = text.indexOf('**'); i !== -1; i = text.indexOf('**', i + 2)) marks.push(i);
+
+    if (marks.length % 2 !== 0) {
+      problems.push(`** 出现 ${marks.length} 次（奇数），有未闭合的标记`);
+      return problems;
+    }
+    for (let k = 0; k + 1 < marks.length; k += 2) {
+      const open = marks[k]!;
+      const close = marks[k + 1]!;
+      // 左闭合失效：`**` 后紧跟标点，而前面又是普通字符
+      if (isPunct(text[open + 2]) && isWord(text[open - 1])) {
+        problems.push(`开头 ** 后紧跟标点 → …${text.slice(open, open + 12)}…`);
+      }
+      // 右闭合失效：`**` 前紧贴标点，而后面又是普通字符
+      if (isPunct(text[close - 1]) && isWord(text[close + 2])) {
+        problems.push(`结尾 ** 前紧贴标点 → …${text.slice(Math.max(0, close - 10), close + 4)}…`);
+      }
+    }
+    return problems;
+  }
+
+  it('MDX 正文里的粗体两端都构成合法分隔符', () => {
+    const root = join(process.cwd(), 'src/content/chapters');
+    const files = readdirSync(root, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('.mdx'));
+    expect(files.length).toBeGreaterThan(10);
+
+    const failures: string[] = [];
+    for (const file of files) {
+      const raw = readFileSync(join(root, file), 'utf8');
+      // 只检查「代码之外」的正文：按反引号切段后取偶数段。
+      // 围栏块与行内代码一起被排除，不必分别写正则（早先那样写会跨行误吞正文）。
+      const prose = raw
+        .replace(/^---[\s\S]*?---/, '') // frontmatter 不渲染
+        .split('`')
+        .filter((_, i) => i % 2 === 0)
+        .join('');
+      for (const p of emphasisProblems(prose)) failures.push(`${file}: ${p}`);
+    }
+    expect(failures, failures.join('\n')).toEqual([]);
   });
 });

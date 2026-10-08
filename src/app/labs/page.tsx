@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { curriculum, getChapter } from '@/content/curriculum';
+import { InlineMd } from '@/components/ui/inline-md';
 
 export const metadata: Metadata = {
   title: '代码实验',
@@ -55,7 +56,7 @@ export default function LabsPage() {
                     >
                       <span className="text-sm font-medium">{lab.title}</span>
                       <span className="text-muted-foreground mt-2 flex-1 text-xs leading-relaxed">
-                        {lab.goal}
+                        <InlineMd text={lab.goal} />
                       </span>
                       <span className="text-muted-foreground/70 mt-3 text-[11px]">
                         约 {lab.estimatedMinutes} 分钟

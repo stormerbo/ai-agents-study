@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { Playground } from '@/components/lab/playground';
+import { InlineMd, plainText } from '@/components/ui/inline-md';
 import { curriculum, getChapter, getLab } from '@/content/curriculum';
 import { getPublicProviderList } from '@/lib/llm/registry';
 import { isCustomBaseUrlAllowed } from '@/lib/llm/url-guard';
@@ -17,7 +18,7 @@ export async function generateMetadata(
   const { labId } = await props.params;
   const lab = getLab(labId);
   if (!lab) return {};
-  return { title: lab.title, description: lab.goal };
+  return { title: lab.title, description: plainText(lab.goal) };
 }
 
 export default async function LabPage(props: PageProps<'/labs/[labId]'>) {
@@ -48,7 +49,9 @@ export default async function LabPage(props: PageProps<'/labs/[labId]'>) {
 
       <header className="mt-5">
         <h1 className="text-2xl font-semibold tracking-tight">{lab.title}</h1>
-        <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{lab.goal}</p>
+        <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+          <InlineMd text={lab.goal} />
+        </p>
         <p className="text-muted-foreground/70 mt-2 text-xs">
           约 {lab.estimatedMinutes} 分钟 · 需要你自己的 API Key
         </p>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
 
+import { InlineMd } from '@/components/ui/inline-md';
 import { useChatRelay, type TraceEntry } from '@/hooks/use-chat-relay';
 import {
   createProfile,
@@ -155,15 +156,17 @@ export function Playground({
       {/* 头部：实验目标 */}
       <header className="border-border border-b px-4 py-3">
         <h3 className="text-sm font-medium">{lab.title}</h3>
-        <p className="text-muted-foreground mt-1 text-xs leading-relaxed">{lab.goal}</p>
+        <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+          <InlineMd text={lab.goal} />
+        </p>
         {lab.objectives.length > 0 && (
           <ul className="text-muted-foreground mt-2 space-y-1 text-xs">
             {lab.objectives.map((o) => (
               <li key={o} className="flex gap-2">
-                <span aria-hidden className="text-muted-foreground/50">
+                <span className="text-muted-foreground/50" aria-hidden>
                   —
                 </span>
-                <span>{o}</span>
+                <InlineMd text={o} />
               </li>
             ))}
           </ul>

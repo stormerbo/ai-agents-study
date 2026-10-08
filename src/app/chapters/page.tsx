@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { CSSProperties } from 'react';
 
 import { getChaptersByStage, getStages } from '@/content/curriculum';
+import { InlineMd } from '@/components/ui/inline-md';
 import { DIFFICULTY_LABEL, formatMinutes } from '@/lib/labels';
 
 export const metadata: Metadata = {
@@ -74,7 +75,7 @@ export default function ChaptersPage() {
                           </div>
 
                           <p className="mt-2 flex-1 text-xs leading-relaxed text-muted-foreground">
-                            {chapter.summary}
+                            <InlineMd text={chapter.summary} />
                           </p>
 
                           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">

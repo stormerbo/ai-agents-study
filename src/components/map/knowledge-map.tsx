@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { plainText } from '@/components/ui/inline-md';
 import type { Chapter, Stage } from '@/content/curriculum/schema';
 import {
   HEADER_HEIGHT,
@@ -89,7 +90,7 @@ export function KnowledgeMap({ chapters, stages }: { chapters: Chapter[]; stages
           return (
             <g key={chapter.id}>
               <Link href={`/chapters/${chapter.id}`}>
-                <title>{`${chapter.title} —— ${chapter.summary}`}</title>
+                <title>{`${chapter.title} —— ${plainText(chapter.summary)}`}</title>
                 <rect
                   x={node.x}
                   y={node.y}

@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { CheckpointList } from '@/components/chapter/checkpoint-list';
 import { ResourceList } from '@/components/resource/resource-card';
+import { InlineMd, plainText } from '@/components/ui/inline-md';
 import {
   getChapter,
   getChapters,
@@ -25,7 +26,7 @@ export async function generateMetadata(
   const { chapterId } = await props.params;
   const chapter = getChapter(chapterId);
   if (!chapter) return {};
-  return { title: chapter.title, description: chapter.summary };
+  return { title: chapter.title, description: plainText(chapter.summary) };
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +55,7 @@ function BackendMappingPanel({ chapter }: { chapter: Chapter }) {
 
       <p className="mt-3 text-sm leading-relaxed">
         <span className="text-muted-foreground">一句话类比 —— </span>
-        {backendMapping.analogy}
+        <InlineMd text={backendMapping.analogy} />
       </p>
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -68,7 +69,7 @@ function BackendMappingPanel({ chapter }: { chapter: Chapter }) {
                 <span aria-hidden className="mt-px shrink-0 text-muted-foreground/50">
                   ·
                 </span>
-                <span>{item}</span>
+                <InlineMd text={item} />
               </li>
             ))}
           </ul>
@@ -87,7 +88,7 @@ function BackendMappingPanel({ chapter }: { chapter: Chapter }) {
                 >
                   !
                 </span>
-                <span>{item}</span>
+                <InlineMd text={item} />
               </li>
             ))}
           </ul>
@@ -173,7 +174,9 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
           <h1 className="text-2xl font-semibold tracking-tight">{chapter.title}</h1>
         </div>
         {chapter.subtitle && <p className="mt-2 text-muted-foreground">{chapter.subtitle}</p>}
-        <p className="mt-4 leading-relaxed">{chapter.summary}</p>
+        <p className="mt-4 leading-relaxed">
+          <InlineMd text={chapter.summary} />
+        </p>
       </header>
 
       {/* 元信息 */}
@@ -252,7 +255,7 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
                     <span className="block text-sm font-medium">{lesson.title}</span>
                     {lesson.summary && (
                       <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                        {lesson.summary}
+                        <InlineMd text={lesson.summary} />
                       </span>
                     )}
                   </span>
@@ -283,7 +286,7 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
                       </span>
                     </div>
                     <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                      {lab.goal}
+                      <InlineMd text={lab.goal} />
                     </p>
                   </Link>
                 </li>

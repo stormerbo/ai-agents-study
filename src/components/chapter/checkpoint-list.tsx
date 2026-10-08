@@ -1,5 +1,6 @@
 import { getResources } from '@/content/curriculum';
 import type { Checkpoint, ClaimBasis } from '@/content/curriculum/schema';
+import { InlineMd } from '@/components/ui/inline-md';
 import { cn } from '@/lib/utils';
 
 /**
@@ -52,12 +53,14 @@ export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
                   >
                     ▸
                   </span>
-                  <span>{cp.question}</span>
+                  <InlineMd text={cp.question} />
                 </span>
               </summary>
 
               <div className="border-border border-t px-4 py-3 pl-10">
-                <p className="text-muted-foreground text-sm leading-relaxed">{cp.answer}</p>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  <InlineMd text={cp.answer} />
+                </p>
 
                 <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <BasisTag basis={cp.basis} />
