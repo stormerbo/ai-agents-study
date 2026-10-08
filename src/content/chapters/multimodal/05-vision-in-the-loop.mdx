@@ -1,0 +1,257 @@
+---
+lesson: multimodal/vision-in-the-loop
+title: 把视觉接进循环
+status: drafting
+---
+
+上一节留了一个不舒服的结论：视觉的错误是单字符替换、结构上不可发现、而且没有独立信源可比对。
+
+这一节给出一套**可测的**校验办法，并且测出其中哪一种真的有用。
+
+## 实测：跑多次比对差异，能抓住多少错
+
+最直觉的校验策略是「同一张图多跑几次，不一致的地方就是可疑的」。这个说法听起来合理，但没人告诉你它能抓住多少。
+
+我用 120 行的密集表跑了三次独立提取（360 个单元格），然后逐格比对：
+
+| 指标 | 数值 |
+|---|---:|
+| 第 1 / 2 / 3 次各自的错误格数 | 6 / 9 / 8 |
+| 三次里出过错的格数（并集） | **12 / 360（3.3%）** |
+| 「三次结果不一致」标记出的格数 | 8 |
+| 其中真的错了 | 8 |
+| **召回率**（抓到多少真错） | **67%** |
+| **精确率**（标记出来的有多少是真错） | **100%** |
+
+（实跑数据，2026-10-08，deepseek-flash。逐格比对，答案键由代码生成。）
+
+这两个数字要分开看，因为它们对设计的影响完全不同。
+
+**精确率 100% 是这条策略最有价值的部分：它一次误报都没有。** 也就是说，只要两次结果不一致，那一格**一定**有问题 —— 你可以放心把它标出来送人工或重读，不必担心白跑一遍。
+
+**召回率 67% 是它的天花板所在。** 12 格错误里只抓到 8 格，剩下的 4 格漏了。而漏掉的那 4 格有一个共同特征 —— 它们**每次都以同样的方式错**。
+
+## 为什么会有「每次都错成一样」
+
+这一条比 67% 这个数字重要得多。
+
+想象某个单元格的字形在渲染或缩放时正好落在一个临界点上：那一笔的闭合被抹掉了，于是「8」稳定地看起来像「6」。这种情况下：
+
+- 第一次读成 6
+- 第二次读成 6
+- 第三次还是读成 6
+
+**三次完全一致，一致性校验完全失明。** 而它恰恰是最容易被信以为真的情况 —— 因为你验证过了，三次都一样。
+
+所以必须把这句话写进任何用视觉做数据提取的设计里：**一致 ≠ 正确。** 一致性校验能发现「不稳定的错」，发现不了「稳定的错」。
+
+## 四种校验，按代价排序
+
+综合本节与上一节的实测，可以排出这个顺序：
+
+**一，先问「这份信息有没有非视觉的来源」。** 如果答案是「有」（数据库、API、原始文本），那就别用视觉做主信源 —— 这是唯一能同时做到高召回与高精确的办法，因为它引入了**真正独立**的信源。视觉在这里只做补充。
+
+**二，加可计算的内部一致性。** 表格里的合计、行数、字段和、编号连续性 —— 这些都是代码能算的，而错一个数就会破坏它们。注意上一节那条实测：**合计本身也可能被读错**，所以它降低了风险但没有消除风险。
+
+**三，跑多次比对差异。** 实测召回 67%、精确 100%，成本是 N 倍。它适合**高风险字段**（金额、编号），不适合全表 —— 全表跑三遍的收益不值那个成本。
+
+**四，随机抽样人工复核。** 一致性抓不到稳定的错，人工能。抽 5% 通常就足以发现「这一类图有问题」，因为稳定的错往往成片出现。
+
+**这四条的强度是递减的，代价也是递减的。** 从下往上选：先抽 5%、不够就加多次提取、还不够就必须回头找独立信源。反过来，直接跳到第四条而不做第一条，通常是在花大力气验证一个本来可以直接读到的数据。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["需要从图里取数据"] --> B{"有非视觉的信源吗？"}
+    B -->|有| C["用非视觉做主信源<br/>视觉只做补充"]
+    B -->|没有| D["加内部一致性校验<br/>合计 / 行数 / 编号连续性"]
+    D --> E{"字段有多关键？"}
+    E -->|"高风险（金额、编号）"| F["跑多次比对差异<br/>实测召回 67% / 精确 100%"]
+    E -->|一般| G["随机抽样人工复核<br/>抽 5%"]
+    F --> H["仍有漏网"]
+    G --> H
+    H -.-> I["⚠️ 一致 ≠ 正确<br/>稳定错成同一个值的格子，一致性校验完全失明"]
+`}
+/>
+
+## 接进循环时要注意的两件事
+
+**第一，控制输出预算并检查 stop_reason。** 120 行的表要输出上千个 token 的 JSON。本次三跑里有一次第一次尝试就被截断 —— 输出停在半条记录上，JSON 不合法。这类失败看起来像「模型提取能力不行」，其实是预算不够。判据还是那句话：**没确认 stop_reason 之前，不要解释任何「没答出来」的结果。**
+
+**第二，把校验放在代码里，不要放在提示词里。** 「请你仔细核对每个数字」这类指令无法验证是否被执行；而「三次结果不一致就标记」只有几行代码，可以单元测试，而且精确率实测 100%。第 5 章那条规律在这里同样成立：**能由代码算的，不要让模型保证。**
+
+## 本节小结
+
+1. **一致性校验的精确率是 100%** —— 不一致就是有问题，可以放心标出来。
+2. **但召回率只有 67%** —— 稳定错成同一个值的格子它抓不到。**一致 ≠ 正确。**
+3. **最强的校验是引入独立信源**，而不是把视觉跑更多遍。
+4. **校验必须写在代码里**，并且要检查 stop_reason —— 截断的 JSON 会被误读成提取失败。
+
+## 什么时候该用视觉
+
+把这一章的五节合起来，就是一个可执行的选择规则。三个问题，按顺序问。
+
+**第一个问题：这份信息能不能用文本拿到？**
+
+能拿到（数据库字段、API、有文本层的 PDF、HTML）就用文本。它便宜（第 2 节实测 123 对 337 token）、确定（可逐字符 diff）、可单元测试。**视觉是拿不到文本时的退路，不是默认选项。**
+
+拿不到（截图、扫描件、照片、只有版面才携带信息的表格）才进入下一步。
+
+**第二个问题：视觉的结果会被用来做什么？**
+
+如果只是「看个大概」—— 界面上有没有报错、这张图大致是什么内容 —— 单次视觉就够了，成本也低。
+
+如果要进入计算或写进数据库（金额、数量、编号），就必须有校验，而且**优先去找非视觉信源**。第 4 节实测的单次错误率在密集内容上是 2% 量级，而第 5 节实测「多次比对」只能抓住其中 67% —— 这两个数字决定了「裸用视觉写库」是不可接受的做法。
+
+**第三个问题：一次要看多少、要看几遍？**
+
+单张、低频 → 基本可以忽略成本。多张、或者每轮都要看 → 回到第 1 节的账：每张 186 到 996 token，而且会随对话轮次被反复计费。
+
+三句话可以记成：**能用文本就别用视觉；用了视觉就别把它当唯一信源；要反复看就先算成本。**
+
+这三条也是本章全部实测数据的收束 —— 它们不是经验之谈，每一条背后都有本节点名的那个数字。如果只能记住一句，就记第 4 节那条：**视觉最危险的地方不是它读不出来，而是它读错了却看不出来** —— 实测 360 格里错了 8 格，而格式、类型、范围三重结构校验全部通过。
+## 完整可运行代码
+
+```python
+"""二次独立提取能不能抓出视觉错误？
+
+对同一张图跑三次，比较「三次结果是否一致」与「是否真的错了」。
+
+实跑状态：2026-10-08，deepseek-flash。
+"""
+
+import base64, json, os, random, re, urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+random.seed(4242)
+ROWS = [("ITM-%03d" % (101 + i), str(random.randint(10, 990)),
+         "%d.%02d" % (random.randint(1, 99), random.randint(0, 99))) for i in range(120)]
+
+
+def render(rows, width=1000):
+    fs = max(8, round(width * 0.022))
+    font = ImageFont.truetype(FONT, fs)
+    lh = round(fs * 2.1)
+    h = lh * (len(rows) + 2) + 30
+    img = Image.new("RGB", (width, h), "white")
+    d = ImageDraw.Draw(img)
+    cols = [round(width * 0.08), round(width * 0.52), round(width * 0.72)]
+    for r, row in enumerate([["Item", "Qty", "Amount"]] + rows):
+        y = 15 + r * lh
+        for c, cell in enumerate(row):
+            d.text((cols[c], y), cell, fill="black", font=font)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def ask(content, max_tokens=8000):
+    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
+                       "messages": [{"role": "user", "content": content}]}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        data = json.loads(resp.read())
+    return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+
+
+PROMPT = ("把表格每一行提取成 JSON 数组，每项 "
+          "{\"item\":\"...\",\"qty\":\"...\",\"amount\":\"...\"}，数字逐字准确，只输出 JSON。")
+
+
+def parse(text):
+    """用 raw_decode 从第一个 [ 开始解析 —— 贪婪正则会把尾部文字一起吃进来。"""
+    i = text.find("[")
+    if i < 0:
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text[i:])
+        return obj
+    except Exception:
+        return None
+
+
+if __name__ == "__main__":
+    b64 = base64.b64encode(render(ROWS)).decode()
+    runs = []
+    for n in range(3):
+        for attempt in range(3):
+            raw = ask([{"type": "image", "source": {"type": "base64",
+                        "media_type": "image/png", "data": b64}},
+                       {"type": "text", "text": PROMPT}])
+            got = parse(raw)
+            if got is not None and len(got) == len(ROWS):
+                break
+            print("  第 %d 次尝试 %d 解析异常：长度 %s，尾部 %r" % (n + 1, attempt + 1,
+                  len(got) if got is not None else None, raw[-90:]))
+        runs.append(got)
+
+    # 逐格取值
+    def cell(run, i, k):
+        if run is None or i >= len(run):
+            return "<缺>"
+        return str(run[i].get(k, "")).strip()
+
+    keys = ("item", "qty", "amount")
+    total = wrong = flagged = hit = false_alarm = 0
+    for i, truth in enumerate(ROWS):
+        for k, want in zip(keys, truth):
+            total += 1
+            vals = [cell(r, i, k) for r in runs]
+            is_wrong = any(v != want for v in vals)
+            disagree = len(set(vals)) > 1
+            if is_wrong:
+                wrong += 1
+            if disagree:
+                flagged += 1
+                if is_wrong:
+                    hit += 1
+                else:
+                    false_alarm += 1
+
+    print("表格：%d 行 × 3 列 = %d 格，同一张图独立提取 3 次" % (len(ROWS), total))
+    for n, r in enumerate(runs, 1):
+        bad = sum(1 for i, t in enumerate(ROWS)
+                  for k, w in zip(keys, t) if cell(r, i, k) != w)
+        print("  第 %d 次：标准答案 %d 格，实际错 %d 格" % (n, total, bad))
+    print()
+    print("三次里出过错的总格数：%d / %d（%.1f%%）" % (wrong, total, wrong * 100.0 / total))
+    print("«三次结果不一致» 标记出的格数：%d" % flagged)
+    print("  其中真的错了：%d" % hit)
+    if wrong:
+        print("  所以这个策略的召回率（抓到多少真错）：%d / %d = %.0f%%" % (hit, wrong, hit * 100.0 / wrong))
+    if flagged:
+        print("  误报（不一致但其实全对）：%d，精确率 %.0f%%" % (false_alarm, hit * 100.0 / flagged))
+    print()
+    print("结论：不一致是「可疑」的强信号，但从不一致到「确认有错」还需要独立信源。")
+```
+
+实跑输出（2026-10-08）：
+
+```text
+  第 3 次尝试 1 解析异常：长度 None，尾部 ITM-177","qty":"142","amount":"3.83"},\n  {"item":"ITM-178"...
+表格：120 行 × 3 列 = 360 格，同一张图独立提取 3 次
+  第 1 次：标准答案 360 格，实际错 6 格
+  第 2 次：标准答案 360 格，实际错 9 格
+  第 3 次：标准答案 360 格，实际错 8 格
+
+三次里出过错的总格数：12 / 360（3.3%）
+«三次结果不一致» 标记出的格数：8
+  其中真的错了：8
+  所以这个策略的召回率（抓到多少真错）：8 / 12 = 67%
+  误报（不一致但其实全对）：0，精确率 100%
+```
+
+## 常见坑
+
+- **把「跑多次结果一致」当成「读对了」。** 实测 12 格错误里有 4 格每次错得一模一样，一致性校验完全抓不到。
+- **全表跑三遍。** 召回只有 67%，成本却是 3 倍。这个手段该只用在关键字段上。
+- **用提示词要求模型「仔细核对」。** 无法验证是否执行。校验要写成代码。
+- **忘了查 stop_reason。** 密集表格的 JSON 输出很长，被截断时看起来像提取失败。本次三跑里出现过一次。
+- **直接跳到人工复核而不先问「有没有独立信源」。** 多数情况下那份数据本来就在数据库里 —— 先问这一句，能省掉整套校验。
+- **把视觉当唯一信源还要求高准确率。** 单次提取的错误率在密集内容上是 2% 量级（第 4 节实测），这个量级决定了它只能做补充或需要校验。

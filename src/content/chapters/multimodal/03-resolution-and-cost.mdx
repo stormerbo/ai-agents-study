@@ -1,0 +1,255 @@
+---
+lesson: multimodal/resolution-and-cost
+title: 分辨率、分块与成本
+status: drafting
+---
+
+视觉输入的成本旋钮只有一个：**分辨率**。
+
+文本你可以删、可以摘要、可以只取相关段落；图不行 —— 它是一整块。你唯一能做的就是把它缩放、压缩、或者切成几块。所以这一节要回答的是一个很实际的问题：**这个旋钮该转到哪。**
+
+常见的答案有两派。一派说「尽量缩小，反正模型看不清细节」；另一派说「尽量保真，别让模型看不清」。两派都能讲出道理。我把它测了。
+
+## 实测：分辨率换来的准确率是多少
+
+我生成了一张 12 行 × 3 列的表（答案键由代码生成，逐格比对），然后**按宽度等比放大字号**渲染成不同分辨率 —— 模拟同一页在不同清晰度下的截屏。
+
+每档都让模型把表格提取成 JSON，逐格核对 36 个单元格：
+
+| 宽度 | 字号 | PNG 字节 | 输入 token | 正确格数 |
+|---:|---:|---:|---:|---:|
+| 480 | 11 | 14,699 | 290 | **36/36** |
+| 720 | 16 | 25,370 | 333 | **36/36** |
+| 1,000 | 22 | 37,388 | 511 | **36/36** |
+| 1,400 | 31 | 56,015 | 891 | **36/36** |
+| 2,000 | 44 | 87,497 | 1,061 | **36/36** |
+
+（实跑数据，2026-10-08，deepseek-flash。）
+
+读出这张表只需要一句话：**从 290 token 到 1,061 token，准确率一格没变。**
+
+480 宽那张只有 14.7KB，2,000 宽那张 87.5KB，**字节数差 6 倍、token 差 3.7 倍，而结果完全相同**。
+
+## 往下再压呢
+
+也许断崖在更下面。继续往下压，并把字号下限锁在 8px（再小就不是「分辨率低」而是「字被压掉了」）：
+
+| 宽度 | 字号 | 输入 token | 正确格数 |
+|---:|---:|---:|---:|
+| 400 | 9 | 273 | 35/36 ❌ |
+| 300 | 8 | 264 | 36/36 ✅ |
+| 220 | 8 | 264 | 36/36 ✅ |
+| 160 | 8 | 256 | 36/36 ✅ |
+
+（实跑数据，2026-10-08。）
+
+注意 400 那一行错了 1 格，而**更小的 300 / 220 / 160 反而全对**。
+
+这不是「400 比 160 更差」—— 它说明**那一格错误和分辨率无关**。如果是分辨率造成的，错误应该随尺寸单调增加。而这批数据不是单调的，所以它更可能是一次运行间抖动。第 4 节会专门验证这件事，并给出错误真实的样子。
+
+所以到目前为止的结论是反直觉的：**在我测的这个范围里（160 宽到 2,000 宽），分辨率不是准确率的瓶颈。**
+
+## 那这个旋钮该转到哪
+
+既然准确率不随分辨率变，成本就成了唯一的判据。综合第 1 节的阶梯与本节的数据，可以给出一条明确的规则：
+
+**一，不要低于服务端的下限。** 实测 512 及以下都是一个固定价（186 token），再缩不省钱，只丢信息。所以**没有理由把图缩到 512 以下**。
+
+**二，不要高于服务端的上限。** 实测 1,280 及以上都是同一个价（996 token），因为服务端会先缩。所以**传 3,000 和传 1,280 花的 token 一模一样**，多出来的 30KB 只是白传。
+
+**三，落在这两者之间，按需选。** 如果下游任务只是「图里有没有某个东西」，480 宽就够；如果是密集表格的逐格提取，往 1,000 以上靠。但要记住：本节的实测**没有证据支持**「往上靠能提高准确率」。
+
+**四，压缩格式随便选。** 同一张表存成 PNG、JPEG q20、JPEG q10，字节数从 37.4KB 降到 18.5KB（**减半**），而准确率三档都是 36/36：
+
+| 格式 | 字节 | 正确格数 |
+|---|---:|---:|
+| PNG | 37,364 | 36/36 ✅ |
+| JPEG q20 | 21,947 | 36/36 ✅ |
+| JPEG q10 | 18,515 | 36/36 ✅ |
+
+（实跑数据，2026-10-08。）
+
+这不奇怪：**token 按分辨率算，不按字节算。** 所以压缩格式影响的是上传延迟和请求体大小，不是账单。对于「一次传几十张图」的场景，这个差别是真实的。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["准备发送一张图"] --> B{"宽度小于 512？"}
+    B -->|是| C["放大到 512 以上<br/>再缩不省钱，只丢信息"]
+    B -->|否| D{"宽度大于 1280？"}
+    C --> D
+    D -->|是| E["缩到 1280<br/>token 一样，字节少 2-4 倍"]
+    D -->|否| F["保持原尺寸"]
+    E --> G["选压缩格式：JPEG q10<br/>字节减半，token 不变"]
+    F --> G
+    G --> H["发送"]
+    H -.-> I["⚠️ 别指望「更清楚 = 更准」<br/>实测 290 与 1061 token 准确率相同"]
+`}
+/>
+
+## 分块：什么时候该把图切开
+
+分辨率之外还有一个旋钮：**把一张大图切成几块，分别发送。**
+
+这个旋钮看起来稳赚 —— 每块都小，服务端不会缩，细节全保住了。但第 1 节那张阶梯表里藏着一条会让它亏本的规则：**每张图都有 186 token 的下限。**
+
+用实测数字算一笔账。假设一张 1,000×3,000 的长截图（一个长页面）：
+
+| 方案 | 计算 | token |
+|---|---|---:|
+| 整张发 | 长边 3,000 超过上限，按 996 计 | **996** |
+| 切 3 块（各 1,000×1,000） | 3 × 688（第 1 节实测值） | **2,064** |
+| 切 6 块（各 1,000×500） | 6 × 下限 186（512 以下按下限） | **1,116** |
+
+（按第 1 节与本节实测的单价推算。）
+
+三种方案的差别不只是钱：
+
+- **整张发最便宜，但长边被服务端缩到约 1,280，下半页的细节是丢的** — 而你不会收到任何提示
+- **切 3 块贵一倍，但每块都是原始分辨率** — 这是唯一「花更多钱买到更多细节」的方案
+- **切 6 块只贵 12%，但每块都落到了下限以下** — 你为「图的存在」付了 6 次固定费，实际拿到的分辨率还不如切 3 块
+
+所以规则很清楚：**切块的唯一理由是「整张已经被服务端缩了」。** 只有在这种情况下，你花的钱才买到了原本会丢失的细节；否则它就是把成本乘以块数。
+
+还有一个实现上的前提容易被忽略：切块之后，模型看到的是**几块互不相关的图** —— 它不知道第 2 块在第 1 块下面。所以切块必须配合重叠（比如上下各留 10% 重叠）或者明确的文字说明（「这是同一页的第 2/3 块」），否则跨块的内容会被读错。
+
+## 本节小结
+
+1. **准确率不随分辨率变**（实测 290 与 1,061 token 都是 36/36）—— 这个旋钮买到的是字节数，不是准确率。
+2. **成本有下限也有上限**（186 与 996）—— 缩到 512 以下不省钱，传到 1,280 以上不多花钱。
+3. **压缩格式不影响 token** —— JPEG q10 把字节减半，token 一点没变。
+4. **切块只在「整张已被服务端缩小」时才值得** —— 否则就是把成本乘以块数，还要额外处理跨块语义。
+## 完整可运行代码
+
+```python
+"""分辨率 → 视觉提取准确率：同一张表渲染成不同宽度。
+
+答案键由代码生成并逐格比对 —— 不靠人眼看。
+
+实跑状态：2026-10-08，deepseek-flash。
+"""
+
+import base64
+import json
+import os
+import random
+import re
+import urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+random.seed(20261008)
+
+ROWS = []
+for i in range(12):
+    ROWS.append(("ITM-%03d" % (101 + i),
+                 str(random.randint(10, 990)),
+                 "%d.%02d" % (random.randint(1, 99), random.randint(0, 99))))
+
+
+def render(width):
+    """按宽度等比放大字号 —— 模拟同一页在不同分辨率下的截屏。"""
+    fs = max(8, round(width * 0.022))
+    font = ImageFont.truetype(FONT, fs)
+    lh = round(fs * 2.1)
+    header = ["Item", "Qty", "Amount"]
+    height = lh * (len(ROWS) + 2) + 30
+    img = Image.new("RGB", (width, height), "white")
+    d = ImageDraw.Draw(img)
+    cols = [round(width * 0.08), round(width * 0.52), round(width * 0.72)]
+    for r, row in enumerate([header] + ROWS):
+        y = 15 + r * lh
+        for c, cell in enumerate(row):
+            d.text((cols[c], y), cell, fill="black", font=font)
+        if r == 0:
+            d.line([(cols[0], y + lh - 4), (width - cols[0], y + lh - 4)], fill="black", width=2)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue(), (width, height), fs
+
+
+def ask(content, max_tokens=4000):
+    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
+                       "messages": [{"role": "user", "content": content}]}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=240) as resp:
+        data = json.loads(resp.read())
+    u = data.get("usage", {})
+    total = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+             + u.get("cache_creation_input_tokens", 0))
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    return text.strip(), total, data.get("stop_reason")
+
+
+def parse(text):
+    m = re.search(r"\[.*\]", text, re.S)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
+
+
+PROMPT = ("把这张表格里的每一行提取出来，返回 JSON 数组，每项形如 "
+          "{\"item\":\"...\",\"qty\":\"...\",\"amount\":\"...\"}。"
+          "数字必须逐字准确，不要做任何计算或四舍五入。只输出 JSON。")
+
+if __name__ == "__main__":
+    print("答案键（由代码生成）：共 %d 行 × 3 列 = %d 格" % (len(ROWS), len(ROWS) * 3))
+    print(ROWS[0], "...", ROWS[-1])
+    print()
+    print("%8s %7s %9s %8s %10s %s" % ("宽度", "字号", "PNG字节", "token", "正确格数", "错误明细"))
+    for width in [480, 720, 1000, 1400, 2000]:
+        png, size, fs = render(width)
+        b64 = base64.b64encode(png).decode()
+        text, tok, stop = ask([
+            {"type": "image", "source": {"type": "base64",
+             "media_type": "image/png", "data": b64}},
+            {"type": "text", "text": PROMPT}])
+        got = parse(text)
+        if got is None:
+            print("%8d %7d %9d %8d %10s %s" % (width, fs, len(png), tok, "解析失败",
+                                               "stop=" + str(stop)))
+            continue
+        correct, wrong = 0, []
+        for i, truth in enumerate(ROWS):
+            if i >= len(got):
+                wrong.append("缺第%d行" % (i + 1))
+                continue
+            for k, want in zip(("item", "qty", "amount"), truth):
+                if str(got[i].get(k, "")).strip() == want:
+                    correct += 1
+                else:
+                    wrong.append("%s:%s≠%s" % (want, got[i].get(k, ""), want))
+        print("%8d %7d %9d %8d %6d/%d %s" % (width, fs, len(png), tok, correct, len(ROWS) * 3,
+                                             "  ".join(wrong[:4]) or "—" if wrong else "—"))
+```
+
+实跑输出（2026-10-08）：
+
+```text
+答案键（由代码生成）：共 12 行 × 3 列 = 36 格
+('ITM-101', '309', '6.56') ... ('ITM-112', '484', '60.07')
+
+      宽度      字号     PNG字节    token       正确格数 错误明细
+     480      11     14699      290     36/36 —
+     720      16     25370      333     36/36 —
+    1000      22     37388      511     36/36 —
+    1400      31     56015      891     36/36 —
+    2000      44     87497     1061     36/36 —
+```
+
+## 常见坑
+
+- **把图缩得很小来省钱。** 512 以下是一个固定下限，把 512 缩到 64 一分钱不省。
+- **上传原图求保真。** 1,280 以上 token 完全相同，多出来的像素根本没被用。
+- **以为「分辨率越高越准」。** 实测 290 token 与 1,061 token 的准确率一格不差 —— 这个旋钮买到的是字节数，不是准确率。
+- **看字节数估算成本。** token 按分辨率算。JPEG q10 把字节砍掉一半，token 一点没变。
+- **只测一档就下结论。** 正确做法是测一整条阶梯 —— 只测两档很容易把运行间抖动当成分辨率效应（400 宽那一格就是这么冒出来的）。
+- **忽略「一张图是一整块」。** 文本能删能摘要，图不能。所以分辨率的决定要在发送**之前**做好，发送之后没有任何补救手段。

@@ -1,0 +1,261 @@
+---
+lesson: multimodal/when-vision-fails
+title: 视觉会怎么错
+status: drafting
+---
+
+上一节得到一个让人放松的结论：分辨率从 160 宽到 2,000 宽，准确率一格不差。
+
+放松是对的，但**不能放松到「所以视觉很可靠」**。这一节要做的是把「错」这件事测清楚：它多常发生、以什么形态出现、以及为什么它比「整个读不出来」危险得多。
+
+## 实测一：对比度 —— 未复现
+
+第一个怀疑对象是图像质量。真实截图不总是白底黑字，而扫描件经常是灰的。
+
+我把同一张表渲染成五个对比度档（白底不变，改文字颜色），逐格核对：
+
+| 文字颜色 | 正确格数 |
+|---|---:|
+| 黑 `#000` | 36/36 ✅ |
+| 深灰 `#666` | 36/36 ✅ |
+| 浅灰 `#999` | 36/36 ✅ |
+| 很浅 `#bbb` | 36/36 ✅ |
+| 极浅 `#ddd` | 36/36 ✅ |
+
+（实跑数据，2026-10-08，`deepseek-flash`。）
+
+**一档都没掉，包括最浅的 `#ddd`** —— 那是白底上几乎看不清的浅灰。
+
+这条结果和「图像质量决定识别效果」的直觉相反。我把它如实记下来，因为**未复现的结论本身就是教学内容**：它说明这个模型的前置处理比我预期的强，而不说明「所有低质量图都没问题」。
+
+## 实测二：信息密度 —— 唯一稳定复现的变量
+
+第二个怀疑对象是**一张图里塞了多少东西**。这次我固定宽度 1000（字号 22px 不变），只改行数：
+
+| 行数 | 单元格数 | 正确格数 | 错误率 |
+|---:|---:|---:|---:|
+| 30 | 90 | 90/90 ✅ | 0% |
+| 60 | 180 | 179/180 ❌（另三次 180/180） | 0.6% |
+| 120 | 360 | 352/360 ❌（另一次 351/360） | 2.2% |
+
+（实跑数据，2026-10-08。）
+
+这是本节唯一稳定复现的变量：**错误率随信息密度上升，而分辨率与对比度都不影响它。**
+
+注意 60 行那一档：第一次跑出 179/180，随后连跑三次全是 180/180。所以即使在同一密度下，错误也是**间歇性**的 —— 它不是「超过某个密度就一定错」，而是「密度越高，偶尔出错的概率越大」。
+
+## 实测三：错误长什么样
+
+这一节最重要的数据。把 120 行那次的**全部 8 处错误**原样列出来：
+
+| 出错单元格 | 真值 | 读成 |
+|---|---:|---:|
+| ITM-122.qty | 838 | 836 |
+| ITM-142.qty | 260 | 250 |
+| ITM-153.qty | 388 | 398 |
+| ITM-165.qty | 428 | 426 |
+| ITM-188.amount | 88.38 | 98.38 |
+| ITM-197.qty | 986 | 586 |
+| ITM-212.qty | 699 | 698 |
+| ITM-218.qty | 359 | 389 |
+
+（实跑数据，2026-10-08。这是 352/360 里那 8 格。）
+
+盯着这张表看一会儿，会发现三件事，每一件都很重要：
+
+**第一，全部是单字符替换。** 838→836、359→389、88.38→98.38 —— 没有一处是整行丢失、串行、或格式错乱。都是**同一个数里有一位看错了**。
+
+**第二，错值全都「看起来很合理」。** 836 是一个完全正常的数量，389 也是。它们没有任何特征表明自己错了 —— 位数对、范围对、格式对。
+
+**第三，item 编号一列零错误。** 8 处全落在数值列。编号是有校验位的字母数字串（`ITM-122`），而数量是纯数字。**有意义的结构比纯数字更抗错。**
+
+## 为什么这比「读不出来」危险
+
+把这一节和上一节放在一起看，风险轮廓就清楚了。
+
+如果模型说「这张图我看不清」，你会立刻知道要换方案 —— 提高分辨率、切成几块、或者改走文本抽取。**错误是显式的，可以处理。**
+
+现在的情况是：模型**读出了 352 格**，其中 8 格是错的，而它**不知道**这 8 格是错的，你也不知道。输出是一份格式完全正确的 JSON。
+
+问题在于**没有任何结构上的线索**能让你发现它：
+
+- 格式校验：JSON 合法，通过
+- 类型校验：数量是整数、金额是两位小数，通过
+- 范围校验：836 在合理范围内，通过
+- 交叉校验（如果表里有合计）：**这是唯一可能发现的 —— 但前提是合计本身也被正确读了出来**
+
+所以视觉路线的可靠性**不能靠「看起来对」来判断**。它必须靠另一条独立的信息来验证，而这正是下一节的主题。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["一张图"] --> B["模型提取"]
+    B --> C{"输出形态"}
+    C -->|"说读不出"| D["显式失败<br/>✅ 你能立刻换方案"]
+    C -->|"给出结果"| E["结果里可能混着错"]
+    E --> F["格式校验"]
+    E --> G["类型校验"]
+    E --> H["范围校验"]
+    F -.->|"全部通过"| I["⚠️ 单字符替换无法被任何结构校验发现<br/>实测 838 被读成 836"]
+    G -.->|"全部通过"| I
+    H -.->|"全部通过"| I
+    E --> J["唯一的出路：引入独立信源"]
+    J --> K["第 5 节：交叉校验"]
+`}
+/>
+
+## 为什么偏偏是纯数字
+
+8 处错误全落在数值列，这不是巧合，有三个叠加的原因。
+
+**一，数字没有冗余。** `ITM-122` 里，前面的 `ITM-` 是固定前缀，后面是三位序号 —— 读到 `ITM-1` 的时候你已经知道后面大概是什么形状。而 `838` 这三个字符之间没有任何约束关系，任何一位都可能被替换成字形相邻的数。
+
+**二，相邻数字的字形差异极小。** 3 和 8、6 和 8、2 和 5、9 和 8 —— 小字号下它们只差一两个像素的闭合或开口。字母的差异在结构上明显得多。
+
+**三，数字错了后果最重。** 把 `Widget` 读成 `Widgct`，你一眼能看出来；把 838 读成 836，看不出来，而且它会直接进入下游计算。
+
+所以给关键数值加冗余是有效的：**校验位、固定宽度、前后加分隔符**都能提高抗错能力。注意这不是「让模型更准」，而是**让错误变得可发现** —— 目标不同，手段也不同。
+
+## 这个错误在循环里会怎么放大
+
+单次提取错 2.2% 听起来也许可以接受。但在 agent 循环里它会被放大两次。
+
+**第一次放大：错误进入后续所有推理。** 一旦 836 被写进上下文，后面每一轮都基于它计算。第 5 章讲过「用代码注入事实」能治幻觉 —— 那条经验在这里反过来成立：**一个错误的事实会被后续所有推理继承，而且它比幻觉更难发现，因为它看起来像真的。**
+
+**第二次放大：没有独立信源可比对。** 文本抽取错了，你可以和源文件逐字符 diff；视觉抽取错了，源文件就是那张图，而读图的还是同一个模型。**你手上没有第二个信源。**
+
+这两次放大合起来，就是下一节要解决的问题：把视觉接进循环时，必须同时接进**校验**。
+## 完整可运行代码
+
+```python
+"""对比度阶梯 + 120 行密集表的具体错值。
+
+实跑状态：2026-10-08，deepseek-flash。
+"""
+
+import base64, json, os, random, re, urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+
+
+def gen(n, seed):
+    random.seed(seed)
+    return [("ITM-%03d" % (101 + i), str(random.randint(10, 990)),
+             "%d.%02d" % (random.randint(1, 99), random.randint(0, 99))) for i in range(n)]
+
+
+def render(rows, width, color="black", fs=None):
+    fs = fs or max(8, round(width * 0.022))
+    font = ImageFont.truetype(FONT, fs)
+    lh = round(fs * 2.1)
+    h = lh * (len(rows) + 2) + 30
+    img = Image.new("RGB", (width, h), "white")
+    d = ImageDraw.Draw(img)
+    cols = [round(width * 0.08), round(width * 0.52), round(width * 0.72)]
+    for r, row in enumerate([["Item", "Qty", "Amount"]] + rows):
+        y = 15 + r * lh
+        for c, cell in enumerate(row):
+            d.text((cols[c], y), cell, fill=color, font=font)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def ask(content, max_tokens=8000):
+    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
+                       "messages": [{"role": "user", "content": content}]}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        data = json.loads(resp.read())
+    return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+
+
+PROMPT = ("把表格每一行提取成 JSON 数组，每项 "
+          "{\"item\":\"...\",\"qty\":\"...\",\"amount\":\"...\"}，数字逐字准确，只输出 JSON。")
+
+
+def grade(rows, text):
+    m = re.search(r"\[.*\]", text, re.S)
+    if not m:
+        return None, []
+    try:
+        got = json.loads(m.group(0))
+    except Exception:
+        return None, []
+    wrong = []
+    for i, truth in enumerate(rows):
+        if i >= len(got):
+            wrong.append((truth[0], "整行缺失", "-"))
+            continue
+        for k, want in zip(("item", "qty", "amount"), truth):
+            val = str(got[i].get(k, "")).strip()
+            if val != want:
+                wrong.append(("%s.%s" % (truth[0], k), want, val))
+    return len(rows) * 3, wrong
+
+
+def call(rows, **kw):
+    png = render(rows, **kw)
+    b64 = base64.b64encode(png).decode()
+    return ask([{"type": "image", "source": {"type": "base64",
+                 "media_type": "image/png", "data": b64}},
+                {"type": "text", "text": PROMPT}])
+
+
+if __name__ == "__main__":
+    print("--- A：120 行密集表，具体错值 ---")
+    rows = gen(120, 4242)
+    tot, wrong = grade(rows, call(rows, width=1000))
+    print("  %d/%d，错 %d 处" % (tot - len(wrong), tot, len(wrong)))
+    for w in wrong[:10]:
+        print("    %-16s 真值 %-8s 读成 %s" % w)
+    print()
+    print("--- B：对比度阶梯（12 行，宽度 1000）---")
+    rows12 = gen(12, 20261008)
+    for label, color in [("黑 #000", "black"), ("深灰 #666", "#666666"),
+                         ("浅灰 #999", "#999999"), ("很浅 #bbb", "#bbbbbb"),
+                         ("极浅 #ddd", "#dddddd")]:
+        tot, wrong = grade(rows12, call(rows12, width=1000, color=color))
+        if tot is None:
+            print("  %-10s 解析失败" % label)
+        else:
+            print("  %-10s %d/%d %s" % (label, tot - len(wrong), tot,
+                  "✅" if not wrong else "❌ " + str([w[1] + "→" + w[2] for w in wrong[:3]])))
+```
+
+实跑输出（2026-10-08）：
+
+```text
+--- A：120 行密集表，具体错值 ---
+  352/360，错 8 处
+    ITM-122.qty      真值 838      读成 836
+    ITM-142.qty      真值 260      读成 250
+    ITM-153.qty      真值 388      读成 398
+    ITM-165.qty      真值 428      读成 426
+    ITM-188.amount   真值 88.38    读成 98.38
+    ITM-197.qty      真值 986      读成 586
+    ITM-212.qty      真值 699      读成 698
+    ITM-218.qty      真值 359      读成 389
+
+--- B：对比度阶梯（12 行，宽度 1000）---
+  黑 #000     36/36 ✅
+  深灰 #666    36/36 ✅
+  浅灰 #999    36/36 ✅
+  很浅 #bbb    36/36 ✅
+  极浅 #ddd    36/36 ✅
+```
+
+## 常见坑
+
+- **把「模型没报错」当成「读对了」。** 实测 360 格里错了 8 格，模型一次都没提示。
+- **指望格式校验能抓住视觉错误。** 单字符替换（838→836）让 JSON 合法、类型正确、范围合理，三重校验全过。
+- **靠提高分辨率解决。** 实测 160 宽到 2,000 宽准确率完全相同 —— 这个手段不解决这个问题。
+- **以为对比度是主要风险。** 实测连 `#ddd` 极浅灰都全对。真正相关的是信息密度。
+- **一次采样就下结论。** 60 行那档第一次错 1 格、之后三次全对。视觉错误是间歇性的，样本量太小会把噪声当成规律。
+- **忽略「编号比数字更抗错」这个线索。** 8 处错误全在纯数字列 —— 给关键字段加结构（前缀、校验位、格式约束）能降低出错概率。

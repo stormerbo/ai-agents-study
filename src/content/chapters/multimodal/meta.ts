@@ -27,8 +27,8 @@ export const chapter = {
       summary: '它不是附件，是内容块 —— 和文本走同一条通道，按同一套规则计费。',
       estimatedMinutes: 18,
       difficulty: 'beginner',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['image-block', 'multimodal-basics'],
       checkpoints: [
         {
@@ -57,8 +57,8 @@ export const chapter = {
       summary: '先抽文本、直接交给视觉、或者两者结合 —— 差别不只在效果，更在可验证性。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['pdf', 'ocr', 'parsing'],
       checkpoints: [
         {
@@ -86,8 +86,8 @@ export const chapter = {
       summary: '图像 token 是可以估算的，而估算能力直接决定你的取舍。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['cost', 'resolution', 'tokens'],
       checkpoints: [
         {
@@ -115,8 +115,8 @@ export const chapter = {
       summary: '它和文本任务的失败模式不一样，所以校验方式也得不一样。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['failure-modes', 'validation'],
       checkpoints: [
         {
@@ -144,8 +144,8 @@ export const chapter = {
       summary: '当图像变成工具返回值，成本和上下文管理的问题会一起放大。',
       estimatedMinutes: 18,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['agent-loop', 'context'],
       checkpoints: [
         {
@@ -183,7 +183,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
