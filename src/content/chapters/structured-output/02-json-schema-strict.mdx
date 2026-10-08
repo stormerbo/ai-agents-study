@@ -1,0 +1,224 @@
+---
+lesson: structured-output/json-schema-strict
+title: JSON Schema 与约束解码
+status: drafting
+---
+
+上线两周后你发现库里有几条折扣率是 150% 的记录。你翻回代码，schema 里明明写着：
+
+```json
+{ "discount_percent": { "type": "number", "maximum": 100 } }
+```
+
+模型也确实调用了工具，返回的 JSON 也通过了你的解析。**问题出在一个常见的误解上：你以为 `input_schema` 是一道闸门，实际上它只是一份说明书。**
+
+## 实测：schema 到底强制了什么
+
+方法：每种关键字单独建一个工具，输入**故意引诱模型违反该约束**，然后用强制工具调用跑 3 次（关闭思考，让 schema 成为唯一约束来源）。
+
+| 关键字 | 我给的输入 | 实测输出 | 被强制了吗 |
+|---|---|---|---|
+| `enum: [low, medium, high]` | 「十万火急」 | `high` | 合规 |
+| `required: [owner]` | 原文**没提**负责人 | `""` 或 `"未提及"` | **没有 —— 逼出假值** |
+| `type: number` | 「一百九十九元」 | `199`（number） | 类型转换成功 |
+| `maximum: 100` | 「折扣力度是 150%」 | `150` | **没有** |
+| `pattern: ^1[0-9]{10}$` | 座机 `010-12345678` | `"01012345678"` | **没有**（还吞掉了连字符） |
+| `additionalProperties: false` | 原文多给了邮箱、手机、公司、职位 | 5/5 只返回 `["name"]` | 遵守 |
+| `type: integer` | 「买了 2.5 箱」 | `2` 或 `3` | **没有，且静默取整** |
+| `minItems: 3` | 清单里只有 2 项 | 2 项 | 没有，但**没有编造第 3 项** |
+| `format: date` | 「下周三交货」 | `"2025-11-19"` 或 `"下周三"` | **没有** |
+| `type: ["string","null"]` | 「（没有备注）」 | `"无"` 或 `"null"`（**字符串**） | 端点接受 |
+| `oneOf` | — | 正常返回 | 端点接受 |
+| 顶层递归 `$ref` | 树形目录 | **HTTP 400** | 端点拒绝 |
+
+（实测数据，`deepseek-flash`，2026-10-08，每个关键字 3 次。）
+
+这张表里最值得注意的是**两件事的方向相反**：
+
+- `maximum` / `pattern` / `format` / `minItems` **完全不生效**。它们是写给读 schema 的人看的，不是写给采样器的。
+- `required` **太生效了**。当输入里根本没有这个信息时，模型不会说「不知道」，而是**填一个看起来合规的值**：空字符串，或者 `"未提及"`。
+
+**一个「不强制」的约束，加上一个「强制」的必填项，合起来就是在批量生产假数据。**
+
+## 约束解码是什么，不是什么
+
+真正的**约束解码**（constrained decoding）发生在采样阶段：每一步都屏蔽掉会导致非法输出的 token，让「生成非法结构」在机制上不可能。这是编译器级别的保证。
+
+而工具调用的 `input_schema` 是一份**给模型看的接口说明**。在这个端点上，它的行为更像「模型读了这份说明并尽量遵守」，而不是「采样器照着它屏蔽 token」—— 上表里 `maximum` 与 `pattern` 的结果就是证据。
+
+顺带排除一个常见的指望：`strict: true`。
+
+```json
+{
+  "name": "save",
+  "description": "保存报销单",
+  "strict": true,
+  "input_schema": {
+    "type": "object",
+    "properties": { "discount_percent": { "type": "number", "maximum": 100 } },
+    "required": ["discount_percent"]
+  }
+}
+```
+
+实测：加上它仍然返回 200，仍然输出 `150`。**参数被接受了，然后被静默忽略。** 跨厂商时更不能假定它生效 —— 你至少要在自己的代码里兜一层。
+
+## 所以要把三件事分开
+
+<Mermaid
+  chart={`
+flowchart TB
+    M["模型的输出"] --> L1{"第一层：形状"}
+    L1 -->|"对象？字段名对？类型对？"| A1["schema + 解析器<br/>能机械保证"]
+    L1 -->|"不对"| X1["解析失败<br/>→ 重试（下一节）"]
+    A1 --> L2{"第二层：约束"}
+    L2 -->|"范围 / 格式 / 长度<br/>跨字段关系"| A2["自己写校验<br/>schema 不保证"]
+    L2 -->|"越界"| X2["校验失败<br/>→ 带反馈重试"]
+    A2 --> L3{"第三层：语义"}
+    L3 -->|"这个值是真的吗"| A3["schema 完全无能为力<br/>→ 改变任务设计（下一节）"]
+`}
+/>
+
+三条线要分清楚，因为它们的**处理方式完全不同**：
+
+1. **形状**：字段名、类型、是否对象。schema 加解析器能机械保证。
+2. **约束**：范围、格式、长度、跨字段关系。schema 表达不了或表达得不保证，必须自己校验。
+3. **语义**：字段内容是否与事实相符。谁也保证不了，只能改任务设计。
+
+## 完整可运行代码：用 Pydantic 把第二层补上
+
+```python
+# validated_refund.py
+"""schema 保证形状，Pydantic 保证约束，业务规则再兜一层。"""
+
+from typing import Literal
+
+from pydantic import BaseModel, Field, ValidationError
+
+
+class Refund(BaseModel):
+    amount: int = Field(multiple_of=100, description="报销金额，必须是 100 的整数倍")
+    issue_type: Literal["refund", "repair"]
+    start_date: str
+    end_date: str
+
+    def check_business_rules(self) -> list[str]:
+        """第三层：schema 与 Pydantic 都表达不了的规则。"""
+        problems = []
+        if self.end_date < self.start_date:
+            problems.append("end_date 早于 start_date：区间不可满足")
+        return problems
+
+
+RAW = """{
+  "amount": 1234,
+  "issue_type": "question",
+  "start_date": "2026-10-15",
+  "end_date": "2026-10-01"
+}"""
+
+try:
+    refund = Refund.model_validate_json(RAW)
+    print("schema 与约束都通过")
+    print("业务规则问题：", refund.check_business_rules())
+except ValidationError as exc:
+    print(exc)
+```
+
+真实运行输出：
+
+```text
+2 validation errors for Refund
+amount
+  Input should be a multiple of 100 [type=multiple_of, input_value=1234, input_type=int]
+    For further information visit https://errors.pydantic.dev/2.9/v/multiple_of
+issue_type
+  Input should be 'refund' or 'repair' [type=literal_error, input_value='question', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.9/v/literal_error
+```
+
+注意这段输出里有两类信息，它们在下一节会派上不同的用场：
+
+- **给人看的**是上面这种带换行和缩进的报告。
+- **给模型看的**应该是结构化的形式 —— Pydantic 可以直接给：
+
+```python
+print(exc.json(include_url=False))
+```
+
+```json
+[{"type":"multiple_of","loc":["amount"],"msg":"Input should be a multiple of 100","input":1234,"ctx":{"multiple_of":100}},{"type":"literal_error","loc":["issue_type"],"msg":"Input should be 'refund' or 'repair'","input":"question"}]
+```
+
+> **实跑状态**：以上两段输出都是在本地 Python 3.10 + Pydantic 2.9.2 上真实运行得到的。
+
+## 一个真实的 400：schema 不是任意 JSON Schema
+
+把树形结构写成递归 `$ref`（这是 JSON Schema 里很自然的写法），端点直接拒绝：
+
+```json
+{
+  "error": {
+    "message": "Invalid schema for function 'save': schema must be a JSON Schema of 'type: \"object\"', got 'type: null'. (request_id: ...)",
+    "type": "invalid_request_error"
+  }
+}
+```
+
+读法：**工具参数的 schema 顶层必须是一个 `type: "object"`**，用 `$ref` 指过去不行。树形数据要换成「用扁平列表 + parent_id 表达层级」，或者干脆放弃这一个工具的结构保证。
+
+同样的道理适用于所有厂商的「严格模式」子集限制：能用的关键字各家不同、还会随版本变。**以官方文档为准，别照抄博客。**
+
+## 真正管用的是 description，不是这些关键字
+
+上面那张表里还有一条线索：`enum`、`additionalProperties` 这类**结构性**关键字被遵守了，而 `maximum`、`pattern`、`format` 这类**校验性**关键字没有。
+
+那模型到底靠什么决定怎么填？答案是**你写的那段 description** —— 这一点和上一章的结论完全一致：工具描述就是 prompt。
+
+| schema 里的 description | 给它的输入 | 实测输出（5 次全部一致） |
+|---|---|---|
+| `必须用英文填写公司名` | 「公司叫启明电子」 | `"Qiming Electronics"` |
+| `必须是 11 位手机号，纯数字，不要连字符` | 「电话是 010-12345678」 | `"01012345678"` |
+
+第二行值得多看一会儿：模型**遵守了「纯数字、不要连字符」**，却没有满足「11 位手机号」—— 因为那做不到，输入是个 10 位座机号。
+
+所以 description 的效力是「引导模型的表达方式」，不是「施加一个可验证的约束」：
+
+> **`description` 是 prompt，模型会读；`maximum` / `pattern` / `format` 是注释，没人读。**
+
+把它和上一章接起来：schema 决定**能填哪些字段**，description 决定**填成什么样**。你上一章学到的「把边界条件写进描述」，在这里直接决定输出质量。
+
+## enum 是个双刃剑
+
+`enum` 是这套工具里最像「约束」的关键字，它确实能排除非法值。但它同时会**排除掉「我不知道」这个正确答案**。
+
+给一个只有两个取值、而输入两个都不是的场景，跑 6 次：
+
+| schema | 实测输出 | 结果 |
+|---|---|---|
+| `enum: ["refund", "repair"]` | `refund` ×5、`repair` ×1 | **6/6 静默选了错的** |
+| `enum: ["refund", "repair", "other"]` | `other` ×6 | **6/6 正确** |
+
+第一行里的模型不是在乱猜 —— 它在完成你交给它的任务：**必须从这两个里选一个**。它没有任何办法表达「都不对」。第二行只是把一个「它做不到的任务」换成了「它做得到的任务」。
+
+**设计规则：给每一个 `enum` 留一个 `other` 或 `unknown` 成员。** 这不是为了对模型宽容，而是为了让「信息不足」这个真实状态有地方落脚。没有这个出口，你得到的不是报错，而是一个看起来完全正常的错误值 —— 然后它被写进数据库。
+
+（这个问题在下一节会以更严重的形式出现：连 `other` 都没有的必填字段，会逼出彻底的幻觉。）
+
+## 为什么不是所有厂商都做约束解码
+
+以下是我的判断，不是实测结论：约束解码要把你的 schema 编译成一张 token 级的合法掩码，而各家的 tokenizer 不同、schema 表达能力也不同。对简单结构它很便宜；碰到递归、联合类型、以及中文分词边界就不那么便宜。它还会压缩模型「先想再写」的表达空间。所以厂商更倾向于提供 JSON 模式加上文档级建议，把强约束留给少数明确支持的场景与 schema 子集。
+
+工程含义只有一句：**别把「结构保证」当成跨厂商默认可移植的能力。** 每换一个端点，都要重新验一遍你的 schema 子集 —— 上表里 `$ref` 被 400 拒绝就是例子。
+
+## 常见坑
+
+**以为写了 `maximum` / `pattern` / `format` 就有人管。** 实测全都不生效。这些关键字在 schema 里是文档，不是闸门。
+
+**以为 `required` 只影响「字段在不在」。** 它还会影响「字段里的内容是不是真的」—— 输入缺失时模型会填一个假值来满足它。
+
+**以为 `strict: true` 打开了强制。** 端点接受了参数但静默忽略，实测输出不变。
+
+**把厂商的严格模式当成可移植能力。** 各家的子集不同，且 `$ref` 这类常用写法可能直接被 400 拒绝。
+
+**只用 schema 校验，不写第二层。** 上表的 `maximum`、`pattern`、`format`、跨字段区间 —— 全部会漏过去。

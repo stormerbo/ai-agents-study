@@ -27,8 +27,8 @@ export const chapter = {
       summary: '提示级别的约束是概率性的，工程级别的约束才是确定的。这个区别决定了系统能不能上线。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['json', 'reliability'],
       checkpoints: [
         {
@@ -55,8 +55,8 @@ export const chapter = {
       summary: 'schema 如何从“建议”变成“强制”，以及模型厂商各自是怎么实现它的。',
       estimatedMinutes: 22,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['json-schema', 'constrained-decoding'],
       checkpoints: [
         {
@@ -84,8 +84,8 @@ export const chapter = {
       summary: '失败一定会发生。区别在于你的系统是优雅地处理它，还是把异常抛给用户。',
       estimatedMinutes: 25,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['retry', 'fallback', 'error-handling'],
       checkpoints: [
         {
@@ -112,8 +112,8 @@ export const chapter = {
       summary: '结构合法只是入场券。真正决定系统是否可用的是那些 schema 表达不出来的约束。',
       estimatedMinutes: 25,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['business-rules', 'cross-validation'],
       checkpoints: [
         {
@@ -156,7 +156,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
-  updatedAt: '2026-09-24',
-  verifiedAt: '2026-09-24',
+  status: 'published',
+  updatedAt: '2026-10-08',
+  verifiedAt: '2026-10-08',
 } satisfies Chapter;
