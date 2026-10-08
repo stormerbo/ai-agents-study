@@ -572,20 +572,37 @@ function TraceTimeline({
         {visible.map((t) => {
           const ev = t.event as { type: string; [k: string]: unknown };
           return (
-            <li
-              key={t.id}
-              className="border-border/50 flex gap-3 border-b px-4 py-1.5 text-xs last:border-0"
-            >
-              <span className="text-muted-foreground/50 w-8 shrink-0 font-mono tabular-nums">
-                {String(t.seq).padStart(3, '0')}
-              </span>
-              <span className="text-muted-foreground/50 w-14 shrink-0 font-mono tabular-nums">
-                +{t.at - start}ms
-              </span>
-              <span className={cn('w-24 shrink-0 font-mono', eventTone(ev.type))}>{ev.type}</span>
-              <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono">
-                {summarize(ev)}
-              </span>
+            <li key={t.id} className="border-border/50 border-b last:border-0">
+              {/*
+                用原生 <details> 折叠：点一行展开它的完整 JSON。
+                选它而不是自己写状态，是因为它不需要任何客户端 JS ——
+                也就不会引入 hydration 或事件绑定方面的问题。
+              */}
+              <details className="group">
+                <summary className="hover:bg-muted/40 flex cursor-pointer list-none gap-3 px-4 py-1.5 text-xs marker:hidden">
+                  <span className="text-muted-foreground/40 w-8 shrink-0 font-mono tabular-nums">
+                    {String(t.seq).padStart(3, '0')}
+                  </span>
+                  <span className="text-muted-foreground/40 w-14 shrink-0 font-mono tabular-nums">
+                    +{t.at - start}ms
+                  </span>
+                  <span className={cn('w-24 shrink-0 font-mono', eventTone(ev.type))}>
+                    {ev.type}
+                  </span>
+                  <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono">
+                    {summarize(ev)}
+                  </span>
+                  <span
+                    aria-hidden
+                    className="text-muted-foreground/30 shrink-0 transition-transform group-open:rotate-90"
+                  >
+                    ▸
+                  </span>
+                </summary>
+                <pre className="bg-muted/40 text-muted-foreground overflow-x-auto px-4 py-2.5 pl-16 font-mono text-[11px] leading-relaxed">
+                  {JSON.stringify(ev, null, 2)}
+                </pre>
+              </details>
             </li>
           );
         })}
@@ -614,30 +631,43 @@ function eventTone(type: string): string {
   }
 }
 
+/** 换行会破坏单行摘要的布局，用可见符号代替 */
+function oneLine(s: string): string {
+  return s.replace(/\n/g, '⏎');
+}
+
+/**
+ * 把事件压成一行摘要。
+ *
+ * 文本类事件**直接显示内容**而不是 JSON 转义 —— 后者满是 `\n` 与 `\"`，
+ * 一眼看不出模型说了什么。想看原始结构的话，展开那一行就是完整 JSON。
+ */
 function summarize(ev: { type: string; [k: string]: unknown }): string {
   switch (ev.type) {
     case 'text':
-      return JSON.stringify(ev.delta);
+      return oneLine(String(ev.delta));
     case 'thinking':
-      return JSON.stringify(String(ev.delta).slice(0, 40));
+      return oneLine(String(ev.delta)).slice(0, 70);
     case 'tool_call':
-      return `${ev.name} (index ${ev.index})`;
+      return `${ev.name}(index ${ev.index})`;
     case 'tool_args':
-      return JSON.stringify(ev.delta);
+      return oneLine(String(ev.delta));
     case 'tool_call_end':
       return JSON.stringify(ev.input);
     case 'usage':
-      return `in=${ev.inputTokens ?? '-'} out=${ev.outputTokens ?? '-'}${
-        ev.cacheReadTokens ? ` cache=${ev.cacheReadTokens}` : ''
+      return `输入 ${ev.inputTokens ?? '-'} · 输出 ${ev.outputTokens ?? '-'}${
+        ev.cacheReadTokens ? ` · 缓存命中 ${ev.cacheReadTokens}` : ''
       }`;
     case 'stop_reason':
       return String(ev.stopReason);
     case 'raw':
-      return String(ev.line).slice(0, 120);
+      return oneLine(String(ev.line)).slice(0, 120);
     case 'error':
       return `${ev.code}: ${ev.message}`;
     case 'done':
-      return `${ev.durationMs}ms`;
+      return `耗时 ${ev.durationMs}ms`;
+    case 'start':
+      return `${ev.provider} / ${ev.model}`;
     default:
       return '';
   }
