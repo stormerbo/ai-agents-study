@@ -7,4 +7,5 @@ export const bodies = {
   'schema-design': () => import('./02-schema-design.mdx'),
   'poka-yoke': () => import('./03-poka-yoke.mdx'),
   'parallel-and-errors': () => import('./04-parallel-and-errors.mdx'),
+  'tool-count': () => import('./05-tool-count.mdx'),
 } as const;
