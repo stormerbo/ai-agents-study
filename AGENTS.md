@@ -28,7 +28,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ```bash
 pnpm dev          # 本地开发，http://localhost:3000
-pnpm build        # 构建（46 个静态页面）
+pnpm build        # 构建（88 个静态页面）
 pnpm typecheck    # next typegen && tsc --noEmit
 pnpm test         # vitest，内容完整性 + SSE 编解码
 pnpm lint         # eslint
@@ -305,7 +305,7 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 
 ### 6.1 已完成
 
-**基础设施**：脚手架、Tailwind 4 设计令牌、深色模式、MDX 管线、Mermaid 组件、资源库（47 条）、术语表（30 条）、实验定义（4 个）、作业（1 个）、准确性机制、54 个测试断言
+**基础设施**：脚手架、Tailwind 4 设计令牌、深色模式、MDX 管线、Mermaid 组件、资源库（48 条）、术语表（30 条）、实验定义（4 个）、作业（1 个）、准确性机制、54 个测试断言
 
 **章 0「起点」** —— 4 节完整正文（从中途开始写，此前只有大纲）
 
@@ -321,43 +321,52 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 
 > ⚠️ **章 3、4 写完后建议人工复核一遍** —— 这两章的实验密度最高、结论也最多反直觉，而且期间被我自己纠正过五次测量缺陷。复核重点是「反例的边界说得够不够准」。
 
+**阶段 2 余下 2 章 + 阶段 3 全 5 章（2026-10-08 规划完成，均为 `outlined`）**：
+
+- 章 6「检索」（stage 2）—— 检索 vs 微调、切分、向量检索的天花板、评估、接进循环
+- 章 7「记忆」（stage 2）—— 上下文不是记忆、写入规则、召回、遗忘与冲突、成本与评估
+- 章 8「Agent 范式」（stage 3）—— 五类范式对照、ReAct、Plan-Execute、自我批评、怎么选
+- 章 9「手写一个 Agent 循环」（stage 3）—— 最小循环、工具注册表、预算与循环检测、状态与恢复、对照框架
+- 章 10「多智能体」（stage 3）—— 三种拓扑、成本模型、上下文隔离、边界失败模式、替代方案
+- 章 11「框架选型」（stage 3）—— 框架替你做了什么、三种抽象模型、抽象泄漏、12-Factor 反方、选型矩阵
+- 章 12「MCP」（stage 3）—— 为什么需要协议、角色与能力、2026-07-28 无状态化、最小 server、安全边界
+
+> 规划依据：项目原有资源库里的章号引用（「第 7 章记忆」「第 9 章手写循环」「第 11 章选型」「第 12 章 MCP」）确认了原始 19 章编号；阶段 3 的调研还带回了 **MCP 规范 2026-07-28 的破坏性变更**（见资源库 `mcp-spec-changelog`）。
+
 ### 6.2 进度明细
 
-| 节 | 中文 | 图 | 代码块 | 实测数据 | 错误案例 | 状态 |
-|---|---:|---:|---:|:--:|:--:|---|
-| 0-1 为什么是现在 | 2561 | 1 | 5 | ✓ | ✓ | 缺图（可加一节成本图） |
-| 0-2 什么算 agent | 2106 | 2 | 3 | ✓ | ✓ | ✅ |
-| 0-3 三个失效直觉 | 2625 | 2 | 6 | ✓ | ✓ | ✅ 已补两张图 |
-| 0-4 怎么用这个站 | 1729 | 1 | 2 | — | — | 内容性质偏说明，不需实测 |
-| 1-1 token（**标杆**） | 3922 | 2 | 7 | ✓ | ✓ | ✅ |
-| 1-2 采样参数 | 3026 | 1 | 5 | ✓ | ✓ | ✅ 已补迁移案例 |
-| 1-3 Messages API | 1661 | 1 | 8 | ✓ | ✓ | 代码为主，中文偏少但内容不缺 |
-| 1-4 模型选型 | 1903 | 2 | 11 | ✓ | ✓ | ✅ 已补成本误判案例 |
-| 1-5 prompt caching | 1958 | 1 | 10 | ✓ | ✓ | ✅ 已补缓存排查案例 |
-| **2-1 清晰直接** | 1762 | 1 | 2 | ✓ | ✓ | ✅ |
-| **2-2 指令与数据分离** | 2551 | 1 | 3 | ✓ | ✓ | ✅ |
-| **2-3 少样本示例** | 1780 | 1 | 1 | ✓ | ✓ | ✅ |
-| **2-4 思维链与 prefill** | 1516 | 1 | 3 | ✓ | ✓ | ✅ |
-| **2-5 可靠性增强** | 3299 | 2 | 2 | ✓ | ✓ | ✅ |
-| **3-1 上下文不是越多越好** | 2024 | 1 | 3 | ✓ | ✓ | ✅ 五次设计都未复现位置/容量效应 |
-| **3-2 system prompt 的高度** | 1735 | 1 | 3 | ✓ | ✓ | ✅ 矛盾规则导致行为随机（8/12） |
-| **3-3 即时检索** | 1526 | 1 | 2 | ✓ | ✓ | ✅ 测出交叉点在「需要 20%」 |
-| **3-4 压缩与结构化笔记** | 1877 | 1 | 3 | ✓ | ✓ | ✅ 摘要丢的是「硬约束」 |
-| **3-5 子智能体隔离** | 1924 | 1 | 1 | ✓ | ✓ | ✅ 测出「成本 = 内容 × 装载次数」 |
-| **4-1 工具调用到底发生了什么** | 2000 | 1 | 5 | ✓ | ✓ | ✅ 含两条 400 报错原文 |
-| **4-2 工具描述即 prompt** | 1565 | 1 | 2 | ✓ | ✓ | ✅ enum vs 自由字符串 3/3 vs 0/3 |
-| **4-3 poka-yoke** | 1666 | 1 | 1 | ✓ | ✓ | ✅ 互斥参数 3/3 冲突 → 三层修法 |
-| **4-4 并行调用与错误处理** | 2080 | 1 | 4 | ✓ | ✓ | ✅ 失败回传三形态行为各不相同 |
-| **4-5 工具数量的代价** | 1832 | 1 | 2 | ✓ | ✓ | ✅ 成本线性增长；准确率未见下降 |
+> 下表由 scripts/content-stats.mjs 同源口径生成（2026-10-08 全部补到新标准后，28/28 达标）。
 
-**章 5「结构化输出」**（2026-10-08 完成，4 节，全部含四块内容）：
-
-| 节 | 中文 | 说明文字 | 图 | 代码块 | 实测数据 | 错误案例 | 状态 |
-|---|---:|---:|---:|---:|:--:|:--:|---|
-| **5-1 为什么写清楚要 JSON 不够** | 1900 | 3243 | 1 | 6 | ✓ | ✓ | ✅ 提示式未复现不可靠；强制工具需关思考 |
-| **5-2 JSON Schema 与约束解码** | 1968 | 3975 | 1 | 7 | ✓ | ✓ | ✅ 12 个关键字的实际约束力表 |
-| **5-3 校验失败之后** | 2049 | 3096 | 1 | 3 | ✓ | ✓ | ✅ 三种重试 0/6 / 0/6 / 6/6 |
-| **5-4 schema 之外** | 1818 | 3114 | 1 | 4 | ✓ | ✓ | ✅ 幻觉 5/5；enum 加 other 后 6/6 |
+| 节 | 中文 | 说明文字 | 图 | 代码块 | 达标 |
+|---|---:|---:|---:|---:|:--:|
+| context-engineering/01-context-is-finite | 2006 | 3285 | 1 | 3 | ✅ |
+| context-engineering/02-system-prompt-altitude | 2028 | 3049 | 1 | 3 | ✅ |
+| context-engineering/03-just-in-time | 1890 | 3130 | 1 | 2 | ✅ |
+| context-engineering/04-compaction | 2110 | 3150 | 1 | 3 | ✅ |
+| context-engineering/05-subagent-isolation | 2047 | 3301 | 1 | 1 | ✅ |
+| llm-api-basics/01-tokens-and-context | 3922 | 6704 | 2 | 7 | ✅ |
+| llm-api-basics/02-sampling-params | 3026 | 5794 | 1 | 5 | ✅ |
+| llm-api-basics/03-messages-api | 1661 | 3560 | 1 | 8 | ✅ |
+| llm-api-basics/04-model-selection | 1903 | 3179 | 2 | 11 | ✅ |
+| llm-api-basics/05-prompt-caching | 1958 | 3567 | 1 | 10 | ✅ |
+| prompt-engineering/01-instruction-clarity | 1956 | 3034 | 1 | 2 | ✅ |
+| prompt-engineering/02-structure-and-separation | 2013 | 3053 | 1 | 3 | ✅ |
+| prompt-engineering/03-few-shot | 2021 | 3001 | 1 | 1 | ✅ |
+| prompt-engineering/04-chain-of-thought | 1854 | 3063 | 1 | 4 | ✅ |
+| prompt-engineering/05-reliability | 2945 | 4733 | 2 | 2 | ✅ |
+| structured-output/01-why-not-prompt-only | 1900 | 3243 | 1 | 6 | ✅ |
+| structured-output/02-json-schema-strict | 1968 | 3975 | 1 | 7 | ✅ |
+| structured-output/03-validation-retry | 2049 | 3096 | 1 | 3 | ✅ |
+| structured-output/04-beyond-json | 1818 | 3114 | 1 | 4 | ✅ |
+| tool-calling/01-what-really-happens | 1798 | 3013 | 1 | 5 | ✅ |
+| tool-calling/02-schema-design | 1693 | 3196 | 1 | 2 | ✅ |
+| tool-calling/03-poka-yoke | 1634 | 3103 | 1 | 1 | ✅ |
+| tool-calling/04-parallel-and-errors | 1899 | 3055 | 1 | 4 | ✅ |
+| tool-calling/05-tool-count | 1859 | 3222 | 1 | 2 | ✅ |
+| what-is-an-agent/01-why-now | 2561 | 4293 | 1 | 5 | ✅ |
+| what-is-an-agent/02-what-counts-as-agent | 2106 | 3679 | 2 | 3 | ✅ |
+| what-is-an-agent/03-mindset-shift | 2446 | 3936 | 2 | 6 | ✅ |
+| what-is-an-agent/04-how-to-use-this-site | 2151 | 3157 | 1 | 2 | ✅ |
 
 **章 2 / 3 / 4（2026-10-08）完成的工作**：
 
@@ -432,13 +441,13 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 ```
 阶段 0 起点（1 章）    ✅ 章 0 已完成正文
 阶段 1 地基（3 章）    ✅ 章 1、2、3 已完成正文
-阶段 2 原语（4 章）    ✅ 章 4、5 均已完成正文 <- 当前所在（阶段 2 收口）
-阶段 3 编排（5 章）    仅大纲：Agent 范式 / 手写循环 / 多智能体 / 框架 / MCP
+阶段 2 原语（4 章）    章 4、5 有正文；章 6、7 已注册（大纲）
+阶段 3 编排（5 章）    章 8-12 已注册（大纲）<- 当前所在
 阶段 4 生产化（4 章）  仅大纲：评估 / 沙箱 / 成本 / 部署
 阶段 5 实战（2 章）    仅大纲：源码研读 / 综合项目
 ```
 
-> ⚠️ 注意：`stages.ts` 里 `chapterIds` 已被**移除**（改为从 `Chapter.stageId` 派生），所以「有哪些章」取决于 `content/chapters/index.ts` 里注册了什么。当前只注册了 6 章，顺序为：0 what-is-an-agent / 1 llm-api-basics / 2 prompt-engineering / 3 context-engineering / 4 tool-calling / 5 structured-output。
+> ⚠️ 注意：`stages.ts` 里 `chapterIds` 已被**移除**（改为从 `Chapter.stageId` 派生），所以「有哪些章」取决于 `content/chapters/index.ts` 里注册了什么。当前注册 13 章，顺序为：0 what-is-an-agent / 1 llm-api-basics / 2 prompt-engineering / 3 context-engineering / 4 tool-calling / 5 structured-output / 6 retrieval / 7 memory / 8 agent-paradigms / 9 agent-loop / 10 multi-agent / 11 agent-frameworks / 12 mcp。
 
 ### 7.2 未实现的功能（已在章 0-4 如实告知读者）
 
@@ -532,7 +541,7 @@ playwright 操作 React 受控组件的表单时遇到了 ref 失效问题。**�
 
 已按此完成章 0、1、2、3、4、5。用户明确说过「质量非常好，所有内容都按这个标准执行」。
 
-**下一章：阶段 3「编排」的第一章**（该阶段 5 章目前只有大纲）。
+**下一章：第 6 章「检索」**（阶段 2 收口）。注意依赖顺序 —— 阶段 3 的「多智能体」「MCP」都建立在检索与记忆之上，跳过它们会让阶段 3 悬空。
 
 ## 8. 待办清单
 
@@ -541,13 +550,13 @@ playwright 操作 React 受控组件的表单时遇到了 ref 失效问题。**�
 **之后：**
 
 - [x] **章 5「结构化输出」**（4 节正文，2026-10-08 完成）
-- [ ] **阶段 3「编排」起逐章推进**（Agent 范式 / 手写循环 / 多智能体 / 框架 / MCP，均只有大纲）
-- [ ] **复核 14 节低于新字数下限的旧正文**：按 §3.2 口径跑 `node scripts/content-stats.mjs`，24 节里只有 10 节达标。章 1-4 的正文是按各自当时的标准验收的，是否回填需要单独决策 —— **先不要动它们**
+- [ ] **第 6 章「检索」起逐章写正文**（第 6-12 章已有完整大纲与自检项，等待写正文）
+- [x] **章 0-5 全部 28 节补到新验收标准**（2026-10-08）：字数、真实报错案例、以及章 3 的四处静默失效排查。当前 28/28 达标
 - [ ] 实现学习进度（兑现章 0-4 的说明）
 - [ ] 全文搜索（计划用 Pagefind）
 - [ ] 按 `VERIFY.md` 验证所有「未实跑」的代码
 
-**工具链现状**：`pnpm test`（54 断言）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（46 页）**全部干净**。
+**工具链现状**：`pnpm test`（54 断言）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（88 页）**全部干净**。
 
 ## 9. 给接手的会话的话
 

@@ -6,6 +6,13 @@ import { chapter as promptEngineering } from './prompt-engineering/meta';
 import { chapter as contextEngineering } from './context-engineering/meta';
 import { chapter as toolCalling } from './tool-calling/meta';
 import { chapter as structuredOutput } from './structured-output/meta';
+import { chapter as retrieval } from './retrieval/meta';
+import { chapter as memory } from './memory/meta';
+import { chapter as agentParadigms } from './agent-paradigms/meta';
+import { chapter as agentLoop } from './agent-loop/meta';
+import { chapter as multiAgent } from './multi-agent/meta';
+import { chapter as agentFrameworks } from './agent-frameworks/meta';
+import { chapter as mcp } from './mcp/meta';
 
 /**
  * 章节清单。
@@ -26,4 +33,11 @@ export const chapters: Chapter[] = [
   contextEngineering,
   toolCalling,
   structuredOutput,
+  retrieval,
+  memory,
+  agentParadigms,
+  agentLoop,
+  multiAgent,
+  agentFrameworks,
+  mcp,
 ].sort((a, b) => a.order - b.order);
