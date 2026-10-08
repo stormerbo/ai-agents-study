@@ -79,8 +79,8 @@ export const chapter = {
       summary: '三个精心挑选的示例，通常胜过二十个随手凑的示例。',
       estimatedMinutes: 15,
       difficulty: 'beginner',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['few-shot', 'examples'],
       checkpoints: [
         {
