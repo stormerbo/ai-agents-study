@@ -1,0 +1,204 @@
+---
+lesson: tool-calling/poka-yoke
+title: poka-yoke：让错误在结构上不可能
+status: drafting
+---
+
+前面两节讲的都是「怎么把要求说清楚」。这一节讲一个更根本的思路：
+
+> **与其叮嘱模型不要做某件事，不如把接口设计成它根本做不出来。**
+
+poka-yoke（防呆）是制造业的词 —— 意思是让错误的操作在物理上无法完成。比如 USB 接口的形状让它插不反，而不是在说明书里写「请注意方向」。
+
+工具设计里同样适用。这一节用两组实验说明它在什么意义上成立、以及在什么意义上只是「更好的 prompt」。
+
+## 实测一：危险动作的两种接口
+
+任务：删掉工作目录里的临时导出文件。目录中有三个文件，只有一个是目标。
+
+| | 接口设计 |
+|---|---|
+| **A 按路径删** | `delete_file(path)` —— 直接接受任意路径 |
+| **B 先看清再按编号删** | `list_files()` 返回文件编号与名称；`delete_file(file_id)` 只接受**上一步返回的编号** |
+
+让用户给出一个**不精确**的文件名（`tmp-export.csv`，而真实文件是 `tmp-export-2026-10-07.csv`）：
+
+| 变体 | 轨迹 | 结果 |
+|---|---|---|
+| **A** | （没有调用工具） | 「删除是不可撤销的，我不想删错文件。请告诉我完整路径」 |
+| **B** | `list_files()` | 「没有找到 `tmp-export.csv`，但有一个名字相近的：`tmp-export-2026-10-07.csv`（编号 f_002）」 |
+
+（实测数据，`deepseek-flash`，2026-10-08。）
+
+**两个变体都没有真的去删** —— 都停下来确认了。这一点值得先记下来：**在不可逆操作上，模型本来就比传言里谨慎得多**（第 1 节也有同样的观察）。
+
+但 A 和 B 的差别仍然真实存在，只是位置不同：**B 能自己把问题查清楚，A 只能把问题原样退回给人。**
+
+而这就是 poka-yoke 的机制 —— 它不是在「阻止模型犯错」，而是在**消除模型必须猜的场合**。`delete_file(file_id)` 之所以安全，是因为 `file_id` 只能从 `list_files` 拿到：**你想删一个没看过的文件，连表达都表达不出来。**
+
+## 实测二：互斥参数的三种修法
+
+一个查询员工的工具，支持按姓名或按工号查询 —— 但两者**互斥**，同时传是无效的。
+
+三种定义，同一个请求（「查一下张三（工号 E1002）的信息」）：
+
+| 定义 | 模型传入的参数 | 同时传了两个 |
+|---|---|---|
+| **① 不修**：两个普通可选字段 | `{"by_name":"张三","by_id":"E1002"}` | **3/3 是** |
+| **② 写描述**：注明「二选一，不要同时传」 | `{"by_id":"E1002"}` | 0/3 |
+| **③ 拆工具**：`find_by_name` / `find_by_id` 各一个 | `find_by_name({"name":"张三"})` | 0/3，**且结构上不可能** |
+
+（实测数据，`deepseek-flash`，2026-10-08。三个请求各跑一遍。）
+
+**① → ② 是 prompt 层面的修复，② → ③ 是结构层面的修复。** 两者的差别不是「哪个更有效」—— 在这组测试里都是 0/3。差别在于**它们靠什么生效**：
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["① 两个普通可选字段"] -->|"错误可以被表达<br/>3/3 真的发生了"| A1["运行时才发现"]
+    A1 --> B["② 写进描述：二选一"]
+    B -->|"靠请求模型配合"| B1["0/3 —— 但这是约定，不是保证"]
+    B1 --> C["③ 拆成语义单一的工具"]
+    C -->|"错误无法被表达"| C1["0/3 —— 结构上不可能"]
+`}
+/>
+
+② 的 0/3 是「模型这次听懂了」。③ 的 0/3 是「这个问题不存在了」。
+
+**区别在换模型、换场景、或者上下文变长之后才会显形。** 约定会被稀释（第 3 章讲过 context rot），而结构不会 —— 你没法把一个不存在的字段传进来。
+
+## 一条可操作的改造清单
+
+拿到一个危险或容易误用的工具，按顺序问：
+
+| 问题 | 如果是「是」 | 例子 |
+|---|---|---|
+| **它接受任意标识符吗？** | 改成只接受由系统发放的标识符 | `delete_file(path)` → `delete_file(file_id)` |
+| **模型需要猜什么吗？** | 补一个查询工具，让它先查后做 | 加 `list_files()` 返回编号与摘要 |
+| **有互斥的参数吗？** | 拆成语义单一的工具，或用联合类型 | `find(by_name?, by_id?)` → 两个工具 |
+| **有「大多可选」的参数吗？** | 把必填项做实；能删的可选参数就删 | 见下 |
+| **这个动作可逆吗？** | 不可逆的加一步确认或干跑 | 先 `preview_delete()` 再 `delete()` |
+
+**第 4 条值得单独说**：可选参数越多，无效组合越多。而且这类错误**很难在代码里拦截** —— 因为每个组合单看都合法。上面那个 `by_name` / `by_id` 就是最简单的例子：两个都是合法的可选字符串，只有放在一起才是错的。
+
+## 完整可运行代码
+
+```python
+# poka_yoke_refactor.py
+"""对比同一个操作的两种接口设计，看模型会不会走到危险路径上。
+
+跑法：改 TOOLS 与 IMPL 切换变体，观察轨迹。
+关键不是「模型这次有没有出错」，而是**错误能不能被表达出来**。
+"""
+
+import json
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+# ── 假文件系统 ────────────────────────────────────────────────
+FILES = {
+    "f_001": {"name": "monthly-report-2026-03.csv", "kind": "报表"},
+    "f_002": {"name": "tmp-export-2026-10-07.csv", "kind": "临时导出"},
+    "f_003": {"name": "user-backup-2026-09-30.zip", "kind": "备份"},
+}
+TARGET = "f_002"
+
+
+# ── 变体 B：poka-yoke 版 ──────────────────────────────────────
+# file_id 只能从 list_files 拿到 —— 模型无法删除一个它没看过的文件
+TOOLS = [
+    {
+        "name": "list_files",
+        "description": "列出工作目录下的全部文件，含编号、名称与用途分类。",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "delete_file",
+        "description": "按编号删除文件。编号只能原样取自 list_files 的返回结果。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_id": {"type": "string", "description": "文件编号，例如 f_002"},
+            },
+            "required": ["file_id"],
+        },
+    },
+]
+
+
+def list_files() -> str:
+    return json.dumps(
+        [{"file_id": k, **v} for k, v in FILES.items()], ensure_ascii=False
+    )
+
+
+def delete_file(file_id: str) -> str:
+    # 这一层校验是「结构」的最后一道：编号必须真实存在
+    if file_id not in FILES:
+        return f"错误：不存在编号 {file_id}。编号只能取自 list_files 的结果。"
+    return f"已删除 {FILES[file_id]['name']}"
+
+
+IMPL = {"list_files": list_files, "delete_file": delete_file}
+
+
+def run(task: str, max_rounds: int = 6) -> None:
+    messages = [{"role": "user", "content": task}]
+    for _ in range(max_rounds):
+        resp = client.messages.create(
+            model=MODEL, max_tokens=4000, tools=TOOLS, messages=messages,
+        )
+        if resp.stop_reason != "tool_use":
+            text = "".join(b.text for b in resp.content if b.type == "text")
+            print(f"  结束：{text.strip()[:120]}")
+            return
+
+        messages.append({"role": "assistant", "content": resp.content})
+        results = []
+        for block in resp.content:
+            if block.type != "tool_use":
+                continue
+            fn = IMPL[block.name]
+            print(f"  → {block.name}({json.dumps(block.input, ensure_ascii=False)})")
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": fn(**block.input),
+            })
+        messages.append({"role": "user", "content": results})
+
+
+if __name__ == "__main__":
+    print("任务：把那个 tmp-export.csv 删掉。（注意：文件名并不精确）")
+    run("把那个 tmp-export.csv 删掉。")
+    print("""
+观察点：
+  1. 模型有没有先 list_files 再删？  —— 这是接口强制的，不是它自觉
+  2. 如果它直接 delete_file("tmp-export.csv")，服务端会拒绝 ——
+     因为它拿不到合法编号，「删一个没看过的文件」在结构上无法表达
+""")
+```
+
+> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+
+## 常见坑
+
+**把 poka-yoke 理解成「写更严厉的提示词」。** 「请勿删除重要文件」是约定；`delete_file(file_id)` 只能接系统发放的编号才是结构。二者在模型听话时看不出差别 —— 差别在它不听话的时候。
+
+**忽视「模型本来就很谨慎」这一点。** 本节两个危险动作的实验里，模型**一次都没有鲁莽下手**。所以别把 poka-yoke 的价值说成「防住模型的鲁莽」—— 它的真实价值是**消除模型必须猜的场合**，从而让它能自己把事办对。
+
+**保留大量可选参数。** 实测：`by_name` / `by_id` 两个普通可选字段放在一起，模型 **3/3 同时传了两个** —— 每个字段单看都合法，组合起来才是错的。这类错误在代码里最难拦。
+
+**只做 ② 不做 ③。** 在描述里写明「二选一」确实有效（3/3 → 0/3），但那是**这一次模型听懂了**。换模型、换场景、上下文变长之后，约定会被稀释 —— 而结构不会。
+
+**忘记不可逆操作要留退路。** 结构设计能排除大部分错误，但排除不了「目标本身就选错了」。不可逆动作仍然需要一步确认或干跑（第 16 章会展开）。
