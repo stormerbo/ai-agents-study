@@ -16,7 +16,8 @@ status: drafting
 
 模型生成下一个 token 时，不是直接给出一个词，而是给**整个词表**上每个 token 打分（称为 logits）。然后从这些分数转成的概率分布里**采样**出一个。
 
-```mermaid
+<Mermaid
+  chart={`
 flowchart LR
     A["输入上下文"] --> B["模型前向计算"]
     B --> C["词表中每个 token 的<br/>原始分数 logits"]
@@ -28,7 +29,8 @@ flowchart LR
     F --> H
     G --> H
     H --> I["采样出一个 token"]
-```
+`}
+/>
 
 三个参数各自作用在采样的不同环节：
 
@@ -196,6 +198,89 @@ response = client.messages.create(
 - 需要中途改变的话，用 **per-message effort**（beta 特性，需要 beta header `mid-conversation-output-config-2026-07-01`），它的设计目标正是保留缓存。支持它的模型包括 Fable 5.1、Mythos 5.1、Opus 5.5、Opus 5
 
 另一个相关行为：**在 Opus 5.5 上，adaptive thinking 始终开启、无法关闭**。传 `thinking: {"type": "disabled"}` 会返回 400。所以在这些模型上，effort 是控制「模型思考多少」的唯一杠杆。
+
+## 一次完整的迁移：从旧代码到能跑
+
+把前面的内容串起来，看一个真实的迁移过程。
+
+### 起点：一份当年能跑的代码
+
+从 2024 年的教程里抄来的：
+
+```python
+response = client.messages.create(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    temperature=0.3,      # 想让它稳定
+    top_p=0.9,
+    system="你是一个严谨的技术助手。",
+    messages=[{"role": "user", "content": question}],
+)
+```
+
+当年它工作得很好。现在你换成了新模型。
+
+### 第一步：报错（或者不报错）
+
+直连 API 的话，你会看到：
+
+```
+HTTP 400
+{"error":{"message":"temperature: Extra inputs are not permitted", ...}}
+```
+
+错误指向很明确：`temperature` 不被允许。
+
+**但如果走的是聚合层，你可能什么错误都看不到** —— 请求成功，温度被静默丢弃。那时你会开始怀疑自己的 prompt 写得不好，在完全错误的方向上排查。
+
+### 第二步：查文档确认
+
+搜「temperature deprecated」，找到官方的[模型迁移指南](https://platform.claude.com/docs/en/about-claude/models/migration-guide)：
+
+> 对 Opus 4.6 之后发布的模型，传 `temperature`（非 1.0）、`top_p`（小于 0.99）、`top_k`（任意值）会返回 400 错误。
+
+删掉那两行。
+
+### 第三步：删完之后仍然不稳
+
+代码能跑了，但输出**仍然不稳定** —— 同一段输入，两次调用可能给出不同措辞。
+
+**这时才意识到：「低温度换稳定」这条路本来就不成立。** 本节的实测已经证明了：`temperature=0` 三次里也有一次不同。
+
+参数从来不是稳定性的来源，它只是一个你无法预测效果的补偿旋钮。
+
+### 第四步：正确的做法
+
+```python
+# 1. 删掉采样参数，改用 prompt 明确约束
+SYSTEM = """你是一个严谨的技术助手。
+
+输出要求：
+- 只输出 JSON，不要任何解释文字
+- 字段：{"answer": string, "confidence": number}
+"""
+
+response = client.messages.create(
+    model="claude-sonnet-5",
+    max_tokens=2048,
+    output_config={"effort": "medium"},   # 用 effort 控制投入深度
+    system=SYSTEM,
+    messages=[{"role": "user", "content": question}],
+)
+
+# 2. 稳定性靠校验 + 重试，而不是靠参数
+data = validate_schema(response.content[0].text)   # 结构不符就重试
+```
+
+### 迁移对照表
+
+| 旧做法 | 新做法 |
+|---|---|
+| `temperature=0.3` 求稳定 | prompt 明确约束 + schema 校验 |
+| `top_p=0.9` 控制多样性 | 用 prompt 描述风格 |
+| 相信「温度 0 = 可复现」 | 接受不确定性，改用统计指标衡量 |
+| 不显式设 effort | 显式设置（默认值已经变过一次） |
+| 写精确匹配的测试 | 断言结构属性 + 成功率阈值 |
 
 ## 从旧代码迁移的检查清单
 

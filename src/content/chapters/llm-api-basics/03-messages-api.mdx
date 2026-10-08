@@ -106,7 +106,8 @@ message_stop
 
 这张图信息量很大，逐段看：
 
-```mermaid
+<Mermaid
+  chart={`
 flowchart TB
     MS["message_start<br/>usage: 输入 token 已可知"]
     CBS1["content_block_start<br/>index=0 type=thinking"]
@@ -117,7 +118,8 @@ flowchart TB
     ME["message_stop"]
 
     MS --> CBS1 --> D1 --> CBS2 --> D2 --> MD --> ME
-```
+`}
+/>
 
 ### 三种 delta 类型
 
