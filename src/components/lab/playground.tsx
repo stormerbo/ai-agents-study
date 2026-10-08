@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { useSyncExternalStore } from 'react';
 
-import { useChatRelay } from '@/hooks/use-chat-relay';
+import { useChatRelay, type TraceEntry } from '@/hooks/use-chat-relay';
 import {
   getCredential,
   loadByok,
@@ -88,7 +88,7 @@ export function Playground({
   const [model, setModel] = useState(allowedModels[0] ?? provider?.defaultModel ?? '');
   const [system, setSystem] = useState(lab.system?.content ?? '');
   const [input, setInput] = useState('');
-  const [showRaw, setShowRaw] = useState(false);
+  // 原始事件现在折叠在轨迹卡片里，不再需要单独的开关
 
   const apiKey = provider ? (getCredential(byok, provider.id) ?? '') : '';
   // 别的厂商有没有存过 Key —— 用于在「选错厂商」时给出可操作的提示
@@ -349,15 +349,6 @@ export function Playground({
           {!apiKey && (
             <span className="text-muted-foreground text-xs">需要先填入你的 API Key</span>
           )}
-
-          <label className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs">
-            <input
-              type="checkbox"
-              checked={showRaw}
-              onChange={(e) => setShowRaw(e.target.checked)}
-            />
-            显示原始事件
-          </label>
         </div>
       </div>
 
@@ -421,9 +412,7 @@ export function Playground({
       )}
 
       {/* 轨迹 */}
-      {relay.state.trace.length > 0 && (
-        <TraceTimeline trace={relay.state.trace} showRaw={showRaw} />
-      )}
+      {relay.state.trace.length > 0 && <TraceCards trace={relay.state.trace} />}
     </section>
   );
 }
@@ -544,69 +533,228 @@ function ApiKeyForm({
   );
 }
 
-/** 轨迹时间线 —— 实验的核心价值所在 */
-function TraceTimeline({
-  trace,
-  showRaw,
-}: {
-  trace: { id: string; seq: number; at: number; event: unknown }[];
-  showRaw: boolean;
-}) {
-  const visible = showRaw
-    ? trace
-    : trace.filter((t) => (t.event as { type: string }).type !== 'raw');
+/** 扁平事件流折叠后的结构 */
+interface FoldedTrace {
+  thinking: string;
+  text: string;
+  toolCalls: { index: number; id: string; name: string; argsText: string; input?: unknown }[];
+  usage: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number };
+  stopReason?: string;
+  durationMs?: number;
+  rawCount: number;
+  total: number;
+}
 
-  const start = trace[0]?.at ?? 0;
+/**
+ * 把扁平的事件流折叠成结构化的轨迹。
+ *
+ * 为什么要折叠：原始事件流是**协议层**的样子（几十上百个 delta），
+ * 而人想看的是**语义层**的东西 —— 模型想了什么、说了什么、调了什么工具。
+ * 两者都需要，但顺序应该是「先给语义、再给协议」。
+ */
+function foldTrace(trace: { event: unknown }[]): FoldedTrace {
+  const out: FoldedTrace = {
+    thinking: '',
+    text: '',
+    toolCalls: [],
+    usage: {},
+    rawCount: 0,
+    total: trace.length,
+  };
+  const byIndex = new Map<number, FoldedTrace['toolCalls'][number]>();
+
+  for (const entry of trace) {
+    const ev = entry.event as { type: string; [k: string]: unknown };
+    switch (ev.type) {
+      case 'thinking':
+        out.thinking += String(ev.delta ?? '');
+        break;
+      case 'text':
+        out.text += String(ev.delta ?? '');
+        break;
+      case 'tool_call': {
+        const rec = {
+          index: Number(ev.index),
+          id: String(ev.id ?? ''),
+          name: String(ev.name ?? ''),
+          argsText: '',
+        };
+        byIndex.set(rec.index, rec);
+        out.toolCalls.push(rec);
+        break;
+      }
+      case 'tool_args': {
+        const rec = byIndex.get(Number(ev.index));
+        if (rec) rec.argsText += String(ev.delta ?? '');
+        break;
+      }
+      case 'tool_call_end': {
+        const rec = byIndex.get(Number(ev.index));
+        if (rec) rec.input = ev.input;
+        break;
+      }
+      case 'usage':
+        out.usage = {
+          inputTokens: (ev.inputTokens as number) ?? out.usage.inputTokens,
+          outputTokens: (ev.outputTokens as number) ?? out.usage.outputTokens,
+          cacheReadTokens: (ev.cacheReadTokens as number) ?? out.usage.cacheReadTokens,
+        };
+        break;
+      case 'stop_reason':
+        out.stopReason = String(ev.stopReason ?? '');
+        break;
+      case 'done':
+        out.durationMs = Number(ev.durationMs);
+        break;
+      case 'raw':
+        out.rawCount += 1;
+        break;
+    }
+  }
+  return out;
+}
+
+/**
+ * 轨迹卡片视图 —— 实验的核心价值所在。
+ *
+ * 先给语义（思考 / 工具调用 / 输出），原始事件折叠在最后。这样默认视图能读懂，
+ * 需要核对时又能下钻到协议层。教学上这两层缺一不可：
+ * 只有语义层就成了黑盒，只有协议层就看不懂全局。
+ */
+function TraceCards({ trace }: { trace: TraceEntry[] }) {
+  const t = foldTrace(trace);
+  if (t.total === 0) return null;
+
+  const summaryParts = [
+    t.thinking && '思考',
+    t.toolCalls.length > 0 && `${t.toolCalls.length} 次工具调用`,
+    t.text && '输出',
+  ].filter(Boolean) as string[];
 
   return (
     <div className="border-border border-t">
-      <div className="border-border flex items-baseline gap-2 border-b px-4 py-2">
+      <div className="border-border flex flex-wrap items-baseline gap-2 border-b px-4 py-2">
         <span className="text-xs font-medium">轨迹</span>
         <span className="text-muted-foreground/70 text-[11px]">
-          {visible.length} 个事件
-          {!showRaw && trace.length !== visible.length && `（已隐藏 ${trace.length - visible.length} 个原始事件）`}
+          {summaryParts.join(' + ') || '无内容'}
+          {t.durationMs != null && ` · 耗时 ${t.durationMs}ms`}
         </span>
       </div>
 
-      <ol className="max-h-80 overflow-y-auto">
-        {visible.map((t) => {
-          const ev = t.event as { type: string; [k: string]: unknown };
-          return (
-            <li key={t.id} className="border-border/50 border-b last:border-0">
-              {/*
-                用原生 <details> 折叠：点一行展开它的完整 JSON。
-                选它而不是自己写状态，是因为它不需要任何客户端 JS ——
-                也就不会引入 hydration 或事件绑定方面的问题。
-              */}
-              <details className="group">
-                <summary className="hover:bg-muted/40 flex cursor-pointer list-none gap-3 px-4 py-1.5 text-xs marker:hidden">
-                  <span className="text-muted-foreground/40 w-8 shrink-0 font-mono tabular-nums">
-                    {String(t.seq).padStart(3, '0')}
-                  </span>
-                  <span className="text-muted-foreground/40 w-14 shrink-0 font-mono tabular-nums">
-                    +{t.at - start}ms
-                  </span>
-                  <span className={cn('w-24 shrink-0 font-mono', eventTone(ev.type))}>
-                    {ev.type}
-                  </span>
-                  <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono">
-                    {summarize(ev)}
-                  </span>
-                  <span
-                    aria-hidden
-                    className="text-muted-foreground/30 shrink-0 transition-transform group-open:rotate-90"
-                  >
-                    ▸
-                  </span>
-                </summary>
-                <pre className="bg-muted/40 text-muted-foreground overflow-x-auto px-4 py-2.5 pl-16 font-mono text-[11px] leading-relaxed">
-                  {JSON.stringify(ev, null, 2)}
+      <div className="space-y-2 p-4">
+        {/* 思考过程 */}
+        {t.thinking && (
+          <details className="border-border bg-muted/30 group rounded-lg border">
+            <summary className="flex cursor-pointer list-none items-baseline gap-2 px-3 py-2 text-xs marker:hidden">
+              <span
+                aria-hidden
+                className="text-muted-foreground/40 transition-transform group-open:rotate-90"
+              >
+                ▸
+              </span>
+              <span className="font-medium">思考过程</span>
+              <span className="text-muted-foreground/60 ml-auto">{t.thinking.length} 字符</span>
+            </summary>
+            <pre className="border-border text-muted-foreground overflow-x-auto border-t px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap">
+              {t.thinking}
+            </pre>
+          </details>
+        )}
+
+        {/* 工具调用：参数与结果并排 */}
+        {t.toolCalls.map((tc) => (
+          <div key={tc.index} className="overflow-hidden rounded-lg border border-sky-500/30">
+            <div className="flex items-baseline gap-2 border-b border-sky-500/20 bg-sky-500/5 px-3 py-2 text-xs">
+              <span className="font-mono font-medium text-sky-700 dark:text-sky-400">
+                {tc.name}
+              </span>
+              <span className="text-muted-foreground/50 ml-auto font-mono text-[10px]">
+                {tc.id.slice(0, 24)}
+              </span>
+            </div>
+            <div className="grid sm:grid-cols-2">
+              <div className="border-border border-b p-3 sm:border-r sm:border-b-0">
+                <p className="text-muted-foreground/60 mb-1 text-[10px] tracking-wide uppercase">
+                  参数
+                </p>
+                <pre className="text-muted-foreground overflow-x-auto font-mono text-[11px]">
+                  {tc.input !== undefined
+                    ? JSON.stringify(tc.input, null, 2)
+                    : tc.argsText || '（无参数）'}
                 </pre>
-              </details>
-            </li>
-          );
-        })}
-      </ol>
+              </div>
+              <div className="p-3">
+                <p className="text-muted-foreground/60 mb-1 text-[10px] tracking-wide uppercase">
+                  结果
+                </p>
+                <p className="text-muted-foreground text-[11px] leading-relaxed">
+                  本站实验暂不执行工具，只展示模型的调用意图与参数。
+                  工具的实际执行与结果回填是第 4 章的内容。
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {/* 模型输出 */}
+        {t.text && (
+          <div className="border-border bg-card rounded-lg border p-3">
+            <p className="text-muted-foreground/60 mb-1.5 text-[10px] tracking-wide uppercase">
+              模型输出
+            </p>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{t.text}</p>
+          </div>
+        )}
+
+        {/* 用量 */}
+        <div className="text-muted-foreground/70 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+          <span>输入 {t.usage.inputTokens ?? '-'}</span>
+          {t.usage.cacheReadTokens ? <span>缓存命中 {t.usage.cacheReadTokens}</span> : null}
+          <span>输出 {t.usage.outputTokens ?? '-'}</span>
+          {t.stopReason && <span>停止原因 {t.stopReason}</span>}
+        </div>
+
+        {/* 原始事件：折叠在最后。教学上你需要能核对「语义层与协议层对不对得上」 */}
+        {t.total > 0 && (
+          <details className="border-border group rounded-lg border border-dashed">
+            <summary className="text-muted-foreground flex cursor-pointer list-none items-baseline gap-2 px-3 py-2 text-xs marker:hidden">
+              <span
+                aria-hidden
+                className="text-muted-foreground/40 transition-transform group-open:rotate-90"
+              >
+                ▸
+              </span>
+              <span>原始事件（协议层）</span>
+              <span className="text-muted-foreground/60 ml-auto">{t.total} 个</span>
+            </summary>
+            <ol className="border-border max-h-72 overflow-y-auto border-t">
+              {trace.map((entry) => {
+                const ev = entry.event as { type: string; [k: string]: unknown };
+                return (
+                  <li key={entry.id} className="border-border/40 border-b last:border-0">
+                    <details>
+                      <summary className="hover:bg-muted/40 flex cursor-pointer list-none gap-2 px-3 py-1 text-[11px] marker:hidden">
+                        <span className="text-muted-foreground/40 w-7 shrink-0 font-mono tabular-nums">
+                          {String(entry.seq).padStart(3, '0')}
+                        </span>
+                        <span className={cn('w-20 shrink-0 font-mono', eventTone(ev.type))}>
+                          {ev.type}
+                        </span>
+                        <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono">
+                          {summarize(ev)}
+                        </span>
+                      </summary>
+                      <pre className="bg-muted/40 text-muted-foreground overflow-x-auto px-3 py-2 pl-12 font-mono text-[10px] leading-relaxed">
+                        {JSON.stringify(ev, null, 2)}
+                      </pre>
+                    </details>
+                  </li>
+                );
+              })}
+            </ol>
+          </details>
+        )}
+      </div>
     </div>
   );
 }
