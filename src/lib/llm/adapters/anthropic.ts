@@ -32,6 +32,31 @@ const MODELS = [
   'claude-haiku-4-5-20251001',
 ] as const;
 
+/**
+ * 流式分片的形状。
+ *
+ * 只声明**我们会读取**的字段 —— 目的是不让 `any` 顺着 payload 扩散到整个
+ * switch 里。字段按 SSE 事件名分组，例如 `index` 只在 `content_block_*`
+ * 与 `message_delta` 上出现；这里声明为必填，是因为读取它的分支恰好都是
+ * 那些事件。协议的完整定义见官方 streaming 文档。
+ */
+interface AnthropicStreamChunk {
+  index: number;
+  message?: {
+    usage?: { input_tokens?: number; cache_read_input_tokens?: number };
+  };
+  content_block?: { type: string; id: string; name: string };
+  delta?: {
+    type: string;
+    text: string;
+    thinking: string;
+    partial_json: string;
+    stop_reason?: string | null;
+  };
+  usage?: { output_tokens?: number };
+  error?: { message?: string };
+}
+
 // ---------------------------------------------------------------------------
 // 请求转换
 // ---------------------------------------------------------------------------
@@ -118,7 +143,7 @@ async function* normalizeAnthropicStream(
         // 先原样透出，教学面板要靠它展示"厂商到底发了什么"
         yield { type: 'raw', line: `event: ${msg.event}\ndata: ${msg.data}` };
 
-        const payload = safeJson(msg.data) as Record<string, any> | null;
+        const payload = safeJson(msg.data) as AnthropicStreamChunk | null;
         if (!payload) continue;
 
         switch (msg.event) {

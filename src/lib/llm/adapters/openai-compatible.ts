@@ -26,6 +26,33 @@ import {
 
 const DEFAULT_MODELS = ['gpt-5.5', 'gpt-5'] as const;
 
+/**
+ * 流式分片的形状。
+ *
+ * 只声明**我们会读取**的字段，避免 `any` 顺着 payload 扩散到整个解析循环。
+ * `index` / `function.name` 等在 `delta.tool_calls` 里声明为必填，是因为
+ * 读取它们的分支就在 `tool_calls` 数组内 —— 协议见 OpenAI Chat Completions 文档。
+ */
+interface OpenAIStreamChunk {
+  choices?: { delta?: OpenAIDelta; finish_reason?: string | null }[];
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
+}
+
+interface OpenAIDelta {
+  content?: string;
+  /** DeepSeek 等推理模型的思考内容走这个字段，不在 OpenAI 官方协议里 */
+  reasoning_content?: string;
+  tool_calls?: {
+    index: number;
+    id?: string;
+    function?: { name?: string; arguments?: string };
+  }[];
+}
+
 // ---------------------------------------------------------------------------
 // 请求转换
 // ---------------------------------------------------------------------------
@@ -76,14 +103,16 @@ function toOpenAIMessages(system: string | undefined, messages: AgentMessage[]) 
       if (hasImage) {
         out.push({
           role: 'user',
-          content: rest.map((b) =>
-            b.type === 'text'
-              ? { type: 'text', text: b.text }
-              : {
-                  type: 'image_url',
-                  image_url: { url: `data:${(b as any).mediaType};base64,${(b as any).dataBase64}` },
-                },
-          ),
+          content: rest.map((b) => {
+            if (b.type === 'image') {
+              return {
+                type: 'image_url' as const,
+                image_url: { url: `data:${b.mediaType};base64,${b.dataBase64}` },
+              };
+            }
+            // tool_use / thinking 在 OpenAI 侧没有对应表示，降级为空文本
+            return { type: 'text' as const, text: b.type === 'text' ? b.text : '' };
+          }),
         });
       } else {
         out.push({ role: 'user', content: textOf(rest) });
@@ -115,7 +144,7 @@ async function* normalizeOpenAIStream(
 
   /** index → { id, name, args }。与 Anthropic 一样要按 index 累积参数。 */
   const pendingToolCalls = new Map<number, { id: string; name: string; args: string }>();
-  let announced = new Set<number>();
+  const announced = new Set<number>();
 
   try {
     while (true) {
@@ -128,7 +157,7 @@ async function* normalizeOpenAIStream(
         // OpenAI 用 [DONE] 哨兵标记结束，它不是一个 JSON
         if (msg.data.trim() === '[DONE]') continue;
 
-        const payload = safeJson(msg.data) as Record<string, any> | null;
+        const payload = safeJson(msg.data) as OpenAIStreamChunk | null;
         if (!payload) continue;
 
         // 差异之三：最后一帧只带 usage，choices 是空数组。

@@ -190,8 +190,6 @@ const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
 用 `useSyncExternalStore` 的 `getServerSnapshot` 区分，或用 `mounted` 门控。
 不要用 `useEffect + setState` —— React 19 的 lint 规则会直接报错。
 
-## 5. 已建立的机制
-
 ### 4.8 `meta.ts` 的纯文本字段不解析 Markdown（静默失效）
 
 **症状**：章节摘要、自检项、资源推荐理由、实验目标里写的 `**强调**`，页面上**原样显示成星号**。全站一度有 8 个页面中招。
@@ -215,6 +213,8 @@ const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
 
 **教训**：和 §4.1 是同一类 —— **内容按一种格式写、渲染层按另一种处理，且失败是静默的**。凡是「塞进 JSX 的字符串字段」，都要问一句：作者会不会在里面写标记？
 
+## 5. 已建立的机制
+
 ### 5.1 内容完整性测试
 
 `tests/curriculum.test.ts`（35 个断言）：id 唯一性、引用完整性、依赖无环、依据标注合规、资源质量、纯文本字段与 MDX 正文的**行内标记渲染等价性**（见 §4.8）。
@@ -237,6 +237,20 @@ PORT=3100 pnpm start &
 然后用 Read 工具查看生成的 PNG。**每写完一节都该做一次，深浅两种模式各一张。**
 
 注意 `eval` 的限制：playwright-cli 会把结果再包一层引号并转义，**不要返回 JSON**（解析极易出错），用 `|` 或 `;;` 分隔的简单格式。另外**不要用 `\n` 做分隔符** —— 它会在跨层传递时被解释成真实换行，让 eval 源码里出现裸换行而语法错误。
+
+**切主题必须走 next-themes，不能直接改 `className`。** 两种做法对 CSS 类驱动的样式都有效，但对**依赖 React 状态的组件无效** —— `mermaid.tsx` 是根据 `resolvedTheme` 重绘的，`document.documentElement.className = 'dark'` 不会触发它重绘，你截图看到的仍是浅色图，会误判成 bug（本次就误判了一次）。正确做法：
+
+```bash
+"$PWCLI" eval "() => { localStorage.setItem('theme','dark'); location.reload(); return 'ok'; }"
+sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
+# 验证确实生效：document.documentElement.className 应为 'dark'
+```
+
+另外，**低分辨率截图里的反引号不可信** —— `<code>` 元素的内联样式看起来很像反引号，我据此误判过两次。要确认是否有字面标记残留，读 DOM：
+
+```bash
+"$PWCLI" eval "() => { const c=document.querySelector('.prose').cloneNode(true); c.querySelectorAll('pre,code').forEach(n=>n.remove()); const t=c.textContent; return 'STAR='+(t.match(/\*\*/g)||[]).length+' TICK='+(t.match(/\`/g)||[]).length; }"
+```
 
 ### 5.3 实测数据采集
 
@@ -268,7 +282,7 @@ PORT=3100 pnpm start &
 |---|---:|---:|---:|:--:|:--:|---|
 | 0-1 为什么是现在 | 2561 | 1 | 5 | ✓ | ✓ | 缺图（可加一节成本图） |
 | 0-2 什么算 agent | 2106 | 2 | 3 | ✓ | ✓ | ✅ |
-| 0-3 三个失效直觉 | 2187 | 0 | 6 | ✓ | ✓ | **缺图** |
+| 0-3 三个失效直觉 | 2625 | 2 | 6 | ✓ | ✓ | ✅ 已补两张图 |
 | 0-4 怎么用这个站 | 1729 | 1 | 2 | — | — | 内容性质偏说明，不需实测 |
 | 1-1 token（**标杆**） | 3922 | 2 | 7 | ✓ | ✓ | ✅ |
 | 1-2 采样参数 | 3026 | 1 | 5 | ✓ | ✓ | ✅ 已补迁移案例 |
@@ -417,9 +431,7 @@ playwright 操作 React 受控组件的表单时遇到了 ref 失效问题。**�
 
 **章 2（2026-10-08 完成）**：5 节全部含「实测数据 + Mermaid 图 + 完整可运行代码 + 真实错误案例」。
 
-**仍缺**：
-
-- **0-3**：Mermaid 图
+**仍缺**：无。0-3 的两张图已于 2026-10-08 补齐（一张总览三个失效直觉，一张画「上下文 ≠ 精确状态」的机制）。
 
 > 批量转换 Mermaid 代码块的方式：`node -e '...replace(/```mermaid\n([\s\S]*?)```/g, ...)'`（见 0-1 的做法）
 
@@ -431,18 +443,16 @@ playwright 操作 React 受控组件的表单时遇到了 ref 失效问题。**�
 
 ## 8. 待办清单
 
-**立即要做：**
-
-- [ ] 给 0-3 补 Mermaid 图（章 1 的图已全部补齐）
-- [ ] 修 `src/lib/llm/adapters/` 的 5 个 lint 错误（`pnpm lint` 目前不是干净的）
-- [ ] 每节补完做一次深浅双模式截图验证
+**内容缺口：** 无 —— 章 0/1/2 的每节都齐了「实测数据 + Mermaid 图 + 完整可运行代码 + 真实错误案例」。2026-10-08 收尾时补上了 0-3 的两张图。
 
 **之后：**
 
-- [ ] **章 3「上下文工程」起逐章推进**（章 0/1/2 已完成正文；先写 meta.ts → 各节 mdx → 实测数据 → 截图验证）
-- [ ] 实现 Playground 前端交互（`/api/chat` 与适配层已就绪）
+- [ ] **章 3「上下文工程」起逐章推进**（先写 meta.ts → 各节 mdx → 实测数据 → 截图验证）
 - [ ] 实现学习进度（兑现章 0-4 的说明）
+- [ ] 全文搜索（计划用 Pagefind）
 - [ ] 按 `VERIFY.md` 验证所有「未实跑」的代码
+
+**工具链现状**：`pnpm test`（50 断言）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（46 页）**全部干净**。
 
 ## 9. 给接手的会话的话
 
