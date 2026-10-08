@@ -187,10 +187,12 @@ DAILY_CONVERSATIONS = 500
 TURNS_PER_CONVERSATION = 10
 PER_TURN_GROWTH = input_tokens   # 简化假设：每轮新增约等于一次典型请求
 
+per_conversation = cumulative_input(PER_TURN_GROWTH, TURNS_PER_CONVERSATION)
+
 print(f"单次请求输入: {input_tokens} token")
 print(f"单次对话（{TURNS_PER_CONVERSATION} 轮）累计输入: "
-      f"{cumulative_input(PER_TURN_GROWTH, TURNS_PER_CONVERSATION):,} token")
-print(f"日输入总量: {cumulative_input(PER_TURN_GROWTH, TURNS_PER_CONVERSATION) * DAILY_CONVERSATIONS:,} token")
+      f"{per_conversation:,} token")
+print(f"日输入总量: {per_conversation * DAILY_CONVERSATIONS:,} token")
 print("再乘定价页上的单价，得到一个量级正确的估算")
 ```
 

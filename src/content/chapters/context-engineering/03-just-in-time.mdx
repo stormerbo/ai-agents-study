@@ -118,7 +118,10 @@ import os
 import anthropic
 
 client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
 MODEL = os.environ["VERIFY_MODEL"]
@@ -164,7 +167,12 @@ def preload() -> int:
 
 def on_demand() -> int:
     catalogue = "\n".join(f"{d['id']}  {d['title']}" for d in DOCS)
-    messages = [{"role": "user", "content": f"可查阅以下资料（只给目录）：\n\n{catalogue}\n\n{QUESTION}"}]
+    messages = [
+        {
+            "role": "user",
+            "content": f"可查阅以下资料（只给目录）：\n\n{catalogue}\n\n{QUESTION}",
+        }
+    ]
     total = 0
 
     for _ in range(8):                      # 硬上界：没有上界的循环会烧光预算

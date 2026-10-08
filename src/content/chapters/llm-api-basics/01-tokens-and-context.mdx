@@ -375,7 +375,10 @@ import os
 import anthropic
 
 client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
 
@@ -416,8 +419,14 @@ def probe_errors() -> None:
     只有看 HTTP 状态码才能发现。
     """
     probes = {
-        "空模型名": {"model": "", "max_tokens": 16, "messages": [{"role": "user", "content": "hi"}]},
-        "缺 max_tokens": {"model": MODEL, "messages": [{"role": "user", "content": "hi"}]},
+        "空模型名": {
+            "model": "", "max_tokens": 16,
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+        "缺 max_tokens": {
+            "model": MODEL,
+            "messages": [{"role": "user", "content": "hi"}],
+        },
         "传 temperature": {
             "model": MODEL,
             "max_tokens": 16,

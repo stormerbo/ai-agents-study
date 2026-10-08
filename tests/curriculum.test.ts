@@ -469,4 +469,24 @@ describe('粗体标记的位置（CommonMark flanking）', () => {
     }
     expect(failures, failures.join('\n')).toEqual([]);
   });
+
+  it('Mermaid 图表里没有 Markdown 标记（图表不解析 markdown）', () => {
+    // chart={`...`} 的内容由 mermaid 渲染，不是 markdown —— 写了 `**粗体**`
+    // 会原样显示成星号，而上面那条「按反引号切段」的规则恰好把这段排除了。
+    const root = join(process.cwd(), 'src/content/chapters');
+    const files = readdirSync(root, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith('.mdx'));
+
+    const failures: string[] = [];
+    for (const file of files) {
+      const raw = readFileSync(join(root, file), 'utf8');
+      for (const chart of raw.matchAll(/chart=\{`([\s\S]*?)`\}/g)) {
+        for (const line of (chart[1] ?? '').split('\n')) {
+          if (line.includes('**')) failures.push(`${file}: ${line.trim()}`);
+        }
+      }
+    }
+    expect(failures, `Mermaid 图表里出现了 Markdown 标记：\n${failures.join('\n')}`).toEqual([]);
+  });
 });

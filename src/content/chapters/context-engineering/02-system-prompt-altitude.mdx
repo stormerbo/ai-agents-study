@@ -127,7 +127,10 @@ from collections import Counter
 import anthropic
 
 client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
 MODEL = os.environ["VERIFY_MODEL"]

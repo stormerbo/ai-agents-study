@@ -140,7 +140,10 @@ import re
 import anthropic
 
 client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
 MODEL = os.environ["VERIFY_MODEL"]
@@ -170,7 +173,12 @@ def ask(doc: str) -> tuple[str, str]:
         model=MODEL,
         max_tokens=MAX_TOKENS,
         system="只依据用户提供的文档回答。只给出答案，不要解释。",
-        messages=[{"role": "user", "content": f"<document>\n{doc}\n</document>\n\n问题：{QUESTION}"}],
+        messages=[
+            {
+                "role": "user",
+                "content": f"<document>\n{doc}\n</document>\n\n问题：{QUESTION}",
+            }
+        ],
     )
     text = "".join(b.text for b in response.content if b.type == "text")
     return text, response.stop_reason
@@ -178,7 +186,10 @@ def ask(doc: str) -> tuple[str, str]:
 
 if __name__ == "__main__":
     n = len(DOCS)
-    positions = {"开头": 0, "前 1/4": n // 4, "正中": n // 2, "后 1/4": n * 3 // 4, "结尾": n - 1}
+    positions = {
+        "开头": 0, "前 1/4": n // 4, "正中": n // 2,
+        "后 1/4": n * 3 // 4, "结尾": n - 1,
+    }
 
     print(f"{'位置':<8} {'正确':>6} {'截断':>6}   模型答的")
     print("-" * 52)
