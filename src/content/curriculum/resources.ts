@@ -11,8 +11,14 @@ import type { Resource } from './schema';
  *    不是它对你的用处。
  *
  * ⚠️ 关于 `verificationLevel` 的诚实说明：
- * - `'opened'`      = 2026-09-24 的调研中实际打开过页面
- * - `'search-only'` = 来自搜索结果、未逐页打开，**用之前请自行确认**
+ * - `'opened'`      = 2026-10-08 复核时实际访问过：网页抓取跟随了重定向并读到页面内容，
+ *                     或通过 GitHub API 读到仓库元数据（是否归档 / 所有者 / 最后推送日期）
+ * - `'search-only'` = 站点拒绝自动化访问（403），只确认链接指向存在，**用之前请自行确认**
+
+ * 2026-10-08 的第二轮复核：47 条全部跑了一遍可达性检查，抓到 4 处 URL 漂移 ——
+ * Anthropic 文章改了 slug、Claude 文档改了路径、Google ADK 迁到了 adk.dev、
+ * MCP 文档已进入 2026-07-28 版本（且该版本是**破坏性**修订）。
+ * 这再次印证首轮的结论：**链接「还在」不代表内容「还对」**。
  *
  * `scripts/check-links.mjs` 会定期巡检链接可用性，但它只能验证"页面还在"，
  * 验证不了"内容还对"。后者只能靠人工复审 —— 这也是 `verifiedAt` 字段的用途。
@@ -29,7 +35,14 @@ import type { Resource } from './schema';
  * 所以本文件里的每一条都应当被怀疑，直到它被真正打开过。
  */
 
-const VERIFIED_AT = '2026-09-24';
+/**
+ * 最近一次复核日期。
+ *
+ * 用单一常量而不是逐条写日期，是因为复核是**批量**做的 —— 同一天访问过的条目
+ * 本就该是同一天。逐条写不同日期只会制造「每条都单独核实过」的假象。
+ * 真需要区分粒度时，拆成 VERIFIED_AT_<批次> 常量即可，但请同时更新上面的说明。
+ */
+const VERIFIED_AT = '2026-10-08';
 
 export const resources: Record<string, Resource> = {
   // -------------------------------------------------------------------------
@@ -70,17 +83,17 @@ export const resources: Record<string, Resource> = {
   'anthropic-multi-agent-research': {
     id: 'anthropic-multi-agent-research',
     title: 'How we built our multi-agent research system',
-    url: 'https://www.anthropic.com/engineering/built-multi-agent-research-system',
+    url: 'https://www.anthropic.com/engineering/multi-agent-research-system',
     kind: 'doc',
     lang: 'en',
     difficulty: 'advanced',
     priority: 'recommended',
-    why: '少见的一篇讲"生产教训"而非"架构图"的多智能体文章。重点看两处：成本账（多智能体约消耗 15 倍 token，这个数字值得记住），以及 production reliability 那一节对持久化执行的讨论。',
+    why: '少见的一篇讲"生产教训"而非"架构图"的多智能体文章。重点看两处：**成本账** —— 原文口径是「agent 比普通对话多约 4 倍 token，多智能体再多约 15 倍」；以及 production reliability 那一节对持久化执行的讨论。还有一个会改变判断的因果：在 BrowseComp 上，**token 用量单独就解释了 80% 的性能方差**。也就是说多智能体买到的主要是「更大的 token 预算 + 并行的上下文窗口」，而不是某种更聪明的协作方式。',
     access: 'free',
     estimatedMinutes: 30,
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['multi-agent', 'production'],
   },
 
@@ -90,7 +103,7 @@ export const resources: Record<string, Resource> = {
   'claude-api-docs': {
     id: 'claude-api-docs',
     title: 'Claude 平台文档首页',
-    url: 'https://platform.claude.com/docs/',
+    url: 'https://platform.claude.com/docs/en/home',
     kind: 'doc',
     lang: 'en',
     difficulty: 'beginner',
@@ -105,7 +118,7 @@ export const resources: Record<string, Resource> = {
   'claude-models-overview': {
     id: 'claude-models-overview',
     title: 'Claude 模型总览：当前模型、API ID 与价格',
-    url: 'https://platform.claude.com/docs/en/about-claude/models/overview',
+    url: 'https://platform.claude.com/docs/en/models/overview',
     kind: 'doc',
     lang: 'en',
     difficulty: 'beginner',
@@ -189,7 +202,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['claude', 'migration', 'breaking-change'],
   },
   'claude-pricing': {
@@ -215,7 +228,7 @@ export const resources: Record<string, Resource> = {
     lang: 'en',
     difficulty: 'intermediate',
     priority: 'recommended',
-    why: '做多厂商适配时必须对照的另一份权威参考。与 Anthropic 的关键差异：system 作为 messages 里的第一条消息、工具定义用 function.parameters 而非 input_schema、流式增量在 delta.tool_calls 里按 index 累积。',
+    why: '做多厂商适配时必须对照的另一份权威参考。与 Anthropic 的关键差异：system 作为 messages 里的第一条消息、工具定义用 function.parameters 而非 input_schema、流式增量在 delta.tool_calls 里按 index 累积。（该站点对自动化访问返回 403，本条目只确认了链接可达，页面内容未经本轮复核。）',
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
@@ -234,7 +247,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['sdk', 'claude', 'agent'],
   },
   'openai-agents-sdk-python': {
@@ -264,7 +277,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['example', 'cookbook'],
   },
 
@@ -279,7 +292,7 @@ export const resources: Record<string, Resource> = {
     lang: 'en',
     difficulty: 'intermediate',
     priority: 'recommended',
-    why: '文档按规范版本路径化（/docs/<version>/），并提供 llms.txt 供 AI 编码工具读取——这两个做法都值得你自己做项目时抄。第 12 章的主要参考。',
+    why: '两层价值。**工程做法**：文档按规范版本路径化（/docs/<version>/）、提供 llms.txt 供编码工具读取、把 SEP（规范增强提案）单独成区 —— 这三点都值得你自己做项目时抄。**协议本身**：当前版本是 2026-07-28，而且这是一次**破坏性**修订 —— 协议改为无状态（移除 initialize 握手与协议级 session）、新增 server/discover、资源订阅改用 subscriptions/listen、任务降级为扩展、引入 MRTR（多轮往返请求）。照更早的教程写会对不上接口名与生命周期，务必以该版本的 Key Changes 页为准。第 12 章的主要参考。',
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
@@ -304,7 +317,7 @@ export const resources: Record<string, Resource> = {
   'google-adk-docs': {
     id: 'google-adk-docs',
     title: 'Google Agent Development Kit (ADK)',
-    url: 'https://google.github.io/adk-docs/',
+    url: 'https://adk.dev/',
     kind: 'doc',
     lang: 'en',
     difficulty: 'intermediate',
@@ -313,7 +326,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['framework', 'google'],
   },
 
@@ -328,12 +341,12 @@ export const resources: Record<string, Resource> = {
     lang: 'en',
     difficulty: 'advanced',
     priority: 'must',
-    why: '本站立场最接近的一份资料：主张 agent = 确定性软件 + 少量 LLM 决策点，而不是"把一切交给模型"。读完它再回头看各种框架，判断力会明显不一样。作为第 11 章的反方读本。',
+    why: '本站立场最接近的一份资料：主张 agent = 确定性软件 + 少量 LLM 决策点，而不是"把一切交给模型"。读完它再回头看各种框架，判断力会明显不一样。作为第 11 章的反方读本。注意它是一份**立场声明而不是在演进的项目**（仓库最后更新停留在 2025 年 9 月）—— 读它的观点，不必等它的新版本。',
     access: 'free',
     estimatedMinutes: 40,
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['methodology', 'framework-critique'],
   },
 
@@ -442,7 +455,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['course', 'beginner'],
   },
   'roadmap-ai-engineer': {
@@ -477,7 +490,7 @@ export const resources: Record<string, Resource> = {
     estimatedMinutes: 45,
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['paper', 'react'],
   },
   'lost-in-the-middle': {
@@ -493,7 +506,7 @@ export const resources: Record<string, Resource> = {
     estimatedMinutes: 40,
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['paper', 'context'],
   },
   'reflexion-paper': {
@@ -508,7 +521,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['paper', 'reflection'],
   },
   'memgpt-paper': {
@@ -523,7 +536,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['paper', 'memory'],
   },
   'rag-paper': {
@@ -538,7 +551,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['paper', 'rag'],
   },
   'self-refine-paper': {
@@ -553,7 +566,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['paper', 'refinement'],
   },
   'toolformer-paper': {
@@ -568,7 +581,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['paper', 'tool-use'],
   },
   'chain-of-thought-paper': {
@@ -583,7 +596,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['paper', 'prompting'],
   },
 
@@ -598,7 +611,7 @@ export const resources: Record<string, Resource> = {
     lang: 'en',
     difficulty: 'intermediate',
     priority: 'recommended',
-    why: '目前少见的"系统级"LLM 应用工程书，覆盖评估、RAG、微调、agent、延迟与成本瓶颈。务必注意：**它是原理书不是教程书，代码极少**。适合在进入阶段 4 之前通读一遍建立全局观。（ISBN 9781098166304）',
+    why: '目前少见的"系统级"LLM 应用工程书，覆盖评估、RAG、微调、agent、延迟与成本瓶颈。务必注意：**它是原理书不是教程书，代码极少**。适合在进入阶段 4 之前通读一遍建立全局观。（ISBN 9781098166304。出版社站点对自动化访问返回 403，本条目只确认链接可达。）',
     access: 'paid',
     author: 'Chip Huyen',
     publisher: "O'Reilly Media",
@@ -625,7 +638,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['repo', 'coding-agent', 'context'],
   },
   'deer-flow': {
@@ -640,7 +653,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['repo', 'orchestration'],
   },
 
@@ -657,7 +670,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['repo', 'context', 'coding-agent'],
   },
 
@@ -674,7 +687,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['repo', 'memory'],
   },
   mem0: {
@@ -689,7 +702,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['repo', 'memory'],
   },
 
@@ -706,7 +719,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'archived',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['repo', 'evaluation', 'deep-research'],
   },
 
@@ -723,7 +736,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['repo', 'rag'],
   },
   dify: {
@@ -738,7 +751,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['repo', 'platform'],
   },
   'awesome-ai-agents': {
@@ -753,7 +766,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['awesome-list'],
   },
 
@@ -772,7 +785,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['chinese', 'course'],
   },
   'langchain-zh': {
@@ -787,7 +800,7 @@ export const resources: Record<string, Resource> = {
     access: 'free',
     status: 'active',
     verifiedAt: VERIFIED_AT,
-    verificationLevel: 'search-only',
+    verificationLevel: 'opened',
     tags: ['chinese', 'langchain'],
   },
 };
