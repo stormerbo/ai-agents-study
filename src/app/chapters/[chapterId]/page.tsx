@@ -271,14 +271,21 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
             <h2 className="text-sm font-medium">代码实验</h2>
             <ul className="mt-4 space-y-3">
               {labs.map((lab) => (
-                <li key={lab.id} className="rounded-lg border border-border bg-card p-4">
-                  <div className="flex flex-wrap items-baseline gap-2">
-                    <span className="text-sm font-medium">{lab.title}</span>
-                    <span className="ml-auto text-[11px] text-muted-foreground">
-                      约 {lab.estimatedMinutes} 分钟
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{lab.goal}</p>
+                <li key={lab.id}>
+                  <Link
+                    href={`/labs/${lab.id}`}
+                    className="border-border bg-card hover:border-accent/60 block rounded-lg border p-4 transition-colors"
+                  >
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <span className="text-sm font-medium">{lab.title}</span>
+                      <span className="text-muted-foreground ml-auto text-[11px]">
+                        约 {lab.estimatedMinutes} 分钟
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+                      {lab.goal}
+                    </p>
+                  </Link>
                 </li>
               ))}
             </ul>

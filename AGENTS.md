@@ -270,12 +270,47 @@ PORT=3100 pnpm start &
 
 | 功能 | 状态 | 优先级 |
 |---|---|---|
-| 站内 Playground（BYOK + 轨迹可视化） | `/api/chat` 与适配层类型**已写**，前端组件未接 | 高 |
+| 站内 Playground（BYOK + 轨迹可视化） | ✅ **已完成**（2026-10-08），见下方说明 | — |
 | 学习进度（章节完成 / 自检项勾选） | 未开始，schema 已预留 | 中 |
 | 全文搜索 | 未开始（计划用 Pagefind） | 中 |
 | 资源库筛选 | 未开始（当前按优先级分组） | 低 |
 
-**适配层现状**：`src/lib/llm/` 下有 `types.ts`（统一事件模型）、`sse.ts`（同构编解码）、`adapters/anthropic.ts`、`adapters/openai-compatible.ts`。**均未实跑验证**，只做过类型检查。
+**Playground 现状**（`/labs` 与 `/labs/[labId]`）：
+
+- `src/lib/llm/`：`types.ts`（统一事件模型）、`sse.ts`（同构编解码）、`registry.ts`（
+  provider 注册表 **兼白名单**）、`adapters/anthropic.ts`、`adapters/openai-compatible.ts`
+- `src/lib/byok/storage.ts`：Key 的浏览器端存储，支持「仅本次会话」模式
+- `src/hooks/use-chat-relay.ts`：客户端驱动循环 + SSE 解析 + 轨迹记录
+- `src/components/lab/playground.tsx`：实验 UI（Key 表单、预设、流式输出、轨迹时间线）
+- `src/app/api/chat/route.ts`：BYOK 中转端点（**唯一运行时后端**）
+- `src/app/labs/`：实验索引页与详情页
+
+**已实测通过**（2026-10-08）：
+
+| 测试项 | 结果 |
+|---|---|
+| 正常流式调用（字符串 content） | HTTP 200，294 事件，输出正确 |
+| 正常流式调用（block 数组 content） | HTTP 200，212 事件 |
+| system 生效 | 输出英文（system 指令被遵守） |
+| 模型不在白名单 | 400 `model_not_allowed` |
+| provider 不存在 | 400，并列出支持的 provider |
+| 缺 Key | 401 `unauthorized` |
+| UI 渲染 | 完整（Key 表单、厂商/模型选择、预设、轨迹区） |
+| 错误展示 | 正确显示上游错误原文 |
+
+**已知未验证**：浏览器里的完整成功路径（填 Key → 运行 → 看到流式输出）尚未端到端跑通 ——
+playwright 操作 React 受控组件的表单时遇到了 ref 失效问题。**建议人工在页面上试一次**。
+
+**设计要点**（值得保留的判断）：
+
+1. **适配器选的是协议，不是厂商**。`registry.ts` 里 DeepSeek 用的是 `anthropicAdapter`
+   —— 因为它提供 Anthropic 兼容端点。同一个适配器可以被多个 provider 复用。
+2. **Key 走请求头不走请求体**。请求体更容易被中间层记录。
+3. **错误两阶段契约**。首字节前返回真实 HTTP 状态码；之后只能发 `error` 事件。
+   客户端因此能区分「配置错了」和「生成中断了」。
+4. **`content` 归一化**。官方 SDK 允许 `content: "文本"` 简写，适配层内部统一按 block
+   数组处理。实测中真的踩到了这个坑（传字符串得到 502 与 `content.map is not a function`），
+   现在在 `/api/chat` 的 `normalizeMessages` 里统一处理。
 
 ### 7.3 剩余章 1 的补缺口清单
 

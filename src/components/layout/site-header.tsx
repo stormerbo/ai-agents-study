@@ -5,6 +5,7 @@ import { ThemeToggle } from './theme-toggle';
 const NAV = [
   { href: '/map', label: '知识地图' },
   { href: '/chapters', label: '章节' },
+  { href: '/labs', label: '实验' },
   { href: '/resources', label: '资源库' },
   { href: '/about', label: '关于' },
 ] as const;
