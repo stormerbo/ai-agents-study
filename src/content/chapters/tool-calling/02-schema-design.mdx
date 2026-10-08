@@ -1,0 +1,202 @@
+---
+lesson: tool-calling/schema-design
+title: 工具描述即 prompt
+status: drafting
+---
+
+写工具 schema 时，很容易把它当成「给人看的 API 文档」—— 功能写清楚、参数列全，就完事了。
+
+**它不是文档。它是 prompt。** 模型决定「用不用这个工具」和「参数填什么」，唯一的依据就是你写的那段 `description`。没有任何别的信息源。
+
+这一节用两组对照说明：描述改一句话，模型的表现可以完全不同。
+
+## 实测一：一句描述，同时修正了两个问题
+
+同一个工具，只改 `description` 和参数的说明：
+
+| | 定义 |
+|---|---|
+| **模糊版** | `description: "查询天气。"`；参数 `city` 无说明 |
+| **精确版** | `description: "查询指定城市的当前实时天气。仅覆盖当下，不包含历史天气，也不提供未来预报——如果用户问的是明天的天气或是否会下雨，本工具无法回答。"`；参数说明 `"城市名，必须是英文名或邮政编码，例如 \"Beijing\" 或 \"100000\"。不要传中文。"` |
+
+三个问题，两种定义各跑一遍：
+
+| 问题 | 模糊版 | 精确版 |
+|---|---|---|
+| 北京现在天气怎么样？ | 调用，`{"city":"北京"}` | 调用，`{"city":"Beijing"}` |
+| 上海现在的气温是多少？ | 调用，`{"city":"上海"}` | 调用，`{"city":"Shanghai"}` |
+| **北京明天会下雨吗？** | **调用** ← 误用 | **不调用** |
+
+（实测数据，`deepseek-flash`，2026-10-08。）
+
+**一句描述同时解决了两件事：**
+
+1. **参数格式** —— 模糊版三次都把中文城市名传了进去（`"北京"`），精确版加了「必须是英文名」之后三次都是 `"Beijing"`。这不是模型「变聪明了」，是你把要求写出来了。
+2. **误用** —— 预报类问题在模糊版下被当成了天气查询（工具答不了，但模型不知道），精确版因为描述里写明了「不提供未来预报」，模型直接不调用。
+
+第二点是主要收益。**误用比填错参数更糟**，因为它看起来「成功」了 —— 工具被调用了、返回了数据、模型基于一份答非所问的数据编出回答。你很难在日志里发现这件事。
+
+## 实测二：enum 把校验提前了
+
+一个设置优先级的工具，参数 `level` 有两种写法：
+
+```python
+# 自由字符串
+{"level": {"type": "string", "description": "优先级"}}
+
+# enum 枚举
+{
+    "level": {
+        "type": "string",
+        "enum": ["low", "medium", "high"],
+        "description": "优先级档位",
+    }
+}
+```
+
+同样三个问题（「标成最高优先级」「标成低优先级」「很紧急，标记一下」）：
+
+| 参数约束 | 模型实际传入的值 | 是否合法 |
+|---|---|---|
+| **自由字符串** | `"最高"` / `"低"` / `"紧急"` | **0/3 合法** |
+| **enum 三档** | `"high"` / `"low"` / `"high"` | **3/3 合法** |
+
+（实测数据，`deepseek-flash`，2026-10-08。）
+
+自由字符串的 **3 次全部非法** —— 它忠实地把用户说的中文词抄了进去。而 enum 版一次都没错。
+
+这不是「模型更小心了」，是**校验位置变了**：
+
+<Mermaid
+  chart={`
+flowchart LR
+    subgraph F["自由字符串"]
+        F1["模型生成任意值<br/>'最高' / '紧急' / 'P0'"] --> F2["你的代码在运行时<br/>校验并拒绝"]
+        F2 --> F3["报错、重试、或写入脏数据"]
+    end
+    subgraph E["enum"]
+        E1["模型只能从<br/>三个合法值里选"] --> E2["生成时就不存在非法值"]
+        E2 --> E3["运行时校验变成多余"]
+    end
+`}
+/>
+
+**enum 把校验从「运行时」提前到了「生成时」。** 自由字符串等于告诉模型「随便填」，然后你在代码里为这个「随便」收拾残局。
+
+这个思路和传统工程里的类型系统是同一件事：**让非法状态无法被表达**，而不是等到它出现再检查。它也是下一节（poka-yoke）的雏形。
+
+## 一份可直接用的 schema 自检清单
+
+把上面的实验抽象成检查项。每写一个工具，过一遍：
+
+| 检查项 | 判据 | 反例 |
+|---|---|---|
+| **描述说清了「什么时候不该用」吗** | 描述里有没有明确排除边界场景 | 「查询天气」没有排除预报，导致误用 |
+| **参数的格式写具体了吗** | 有没有给出格式、单位、示例 | `city` 没说语言，模型传了中文 |
+| **取值固定的参数用 enum 了吗** | 有确定取值集合的一律 enum | `level` 用自由字符串，3/3 非法 |
+| **可选参数是不是太多了** | 可选参数越多，无效组合越多 | 一堆可选字段靠代码隐含约束（见第 3 节） |
+| **描述里有给人看的话吗** | 「该接口由 XX 团队维护」这类对模型无用 | 它在占用 prompt 篇幅，稀释真正有用的信息 |
+
+最后一条容易被忽略：**描述是 prompt，所以要按 prompt 的标准写 —— 每一句都要对模型的决策有用。** 给人看的元信息（维护团队、版本号、内部编号）在这个通道里没有价值，只占 token。
+
+## 完整可运行代码
+
+```python
+# tool_schema_audit.py
+"""审计你的工具定义：模型会不会误用它、会不会传非法值。
+
+做法：给每个工具准备一组探测问题，分成三类 ——
+  should_use   该用这个工具的问题
+  should_avoid 不该用的问题（测误用）
+  probe_params 参数填法容易出错的问题
+
+判据全部可机判，不用肉眼看输出。
+"""
+
+import json
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+TOOL = {
+    "name": "set_priority",
+    "description": "设置任务的优先级。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "level": {
+                "type": "string",
+                # ↓ 加上 enum 再跑一遍，对比这行的差别
+                # "enum": ["low", "medium", "high"],
+                "description": "优先级",
+            },
+        },
+        "required": ["level"],
+    },
+}
+
+LEGAL = {"low", "medium", "high"}
+
+PROBES = {
+    "should_use": ["把「修复登录 bug」标成最高优先级。"],
+    "should_avoid": [],  # 若工具有明确的「不该用」场景，填在这里
+    "probe_params": ["这个任务很紧急，帮我标记一下：上线前的安全审查。"],
+}
+
+
+def probe(question: str) -> dict:
+    resp = client.messages.create(
+        model=MODEL, max_tokens=3000, tools=[TOOL],
+        messages=[{"role": "user", "content": question}],
+    )
+    calls = [b for b in resp.content if b.type == "tool_use"]
+    return {
+        "called": bool(calls),
+        "input": calls[0].input if calls else None,
+    }
+
+
+if __name__ == "__main__":
+    for kind, questions in PROBES.items():
+        for q in questions:
+            r = probe(q)
+            print(f"[{kind}] {q}")
+
+            if kind == "should_avoid":
+                # 误用：不该调却调了
+                mark = "❌ 误用" if r["called"] else "✅ 正确地没调"
+                print(f"    {mark}")
+
+            elif kind == "should_use":
+                mark = "✅ 调用了" if r["called"] else "❌ 该调却没调"
+                shown = json.dumps(r["input"], ensure_ascii=False)
+                print(f"    {mark}  input={shown}")
+
+            else:  # probe_params
+                val = (r["input"] or {}).get("level")
+                ok = val in LEGAL
+                print(f"    参数 {'✅ 合法' if ok else '❌ 非法'}：{val!r}")
+
+    print("\n把 enum 打开再跑一遍 —— 非法值应当消失。")
+```
+
+> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+
+## 常见坑
+
+**把工具描述当文档写。** 它是模型唯一的决策依据。功能写清楚不够 —— 还要写清「什么时候不该用」，因为误用比参数错更难发现。
+
+**参数格式靠代码校验。** 实测：`level` 用自由字符串时 **3/3 非法**（`"最高"`、`"低"`、`"紧急"` 全被原样传入）。用 enum 则 3/3 合法。**能写进 schema 的约束，就不要留到运行时。**
+
+**描述里塞给人看的元信息。** 维护团队、版本号、内部编号对模型决策没有价值，只占 prompt 篇幅。这条通道里的每一句都该为决策服务。
+
+**只测「模型能不能调对」。** 漏了另一面：**该不该调**。准备一组「不该用这个工具」的问题，看它会不会硬调 —— 本节实测里，模糊描述下预报问题被误调用了。
