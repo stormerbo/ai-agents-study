@@ -105,6 +105,8 @@ export function getPublicProviderList() {
     id,
     label: p.label,
     keyHint: p.keyHint,
+    /** 默认端点地址 —— 前端用它预填表单，用户可以改 */
+    defaultBaseUrl: p.baseUrl,
     models: p.models,
     defaultModel: p.defaultModel,
     supportsEffort: p.adapter.supportsEffort,

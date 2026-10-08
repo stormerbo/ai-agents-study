@@ -40,6 +40,8 @@ interface ProviderOption {
   id: string;
   label: string;
   keyHint?: string;
+  /** 默认端点地址，用于预填表单 */
+  defaultBaseUrl: string;
   models: string[];
   defaultModel: string;
 }
@@ -72,14 +74,13 @@ export function Playground({
   const provider = providers.find((p) => p.id === providerId) ?? providers[0];
 
   /**
-   * 自定义端点（第三方中转平台）。
+   * 端点地址 —— 三个字段（地址 / 模型名 / Key）**始终可见、始终可改**。
    *
-   * 开启后，厂商选择器只决定**走哪套协议**（Anthropic 还是 OpenAI 兼容），
-   * 实际的地址与模型名都由你自己填。这样以后换平台不用改代码。
+   * 厂商选择只负责预填这两个值。早期版本用一个「使用自定义端点」开关来区分
+   * 两种模式，那是多余的心智负担：用户要么得先理解那个概念，要么在填错 Key
+   * 之后困惑于为什么点不动运行按钮。现在只有一套表单。
    */
-  const [useCustom, setUseCustom] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState('');
-  const [customModel, setCustomModel] = useState('');
+  const [baseUrl, setBaseUrl] = useState(provider?.defaultBaseUrl ?? '');
 
   const allowedModels = useMemo(
     () => lab.allowedModels.map((m) => m.model).filter((m) => provider?.models.includes(m)),
@@ -91,17 +92,14 @@ export function Playground({
   // 原始事件现在折叠在轨迹卡片里，不再需要单独的开关
 
   const apiKey = provider ? (getCredential(byok, provider.id) ?? '') : '';
-  // 别的厂商有没有存过 Key —— 用于在「选错厂商」时给出可操作的提示
-  const savedForOtherProvider = providers.find(
-    (p) => p.id !== provider?.id && getCredential(byok, p.id),
-  );
   const relay = useChatRelay();
 
-  // provider 变化时，把模型切到该 provider 下可用的第一个
+  // 切换厂商时，把地址与模型名重置为该厂商的默认值。
+  // 这是有意为之：切厂商意味着换端点，保留用户改过的地址只会造成困惑。
   useEffect(() => {
     if (!provider) return;
-    const next = allowedModels[0] ?? provider.defaultModel;
-    setModel(next);
+    setBaseUrl(provider.defaultBaseUrl);
+    setModel(allowedModels[0] ?? provider.defaultModel);
   }, [provider, allowedModels]);
 
   if (!provider) {
@@ -112,22 +110,20 @@ export function Playground({
     );
   }
 
-  // 自定义端点时用用户填的模型名，否则用下拉选中的
-  const effectiveModel = useCustom ? customModel.trim() : model;
-
   const canRun =
     apiKey.length > 0 &&
     input.trim().length > 0 &&
     !relay.state.running &&
-    // 自定义端点时必须先填地址与模型名，否则运行必然失败
-    (!useCustom || (customBaseUrl.trim().length > 0 && effectiveModel.length > 0));
+    // 地址与模型名现在由厂商预填，但仍要防止用户把任一个清空
+    baseUrl.trim().length > 0 &&
+    model.trim().length > 0;
 
   const onRun = () => {
     void relay.run({
       provider: provider.id,
-      model: effectiveModel,
+      model: model.trim(),
       apiKey,
-      baseUrl: useCustom ? customBaseUrl.trim() : undefined,
+      baseUrl: baseUrl.trim(),
       system: system.trim() || undefined,
       messages: [{ role: 'user', content: input.trim() }],
       maxTokens: lab.defaults?.maxTokens,
@@ -154,139 +150,92 @@ export function Playground({
         )}
       </header>
 
-      {/* Key 未填时的引导。等挂载后再渲染 —— 见 mounted 的注释 */}
-      {mounted && !apiKey && (
-        <ApiKeyForm
-          providers={providers}
-          providerId={providerId}
-          onProviderChange={setProviderId}
-          provider={provider}
-          mode={byok.mode}
-          onSave={(key) => setByok(setCredential(byok, provider.id, key))}
-          onModeChange={(m) => setByok(setMode(byok, m))}
-        />
-      )}
-
-      {mounted && apiKey && (
-        <div className="border-border flex flex-wrap items-center gap-2 border-b px-4 py-2 text-xs">
-          <span className="text-muted-foreground">
-            {provider.label} · Key {maskKey(apiKey)}
-            {byok.mode === 'session' && ' · 仅本次会话'}
-          </span>
-          <button
-            type="button"
-            className="text-muted-foreground hover:text-foreground ml-auto underline-offset-2 hover:underline"
-            onClick={() => setByok(setCredential(byok, provider.id, ''))}
-          >
-            清除
-          </button>
-        </div>
-      )}
-
-      {/* 选中的厂商没有 Key，但别的厂商填过 —— 这是最容易困惑的状态：
-          填了 Key 却点不动运行按钮，而界面上没有任何解释 */}
-      {mounted && !apiKey && savedForOtherProvider && (
-        <div className="border-b border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs">
-          <p className="text-muted-foreground leading-relaxed">
-            当前厂商是「{provider.label}」，但你填过的是「{savedForOtherProvider.label}」的 Key。
-            不同厂商的 Key 不能混用 —— 可以
-            <button
-              type="button"
-              onClick={() => setProviderId(savedForOtherProvider.id)}
-              className="text-foreground mx-1 font-medium underline underline-offset-2"
-            >
-              切到 {savedForOtherProvider.label}
-            </button>
-            ，或者填入当前厂商的 Key。
-          </p>
-        </div>
-      )}
-
-      {/* 配置区 */}
-      {allowCustomEndpoint && (
-        <div className="border-border border-b px-4 py-2">
-          <label className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={useCustom}
-              onChange={(e) => setUseCustom(e.target.checked)}
-            />
-            <span>使用自定义端点（第三方中转平台）</span>
-            <span className="text-muted-foreground/70">
-              勾选后，上面选的厂商只表示「走哪套协议」，地址与模型名由你填
-            </span>
-          </label>
-        </div>
-      )}
-
-      <div className="border-border grid gap-3 border-b px-4 py-3 sm:grid-cols-2">
-        <Field label={useCustom ? '协议（按你平台的文档选）' : '厂商'}>
-          <select
-            value={providerId}
-            onChange={(e) => setProviderId(e.target.value)}
-            className="border-border bg-background w-full rounded-md border px-2 py-1.5 text-xs"
-          >
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        {useCustom ? (
-          <Field label="模型名（按你平台的叫法填）">
-            <input
-              value={customModel}
-              onChange={(e) => setCustomModel(e.target.value)}
-              placeholder="例如 deepseek-chat"
-              className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
-            />
-          </Field>
-        ) : (
-          <Field label="模型">
+      {/* 端点配置 —— 三个字段始终可见、始终可改。
+          厂商只负责把地址与模型名预填成默认值，用户想改就改。 */}
+      <div className="border-border space-y-3 border-b px-4 py-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="厂商（选中后自动预填下面的地址与模型）">
             <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
+              value={providerId}
+              onChange={(e) => setProviderId(e.target.value)}
               className="border-border bg-background w-full rounded-md border px-2 py-1.5 text-xs"
             >
-              {(allowedModels.length > 0 ? allowedModels : provider.models).map((m) => (
-                <option key={m} value={m}>
-                  {m}
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
                 </option>
               ))}
             </select>
           </Field>
-        )}
 
-        {useCustom && (
-          <div className="sm:col-span-2">
-            <Field label="端点地址（baseUrl）">
-              <input
-                value={customBaseUrl}
-                onChange={(e) => setCustomBaseUrl(e.target.value)}
-                placeholder="https://your-platform.com/v1"
-                className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
-              />
-            </Field>
-            <p className="text-muted-foreground/70 mt-1.5 text-[11px] leading-relaxed">
-              服务端会校验：必须 https、不能指向内网或云元数据地址。
-              用 http 的话你的 Key 会明文传输，所以被拒绝了。
-            </p>
-          </div>
-        )}
-
-        <div className="sm:col-span-2">
-          <Field label={lab.system?.locked ? 'system 提示（本实验锁定）' : 'system 提示（可修改）'}>
-            <textarea
-              value={system}
-              onChange={(e) => setSystem(e.target.value)}
-              disabled={lab.system?.locked}
-              rows={3}
-              className="border-border bg-background disabled:opacity-60 w-full resize-y rounded-md border px-2 py-1.5 font-mono text-xs leading-relaxed"
+          <Field label="模型名">
+            <input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              list="lab-model-suggestions"
+              placeholder="按你平台的叫法填"
+              className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
             />
+            {/*
+              用 datalist 给出建议但**不限制输入**：第三方平台的模型名往往不在
+              我们的白名单里，做成强制下拉就没法用用户自己的模型了。
+            */}
+            <datalist id="lab-model-suggestions">
+              {(allowedModels.length > 0 ? allowedModels : provider.models).map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
           </Field>
         </div>
+
+        <Field label="端点地址（用第三方中转平台时改成它的地址）">
+          <input
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://your-platform.com/v1"
+            className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
+          />
+          <p className="text-muted-foreground/70 mt-1.5 text-[11px] leading-relaxed">
+            {allowCustomEndpoint
+              ? '服务端会校验：必须 https、不能指向内网或云元数据地址。'
+              : '本站未开放自定义端点，只能用上面预填的地址。'}
+          </p>
+        </Field>
+
+        {/* API Key。等挂载后再渲染 —— 它读 localStorage，服务端读不到 */}
+        {mounted &&
+          (apiKey ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted-foreground">
+                API Key {maskKey(apiKey)}
+                {byok.mode === 'session' && ' · 仅本次会话'}
+              </span>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground ml-auto underline-offset-2 hover:underline"
+                onClick={() => setByok(setCredential(byok, provider.id, ''))}
+              >
+                清除
+              </button>
+            </div>
+          ) : (
+            <ApiKeyInput
+              provider={provider}
+              mode={byok.mode}
+              onSave={(key) => setByok(setCredential(byok, provider.id, key))}
+              onModeChange={(m) => setByok(setMode(byok, m))}
+            />
+          ))}
+
+        <Field label={lab.system?.locked ? 'system 提示（本实验锁定）' : 'system 提示（可修改）'}>
+          <textarea
+            value={system}
+            onChange={(e) => setSystem(e.target.value)}
+            disabled={lab.system?.locked}
+            rows={3}
+            className="border-border bg-background disabled:opacity-60 w-full resize-y rounded-md border px-2 py-1.5 font-mono text-xs leading-relaxed"
+          />
+        </Field>
       </div>
 
       {/* 输入区 */}
@@ -445,18 +394,19 @@ function UsageBar({
   );
 }
 
-function ApiKeyForm({
-  providers,
-  providerId,
-  onProviderChange,
+/**
+ * Key 输入。
+ *
+ * 厂商与端点地址已经在上面那个表单里了，所以这里只做两件事：填 Key、选存储模式。
+ * 早先的版本把这个组件当成「完整引导表单」，连厂商选择也塞了进来 —— 结果是
+ * 同一个选择器在页面上出现两次。
+ */
+function ApiKeyInput({
   provider,
   mode,
   onSave,
   onModeChange,
 }: {
-  providers: ProviderOption[];
-  providerId: string;
-  onProviderChange: (id: string) => void;
   provider: ProviderOption;
   mode: ByokState['mode'];
   onSave: (key: string) => void;
@@ -465,59 +415,36 @@ function ApiKeyForm({
   const [draft, setDraft] = useState('');
 
   return (
-    <div className="border-border bg-muted/30 border-b px-4 py-4">
-      <p className="text-sm font-medium">填入你的 API Key 才能运行</p>
-
-      {/* 厂商选择放在 Key 输入**之前** —— 顺序反了会让人填错：
-          先填了 Key 才发现厂商选的是另一家，是最常见的困惑 */}
-      <label className="mt-3 block">
-        <span className="text-muted-foreground mb-1 block text-xs">
-          1. 先选你要用哪家的模型（Key 要跟这里对应）
-        </span>
-        <select
-          value={providerId}
-          onChange={(e) => onProviderChange(e.target.value)}
-          className="border-border bg-background w-full rounded-md border px-2 py-1.5 text-xs"
+    <div>
+      <span className="text-muted-foreground mb-1 block text-xs">
+        API Key（{provider.label} 的 Key）
+      </span>
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="password"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="粘贴 API Key"
+          className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1.5 font-mono text-xs"
+        />
+        <button
+          type="button"
+          disabled={draft.trim().length === 0}
+          onClick={() => onSave(draft.trim())}
+          className="bg-foreground text-background rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40"
         >
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </label>
+          保存
+        </button>
+      </div>
 
-      <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
-        Key 只存在你的浏览器里。运行时它经本站服务器转发给模型厂商，
+      <p className="text-muted-foreground/70 mt-1.5 text-[11px] leading-relaxed">
+        Key 只存在你的浏览器里。运行时经本站服务器转发给模型厂商，
         <strong className="text-foreground font-medium">服务端不存储、不记录日志</strong>。
-        建议用一把限额的、专用的 Key，用完随时吊销。
+        建议用一把限额的、专用的 Key。
         {provider.keyHint && <> 申请地址：{provider.keyHint}</>}
       </p>
 
-      <label className="mt-3 block">
-        <span className="text-muted-foreground mb-1 block text-xs">
-          2. 粘贴 {provider.label} 的 API Key
-        </span>
-        <div className="flex flex-wrap gap-2">
-          <input
-            type="password"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="粘贴 API Key"
-            className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1.5 font-mono text-xs"
-          />
-          <button
-            type="button"
-            disabled={draft.trim().length === 0}
-            onClick={() => onSave(draft.trim())}
-            className="bg-foreground text-background rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-          >
-            保存
-          </button>
-        </div>
-      </label>
-
-      <label className="text-muted-foreground mt-3 flex items-start gap-2 text-xs">
+      <label className="text-muted-foreground mt-2 flex items-start gap-2 text-[11px]">
         <input
           type="checkbox"
           className="mt-0.5"

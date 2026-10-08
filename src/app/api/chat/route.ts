@@ -183,11 +183,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 自定义端点（第三方中转平台）：仅在开关打开时接受，且必须通过 SSRF 校验。
+  // 自定义端点（第三方中转平台）。
   //
-  // 这一步必须在模型白名单之前 —— 因为它会改变白名单的适用性（见下方注释）。
+  // 关键判断：只有**不是**注册表里的地址时，才需要开关与 SSRF 校验。
+  // 前端会把厂商的默认地址预填进表单，用户不改就是「正常用法」——
+  // 那种情况不该被 ALLOW_CUSTOM_BASE_URL 拦住，否则本地默认配置下
+  // 连官方端点都用不了。
   let customBaseUrl: string | undefined;
-  if (parsed.baseUrl) {
+  const normalizedInput = parsed.baseUrl?.replace(/\/+$/, '');
+  if (normalizedInput && normalizedInput !== provider.baseUrl) {
     if (!isCustomBaseUrlAllowed()) {
       return badRequest(
         requestId,
@@ -196,9 +200,9 @@ export async function POST(req: NextRequest) {
         403,
       );
     }
-    const check = validateCustomBaseUrl(parsed.baseUrl);
+    const check = validateCustomBaseUrl(parsed.baseUrl!);
     if (!check.ok) {
-      return badRequest(requestId, `自定义端点被拒绝：${check.reason}`);
+      return badRequest(requestId, `端点地址被拒绝：${check.reason}`);
     }
     customBaseUrl = check.url;
   }
