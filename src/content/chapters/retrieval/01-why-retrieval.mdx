@@ -1,0 +1,265 @@
+---
+lesson: retrieval/why-retrieval
+title: 检索解决的是「模型不知道」，不是「模型不会」
+status: drafting
+---
+
+你要给一个内部助手接上知识库。资料不多：28 篇内部文档，加起来十几万字。
+
+团队里的第一反应通常是「那就全塞进 prompt」——毕竟现在的上下文窗口看起来很大。这个想法值得认真对待，而不是直接否定。所以我先量了它的价钱。
+
+## 实测一：整份资料有多贵
+
+语料用本站自己的 28 篇正文（真实中文技术文，含代码块，原文共 179,525 字符）。测量方法很直接：把整篇正文当输入发一次，读 `usage` 里的输入 token 数。
+
+| 指标 | 数值 |
+|---|---:|
+| 语料总量 | 28 篇 / 179,525 字符 |
+| 实测 token 消耗 | 约 89,136 token |
+| 换算比例 | 0.497 token/字符 |
+| 单篇平均 | 约 3,183 token |
+
+（实测数据，`deepseek-flash`，2026-10-08。抽样 3 篇取比例后外推，不是逐篇统计。）
+
+0.497 这个数字本身值得记一下：**中文技术文档大约每 2 个字符花 1 个 token**。它比「一个汉字一个 token」更贵，原因是这类文章里混着大量英文术语、代码标识符和标点，而它们在分词器里往往一个字符就被切成好几个 token。
+
+## 一个必须先讲的坑：`input_tokens` 不是输入总量
+
+上面那份语料约 3.1 万 token 时，我做了一组对照，输出长这样：
+
+```text
+第 1 次调用  input_tokens=30935
+第 2 次调用  input_tokens=215
+第 3 次调用  input_tokens=211
+```
+
+同一份语料、同一个问题格式，输入量从 3 万掉到 200。如果就这么信了，你会得出「第一次贵，后面几乎免费」的结论。
+
+真相是厂商的自动缓存。`input_tokens` 的语义是**未命中缓存的输入**，命中部分走另一个字段：
+
+```text
+input_tokens=198  cache_creation=0  cache_read=30720
+真实总输入 = 198 + 0 + 30720 = 30918
+```
+
+**同一次调用，字段显示 198，真实输入 30,918 —— 相差 156 倍。**
+
+这和第 1 章那条规则是同一件事，但这次它咬到的是**对照实验本身**：如果你只在实验里记 `input_tokens`，不同轮次之间的缓存命中状态不同，数据就不可比。凡是做成本对照，总输入必须写成三项之和。
+
+## 实测二：装得下，不等于用得好
+
+「塞不进去」其实是这里最弱的理由。我把 10 篇、64,880 字符（约 3.1 万 token）整段发过去，**HTTP 200，没有任何报错** —— 它装得下。
+
+真正的问题在别处。同样 6 个有标准答案的问题，两种给法各跑一遍：
+
+| | 全量塞入 | 检索 top-5 |
+|---|---:|---:|
+| 答对 | 6/6 | 5/6 |
+| 输入 token 合计 | 185,613 | 9,955 |
+| 输出 token 合计 | 4,276 | 1,931 |
+| 平均耗时 | 3,532 ms | 1,897 ms |
+
+**输入成本差 18.6 倍。**
+
+这张表里有两件事需要同时看。第一件很明显：全量方案每次都要重新付那 3 万 token 的钱，而这份资料里**每个问题平均只用到 1 个片段**。第二件更容易被忽略：检索方案**答错了一题**。
+
+也就是说，检索不是免费的午餐。它是拿「可能没召回到」这个风险，去换 18.6 倍的成本和一半的延迟。什么时候这笔买卖划算，正是这一章要回答的。
+
+## 三条路：塞进去、检索、微调
+
+把外部知识交给模型，只有三种做法。它们的差别不在「哪个更强」，而在**各自改变了什么**：
+
+| 做法 | 改变的是 | 什么时候对 | 什么时候错 |
+|---|---|---|---|
+| 全塞进 prompt | 一次请求里能看到什么 | 资料小、且这一轮几乎全用得上 | 资料大、每次只用到一小部分 |
+| 检索 | 每一轮按需取回什么 | 资料会变、量大、需要出处 | 问题本身需要读完全文才能回答 |
+| 微调 | 模型的默认行为 | 要的是固定格式、领域语气、分类体系 | 要的是「知道某条会变的事实」 |
+
+判断的关键是一次追问：**你要改的是「知识」还是「行为」？**
+
+- 「这单退款到账要几天」是知识 —— 而且它会随政策变化。检索。
+- 「回答一律用表格，不要寒暄」是行为 —— 它不随事实变化。调 prompt，必要时微调。
+- 「把我们几百份产品手册都记住，并且能引用出处」是知识 —— 但量大且会更新。检索。
+
+只要需求里带着「这条信息会变」，默认答案就是检索：**更新一个索引比重新训一遍模型便宜得多，也快得多**。
+
+还有一种情况必须提前排除：**如果失败的真正原因是模型推理不出来，检索帮不上任何忙。** 检索只影响「上下文里有什么」，不影响「模型会不会推」。一个信息齐全仍然答错的案例，说明该改的是 prompt、工具或流程，而不是加大检索力度。把这两类失败混在一起，是检索项目里最常见的时间浪费。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["任务失败了"] --> B["先问：模型缺的是信息，还是能力？"]
+    B -->|缺信息| C["这条信息会变吗？"]
+    B -->|缺能力| Z["改 prompt / 工具 / 流程<br/>检索救不了"]
+    C -->|会变| D["检索"]
+    C -->|不变，且量小| E["直接放进 prompt"]
+    C -->|不变，但量很大| F["检索<br/>（更新索引比重新训练便宜）"]
+    D --> G["下一个问题：检索到的东西，<br/>模型真的会用吗？"]
+    F --> G
+    G --> H["这是第 3 章的问题 —— 上下文工程，<br/>不是检索本身能解决的"]
+`}
+/>
+
+## 关于本章的实验方法：为什么用词法检索
+
+这一章的所有实验都基于**词法检索**（BM25），而不是向量检索。原因很直接：本次实验环境只提供对话端点，`/embeddings` 与 `/v1/embeddings` 都返回 404，没有可用的嵌入模型。
+
+这个限制反而让实验更可复现。判断依据是：**引入向量之前，你必须先知道词法基线在哪。** BM25 完全跑在本地 —— 没有嵌入模型版本漂移、没有向量库依赖，读者拿同样的代码在自己的语料上能跑出同样的数字。而向量检索的结论会随嵌入模型变化，反而更难复现。
+
+所以本章的安排是：先用词法检索把「切分」「召回」「评测」这三件事量清楚（这些结论与用哪种检索引擎无关），再到第 3 节讨论向量检索在哪一类查询上能补上词法的短板 —— 那一节会明确标出哪些是实测、哪些是原理推断。
+
+## 完整可运行代码
+
+下面这份代码不用任何第三方库，只用标准库，把「检索 → 组装上下文 → 调用模型」这条链完整跑一遍。它包含了上面那两个教训：中文用二元组分词，token 记账用三项之和。
+
+```python
+"""最小可用的检索问答：BM25 检索 + 组装上下文 + 调用模型。
+
+不需要任何第三方库（连 rank_bm25 都不需要），只用标准库。
+把 DOCS 换成你自己的文档，把 query 换成你的问题就能跑。
+
+实跑状态：2026-10-08，deepseek-flash，已跑通。
+"""
+
+import json
+import math
+import os
+import re
+import urllib.request
+
+DOCS = {
+    "退款政策": "退款需在签收后 7 天内发起，超过 7 天只能换货。退款到账时间 3 到 5 个工作日。",
+    "换货政策": "换货不限时间，但商品需保持完好。破损商品可直接申请换新，无需寄回原件。",
+    "发票问题": "电子发票在订单完成后 2 小时内开具。需要纸质发票请在备注里说明，会随下一次物流寄出。",
+    "价格保护": "商品签收后 15 天内降价，可申请退差价。参与秒杀的商品不适用价格保护。",
+}
+
+
+def tokenize(text):
+    """中文没有空格：用「ASCII 词 + 汉字二元组」。这是中文检索的常规做法，无需分词库。"""
+    text = text.lower()
+    tokens = re.findall(r"[a-z0-9_]+", text)
+    for run in re.findall(r"[\u4e00-\u9fff]+", text):
+        tokens.extend(run[i:i + 2] for i in range(len(run) - 1))
+        tokens.extend(run)
+    return tokens
+
+
+class BM25:
+    def __init__(self, docs, k1=1.2, b=0.75):
+        self.ids = list(docs)
+        self.tokens = [tokenize(docs[i]) for i in self.ids]
+        self.k1, self.b = k1, b
+        self.avgdl = sum(len(t) for t in self.tokens) / len(self.tokens)
+        self.df = {}
+        for toks in self.tokens:
+            for term in set(toks):
+                self.df[term] = self.df.get(term, 0) + 1
+
+    def search(self, query, k=2):
+        scored = []
+        for idx, toks in enumerate(self.tokens):
+            tf = {}
+            for t in toks:
+                tf[t] = tf.get(t, 0) + 1
+            score = 0.0
+            for term in set(tokenize(query)):
+                if term not in tf:
+                    continue
+                n = self.df.get(term, 0)
+                idf = math.log(1 + (len(self.ids) - n + 0.5) / (n + 0.5))
+                f = tf[term]
+                score += idf * (f * (self.k1 + 1)) / (
+                    f + self.k1 * (1 - self.b + self.b * len(toks) / self.avgdl)
+                )
+            if score > 0:
+                scored.append((score, idx))
+        scored.sort(reverse=True)
+        return [(self.ids[i], s) for s, i in scored[:k]]
+
+
+def build_context(hits, docs):
+    """把检索结果拼成上下文。带上来源，模型才有机会引用。"""
+    parts = []
+    for doc_id, score in hits:
+        parts.append("[来源: %s]\n%s" % (doc_id, docs[doc_id]))
+    return "\n\n".join(parts)
+
+
+def ask_model(question, context):
+    base = os.environ["ANTHROPIC_BASE_URL"].rstrip("/")
+    body = json.dumps({
+        "model": os.environ.get("VERIFY_MODEL", "claude-haiku-4-5"),
+        "max_tokens": 1024,
+        "system": "只根据给定的资料回答。资料里没有的，直接说「资料里没有提到」，不要推测。",
+        "messages": [{"role": "user", "content": context + "\n\n问题：" + question}],
+    }).encode()
+    req = urllib.request.Request(
+        base + "/v1/messages",
+        data=body,
+        headers={
+            "content-type": "application/json",
+            "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+            "anthropic-version": "2023-06-01",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read())
+    text = "".join(b["text"] for b in data["content"] if b["type"] == "text")
+    usage = data["usage"]
+    # 关键：input_tokens 只是「未命中缓存」的那部分，必须三项相加
+    total_in = (
+        usage.get("input_tokens", 0)
+        + usage.get("cache_read_input_tokens", 0)
+        + usage.get("cache_creation_input_tokens", 0)
+    )
+    return text, total_in, usage.get("output_tokens", 0), data["stop_reason"]
+
+
+if __name__ == "__main__":
+    index = BM25(DOCS)
+    for question in ["退款几天能到账", "秒杀商品降价了能退差价吗"]:
+        hits = index.search(question, k=2)
+        context = build_context(hits, DOCS)
+        print("问题:", question)
+        print("  召回:", [h[0] for h in hits])
+        if os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+            answer, tin, tout, stop = ask_model(question, context)
+            print("  回答:", answer.strip()[:120])
+            print("  token: 输入 %d / 输出 %d, stop_reason=%s" % (tin, tout, stop))
+        print()
+```
+
+跑起来是这样（实跑输出，2026-10-08）：
+
+```text
+问题: 退款几天能到账
+  召回: ['退款政策', '价格保护']
+  回答: 退款到账时间为 3 到 5 个工作日。[来源: 退款政策]
+  token: 输入 132 / 输出 68, stop_reason=end_turn
+
+问题: 秒杀商品降价了能退差价吗
+  召回: ['价格保护', '换货政策']
+  回答: 不能。资料显示：参与秒杀的商品不适用价格保护，因此秒杀商品降价不能申请退差价。
+  token: 输入 125 / 输出 133, stop_reason=end_turn
+```
+
+注意第二个问题：它问的是「秒杀 + 退差价」，而答案在「价格保护」这条里，且是个**否定回答**。这类问题最容易暴露检索的问题 —— 如果你的检索只按字面匹配「秒杀」而没抓到「价格保护」，模型就会答成「可以退」。这也是为什么检索系统必须有自己的评测，而不是只看最终答案对不对（第 4 节专门讲）。
+
+## 那 1/6 错在哪
+
+回到上面那张对照表。检索臂答错的是这道题：
+
+> 结构化输出校验失败后，哪种重试方式有效？
+
+它的正确答案（带具体错误信息重试，6/6 有效）确实在语料里，但在第 5 章某篇的中间位置。BM25 取回的 top-5 里没有它 —— 召回没拿到，模型自然答不出来。
+
+这个案例的价值在于它**划出了检索的能力边界**：检索的失败是**召回失败**，而召回失败在最终答案上是看不出来的 —— 你只看到「答错了」，看不到「为什么错」。第 4 节会把这条界线画清楚。
+
+## 常见坑
+
+- **只记 `input_tokens` 就算成本。** 它只是未命中缓存的那部分。总输入 = `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`，漏掉后两项，对照实验会得出完全错误的结论（本次实测差了 156 倍）。
+- **以为检索是「因为上下文装不下」才需要的。** 3.1 万 token 塞得进一个窗口，而且没有报错。真正的约束是成本、延迟与准确性 —— 不是硬上限。
+- **把「答案错了」一律算在模型头上。** 至少要先确认一件事：正确答案有没有被召回。没召回的话，改 prompt 一万次也没用。
+- **指望检索解决推理问题。** 检索改变「模型看得到什么」，不改变「模型会不会推」。
+- **忘了引用来源。** 检索结果里带上出处（代码里的 `[来源: xxx]`）几乎不花成本，却让回答可核对 —— 这也是后面几节要反复依赖的抓手。

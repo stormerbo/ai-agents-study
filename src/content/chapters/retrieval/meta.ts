@@ -27,8 +27,8 @@ export const chapter = {
       summary: '三种把外部知识交给模型的路径，以及它们各自解决不了的问题。',
       estimatedMinutes: 18,
       difficulty: 'beginner',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['rag-basics', 'fine-tuning'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '大多数检索问题在切分阶段就已经注定，而它最容易被跳过。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['chunking', 'preprocessing'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '「语义相似」不等于「相关」，而这正是纯向量检索最常失手的地方。',
       estimatedMinutes: 22,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['embeddings', 'hybrid-search', 'rerank'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '把「检索错了」和「模型答错了」分开，是这类项目最重要的定位能力。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['evaluation', 'recall', 'metrics'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '固定管线的 RAG 与「让模型自己决定查什么」，差的不只是成本。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['agentic-rag', 'tool-use'],
       checkpoints: [
         {
@@ -181,7 +181,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;

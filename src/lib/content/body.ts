@@ -5,6 +5,7 @@ import type { ComponentType } from 'react';
 import { bodies as contextEngineeringBodies } from '@/content/chapters/context-engineering/body';
 import { bodies as llmApiBasicsBodies } from '@/content/chapters/llm-api-basics/body';
 import { bodies as promptEngineeringBodies } from '@/content/chapters/prompt-engineering/body';
+import { bodies as retrievalBodies } from '@/content/chapters/retrieval/body';
 import { bodies as structuredOutputBodies } from '@/content/chapters/structured-output/body';
 import { bodies as toolCallingBodies } from '@/content/chapters/tool-calling/body';
 import { bodies as whatIsAnAgentBodies } from '@/content/chapters/what-is-an-agent/body';
@@ -27,6 +28,7 @@ const REGISTRY: Record<string, Record<string, BodyLoader>> = {
   'context-engineering': contextEngineeringBodies,
   'tool-calling': toolCallingBodies,
   'structured-output': structuredOutputBodies,
+  'retrieval': retrievalBodies,
 };
 
 /** 取某一节的正文组件。没写正文时返回 undefined（页面会渲染大纲占位）。 */
