@@ -6,4 +6,5 @@ export const bodies = {
   'what-really-happens': () => import('./01-what-really-happens.mdx'),
   'schema-design': () => import('./02-schema-design.mdx'),
   'poka-yoke': () => import('./03-poka-yoke.mdx'),
+  'parallel-and-errors': () => import('./04-parallel-and-errors.mdx'),
 } as const;

@@ -1,0 +1,247 @@
+---
+lesson: tool-calling/parallel-and-errors
+title: 并行调用、错误处理与幂等
+status: drafting
+---
+
+模型可以在一轮里请求多个工具。这带来效率，也把一整套你熟悉的问题一起带了过来：顺序、失败、重复执行。
+
+这一节的三组实验有一个共同的意外之处：**模型在这些场景里比传言中谨慎得多**。但风险并没有消失，只是换了地方。
+
+## 实测一：它确实会并行调用
+
+给两个工具（查汇率、查订单金额），问一个需要四个查询的问题：
+
+```
+问题：订单 A-1001、A-1002、A-1003 的应付金额分别是多少？顺便告诉我美元兑人民币的汇率。
+
+一轮里发起 4 个调用：
+  get_amount_due({"order_id":"A-1001"})
+  get_amount_due({"order_id":"A-1002"})
+  get_amount_due({"order_id":"A-1003"})
+  get_rate({"from":"USD","to":"CNY"})
+```
+
+（实测数据，`deepseek-flash`，2026-10-08。对照：只问一个订单时，一轮里只发起 1 个调用。）
+
+**一次响应里带多个 `tool_use` 块** —— 你要做的是把它们全部执行、全部回填，而不是只处理第一个。
+
+这带来一个你在别处也遇到过的问题：**并行执行意味着「部分成功」是常态。** 四个查询里有一个失败，是很正常的事。怎么把这种「三个成功一个失败」回填给模型，决定了它接下来会做什么。
+
+## 实测二：失败结果怎么回传，行为完全不同
+
+三个调用里让中间那个失败（查询一个不存在的 SKU），只改**失败结果的形态**：
+
+| 变体 | 失败的 `tool_result` | 模型接下来的行为（各跑 3 次） |
+|---|---|---|
+| **A** | 不标 `is_error`，内容只有 `{"error":"500"}` | 不重试 ×3 |
+| **B** | 标 `is_error: true`，内容同样只有 `{"error":"500"}` | 不重试 / **重试 1 次** / **重试 1 次** |
+| **C** | 标 `is_error: true`，内容说明原因与下一步 | 不重试 ×3 |
+
+（实测数据，`deepseek-flash`，2026-10-08。）
+
+三种行为都不同，每一种都有问题——只有 C 是对的。
+
+### A：把错误当数据汇报了
+
+不标 `is_error` 时，模型没有意识到这是一次失败。它的输出是：
+
+```
+| SKU | 库存 |
+| SKU-1 | 42 |
+| SKU-404 | ❌ 查询失败（服务端返回…） |
+| SKU-3 | 7 |
+```
+
+**它把那条错误条目当成了「查询结果」写进了表格。** 用户会看到一个把错误混在数据里的回复。
+
+### B：做了一次无意义的重试
+
+标了 `is_error` 之后，模型知道这是失败 —— 于是它**用完全相同的参数又调了一次**。同一个不存在的 SKU，同样的请求，注定再失败一次。3 次里有 2 次是这样。
+
+这是一个很典型的模式：**知道「失败了」，但不知道「为什么失败」，于是选择重试。** 而重试的代价是实打实的（一次往返 + token），收益是零。
+
+### C：带信息量的错误
+
+第三个变体把原因写清楚了（「系统中不存在 SKU-404，可能是编码错误或已下架」），模型就不重试了 —— 它知道重试不会有不同结果，直接按「这一项查不到」来处理。
+
+<Mermaid
+  chart={`
+flowchart TB
+    F["一个工具调用失败了"] --> A{"回填时标了<br/>is_error 吗"}
+    A -->|"没标"| A1["模型当作查询结果<br/>把错误混进数据里展示"]
+    A -->|"标了"| B{"错误内容里<br/>有原因吗"}
+    B -->|"只有错误码"| B1["模型知道失败了<br/>但只能原地重试一次"]
+    B -->|"有原因与下一步"| C1["模型知道重试无意义<br/>按失败处理并继续"]
+`}
+/>
+
+**所以回填失败结果时有两件事要做，缺一不可：标 `is_error`，以及写清原因。** 只做第一件比不做还糟 —— 它会触发一次注定失败的重试。
+
+## 实测三：重复执行的风险不在模型这一侧
+
+带副作用的工具（下单、发消息、转账）最怕重复执行。我让退款工具在第一次调用后返回「**超时，状态未知**」：
+
+| 第一次返回 | `create_refund` 被调用次数 | 模型的行为 |
+|---|---|---|
+| 「已创建，退款单号 RF-77」 | 1 次 | 正常汇总 |
+| 「请求超时，无法确认是否已创建」 | **1 次** | 明确说「我不会贸然重试」并解释原因 |
+
+（实测数据，`deepseek-flash`，2026-10-08。）
+
+第二种情况才是关键：状态未知时，模型**主动选择了不重试**，理由是「退款是不可撤销的资金操作，如果已经成功过账，重试会造成重复退款」。它甚至把这个不确定性明确告诉了用户。
+
+**这意味着重复执行的风险主要不在模型这一侧。** 该防的是另外两层：
+
+1. **你自己的代码层重试** —— HTTP 客户端、网关、任务队列都可能因为超时而重发
+2. **流式连接中断后整轮重放** —— 客户端没收到完整响应，把整个请求重发一遍
+
+这两层里，模型没有参与决策。**所以幂等键仍然是必须的**：让调用方带一个唯一标识，服务端按标识去重，重复请求返回首次的结果而不是再执行一遍。
+
+而幂等键应该由**代码层生成并注入**，不要指望模型每次都传对 —— 它可能换个措辞、换个顺序，那就成了一个新的键，去重就失效了。
+
+## 一个真实的报错：手工拼消息历史会漏掉 thinking 块
+
+写这一节时我自己踩到的。为了构造「三个调用其中一个失败」的场景，我手工拼了一段 assistant 消息，里面只放了三个 `tool_use` 块：
+
+```json
+{
+  "error": {
+    "message": "The `content[].thinking` in the thinking mode must be passed back to the API.",
+    "type": "invalid_request_error"
+  }
+}
+```
+
+HTTP 400。原因是这个模型的响应里带有 `thinking` 块，而**消息历史必须把 assistant 的完整 `content` 原样带回** —— 不能只挑你需要的那几个块。
+
+这条和第 1 节的「常见坑」是同一条，但触发场景更隐蔽：**你并不是在手动改造模型的输出，只是在构造测试数据**。同样的规则仍然适用。
+
+> 顺带一个方法论上的教训：我的实验脚本把这个 400 吞掉了，打印出来是一行空白。**我差点把它解释成「模型在这个场景下不输出任何东西」。** 这和长上下文下 `max_tokens` 被吃光那次是同一类错误 —— **空白输出先查状态码与 `stop_reason`，再谈解释。**
+
+## 完整可运行代码
+
+```python
+# parallel_tool_loop.py
+"""并行工具调用 + 部分失败的回填。
+
+两个关键点：
+  1. 一轮里的**所有** tool_use 都要执行、都要回填（协议强制，漏一个就 400）
+  2. 失败的那条必须标 is_error，并且带上「为什么失败、下一步能做什么」
+"""
+
+import json
+import os
+from concurrent.futures import ThreadPoolExecutor
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+TOOLS = [
+    {
+        "name": "get_stock",
+        "description": "查询商品库存。",
+        "input_schema": {
+            "type": "object",
+            "properties": {"sku": {"type": "string", "description": "商品编码"}},
+            "required": ["sku"],
+        },
+    }
+]
+
+KNOWN = {"SKU-1": 42, "SKU-3": 7}
+
+
+def get_stock(sku: str) -> dict:
+    if sku not in KNOWN:
+        # 返回结构化的失败，而不是抛异常 —— 模型看不到栈
+        raise SkuNotFound(sku)
+    return {"sku": sku, "stock": KNOWN[sku]}
+
+
+class SkuNotFound(Exception):
+    def __init__(self, sku: str):
+        super().__init__(sku)
+        self.sku = sku
+
+
+def fill(block) -> dict:
+    """把一个 tool_use 变成 tool_result。**每个块都必须产出结果。**"""
+    try:
+        output = get_stock(**block.input)
+        return {
+            "type": "tool_result",
+            "tool_use_id": block.id,
+            "content": json.dumps(output, ensure_ascii=False),
+        }
+    except SkuNotFound as exc:
+        # 标 is_error + 写清原因与下一步。缺任一项，模型要么把错误当数据，
+        # 要么用同样的参数原地重试一次（本节实测）。
+        return {
+            "type": "tool_result",
+            "tool_use_id": block.id,
+            "is_error": True,
+            "content": json.dumps(
+                {
+                    "error": "sku_not_found",
+                    "message": f"系统中不存在编码 {exc.sku}。",
+                    "hint": "可能是编码输入错误，或该商品已下架。请向用户确认编码后重试。",
+                    "retryable": False,   # 明确告诉它：重试没有意义
+                },
+                ensure_ascii=False,
+            ),
+        }
+
+
+def run(question: str, max_rounds: int = 8) -> str:
+    messages = [{"role": "user", "content": question}]
+
+    for _ in range(max_rounds):
+        resp = client.messages.create(
+            model=MODEL, max_tokens=4000, tools=TOOLS, messages=messages,
+        )
+        if resp.stop_reason != "tool_use":
+            return "".join(b.text for b in resp.content if b.type == "text")
+
+        # 整个 content 数组原样带回（含 thinking 块，少一个就 400）
+        messages.append({"role": "assistant", "content": resp.content})
+
+        blocks = [b for b in resp.content if b.type == "tool_use"]
+        # 并行执行：这些调用之间没有依赖
+        with ThreadPoolExecutor(max_workers=len(blocks)) as pool:
+            results = list(pool.map(fill, blocks))
+
+        messages.append({"role": "user", "content": results})
+
+    return f"达到 {max_rounds} 轮上限"
+
+
+if __name__ == "__main__":
+    print(run("查一下这三个 SKU 的库存：SKU-1、SKU-404、SKU-3。"))
+```
+
+> **实跑状态**：本文表格与报错报文是**实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+
+## 常见坑
+
+**只处理第一个 `tool_use`。** 一轮里可能有多个。所有的都要执行、都要回填 —— 漏一个就是 400（协议会拦，这是好事）。
+
+**回填失败结果时不标 `is_error`。** 实测：不标的话，模型会把那条错误**当成查询结果写进表格**展示给用户。3/3 都是这样。
+
+**只标 `is_error` 但不写原因。** 实测：模型知道失败了，但只能**用同样的参数原地重试**（3 次里 2 次）。这次重试注定失败，纯粹浪费一次往返。
+
+**以为重复执行的风险主要来自模型。** 实测：写操作返回「状态未知」时，模型**主动选择不重试**，还解释了原因。真正会重复发请求的是你的 HTTP 客户端、网关和任务队列 —— **幂等键该防的是它们**。
+
+**指望模型自己生成幂等键。** 它可能换个措辞、换个顺序，于是变成一个新的键，去重就失效了。幂等键由代码层生成并注入。
+
+**手工构造消息历史时只挑需要的块。** 实测报错：`The content[].thinking in the thinking mode must be passed back to the API.`（400）。assistant 的 `content` 必须原样带回。
+
+**看到空输出就下结论。** 本节那个 400 在我的脚本里显示为一行空白，差点被我解释成「模型什么都不输出」。**先查状态码和 `stop_reason`。**
