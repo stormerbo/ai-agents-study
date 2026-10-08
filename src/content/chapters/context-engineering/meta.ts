@@ -159,8 +159,8 @@ export const chapter = {
       summary: '大家把它讲成“并行提速”，但生产系统里用它最常见的理由，其实是隔离上下文。',
       estimatedMinutes: 23,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['subagent', 'isolation', 'multi-agent'],
       checkpoints: [
         {
@@ -169,7 +169,8 @@ export const chapter = {
           question:
             '一个探索型子任务（比如“在这 50 个文件里找出所有调用点”）交给子智能体去做，最主要的收益是什么？',
           answer:
-            '主要收益是**上下文隔离**，而不是速度。主 agent 需要的是结论（“调用点在这些文件里”），而不是探索过程中的几十次文件读取与试错——那些中间输出如果留在主上下文里，会迅速占满窗口并稀释注意力。子智能体在自己的独立上下文里承受这些噪声，只把精炼结论回传。速度提升只是附带效果，且只在子任务之间真正独立时才存在。',
+            '主要收益是**上下文隔离**，而不是速度。主 agent 需要的是结论，而不是探索过程中的几十次读取与试错 —— 那些中间输出留在主上下文里，会占容量、稀释注意力，而且**每一轮都要重发一遍**。本节实测：20 篇文档的检索任务 + 3 轮追问，隔离路线的主上下文峰值是 1258 token，而「全文常驻主上下文」路线是 6816（1/5），总 token 也从 25913 降到 9182。',
+          note: '本节实测（deepseek-flash，2026-10-08）：主上下文峰值 1258 vs 6816；总 token 9182 vs 25913。',
           resourceIds: ['anthropic-multi-agent-research'],
         },
         {
@@ -177,7 +178,8 @@ export const chapter = {
           basis: 'inferred',
           question: '子智能体方案的主要代价是什么？什么情况下不该用它？',
           answer:
-            '代价是 token 消耗显著上升——每个子智能体都要重新装载任务背景，并且它的探索过程本身也在消耗 token，整体用量通常比单 agent 高出数倍。所以当任务本身很短、或者子任务之间高度依赖（需要频繁共享中间状态）时，不该用它：此时隔离带来的收益抵不过重复装载与协调的成本。',
+            '代价的**唯一决定因素是「同一份内容被装载了几次」**，所以「一定更贵」的说法不成立。本节实测两个方向：和「资料全程常驻主上下文」比，隔离反而更省；和「共享背景只装载一次」比，隔离贵 **8.1 倍**（68548 vs 8430 token）—— 因为 8 个子 agent 各自重复装载了那份 3000 字符的背景。所以不该用的情况是：子任务多且都要带大段共享背景（先试着收窄背景、用 prompt caching），以及子任务之间高度依赖需要频繁共享中间状态时。',
+          note: '本节实测（deepseek-flash，2026-10-08）：8 个子 agent 各装一次共享背景 → 68548 token，装载 1 次 → 8430 token。',
           resourceIds: ['anthropic-multi-agent-research'],
         },
       ],
@@ -205,8 +207,8 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
-  updatedAt: '2026-09-24',
-  verifiedAt: '2026-09-24',
+  status: 'drafting',
+  updatedAt: '2026-10-08',
+  verifiedAt: '2026-10-08',
   flagship: true,
 } satisfies Chapter;
