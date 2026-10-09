@@ -1,4 +1,5 @@
-import { getResources } from '@/content/curriculum';
+import Link from 'next/link';
+import { getResources, getLesson } from '@/content/curriculum';
 import type { Checkpoint, ClaimBasis } from '@/content/curriculum/schema';
 import { InlineMd } from '@/components/ui/inline-md';
 import { cn } from '@/lib/utils';
@@ -33,13 +34,24 @@ function BasisTag({ basis }: { basis: ClaimBasis }) {
   );
 }
 
-export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
+export function CheckpointList({
+  checkpoints,
+  currentLessonId,
+}: {
+  checkpoints: Checkpoint[];
+  /** 没填 reviewLessonId 时，回看目标默认是本节 */
+  currentLessonId?: string;
+}) {
   if (checkpoints.length === 0) return null;
 
   return (
     <ul className="space-y-2">
       {checkpoints.map((cp) => {
         const sources = getResources(cp.sourceIds ?? []);
+        // 回看目标：优先用显式指定的那一节，否则退回本节。
+        // 这样每条自检项都有一个「答不出来看哪里」的出口 —— 而答案本身就在本节的情况是多数。
+        const reviewId = cp.reviewLessonId ?? currentLessonId;
+        const review = reviewId ? getLesson(reviewId) : undefined;
 
         return (
           <li key={cp.id}>
@@ -80,6 +92,18 @@ export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
                     </a>
                   ))}
                 </div>
+
+                {review && (
+                  <p className="mt-3 text-xs">
+                    <span className="text-muted-foreground/70">答不出来？回看</span>{' '}
+                    <Link
+                      href={`/chapters/${review.chapter.id}/${review.lesson.slug}`}
+                      className="text-accent underline-offset-2 hover:underline"
+                    >
+                      {review.lesson.title}
+                    </Link>
+                  </p>
+                )}
 
                 {cp.note && (
                   <p className="text-muted-foreground/70 border-border/60 mt-2.5 border-l-2 pl-3 text-xs leading-relaxed">

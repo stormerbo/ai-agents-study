@@ -3,7 +3,7 @@ import type { Chapter } from '@/content/curriculum/schema';
 export const chapter = {
   id: 'reading-source',
   stageId: 'stage-5-practice',
-  order: 21,
+  order: 22,
   title: '源码研读',
   subtitle: '按「读它的理由」挑项目',
   summary:

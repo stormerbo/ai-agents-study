@@ -3,7 +3,7 @@ import type { Chapter } from '@/content/curriculum/schema';
 export const chapter = {
   id: 'capstone',
   stageId: 'stage-5-practice',
-  order: 22,
+  order: 23,
   title: '综合项目',
   subtitle: '从需求到交付走一遍',
   summary:

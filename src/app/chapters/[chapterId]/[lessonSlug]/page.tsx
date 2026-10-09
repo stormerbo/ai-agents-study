@@ -101,7 +101,7 @@ export default async function LessonPage(props: PageProps<'/chapters/[chapterId]
             先自己回答，再展开对照。直接看答案等于没做。每条答案都标注了依据类型。
           </p>
           <div className="mt-4">
-            <CheckpointList checkpoints={lesson.checkpoints} />
+            <CheckpointList checkpoints={lesson.checkpoints} currentLessonId={lesson.id} />
           </div>
         </section>
       )}

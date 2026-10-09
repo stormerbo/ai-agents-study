@@ -22,6 +22,7 @@ import { chapter as costAndLatency } from './cost-and-latency/meta';
 import { chapter as humanInTheLoop } from './human-in-the-loop/meta';
 import { chapter as agentDeployment } from './agent-deployment/meta';
 import { chapter as readingSource } from './reading-source/meta';
+import { chapter as tooling } from './tooling/meta';
 import { chapter as capstone } from './capstone/meta';
 
 /**
@@ -58,6 +59,7 @@ export const chapters: Chapter[] = [
   costAndLatency,
   humanInTheLoop,
   agentDeployment,
+  tooling,
   readingSource,
   capstone,
 ].sort((a, b) => a.order - b.order);

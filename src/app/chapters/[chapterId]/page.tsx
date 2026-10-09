@@ -121,7 +121,7 @@ function CheckpointSummary({ chapter }: { chapter: Chapter }) {
                 来自《{lesson.title}》→
               </Link>
             </h3>
-            <CheckpointList checkpoints={checkpoints} />
+            <CheckpointList checkpoints={checkpoints} currentLessonId={lesson.id} />
           </div>
         ))}
       </div>

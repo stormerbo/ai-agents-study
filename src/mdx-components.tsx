@@ -1,6 +1,7 @@
 import type { MDXComponents } from 'mdx/types';
 
 import { Mermaid } from '@/components/mdx/mermaid';
+import { ApprovalDemo } from '@/components/mdx/approval-demo';
 
 /**
  * MDX 的全局组件映射。
@@ -44,5 +45,6 @@ export function useMDXComponents(): MDXComponents {
     a: Anchor,
     table: Table,
     Mermaid,
+    ApprovalDemo,
   };
 }

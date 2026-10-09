@@ -1,0 +1,250 @@
+---
+lesson: tooling/agent-ui
+title: 界面：把审批与进度做出来
+status: drafting
+---
+
+第 19 章讲了审批该展示什么、进度该怎么表达。那些是设计结论 —— 这一节把它们落成代码，并说清一个实现上的关键判断。
+
+## 一个反直觉的实现判断
+
+先说结论：**审批界面可以完全不需要客户端状态。**
+
+常见的做法是把它做成一个带 modal 状态、loading 状态、二次确认状态的前端组件 —— 那些状态都来自一个隐含的模型：**「先选中，再提交」**。
+
+而审批的四个选项（同意 / 拒绝 / 修改后同意 / 换个方式）**本质上是四条不同的请求**，不是一个「选择」：
+
+```text
+同意          → 执行原动作
+拒绝          → 取消并重新规划（第 19 章：中止是最后手段）
+修改后同意    → 执行修改后的版本（不重新规划 —— 人的修改是约束）
+换个方式      → 重新规划，把人的意见当约束
+```
+
+四条各自的下一步完全不同，所以它们**不需要先被选中再一起提交**。理解这一点之后，界面就退化成了一组按钮 —— 而它可以是纯 server component，**零客户端 JS**。
+
+好处很具体：没有水合、没有 hydration mismatch 的风险（§4.7 记录过这个坑）、也没有内存状态与存储不同步的问题。
+
+## 一个可以直接用的实现
+
+下面是本站自己用的那一版（`src/components/mdx/approval-demo.tsx`）。它展示了三样信息、给了四个选项，而且是纯 server component：
+
+<ApprovalDemo />
+
+**注意上面那一块是真组件，不是截图。** 它渲染在页面里，用原生 `<details>` 折叠正文、用按钮表达四个选项 —— 没有一行客户端 JS。
+
+三个设计点值得单独说：
+
+**一，信息按「会改变什么」组织，不是按参数。** 界面说的是「发送回复 → zhangsan@example.com（外部地址）」而不是「调用 send_reply」。第 19 章那条结论（减少的是心理推算，不是信息量）就落在这里。
+
+**二，「为什么需要你确认」直接说出来。** 那一行「可逆性：发出后无法撤回」不是装饰 —— 它让用户理解这次打断的理由，而理解了才会真的看内容。
+
+**三，四个选项而不是两个。** 「修改后同意」和「换个方式」是最常见的真实需求；只给同意/拒绝时，用户的反应通常是拒绝然后重说一遍，而那浪费了 agent 已经做好的部分。
+
+## 进度：为什么不用百分比
+
+第 19 章的结论是**按动作显示**，而不是按步数算百分比。代码上的形态就是一串动作描述：
+
+```text
+✓ 读取订单 A-1001
+✓ 检索退款政策
+✓ 整理要点
+⏸ 等待确认发送给 zhangsan@example.com
+```
+
+为什么不用百分比？因为**步数在 agent 里不可预知**。第 10 章实测过静态计划在分支任务上有 0/3 的成功率 —— 计划本身都不可靠，用它来算总步数就更不可靠。百分比会因此跳来跳去，还给出虚假的精确感。
+
+而上面那串动作具体、不会跳，信息量并不比百分比少。**如果确实需要一个粗糙的进度感**，用可预知的阶段（已找到资料 → 正在整理 → 准备发送），而不是用步数。
+
+## 一个容易忽略的状态：卡住了
+
+第 19 章讲过「三类必须暴露的异常」：卡住了、降级了、不确定。界面层要做的就是给它们**各自的显示**：
+
+| 状态 | 界面显示 |
+|---|---|
+| **卡住了** | 「同一个动作已重试 3 次，没有进展」+ 一个「停止」按钮 |
+| **降级了** | 「当前使用简化处理」—— 用户有权知道在用哪个版本 |
+| **不确定** | 允许模型输出「需要确认」，而不是强制它填一个值（第 5 章实测过：不存在的事实被 5/5 编了出来） |
+
+三行里第二行最容易被漏。它的代价是：用户以为自己拿到的是完整能力的结果，而实际上不是 —— **那会让他在错误的前提上做判断。**
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["审批界面"] --> B{"它是「先选中再提交」吗？"}
+    B -->|"不是 —— 四个选项是四条请求"| C["可以是纯 server component<br/>零客户端 JS"]
+    B -->|"是（常见误解）"| D["被迫引入 modal/loading 状态<br/>+ 水合与同步风险"]
+    C --> E["展示三样：动作与目标 / 影响范围 / 可逆性"]
+    E --> F["四个选项：同意 / 拒绝 / 修改后同意 / 换个方式"]
+    G["进度"] --> H{"用百分比吗？"}
+    H -->|"不用：步数不可预知（第 10 章 0/3）"| I["按动作显示<br/>「正在读第 3 份文档」"]
+    H -->|用| J["跳来跳去 + 虚假精度"]
+    K["三类异常要有各自显示"] --> K1["卡住了 → 说 + 给停止"]
+    K --> K2["降级了 → 说，别瞒"]
+    K --> K3["不确定 → 允许说「需要确认」"]
+`}
+/>
+
+## 和前面几章的关系
+
+这一节没有新概念 —— 它把第 19 章的结论落成了代码。三处对应：
+
+| 第 19 章的结论 | 这一节的实现 |
+|---|---|
+| 审批展示三样信息 | 三行 `dl`：动作与目标 / 影响范围 / 可逆性 |
+| 四个响应选项 | 四个按钮，各自对应不同的下一步 |
+| 进度按动作而非百分比 | 一串动作描述，没有百分比 |
+
+**这个对应关系本身就是一条经验：设计结论和实现之间通常隔着一层「隐含的模型」。** 这里那一层是「先选中再提交」—— 拆掉它之后，实现反而变简单了（从有状态组件变成纯 server component）。
+
+
+## 一个具体的实现细节：为什么用 details 而不是 state
+
+上面那个组件里，正文的折叠用的是原生 `<details>`/`<summary>`，不是 React 的 `useState`。这个选择有三个具体好处：
+
+| 用 `<details>` | 用 `useState` |
+|---|---|
+| 服务端就能渲染，首屏可见 | 要等水合才能交互 |
+| 零 JS | 增加客户端 bundle |
+| 不会被水合状态不一致影响 | §4.7 记录过这类坑 |
+
+**第三条特别值得说。** 本站自己在 Playground 上踩过一次 localStorage 与首屏渲染不一致的坑（服务端没有 localStorage，客户端有）—— 那次修复方式是用 `useSyncExternalStore` 的 `getServerSnapshot`。
+
+而 `<details>` **从原理上避开了这类问题**：折叠状态不在 React 里，也不在 localStorage 里，它在浏览器的原生行为里。**能用平台能力解决的问题，不要用状态解决** —— 这是同一类判断。
+
+## 一个和「谁在维护」有关的取舍
+
+最后补一个非技术的点。上面那个实现之所以能是纯 server component，前提是**四个选项各自对应一条明确的请求**。
+
+而这个前提在一种情况下不成立：**如果审批要支持「先改几处、再一起提交」**（比如同时改收件人、正文、发送时间），那它确实需要客户端状态 —— 因为那才是真正的「先编辑再提交」。
+
+所以取舍不是「有状态不好」，而是**先看清楚这次交互到底是「四条路选一条」还是「编辑后提交」**。前者不需要状态，后者需要。
+
+而这个问题应该在设计阶段回答，不是实现阶段 —— 因为它的答案决定了组件的形状。第 19 章那张「四个响应选项」的表其实已经回答了它：**那四个是一组并列的动作，不是一个表单。**
+## 完整可运行代码
+
+下面就是上面那个组件的源码，可以直接复制。它是一个 server component（没有 `"use client"`）。
+
+```tsx
+/**'
+ * 审批界面 + 进度展示的最小实现（第 19 章结论的落地）。
+ *
+ * 两个设计决定：
+ * 1. **是 server component** —— 用原生 <details> 折叠，零客户端 JS。
+ *    审批界面不需要状态：选项是链接/表单，不是内存里的开关。
+ * 2. **进度按「动作」而不是百分比** —— 因为 agent 的步数不可预知（第 10 章实测过计划 0/3），
+ *    百分比是虚假精度。「正在读第 3 份文档」既具体又不会跳。
+ */
+
+const APPROVAL = {
+  action: '发送回复',
+  target: 'zhangsan@example.com',
+  targetKind: '外部地址',
+  scope: '1 个外部收件人可见',
+  reversible: '发出后无法撤回',
+  body: '订单 A-1001 已发货，物流显示派送中。若超过 7 天未更新，可发起售后。',
+};
+
+const OPTIONS = [
+  { label: '同意', hint: '就这么发', tone: 'primary' },
+  { label: '拒绝', hint: '不要发这封', tone: 'plain' },
+  { label: '修改后同意', hint: '方向对，改收件人或措辞', tone: 'plain' },
+  { label: '换个方式', hint: '目标对，做法不对', tone: 'plain' },
+];
+
+const STEPS = [
+  { text: '读取订单 A-1001', state: 'done' },
+  { text: '检索退款政策', state: 'done' },
+  { text: '整理要点', state: 'done' },
+  { text: '等待确认发送给 zhangsan@example.com', state: 'waiting' },
+];
+
+export function ApprovalDemo() {
+  return (
+    <div className="not-prose my-6 space-y-4">
+      {/* 进度：按动作，不按百分比 */}
+      <div className="border-border bg-card rounded-lg border p-4">
+        <p className="text-muted-foreground mb-3 text-xs font-medium">进度</p>
+        <ol className="space-y-1.5">
+          {STEPS.map((s) => (
+            <li key={s.text} className="flex items-baseline gap-2 text-sm">
+              <span aria-hidden className="shrink-0 font-mono text-xs">
+                {s.state === 'done' ? '✓' : s.state === 'waiting' ? '⏸' : '·'}
+              </span>
+              <span className={s.state === 'waiting' ? 'text-accent' : 'text-muted-foreground'}>
+                {s.text}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="text-muted-foreground/70 mt-3 text-xs">
+          注意这里没有「60%」—— 步数事前不知道，百分比是虚假精度。
+        </p>
+      </div>
+
+      {/* 审批：三样信息 + 四个选项 */}
+      <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+        <p className="mb-3 text-xs font-medium text-amber-700 dark:text-amber-500">
+          ⏸ 需要你确认：这个动作不可逆
+        </p>
+
+        <dl className="space-y-2 text-sm">
+          <div className="flex gap-3">
+            <dt className="text-muted-foreground w-20 shrink-0 text-xs leading-6">动作与目标</dt>
+            <dd className="leading-6">
+              {APPROVAL.action} → <span className="font-mono text-xs">{APPROVAL.target}</span>
+              <span className="text-muted-foreground ml-1.5 text-xs">（{APPROVAL.targetKind}）</span>
+            </dd>
+          </div>
+          <div className="flex gap-3">
+            <dt className="text-muted-foreground w-20 shrink-0 text-xs leading-6">影响范围</dt>
+            <dd className="leading-6">{APPROVAL.scope}</dd>
+          </div>
+          <div className="flex gap-3">
+            <dt className="text-muted-foreground w-20 shrink-0 text-xs leading-6">可逆性</dt>
+            <dd className="leading-6 text-amber-700 dark:text-amber-500">{APPROVAL.reversible}</dd>
+          </div>
+        </dl>
+
+        <details className="mt-3 text-sm">
+          <summary className="text-muted-foreground cursor-pointer text-xs">查看正文</summary>
+          <p className="text-muted-foreground mt-2 text-xs leading-relaxed">{APPROVAL.body}</p>
+        </details>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {OPTIONS.map((o, i) => (
+            <button
+              key={o.label}
+              type="button"
+              title={o.hint}
+              className={
+                i === 0
+                  ? 'bg-foreground text-background rounded px-3 py-1.5 text-xs font-medium'
+                  : 'border-border hover:bg-muted rounded border px-3 py-1.5 text-xs'
+              }
+            >
+              {o.label}
+              <span className="sr-only">：{o.hint}</span>
+            </button>
+          ))}
+        </div>
+
+        <p className="text-muted-foreground/70 mt-3 text-xs leading-relaxed">
+          四个选项而不是两个 —— 「修改后同意」和「换个方式」是最常见的真实需求。
+          只给同意/拒绝时，用户的反应通常是拒绝然后重说一遍，
+          而那会浪费 agent 已经做好的部分。
+        </p>
+      </div>
+    </div>
+  );
+}
+```
+
+## 常见坑
+
+- **把审批做成「先选中再提交」。** 四个选项是四条不同的请求，不是一次选择 —— 想清楚这点就不需要客户端状态。
+- **只显示参数不显示影响。** 用户要判断的是「这会改变什么」，不是「它调用了哪个工具」。
+- **只给同意/拒绝。** 缺「修改后同意」和「换个方式」，用户会拒绝然后重说一遍，浪费已完成的部分。
+- **进度用百分比。** 步数不可预知（第 10 章实测计划 0/3），百分比会跳且是虚假精度。
+- **不显示降级。** 用户有权知道他在用哪个版本，否则会在错误前提上做判断。
+- **不给「不确定」出口。** 第 5 章实测：不存在的事实被 5/5 编了出来 —— 要允许模型说「需要确认」。
