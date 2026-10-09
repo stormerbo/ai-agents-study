@@ -67,11 +67,17 @@ node scripts/check-links.mjs   # 巡检所有外链可用性
 | 技术栈   | Next.js 16 App Router + React 19 + Tailwind 4 + TypeScript                          |
 | 内容格式 | 每章一目录：`meta.ts`（纯元数据）+ `body.ts`（server-only 加载器）+ 每节一个 `.mdx` |
 | 产品形态 | 第一版纯静态内容站，无账号无数据库；进度存储预留服务端扩展接口                      |
-| 内容生产 | 正文手工精编，外部资源精确外链，**不做爬虫抓取**                                    |
-| 模型厂商 | 多厂商，Claude 为主，DeepSeek 有 Anthropic 兼容端点                                 |
-| API Key  | BYOK + 服务端中转；Key 只存浏览器 localStorage                                      |
-| 语言     | 简体中文正文，技术术语保留英文原词                                                  |
-| 代码示例 | Python 为主，涉及浏览器/MCP/Node 时补 TypeScript                                    |
+| 内容生产 | 正文手工精编，外部资源精确外链；**资源全文翻译例外**（见下）                        |
+
+> **关于「不做爬虫抓取」**（2026-10-09 变更）：原决策是「外部资源精确外链，不做爬虫抓取」。
+> 用户明确要求「站内直接给中文全文，而不是导读」，因此改为：**抓取 48 条资源的正文并机器翻译**。
+> 译文存在 `src/content/reading/<id>.zh.md`，**仅供个人学习**，页面顶部有声明与原文链接。
+> ⚠️ **若要公开部署，这批译文需要先解决授权问题。**
+
+| 模型厂商 | 多厂商，Claude 为主，DeepSeek 有 Anthropic 兼容端点 |
+| API Key | BYOK + 服务端中转；Key 只存浏览器 localStorage |
+| 语言 | 简体中文正文，技术术语保留英文原词 |
+| 代码示例 | Python 为主，涉及浏览器/MCP/Node 时补 TypeScript |
 
 ## 3. 内容标准（核心）
 

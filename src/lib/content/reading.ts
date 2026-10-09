@@ -1,35 +1,36 @@
 /**
- * 站内「精读」正文的加载器。
+ * 站内「精读」与「中文全文」的加载器。
  *
- * ## 为什么要有这个东西
+ * ## 两种内容，两条管线
  *
- * 资源库里的 48 条多半是英文外链 —— 每读一条都要跳出去、还要过语言关。
- * 这里给每条配一篇**中文精读**：讲清原文的核心结论与取舍，让读者不必跳转就能判断
- * 「这条值不值得细读、该读哪部分」。
+ * | | 来源 | 存法 | 怎么渲染 |
+ * |---|---|---|---|
+ * | **导读** | 本站原创 | `.mdx`，显式 import | MDX（手写内容，能用组件） |
+ * | **中文全文** | 机器翻译 | `.zh.md`，`fs` 读 | `react-markdown`（见 `components/ui/markdown.tsx`） |
  *
- * ## 为什么是「精读」而不是「全文翻译」
+ * 为什么译文不走 MDX：机器产出的 Markdown 里有原文的 `<tag>`、JSON 的 `{`、
+ * README 的 `</details>`，还有**数量不保证成对的代码围栏**。实测九篇里七篇编译不过，
+ * 而围栏一乱，转义方案也失效。分开处理之后两边都简单了。
  *
- * 两个理由，第二个更重要：
+ * 为什么译文用 `fs` 而不是显式 import：它们是**机器生成的、会持续增加**，
+ * 手维护列表必然漂移。导读是手写的，所以仍然显式 import —— 路径写错在 tsc 阶段就报错。
  *
- * 1. **版权与 `AGENTS.md` 的既有决策** —— 项目明确写了「外部资源精确外链，不做爬虫抓取」。
- *    把整篇译文重新发布，既是版权问题，也正好是那条决策要避免的事。
- * 2. **精读比翻译更有用** —— 读者要的通常不是「逐句的中文」，而是「它说了什么、
- *    哪部分值得读、和我已知的有什么关系」。一篇 1200 字的精读能替代 8000 字的译文，
- *    而且顺带回答了「要不要读原文」这个问题。
+ * ## 版权说明
  *
- * 原文链接始终保留在精读页顶部 —— 精读是**入口**，不是替代品。
- *
- * ## 登记方式
- *
- * 和 `src/lib/content/body.ts` 同一套：**显式逐个 import，不用 glob**。
- * 路径写错会在 `tsc` 阶段报错，而不是等运行时才发现某条精读凭空消失。
+ * 译文仅供个人学习。译文页顶部会显示机器翻译声明与原文链接；
+ * `AGENTS.md` §2 的「不做爬虫抓取」在本项目里被用户的明确要求覆盖，
+ * **若将来公开部署，这批译文需要先解决授权问题**。
  */
 
 import 'server-only';
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 type ReadingLoader = () => Promise<{ default: React.ComponentType }>;
 
-const REGISTRY: Record<string, ReadingLoader> = {
+/** 中文导读（原创）：讲清结论与取舍，并给出「该读哪节」。 */
+const DIGESTS: Record<string, ReadingLoader> = {
   'ai-agents-from-zero': () => import('@/content/reading/ai-agents-from-zero.mdx'),
   'ai-engineering-huyen': () => import('@/content/reading/ai-engineering-huyen.mdx'),
   aider: () => import('@/content/reading/aider.mdx'),
@@ -83,20 +84,30 @@ const REGISTRY: Record<string, ReadingLoader> = {
   'twelve-factor-agents': () => import('@/content/reading/twelve-factor-agents.mdx'),
 };
 
-/** 这条资源有站内精读吗。列表页用它决定要不要标「站内精读」。 */
+const READING_DIR = join(process.cwd(), 'src/content/reading');
+
+/** 这条资源有站内导读吗。 */
 export function hasReading(resourceId: string): boolean {
-  return resourceId in REGISTRY;
+  return resourceId in DIGESTS;
 }
 
-/** 有精读的资源 id 列表 —— `generateStaticParams` 用。 */
-export function readingIds(): string[] {
-  return Object.keys(REGISTRY);
+/** 这条资源有中文全文吗。 */
+export function hasTranslation(resourceId: string): boolean {
+  return getTranslation(resourceId) !== undefined;
 }
 
-/** 取某条资源的精读组件。没有时返回 undefined。 */
+/** 取中文导读组件。没有时返回 undefined。 */
 export async function getReading(resourceId: string) {
-  const loader = REGISTRY[resourceId];
+  const loader = DIGESTS[resourceId];
   if (!loader) return undefined;
-  const mod = await loader();
-  return mod.default;
+  return (await loader()).default;
+}
+
+/** 取中文全文的原始 Markdown。没有时返回 undefined。 */
+export function getTranslation(resourceId: string): string | undefined {
+  try {
+    return readFileSync(join(READING_DIR, resourceId + '.zh.md'), 'utf8');
+  } catch {
+    return undefined;
+  }
 }

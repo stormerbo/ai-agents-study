@@ -3,8 +3,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { InlineMd, plainText } from '@/components/ui/inline-md';
+import { Markdown } from '@/components/ui/markdown';
 import { curriculum, getChapters, getResource } from '@/content/curriculum';
-import { getReading, hasReading } from '@/lib/content/reading';
+import { getReading, getTranslation, hasReading, hasTranslation } from '@/lib/content/reading';
 import {
   DIFFICULTY_LABEL,
   RESOURCE_KIND_LABEL,
@@ -44,6 +45,7 @@ export default async function ReadingPage(props: PageProps<'/resources/[resource
   if (!resource) notFound();
 
   const Body = hasReading(resourceId) ? await getReading(resourceId) : undefined;
+  const Translation = hasTranslation(resourceId) ? await getTranslation(resourceId) : undefined;
 
   // 哪些章引用了它 —— 读完精读之后最自然的下一步是去那一章
   const citingChapters = getChapters().filter((c) => {
@@ -121,18 +123,58 @@ export default async function ReadingPage(props: PageProps<'/resources/[resource
         </p>
       </section>
 
-      {Body ? (
+      {/* 中文全文优先 —— 这是这一页的主内容 */}
+      {Translation ? (
+        <>
+          <p className="mt-8 border-l-2 border-border/60 pl-3 text-xs leading-relaxed text-muted-foreground/70">
+            <strong className="font-medium">机器翻译</strong>，仅供个人学习参考；
+            版权归原作者所有，需要准确表述时请对照
+            <a
+              href={resource.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mx-0.5 underline-offset-2 hover:underline"
+            >
+              原文
+            </a>
+            。术语与代码标识符保留英文原词。
+          </p>
+          <article className="prose mt-8 max-w-none prose-zinc dark:prose-invert">
+            <Markdown>{Translation}</Markdown>
+          </article>
+        </>
+      ) : Body ? (
         <article className="prose mt-10 max-w-none prose-zinc dark:prose-invert">
           <Body />
         </article>
       ) : (
         <section className="mt-10 rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-medium">这条还没有站内精读</h2>
+          <h2 className="text-sm font-medium">这条还没有站内内容</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            站内精读在逐步补。这条目前只有上面那段「为什么值得读」，
+            中文全文还在逐步补。这条目前只有上面那段「为什么值得读」，
             需要完整内容请用顶部的「看原文」链接。
           </p>
         </section>
+      )}
+
+      {/* 导读：译文之上的判断（该读哪节、可跳哪节）。有译文时默认折叠，不抢主内容。 */}
+      {Body && Translation && (
+        <details className="group mt-14 overflow-hidden rounded-xl border border-border bg-card">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium marker:hidden hover:bg-muted/50">
+            <span
+              aria-hidden
+              className="font-mono text-xs text-muted-foreground/40 transition-transform group-open:rotate-90"
+            >
+              ▸
+            </span>
+            导读：这篇讲什么、该读哪节
+          </summary>
+          <div className="border-t border-border/70 px-4 py-5">
+            <article className="prose prose-sm max-w-none prose-zinc dark:prose-invert">
+              <Body />
+            </article>
+          </div>
+        </details>
       )}
 
       {citingChapters.length > 0 && (
