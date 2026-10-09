@@ -428,5 +428,69 @@ export const labs: Record<string, Lab> = {
     capabilities: ['multi-turn'],
     estimatedMinutes: 25,
   },
+
+  'lab-vision-extract': {
+    id: 'lab-vision-extract',
+    chapterId: 'multimodal',
+    lessonId: 'multimodal/when-vision-fails',
+    title: '视觉提取：把「看不见的错」抓出来',
+    goal: '上传一张含数据的截图，观察模型逐格提取的结果 —— 然后用同一张图跑第二次，靠「两次不一致」把可疑单元格找出来。',
+    surface: 'standalone',
+    allowedModels: COMMON_MODELS,
+    defaultModel: SONNET,
+    system: {
+      content:
+        '你是一个数据提取器。用户会给你一张包含表格的图片，你只负责逐格照抄，不做任何计算、换算或四舍五入。',
+      locked: true,
+    },
+    presets: [
+      {
+        label: '逐格提取成 JSON',
+        hint: '先跑一次把结果留着，再用同一张图跑第二次',
+        messages: userText(
+          '把这张表格里的每一行提取出来，返回 JSON 数组，每项形如 {"item":"...","qty":"...","amount":"..."}。数字必须逐字准确，不要做任何计算或四舍五入。只输出 JSON。',
+        ),
+      },
+      {
+        label: '只报一个汇总数',
+        hint: '对比「问一格」与「问全部格」的错误概率',
+        messages: userText('这张表格的合计金额是多少？只报数字。'),
+      },
+      {
+        label: '要求它自己做交叉校验',
+        hint: '注意：合计本身也可能被读错 —— 这道校验降低风险，但不消除风险',
+        messages: userText(
+          '把这张表格提取成 JSON，并额外给出 amount 一列的总和。只输出 JSON，形如 {"rows":[...],"amountTotal":"..."}。',
+        ),
+      },
+    ],
+    defaults: { temperature: 0, maxTokens: 2000 },
+    objectives: [
+      '先跑一次「逐格提取成 JSON」，把结果复制下来',
+      '用**同一张图**再跑一次，逐行比两份 JSON —— 不一致的格子就是可疑格',
+      '第 8 章实测：这个办法召回率 67%、精确率 100% —— 不一致必定有问题，但一致不代表正确',
+      '换一张行数更多的图重复一次，观察错误率随信息密度怎么变',
+      '迁回工程：视觉错误是**静默**的 —— 格式、类型、范围三重校验全都会通过，只有独立信源能发现它',
+    ],
+    troubleshooting: [
+      {
+        symptom: '图片没有出现预览',
+        cause: '浏览器不支持 createImageBitmap，或图片超过 4MB 上限',
+        fix: '换 PNG/JPEG 且小于 4MB 的图片；控件会把具体错误显示在按钮旁边。',
+      },
+      {
+        symptom: '模型输出的 JSON 被截断，根本解析不出来',
+        cause: '行数多时输出很长，max_tokens 不够 —— 这是第 8 章实测里真实出现过的一次',
+        fix: '调大本实验的 maxTokens，或者换一张行数更少的图。判据是看轨迹里 stop_reason 是不是 max_tokens。',
+      },
+      {
+        symptom: '两次跑出来的 JSON 完全一样，找不到可疑格',
+        cause: '这张图太简单，错误率为 0 —— 那不是「方法无效」，是没触发条件',
+        fix: '换一张行数更多的图。第 8 章实测：30 行全对、60 行偶发 1 处、120 行约 2% 出错。',
+      },
+    ],
+    capabilities: ['vision', 'json', 'multi-turn'],
+    estimatedMinutes: 25,
+  },
 };
 

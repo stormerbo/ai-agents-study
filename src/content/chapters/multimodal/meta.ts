@@ -167,6 +167,7 @@ export const chapter = {
     },
   ],
   resourceIds: ['claude-messages-api', 'claude-pricing', 'anthropic-context-engineering'],
+  labIds: ['lab-vision-extract'],
   backendMapping: {
     analogy: '多模态输入 ≈ 给系统加一种新的请求体类型：走同一条通道、占同一份预算，但多了一层「分辨率」的取舍',
     transferable: [

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
 
+import { ImageAttach, type AttachedImage } from '@/components/lab/image-attach';
 import { InlineMd } from '@/components/ui/inline-md';
 import { useChatRelay, type TraceEntry } from '@/hooks/use-chat-relay';
 import {
@@ -30,6 +31,22 @@ import { cn } from '@/lib/utils';
  * react-hooks/set-state-in-effect 规则禁止。
  */
 const subscribeNothing = () => () => {};
+
+/**
+ * 组装配送内容：**有图就发 ContentBlock 数组，没图就用字符串简写**。
+ *
+ * 两种形态都保留是有意的：字符串简写是各家的公共约定（第 8 章讲过它其实是
+ * 「content 数组」的语法糖），而数组形态才能表达「图和文本并列」——
+ * 顺序本身带语义（图片前后那句话的意思可以不同）。
+ */
+function buildContent(text: string, image: AttachedImage | null): unknown {
+  if (!image) return text;
+  return [
+    { type: 'image', mediaType: image.mediaType, dataBase64: image.dataBase64 },
+    // 只挂图不打字时给一句默认指令，否则模型不知道该拿这张图做什么
+    { type: 'text', text: text || '描述这张图片。' },
+  ];
+}
 
 /**
  * 站内代码实验。
@@ -102,6 +119,7 @@ export function Playground({
 
   const [system, setSystem] = useState(lab.system?.content ?? '');
   const [input, setInput] = useState('');
+  const [image, setImage] = useState<AttachedImage | null>(null);
   const relay = useChatRelay();
 
   /**
@@ -134,7 +152,7 @@ export function Playground({
 
   const canRun =
     apiKey.length > 0 &&
-    input.trim().length > 0 &&
+    (input.trim().length > 0 || image !== null) &&
     !relay.state.running &&
     baseUrl.trim().length > 0 &&
     model.trim().length > 0;
@@ -146,7 +164,7 @@ export function Playground({
       apiKey,
       baseUrl: baseUrl.trim(),
       system: system.trim() || undefined,
-      messages: [{ role: 'user', content: input.trim() }],
+      messages: [{ role: 'user', content: buildContent(input.trim(), image) }],
       maxTokens: lab.defaults?.maxTokens,
     });
   };
@@ -333,6 +351,10 @@ export function Playground({
           placeholder="输入一句话，观察模型的完整响应过程"
           className="border-border bg-background w-full resize-y rounded-md border px-3 py-2 text-sm"
         />
+
+        <div className="mt-2">
+          <ImageAttach value={image} onChange={setImage} disabled={relay.state.running} />
+        </div>
 
         <div className="mt-2 flex items-center gap-2">
           <button
