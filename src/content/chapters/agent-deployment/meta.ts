@@ -27,8 +27,8 @@ export const chapter = {
       summary: '同步、异步、还是队列 —— 这个选择会决定后面所有运维问题的形状。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['deployment', 'async'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: 'agent 的行为由三样东西共同决定，它们都得能单独回滚。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['versioning', 'rollback'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '上游会挂、模型会变、账单会超 —— 每一类都要有预设的动作。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['incident', 'degradation'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '路径不是一条直线：部署只是这条循环的起点。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['iteration', 'feedback-loop'],
       checkpoints: [
         {
@@ -154,7 +154,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
