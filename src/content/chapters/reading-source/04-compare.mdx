@@ -1,0 +1,245 @@
+---
+lesson: reading-source/compare
+title: 横向对比：同一个能力的不同实现
+status: drafting
+---
+
+第 3 节是纵向追踪（一条调用链读到底）。这一节讲另一种读法：**横向对比。**
+
+它回答的问题不一样：纵向追是"它是怎么做的"，横向比是"**为什么这样做、还有没有别的做法**"。
+
+## 一个具体的对比
+
+拿一个最简单的能力当例子：**定义一个带枚举参数的工具。** 我在三种实现里各写一遍：
+
+| | 实现方式 | 约束从哪来 |
+|---|---|---|
+| A | LangChain `@tool` | Python 类型标注 |
+| B | 手写 JSON Schema（第 4 章） | 手写 |
+| C | MCP server 定义（第 14 章） | 手写 |
+
+跑出来的参数 schema：
+
+```text
+A  {"city": {"enum": ["北京","上海"], "description": "出发城市", "type": "string"}, ...}
+   required: ["city", "day", "passengers"]
+
+B  {"city": {"type": "string", "enum": ["北京","上海"], "description": "出发城市"}, ...}
+   required: ["city", "day", "passengers"]
+
+C  {"city": {"type": "string", "enum": ["北京","上海"]}, ...}
+   required: （未声明）
+```
+
+（实跑数据，2026-10-09。langchain_core 0.3.63。）
+
+## 三个读数
+
+**第一，表达约束的能力三者相同。** 都能给出 `enum`。所以"用哪个框架"不影响你能不能约束参数 —— 影响的是**约束从哪来**。
+
+**第二，差别在"约束源"和"签名源"是不是同一个。** A 里类型标注同时是签名和约束源，改一处两边都变；B、C 里它们是两份手写的数据，改了一处不会同步另一处。
+
+**第三，`required` 揭示了一个协议层的差别。** A 和 B 都有明确的 required 列表，**C 里根本没有** —— 而那不是我的笔误。
+
+第三条值得展开，因为它是"横向对比"这一类读法最典型的产出。
+
+## 一条协议层的结论
+
+MCP 的 `tools/list` 规范只要求 server 提供 `inputSchema`（第 14 章实测过：返回的字段只有 name、description、inputSchema 三样），**它不要求里面有 `required`**。
+
+所以：**在跨进程的场景里，「参数是不是必填」不可保证。** 调用方拿到一个工具定义，不能假设"没列出来的参数就是可选的"—— 因为可能只是没写。
+
+这条结论的来源不是读 MCP 的文档，而是**把三种实现并排放**：一个本地的、一个手写的、一个跨协议的，`required` 的有无立刻显出差别。
+
+**这就是横向对比的价值：单个实现看不出"什么是约定，什么只是这个实现的选择"，并排看就清楚了。**
+
+## 怎么选对比对象
+
+横向对比的第一个问题是"跟谁比"。三种有效的对比轴：
+
+**一、同一能力的不同实现。** 就像上面那个例子 —— 定义一个带约束的工具，三种写法。这种对比能揭示"哪些是本质，哪些是实现细节"。
+
+**二、同一个库的两个版本。** 第 14 章那个 MCP 的破坏性修订就是这个类型：2026-07-28 把 initialize 握手去掉了。读 changelog 加两个版本的 diff，比读单份文档更能理解"为什么要有状态"。
+
+**三、同一个问题的不同抽象层次。** 比如"工具描述"这件事 —— 在 LangChain 里是一个文档字符串，在 API 层是一段 JSON，在 MCP 里是一个协议字段。**它们约束的东西完全不同。**
+
+第三种最难，但产出最大 —— 因为它让你看到**同一件事在不同层次被表达成什么**，而那正是第 13 章"抽象模型"那一节要的东西。
+
+## 一个反过来的检查：什么时候对比会误导
+
+横向对比也有失效的情况，有两种：
+
+**一、两个实现的目标不同。** 拿一个为性能优化的库和一个为易用性优化的库比"谁的 API 更简洁"，结论没有意义。
+
+**二、版本差太远。** 比 `v0.1` 和 `v3.0` 往往比的是"两个项目"，不是"两个设计选择"。
+
+所以对比前要先确认：**这两个实现是不是在解同一个问题、约束条件是不是可比。** 这和第 4 章那条"对照组里必须有正确答案"是同一个道理 —— **对比的价值取决于对照组的构造**。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["横向对比"] --> B{"跟谁比？"}
+    B -->|"同一能力不同实现"| C["揭示：哪些是本质<br/>哪些是实现选择"]
+    B -->|"同库不同版本"| D["揭示：为什么要有 X<br/>（第 14 章 MCP 破坏性修订）"]
+    B -->|"同一问题不同抽象层次"| E["揭示：同一件事在不同层<br/>被表达成什么"]
+    C --> F["产出：协议层 vs 实现层的边界"]
+    D --> F
+    E --> F
+    F --> G["例：MCP 不要求 required<br/>→ 跨进程时「必填」不可保证"]
+    H["失效情形"] --> H1["两个实现目标不同"]
+    H --> H2["版本差太远"]
+`}
+/>
+
+
+## 一次真实的横向对比：三个版本的同一件事
+
+上面那个例子里，三个实现的数据结构看起来很像（都有 name、description、properties）。但**它们代表的东西不同**，而横向对比正是把这层不同照出来的工具。
+
+| | 它在哪个层次 | 谁负责保证正确 |
+|---|---|---|
+| A LangChain `@tool` | 语言层（Python 进程内） | 类型系统 + pydantic |
+| B 手写 JSON Schema | 应用层（你自己发的请求体） | 你自己 |
+| C MCP server 定义 | 协议层（跨进程） | server 提供方 |
+
+第三列的差别解释了一个现象：**为什么 C 里没有 `required` 值得警惕** —— 因为那一层的"正确"由**对方**负责，而协议不强制他写。
+
+而在 A 里，`required` 由"参数有没有默认值"自动推出 —— **负责的是类型系统，不是你。** 这个差别在出问题时表现完全不同：
+
+- A 少了 required → 你写错了函数签名（在你控制内）
+- C 少了 required → 对方没写（你控制不了，只能自己校验）
+
+**横向对比的产出就是这条"谁负责保证正确"的边界。** 它比"谁更好用"有用得多，因为它直接决定你该在哪里加校验。
+
+## 一个可以照抄的做法
+
+把上面那张表做成一个固定的问法，遇到任何一个第三方提供的东西时都可以用：
+
+```text
+1. 它在哪个层次？（进程内 / 应用层 / 协议层）
+2. 谁负责保证字段完整？（类型系统 / 我 / 对方）
+3. 如果它写错了，我能不能发现？（编译期 / 运行时报错 / 静默）
+```
+
+三问里第三问最关键。**"编译期能发现"和"静默"之间有巨大的差别** —— 第 3 节那个 `Args:` 段被丢弃就是"静默"这一类：你写了、它没读、没有任何提示。
+
+而这类差别恰好是横向对比最容易发现的 —— 因为单个实现看不出"这里本该有提示"。
+
+## 一个具体的产出：三种写法的选择建议
+
+横向对比的产出应该是一句「什么时候用哪个」。上面那个例子的结论是：
+
+| 场景 | 用哪个 | 为什么 |
+|---|---|---|
+| 工具就在你的 Python 进程里 | A 类型标注 | 签名和约束是同一个源，改一处两边都变 |
+| 你要发原始 API 请求 | B 手写 | 没有中间层，但你得自己保证 required 正确 |
+| 工具来自第三方进程 | C 加自己校验 | 协议不保证 required，只能自己补 |
+
+第二行和第三行的共同点是：**它们都要求「你自己校验」。** 而第一行不需要 —— 因为类型系统替你保证了。
+
+**这条结论比「用哪个框架」有用**，因为它直接告诉你在哪里加代码：A 不用加；B 加一个 schema 校验；C 加一个参数完整性检查。## 完整可运行代码
+
+下面这段代码就是上面那张对照表的实现：同一个工具，三种声明方式，并排看 schema 的差别。
+
+```python
+"""横向对比：同一个工具，三种实现方式给出的 schema 有什么不同。
+
+对比对象：
+  A. LangChain @tool        —— 从 Python 类型标注推导
+  B. 手写 JSON Schema       —— 第 4 章那种直接写给 API 的形态
+  C. MCP server 定义        —— 第 14 章那种跨进程协议里的形态
+
+实跑状态：2026-10-09。langchain_core 0.3.63。
+"""
+import json
+from typing import Literal
+
+from langchain_core.tools import tool
+
+
+@tool(parse_docstring=True)
+def book_flight(city: Literal["北京", "上海"], day: Literal["明天", "后天"],
+                passengers: int) -> str:
+    """查询航班。
+
+    Args:
+        city: 出发城市
+        day: 出发日期
+        passengers: 乘客人数
+    """
+    return "ok"
+
+
+# B：手写 JSON Schema（第 4 章的形态）
+
+B_HAND = {
+    "name": "book_flight",
+    "description": "查询航班。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "enum": ["北京", "上海"], "description": "出发城市"},
+            "day": {"type": "string", "enum": ["明天", "后天"], "description": "出发日期"},
+            "passengers": {"type": "integer", "description": "乘客人数"},
+        },
+        "required": ["city", "day", "passengers"],
+    },
+}
+
+# C：MCP server 里的形态（第 14 章的 tools/list 返回）
+C_MCP = {
+    "name": "book_flight",
+    "description": "查询航班。",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "enum": ["北京", "上海"]},
+            "day": {"type": "string", "enum": ["明天", "后天"]},
+            "passengers": {"type": "integer"},
+        },
+    },
+}
+
+
+def norm_props(props):
+    return {k: {kk: vv for kk, vv in v.items() if kk in ("type", "enum", "description")}
+            for k, v in props.items()}
+
+
+if __name__ == "__main__":
+    a = book_flight.args_schema.model_json_schema()
+    print("=== A. LangChain @tool → schema ===")
+    print("  " + json.dumps(norm_props(a["properties"]), ensure_ascii=False))
+    print("  required: %s" % a.get("required"))
+    print()
+    print("=== B. 手写 JSON Schema ===")
+    print("  " + json.dumps(norm_props(B_HAND["input_schema"]["properties"]), ensure_ascii=False))
+    print("  required: %s" % B_HAND["input_schema"].get("required"))
+    print()
+    print("=== C. MCP server 定义 ===")
+    print("  " + json.dumps(norm_props(C_MCP["inputSchema"]["properties"]), ensure_ascii=False))
+    print("  required: %s" % C_MCP["inputSchema"].get("required", "（未声明）"))
+    print()
+    print("=== 对比 ===")
+    print("  三者表达**约束**的能力相同（都能给出 enum），差别在**约束从哪来**：")
+    print("    A：约束由类型标注承载 —— 改了类型，schema 自动跟着变")
+    print("    B/C：约束是手写的 —— 改了函数，schema 不会自动跟着变")
+    print()
+    print("  而三者表达**结构**的能力差别很大：")
+    print("    A：required 由无默认值的参数自动推出")
+    print("    B：required 要手写，写错不会有任何提示")
+    print("    C：这份 MCP 定义里**没有 required** —— 所有参数都是可选的")
+    print()
+    print("  最后一条值得注意：C 里漏了 required 不是笔误，是**协议层不强制**。")
+    print("    MCP 的 tools/list 只要求给出 inputSchema，里面写什么由 server 决定。")
+    print("    所以「参数是不是必填」在跨进程的场景里**不可保证**，调用方要自己校验。")
+```
+
+## 常见坑
+
+- **只纵向追不横向比。** 纵向回答"怎么做的"，横向回答"为什么这样做、还有没有别的做法"。
+- **对比前不确认目标是否相同。** 为性能优化的库和为易用性优化的库比"API 简洁"没有意义。
+- **拿版本差很远的两个版本比。** 那比的是两个项目，不是两个设计选择。
+- **忽略协议层的差别。** 实测：MCP 的 tools/list 不要求 required —— 跨进程时"必填"不可保证。
+- **只比"谁更好"。** 横向对比最有价值的产出是"哪些是本质、哪些是选择"，不是排名。
+- **忘了抽象层次这一轴。** 同一件事在不同层的表达差别最大，产出也最大。

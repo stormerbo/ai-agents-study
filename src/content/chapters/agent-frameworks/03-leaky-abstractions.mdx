@@ -106,6 +106,12 @@ flowchart TB
 
 这也是为什么「哪个框架好」没有通用答案 —— 答案取决于你的需求落在它的泄漏区还是覆盖区。
 
+
+> **修正（2026-10-09）**：这一节当时把这个现象记成了「抽象泄漏」。写第 21 章时读了 LangChain 源码（langchain_core 0.3.63），准确的说法要更具体：
+>
+> `@tool` 有一个 `parse_docstring` 参数，**默认是 `False`**（见 `convert.py` 的五处重载）。所以写在 `Args:` 段里的参数说明根本没被读取 —— 而且那段原文还会漏进工具级 description。打开这个开关之后，说明会进 `description`，但**仍然不会变成 `enum`**：schema 来自 pydantic 的 `model_json_schema()`（`base.py:103`），而 pydantic 只能从**类型标注**产生约束。
+>
+> 所以更准确的结论是：**约束写在散文里，就等于把它从「机器可校验」降级成了「模型可以忽略的提示」。** 完整的追踪过程见第 21 章第 3 节，可复现脚本在 `verify-output/read-source-tool.py`。
 ## 完整可运行代码
 
 下面这段代码用真实的 LangChain 跑一遍上面的对照：先打印装饰器生成的 schema，再用 Literal 拿回 enum。

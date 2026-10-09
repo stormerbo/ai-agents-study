@@ -18,6 +18,7 @@ import { bodies as agentSecurityBodies } from '@/content/chapters/agent-security
 import { bodies as costAndLatencyBodies } from '@/content/chapters/cost-and-latency/body';
 import { bodies as humanInTheLoopBodies } from '@/content/chapters/human-in-the-loop/body';
 import { bodies as agentDeploymentBodies } from '@/content/chapters/agent-deployment/body';
+import { bodies as readingSourceBodies } from '@/content/chapters/reading-source/body';
 import { bodies as promptEngineeringBodies } from '@/content/chapters/prompt-engineering/body';
 import { bodies as retrievalBodies } from '@/content/chapters/retrieval/body';
 import { bodies as structuredOutputBodies } from '@/content/chapters/structured-output/body';
@@ -57,6 +58,7 @@ const REGISTRY: Record<string, Record<string, BodyLoader>> = {
   'cost-and-latency': costAndLatencyBodies,
   'human-in-the-loop': humanInTheLoopBodies,
   'agent-deployment': agentDeploymentBodies,
+  'reading-source': readingSourceBodies,
 };
 
 /** 取某一节的正文组件。没写正文时返回 undefined（页面会渲染大纲占位）。 */

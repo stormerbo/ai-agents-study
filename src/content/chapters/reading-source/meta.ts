@@ -27,8 +27,8 @@ export const chapter = {
       summary: '教程给你的是结论，源码给你的是取舍发生的现场。',
       estimatedMinutes: 16,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['source-reading'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '一个项目的价值不在于它有多流行，而在于它能回答你哪个问题。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['selection', 'repositories'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '不要通读文件；跟着一次真实调用走一遍。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['debugging', 'call-chain'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '单个实现只能告诉你「有人这么做」，对比才能告诉你「为什么这么做」。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['comparison', 'abstraction'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '没有产出的阅读，下次还得重读一遍。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['notes', 'learning'],
       checkpoints: [
         {
@@ -182,7 +182,7 @@ export const chapter = {
     ],
     cost: 'low',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
