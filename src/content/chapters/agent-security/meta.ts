@@ -27,8 +27,8 @@ export const chapter = {
       summary: '从「说错话」到「做错事」，中间隔着一个工具调用。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['prompt-injection', 'tool-use'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '第 4 章说过「工具描述即 prompt」—— 那句话在安全语境下还有一半。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['tool-poisoning', 'untrusted-input'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '引入一个 MCP server，和你引入一个 npm 包是同一类决策。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['supply-chain', 'mcp'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '敏感数据、出网能力、外部内容 —— 三者同时具备就构成一条通道。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['exfiltration', 'data-flow'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '每一层都会被绕过，所以不要指望任何单一措施。',
       estimatedMinutes: 20,
       difficulty: 'expert',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['defense-in-depth', 'layers'],
       checkpoints: [
         {
@@ -183,7 +183,7 @@ export const chapter = {
     ],
     cost: 'high',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
