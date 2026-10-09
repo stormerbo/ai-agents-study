@@ -166,8 +166,20 @@ client = anthropic.Anthropic(
 
 MODEL = os.environ["VERIFY_MODEL"]
 
+# 一次「典型请求」的两部分 —— 换成你自己线上的提示词与对话即可。
+# （这两个变量原先在正文里没定义，脚本因此跑不起来；2026-10-09 实跑时补上）
+MY_SYSTEM_PROMPT = (
+    "你是一个订单查询助手。用户会问订单状态，你只能依据工具返回的数据回答，"
+    "不确定时明确说不确定。回答控制在三句话以内。"
+)
+MY_TYPICAL_MESSAGES = [
+    {"role": "user", "content": "帮我看看订单 A-1001 现在到哪了？"},
+]
+
 # 第一步：数清楚一次典型请求要多少输入 token
-count = client.messages.count_tokens(
+# 方法挂在哪个对象上随 SDK 版本变（0.3x 在 beta 下）—— 详见第 1 章第 1 节
+_count = getattr(client.messages, "count_tokens", None) or client.beta.messages.count_tokens
+count = _count(
     model=MODEL,
     system=MY_SYSTEM_PROMPT,
     messages=MY_TYPICAL_MESSAGES,
@@ -196,7 +208,12 @@ print(f"日输入总量: {per_conversation * DAILY_CONVERSATIONS:,} token")
 print("再乘定价页上的单价，得到一个量级正确的估算")
 ```
 
-> **实跑状态**：上面的**数据是实测的**（多轮对话的 token 增长表来自真实调用）；但这段 Python 脚本用的是 SDK 写法，我的采集用的是直接 HTTP 请求，脚本本身未在官方端点验证。
+> **实跑状态**：**数据与脚本都已实跑**（2026-10-09，anthropic 0.39.0 + DeepSeek 的 Anthropic 兼容端点）。
+> 脚本输出：单次请求输入 **75 token** → 10 轮对话累计 **4,125 token** → 日（500 次对话）**2,062,500 token**。
+>
+> 验证时补上了两个**从未定义**的变量（`MY_SYSTEM_PROMPT` 与 `MY_TYPICAL_MESSAGES`）——
+> 原脚本引用了它们却没给值，按「完整可运行代码」的标准印出来其实**跑不起来**。现在它们在脚本开头有定义，
+> 换成你自己线上的提示词与对话即可。
 
 要点是**量级正确**就够了。精确到小数点后两位的估算没有意义，因为输出的 token 数是概率性的。
 

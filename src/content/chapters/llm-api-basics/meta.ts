@@ -220,6 +220,6 @@ export const chapter = {
   },
   status: 'published',
   updatedAt: '2026-09-24',
-  verifiedAt: '2026-09-24',
+  verifiedAt: '2026-10-09',
   flagship: true,
 } satisfies Chapter;

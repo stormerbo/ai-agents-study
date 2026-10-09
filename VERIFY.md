@@ -1,5 +1,62 @@
 # 待验证内容清单
 
+> **2026-10-09 更新：第一轮验证已完成。** 结果见下方「已验证」一节 —— 过程中修掉了 3 个真实缺陷。
+
+## 已验证（2026-10-09）
+
+环境：`anthropic 0.39.0`（另用 `1.12.1` 交叉确认）+ DeepSeek 的 Anthropic 兼容端点，模型 `deepseek-flash`。
+脚本：`verify-output/verify-ch1-5.py`（协议层）；正文章节里的 SDK 脚本逐个抽出实跑。
+
+| 项 | 结果 | 说明 |
+|---|---|---|
+| 1.1 `count_tokens` 的调用方式与响应字段 | ✅ 通过 | 返回 `MessageTokensCount`，`input_tokens = 36`。**但方法位置随 SDK 版本变**（见下「修复 1」） |
+| 1.1′ 五个样本的 token 数 | ✅ 与正文表格逐行一致 | 7 字符→35、1050 字符→381（0.36/字符，正文说的区间下界） |
+| 3.1 `system` 作为顶层字段可用 | ✅ 通过 | 请求成功且模型遵循了 system 指令 |
+| 3.2 流式事件序列 | ✅ 通过 | 六类事件齐全且顺序正确（另有 `ping` 心跳） |
+| 3.3 **`input_json_delta` 只带 index、不带 id** | ✅ **确认** | 9 个 delta，顶层键只有 `delta` / `index` / `type`。**在非 Anthropic 的实现上也成立** → 这是协议形状，不是某家的实现细节 |
+| 3.4 `message_delta` 的 usage | ✅ 通过 | 带最终 `output_tokens`（累积终值）。⚠️ 但 DeepSeek 的 `message_start.usage` 是 `{}`，官方端点会带 usage |
+| 4.1 多轮对话的 token 增长 | ✅ 通过 | 40 → 55 → 70 → 85（每轮 +15），符合「线性增长、累计平方」 |
+| 跨厂商行为差异 | ✅ 新增实测 | 空模型名→400；**缺 `max_tokens`→200**；**传 `temperature`→200**。后两条与官方端点不同 |
+
+### 验证时修掉的三个真实缺陷
+
+**修复 1：`client.messages.count_tokens` 在旧 SDK 上不存在。**
+
+```
+anthropic 0.39.0  →  client.messages 上没有这个方法，它在 client.beta.messages 下
+anthropic 1.12.1  →  client.messages.count_tokens 存在
+```
+
+原代码写死前者，在 0.39.0 上直接 `AttributeError`。**正文里那句「用 `getattr` 兼容返回类型差异」没能兜住它** ——
+因为缺的是方法本身，不是返回类型的差异。现在改成 `getattr(client.messages, "count_tokens", None) or client.beta.messages.count_tokens`。
+共 3 处（章 1 两处、章 4 一处）。
+
+**修复 2：`client._client.post(...)` 永远 401。**
+
+实测 `client._client` 的默认头是 `accept` / `accept-encoding` / `connection` / `user-agent` —— **没有认证字段**。
+SDK 是在每次请求内部加 `x-api-key` 的，不在默认头上。所以直接 post 会一路 401「Authentication Fails」，
+把三段错误探测的真实行为全遮住（这一点很危险：**它看起来像「错误行为就是这样」，其实是没通过认证**）。
+现在改成自己带头的 httpx 客户端 —— 对照实验确认：同样请求带 `x-api-key` 则 200。
+
+**修复 3：章 4 的脚本引用了两个从未定义的变量。**
+
+`MY_SYSTEM_PROMPT` 与 `MY_TYPICAL_MESSAGES` 被引用但没有赋值，按「完整可运行代码」的标准印出来**跑不起来**。已补上定义。
+
+### 无法用本环境验证的项
+
+以下项目在 DeepSeek 兼容端点上**验不了**，原因在端点而不在内容：
+
+| 项 | 为什么验不了 |
+|---|---|
+| 5.1–5.3 prompt caching | `cache_control` 被静默忽略 —— 看起来像「缓存一直不生效」，实际是字段没被处理 |
+| 2.1 传 `temperature` 是否报 400 | DeepSeek **支持** `temperature`（实测 200），验不了 Anthropic 新模型的行为 |
+| 2.2 `output_config.effort` | 该字段在兼容端点上不被处理 |
+| 1.2 新旧分词器的 token 差异 | 需要同时访问 `claude-sonnet-4-5` 与 `claude-sonnet-5` 两个模型 |
+
+> 这几项要等有 Anthropic 官方 Key 时再验。**但注意 2.1 的实测结果本身有价值**：
+> 同一个参数在一家被接受、在另一家报 400 —— 这正是第 1 章「兼容不等于一致」那句话的现场证据。
+
+---
 这个文件存在的理由：本站的写作标准要求「代码必须实跑过」，但目前撰写这些章节时**没有可用的 API Key**，所以代码只做了语法检查，**行为未经真实执行验证**。
 
 与其在每节末尾写一句免责声明了事，不如把待验证项集中列在这里 —— 这样你手上有 Key 时可以一次性验完，而不是逐页去找。

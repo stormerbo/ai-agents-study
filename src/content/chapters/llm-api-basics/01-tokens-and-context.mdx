@@ -222,8 +222,15 @@ def count(text: str, system: str | None = None) -> int:
     kwargs = {"model": MODEL, "messages": [{"role": "user", "content": text}]}
     if system:
         kwargs["system"] = system
-    result = client.messages.count_tokens(**kwargs)
-    # 不同 SDK 版本的返回类型不同，用 getattr 兼容
+
+    # ⚠️ 这个方法挂在哪个对象上取决于 SDK 版本（2026-10-09 实测）：
+    #   anthropic >= 1.0  → client.messages.count_tokens
+    #   anthropic 0.3x    → client.beta.messages.count_tokens
+    #     0.39.0 的 client.messages 上**根本没有** count_tokens，
+    #     写死 client.messages.count_tokens 会直接 AttributeError。
+    fn = getattr(client.messages, "count_tokens", None) or client.beta.messages.count_tokens
+    result = fn(**kwargs)
+    # 返回类型也随版本变：1.x 是 MessageTokensCount，0.3x 是带 .json() 的对象
     return getattr(result, "input_tokens", None) or result.json()["input_tokens"]
 
 
@@ -258,7 +265,12 @@ python3 token_estimator.py
 
 输出就是本节开头那张表。你可以直接改 `samples` 里的文本，换成你自己的真实输入 —— 这是最有价值的一步，因为**你的业务文本的 token 特性，只有测了才知道。**
 
-> **实跑状态**：本节开头的**数据表来自实测**（DeepSeek 的 Anthropic 兼容端点）。但上面的脚本是针对通用 Anthropic 接口写的，**脚本本身未在官方端点上实跑验证**；不同 SDK 版本的返回类型有差异，代码里用 `getattr` 做了兼容处理。
+> **实跑状态**：**数据与脚本都已实跑**（2026-10-09，DeepSeek 的 Anthropic 兼容端点）。
+> 脚本产出的五个样本与上方数据表逐行一致：7 字符 → 35 token（5.00/字符）、1050 字符 → 381 token（0.36/字符）。
+>
+> 验证过程中修掉了一个真实的 bug：原脚本写的是 `client.messages.count_tokens`，而**在 anthropic 0.39.0 上这个方法不存在**，
+> 它挂在 `client.beta.messages` 上，会直接 `AttributeError`。现在的写法用 `getattr` 先试前者、回退到后者，
+> 在 0.39.0 与 1.12.1 上都能跑（见上方代码里的注释）。
 
 ## 三个真实的错误案例
 
@@ -395,7 +407,9 @@ SAMPLES = {
 
 
 def count_tokens(text: str) -> int:
-    result = client.messages.count_tokens(
+    # 同上方 count()：方法位置随 SDK 版本变，0.3x 挂在 beta 下
+    fn = getattr(client.messages, "count_tokens", None) or client.beta.messages.count_tokens
+    result = fn(
         model=MODEL,
         messages=[{"role": "user", "content": text}],
     )
@@ -435,13 +449,27 @@ def probe_errors() -> None:
         },
     }
 
+    # ⚠️ 不要用 client._client.post(...) —— 2026-10-09 实测（anthropic 0.39.0）：
+    #   它的默认头只有 accept / user-agent 等，**认证头是 SDK 在每次请求内部加的**。
+    #   直接 post 会一路 401「Authentication Fails」，把真实错误行为全遮住。
+    #   要看原始 HTTP，就自己带上头。
+    import httpx
+
+    headers = {
+        "x-api-key": os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        or os.environ.get("ANTHROPIC_API_KEY", ""),
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
     print("\n错误行为探查：\n")
-    for label, body in probes.items():
-        # 注意：这里用 client._client 是有意为之 —— 我们要看原始 HTTP 层
-        resp = client._client.post("/v1/messages", json=body)
-        print(f"[{label}] HTTP {resp.status_code}")
-        print(f"  {resp.text[:200]}")
-        print()
+    with httpx.Client(
+        base_url=os.environ["ANTHROPIC_BASE_URL"], headers=headers, timeout=60
+    ) as raw:
+        for label, body in probes.items():
+            resp = raw.post("/v1/messages", json=body)
+            print(f"[{label}] HTTP {resp.status_code}")
+            print(f"  {resp.text[:200]}")
+            print()
 
 
 if __name__ == "__main__":
@@ -449,7 +477,15 @@ if __name__ == "__main__":
     probe_errors()
 ```
 
-> **实跑状态**：本脚本产出的**数据**是实测的（正文表格与错误案例都来自它的真实输出）；但脚本本身是用 SDK 调用写的，而我的数据采集用的是直接 HTTP 请求。两者的字段名一致，`probe_errors` 里访问 `client._client` 的写法**未经验证** —— 如果你用的 SDK 版本没有这个属性，改成直接用 `httpx` / `requests` 发请求即可。
+> **实跑状态**：**数据与脚本都已实跑**（2026-10-09，anthropic 0.39.0 + DeepSeek 的 Anthropic 兼容端点）。
+>
+> 验证时修掉了脚本里一个**原理性的错误**：原代码用 `client._client.post(...)` 打原始请求。实测发现
+> `client._client` 的默认头里**没有认证字段**（只有 `accept` / `user-agent` 等）—— SDK 是在每次请求内部加认证头的，
+> 所以直接 post 会**一路 401**，把真实的错误行为全遮住。现在改成自己带 `x-api-key` 的 httpx 客户端。
+>
+> 修好之后探到了三条真实行为：空模型名 → **HTTP 400**（错误信息会列出该端点支持的模型名）；
+> **缺 `max_tokens` → HTTP 200**；**传 `temperature` → HTTP 200**。后两条与 Anthropic 官方端点不同 ——
+> 官方要求 `max_tokens`、且新模型会对 `temperature` 报 400。这正是本节「兼容不等于一致」那句话的又一例。
 
 ### 怎么用这个脚本建立自己的成本直觉
 
