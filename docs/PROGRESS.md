@@ -37,6 +37,13 @@
 > **阶段 2 到此收口。** 六个原语全部有正文：4 工具调用 / 5 结构化输出 / 6 检索 / 7 记忆 / 8 多模态 / 9 计算机使用。
 > 这也是第二轮规划里点名的那个缺口的闭合处 —— `vision` 与「计算机使用」两项零覆盖，现在都有正文 + 实验。
 
+
+**章 15「评估与可观测性」/ 章 16「沙箱与权限」/ 章 17「安全与信任边界」/ 章 18「成本与延迟」/ 章 19「人机协作」** —— 各 5 节完整正文（2026-10-09 完成）
+
+**章 20「部署与交付」** —— 4 节完整正文（2026-10-09 完成）
+
+> **阶段 4 到此收口。** 生产化的六章全部有正文：评估（怎么知道做对了）、沙箱（够得着什么）、安全（输入变成动作）、成本（两笔账）、人机协作（在哪里停）、部署（上线之后）。
+> 这一轮里最有价值的几组实测：**注入 7 次全部未复现（并给出「动作合法只改目标」的正确攻击设计）**、**朴素路径检查 4/6 被绕过**、**延迟由输出主导（输入涨 34 倍首 token 仅 +0.24s）**、**审批按可逆性而非危险程度**。
 **实验与交互补缺（2026-10-09）** —— Playground 增加**图像上传**，并补上第 8 章的 `lab-vision-extract`（视觉提取）。
   `vision` 从此不再是空置的 capability —— 补它的动因就是第二轮规划时点出的那个缺口。
 
@@ -57,10 +64,14 @@
 
 ### 6.2 进度明细
 
-> 下表由 scripts/content-stats.mjs 同源口径生成（当前 73/73 达标）。
+> 下表由 scripts/content-stats.mjs 同源口径生成（当前 102/102 达标）。
 
 | 节 | 中文 | 说明文字 | 图 | 代码块 | 达标 |
 |---|---:|---:|---:|---:|:--:|
+| agent-deployment/01-deployment-shape | 2103 | 3039 | 1 | 3 | ✅ |
+| agent-deployment/02-versioning | 2197 | 3056 | 1 | 5 | ✅ |
+| agent-deployment/03-incident-response | 2118 | 3152 | 1 | 4 | ✅ |
+| agent-deployment/04-ops-loop | 2398 | 3345 | 1 | 3 | ✅ |
 | agent-frameworks/01-what-frameworks-give | 2508 | 3411 | 1 | 4 | ✅ |
 | agent-frameworks/02-abstraction-models | 2152 | 3037 | 1 | 4 | ✅ |
 | agent-frameworks/03-leaky-abstractions | 2202 | 3264 | 1 | 5 | ✅ |
@@ -76,6 +87,11 @@
 | agent-paradigms/03-plan-and-execute | 1912 | 3002 | 1 | 2 | ✅ |
 | agent-paradigms/04-reflection | 2223 | 3222 | 1 | 2 | ✅ |
 | agent-paradigms/05-choosing | 2124 | 3158 | 1 | 1 | ✅ |
+| agent-security/01-injection-escalation | 2178 | 3136 | 1 | 4 | ✅ |
+| agent-security/02-tools-as-untrusted-input | 2133 | 3013 | 1 | 4 | ✅ |
+| agent-security/03-supply-chain | 2241 | 3206 | 1 | 3 | ✅ |
+| agent-security/04-exfiltration | 2130 | 3009 | 1 | 2 | ✅ |
+| agent-security/05-defense-in-depth | 2138 | 3003 | 1 | 2 | ✅ |
 | computer-use/01-what-differs | 1977 | 3044 | 1 | 4 | ✅ |
 | computer-use/02-observe-act-loop | 1997 | 3152 | 1 | 3 | ✅ |
 | computer-use/03-failure-modes | 2069 | 3046 | 1 | 4 | ✅ |
@@ -86,6 +102,21 @@
 | context-engineering/03-just-in-time | 1890 | 3130 | 1 | 2 | ✅ |
 | context-engineering/04-compaction | 2110 | 3150 | 1 | 3 | ✅ |
 | context-engineering/05-subagent-isolation | 2047 | 3301 | 1 | 1 | ✅ |
+| cost-and-latency/01-cost-model | 1954 | 3196 | 1 | 6 | ✅ |
+| cost-and-latency/02-latency-sources | 1754 | 3023 | 1 | 6 | ✅ |
+| cost-and-latency/03-caching | 2303 | 3257 | 1 | 7 | ✅ |
+| cost-and-latency/04-routing | 2211 | 3119 | 1 | 4 | ✅ |
+| cost-and-latency/05-budget-guardrails | 2149 | 3080 | 1 | 2 | ✅ |
+| evaluation/01-define-good | 2213 | 3039 | 1 | 8 | ✅ |
+| evaluation/02-dataset | 2087 | 3445 | 1 | 3 | ✅ |
+| evaluation/03-llm-as-judge | 2008 | 3122 | 1 | 3 | ✅ |
+| evaluation/04-traces | 2141 | 3040 | 1 | 5 | ✅ |
+| evaluation/05-regression | 2253 | 3240 | 1 | 4 | ✅ |
+| human-in-the-loop/01-automation-levels | 2201 | 3165 | 2 | 1 | ✅ |
+| human-in-the-loop/02-approval-design | 2125 | 3036 | 1 | 4 | ✅ |
+| human-in-the-loop/03-interrupt-and-resume | 2246 | 3052 | 1 | 3 | ✅ |
+| human-in-the-loop/04-progress-and-trust | 2346 | 3286 | 1 | 1 | ✅ |
+| human-in-the-loop/05-streaming-and-control | 2326 | 3231 | 1 | 4 | ✅ |
 | llm-api-basics/01-tokens-and-context | 3922 | 6704 | 2 | 7 | ✅ |
 | llm-api-basics/02-sampling-params | 3026 | 5794 | 1 | 5 | ✅ |
 | llm-api-basics/03-messages-api | 1661 | 3560 | 1 | 8 | ✅ |
@@ -121,6 +152,11 @@
 | retrieval/03-vector-limits | 2114 | 3270 | 1 | 3 | ✅ |
 | retrieval/04-evaluating-retrieval | 2024 | 3041 | 1 | 2 | ✅ |
 | retrieval/05-agentic-retrieval | 2078 | 3043 | 1 | 2 | ✅ |
+| sandboxing/01-why-isolate | 2279 | 3174 | 1 | 1 | ✅ |
+| sandboxing/02-isolation-levels | 2211 | 3108 | 1 | 2 | ✅ |
+| sandboxing/03-least-privilege | 1914 | 3041 | 1 | 5 | ✅ |
+| sandboxing/04-secrets | 2335 | 3125 | 1 | 6 | ✅ |
+| sandboxing/05-execution-policy | 2057 | 3075 | 1 | 8 | ✅ |
 | structured-output/01-why-not-prompt-only | 1900 | 3243 | 1 | 6 | ✅ |
 | structured-output/02-json-schema-strict | 1968 | 3975 | 1 | 7 | ✅ |
 | structured-output/03-validation-retry | 2049 | 3096 | 1 | 3 | ✅ |
