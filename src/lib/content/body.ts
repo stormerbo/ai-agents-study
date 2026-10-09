@@ -12,6 +12,7 @@ import { bodies as agentLoopBodies } from '@/content/chapters/agent-loop/body';
 import { bodies as multiAgentBodies } from '@/content/chapters/multi-agent/body';
 import { bodies as agentFrameworksBodies } from '@/content/chapters/agent-frameworks/body';
 import { bodies as mcpBodies } from '@/content/chapters/mcp/body';
+import { bodies as evaluationBodies } from '@/content/chapters/evaluation/body';
 import { bodies as promptEngineeringBodies } from '@/content/chapters/prompt-engineering/body';
 import { bodies as retrievalBodies } from '@/content/chapters/retrieval/body';
 import { bodies as structuredOutputBodies } from '@/content/chapters/structured-output/body';
@@ -45,6 +46,7 @@ const REGISTRY: Record<string, Record<string, BodyLoader>> = {
   'multi-agent': multiAgentBodies,
   'agent-frameworks': agentFrameworksBodies,
   'mcp': mcpBodies,
+  'evaluation': evaluationBodies,
 };
 
 /** 取某一节的正文组件。没写正文时返回 undefined（页面会渲染大纲占位）。 */

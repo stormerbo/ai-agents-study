@@ -27,8 +27,8 @@ export const chapter = {
       summary: '「效果不好」不是一个可用的需求，它至少要拆成四个维度。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['metrics', 'success-criteria'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '不是先有数据集再开发，而是把失败案例攒起来。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['dataset', 'regression'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '它很适合判断「有没有」，不适合判断「好不好」。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['judge', 'rubric'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '没有轨迹，你只能看到「失败了」；有轨迹，你能看到「在第 4 轮选错了工具」。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['tracing', 'observability'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '改一次 prompt 就跑一遍，让「变好」成为一个可验证的主张。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['ci', 'regression', 'ab'],
       checkpoints: [
         {
@@ -183,7 +183,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
