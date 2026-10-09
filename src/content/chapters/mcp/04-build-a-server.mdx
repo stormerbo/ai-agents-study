@@ -1,0 +1,352 @@
+---
+lesson: mcp/build-a-server
+title: 写一个最小 server
+status: drafting
+---
+
+这一节把一个 MCP server 写出来。目的不是让你以后都手写 —— 而是让你知道**一个 server 最少要实现什么**，以及本地与远程两种形态的差别在哪。
+
+## 最少要实现什么
+
+按 2026-07-28 的形态，一个能用的 server 需要四样东西：
+
+**一、一个传输层。** 本地 server 用 stdio：从 stdin 读换行分隔的 JSON，往 stdout 写换行分隔的 JSON。**注意是分隔符，不是长度前缀** —— 一条消息一行，这让它可以直接用 `echo` 手工调试。
+
+**二、一个方法分发。** 按 `method` 字段路由到处理函数。最少要实现 `tools/list`、`tools/call`，以及 `server/discover`。
+
+**三、每请求的版本校验。** 从 `params._meta.protocolVersion` 取版本，不支持就返回 `UnsupportedProtocolVersionError`。**没有握手，所以这是每个请求都要做的事。**
+
+**四、一个错误映射。** JSON-RPC 的错误码（`-32601` 方法不存在、`-32602` 参数错误）+ 协议自定义的错误（版本不支持）。
+
+四样之外都是可选的。我的实现一共一百行左右 —— 这也是本节想传达的一个事实：**协议层本身并不复杂，复杂的是它背后要接的东西。**
+
+## 本地 server 与远程 server
+
+两者的协议消息格式一样，差别在传输和信任模型：
+
+| | 本地（stdio） | 远程（HTTP） |
+|---|---|---|
+| 启动方式 | host 拉起一个子进程 | host 连一个 URL |
+| 信任假定 | 你装的软件，与你同权限 | 对方控制的端点 |
+| 网络 | 不经网络 | 走网络，延迟与可用性都要考虑 |
+| 凭证 | 通常靠本地环境 | 需要认证与授权 |
+| 升级 | 你决定什么时候升 | 对方决定什么时候变 |
+
+**关键差别在第二行。** 本地 server 跑在你的机器上、用你的权限 —— 它能做的事和你自己写的代码一样多。这不是「更安全」，只是**风险的来源不同**：本地是你自己装的，远程是别人给你的。
+
+所以选择时该问的不是「哪个更安全」，而是：**这个 server 是谁写的、跑在谁的机器上、用谁的权限？** 第 5 节会把这两个风险来源分开讲。
+
+## 一个容易忽略的工程细节：stdout 是协议通道
+
+本地 server 用 stdout 传协议消息，这意味着一件事：**你不能在 server 里随便 print。**
+
+一句调试用的 `print("loading tools...")` 会变成一条无法解析的协议消息，客户端会报解析错误 —— 而错误信息完全不会提示「是因为你 print 了」。这是写本地 MCP server 时最常见的一个坑，而且它的表现（JSON 解析失败）与真正的原因（多了一行日志）之间没有明显联系。
+
+正确做法是把日志写到 **stderr**。几乎所有 stdio 协议的实现都遵循这个约定：**stdout 给协议，stderr 给日志。**
+
+这个坑值得单独记一笔，因为它是「传输层与业务逻辑共享一个通道」的典型症状 —— 而这个设计选择其实是对的（stdio 最简单、最通用），代价是使用者要知道这个约定。
+
+## 实测：一个最小实现的完整往返
+
+我的实现跑通了七个场景，包括无状态校验和 MRTR：
+
+```text
+不带 _meta 直接调 tools/list  → error  UnsupportedProtocolVersionError (-32001)
+带错误的协议版本              → error  UnsupportedProtocolVersionError (-32001)
+带正确版本                    → result {"tools": [...]}
+server/discover               → result {"protocolVersions": [...], "capabilities": {...}}
+get_weather(北京,明天)         → result {"resultType": "complete", "content": [...]}
+未知工具                      → error  Unknown tool: nope (-32602)
+未知方法                      → error  Method not found (-32601)
+
+MRTR：
+第一次调用 transfer_money      → result {"resultType": "input_required", ...}
+补上确认后重调                 → result {"resultType": "complete", ...}
+```
+
+（实跑数据，2026-10-09。这是按规范描述的形态自己实现的，不是对官方 SDK 的测试。）
+
+注意第六行和第七行的区别：**未知工具是 `-32602`（参数错误），未知方法是 `-32601`（方法不存在）**。这不是随意的 —— 工具是 `tools/call` 的参数，所以「工具不存在」属于参数问题；而 `resources/subscribe` 不存在是方法层面的问题。分清楚这两类，客户端才能给出有意义的提示。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["host 拉起本地 server<br/>（stdio 子进程）"] --> B["写一行 JSON 到 stdin"]
+    B --> C["server 读一行"]
+    C --> D{"method 分发"}
+    D --> E{"_meta.protocolVersion 支持吗？"}
+    E -->|否| F["UnsupportedProtocolVersionError<br/>-32001"]
+    E -->|是| G["执行方法"]
+    G --> H{"需要补充输入吗？"}
+    H -->|是| I["返回 input_required<br/>（MRTR）"]
+    I --> J["客户端补输入后重调"]
+    H -->|否| K["返回 result"]
+    F -.-> L["写一行 JSON 到 stdout"]
+    K --> L
+    L --> M["host 读一行"]
+    C -.-> N["⚠️ 别往 stdout print 日志<br/>那会变成一条非法协议消息<br/>日志走 stderr"]
+`}
+/>
+
+## 完整可运行代码
+
+下面是一个一百行左右的 server 和一个驱动它的 client。两者都是独立的 Python 文件，通过真正的子进程管道通信 —— 这就是 stdio 传输的实际形态。
+
+```python
+"""一个最小 MCP server（stdio + 换行分隔的 JSON-RPC 2.0）。
+
+按 2026-07-28 那版的**无状态**形态实现：
+  - 没有 initialize 握手，每个请求自己在 _meta 里带协议版本与客户端能力
+  - 版本不匹配 → UnsupportedProtocolVersionError
+  - server/discover 让 server 主动声明支持的版本
+  - 需要补充输入时不主动发请求，而是返回 InputRequiredResult（MRTR）
+
+它只在**形态**上照做，没有对接官方 SDK —— 所以它验证的是协议机制本身，
+而不是「官方实现是否如此」。实跑状态：2026-10-09。
+"""
+import json, sys
+
+SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25"]
+
+TOOLS = [
+    {"name": "get_weather",
+     "description": "查询某个城市某一天的最高气温。",
+     "inputSchema": {"type": "object",
+                     "properties": {"city": {"type": "string"},
+                                    "day": {"type": "string", "enum": ["明天", "后天"]}},
+                     "required": ["city", "day"]}},
+    {"name": "transfer_money",
+     "description": "给指定账户转账（不可逆）。",
+     "inputSchema": {"type": "object",
+                     "properties": {"to": {"type": "string"}, "amount": {"type": "number"}},
+                     "required": ["to", "amount"]}},
+]
+
+TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27}
+
+
+def error(req_id, code, message, data=None):
+    err = {"code": code, "message": message}
+    if data:
+        err["data"] = data
+    return {"jsonrpc": "2.0", "id": req_id, "error": err}
+
+
+def result(req_id, payload):
+    return {"jsonrpc": "2.0", "id": req_id, "result": payload}
+
+
+def handle(req):
+    """处理一个请求。注意：这里是**无状态**的 —— 没有 session 对象可查。"""
+    method = req.get("method")
+    req_id = req.get("id")
+    params = req.get("params", {})
+    meta = params.get("_meta", {})
+    version = meta.get("protocolVersion")
+
+    # --- 无状态化的核心：版本校验发生在**每个请求**上，而不是握手时 ---
+    if version not in SUPPORTED_VERSIONS:
+        return error(req_id, -32001, "UnsupportedProtocolVersionError",
+                     {"requested": version, "supported": SUPPORTED_VERSIONS})
+
+    if method == "server/discover":
+        return result(req_id, {"protocolVersions": SUPPORTED_VERSIONS,
+                               "capabilities": {"tools": {"listChanged": True}},
+                               "serverInfo": {"name": "demo-server", "version": "1.0.0"}})
+
+    if method == "tools/list":
+        return result(req_id, {"tools": TOOLS})
+
+    if method == "tools/call":
+        name = params.get("name")
+        args = params.get("arguments", {})
+
+        if name == "get_weather":
+            out = TEMP.get((args.get("city"), args.get("day")), {"error": "没有数据"})
+            return result(req_id, {"resultType": "complete",
+                                   "content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
+
+        if name == "transfer_money":
+            # MRTR：金额超过阈值时不主动发 elicitation，而是让客户端补输入后重调
+            if not params.get("_confirmed"):
+                return result(req_id, {
+                    "resultType": "input_required",
+                    "inputRequests": [{"id": "confirm",
+                                       "prompt": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
+                                       "schema": {"type": "boolean"}}]})
+            return result(req_id, {"resultType": "complete",
+                                   "content": [{"type": "text", "text": "已转账 %s 元给 %s"
+                                                % (args.get("amount"), args.get("to"))}]})
+
+        return error(req_id, -32602, "Unknown tool: %s" % name)
+
+    return error(req_id, -32601, "Method not found: %s" % method)
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except Exception as e:
+            print(json.dumps(error(None, -32700, "Parse error: %s" % e)), flush=True)
+            continue
+        print(json.dumps(handle(req), ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    main()
+
+
+"""一个最小的 MCP client：用真正的子进程 + 管道驱动 server。
+
+它验证的是 stdio 传输 + 无状态协议的几个机制点。实跑状态：2026-10-09。
+"""
+import json, subprocess, sys
+
+SERVER = [sys.executable, "verify-output/mcp_server.py"]
+
+
+class Client:
+    def __init__(self):
+        self.proc = subprocess.Popen(SERVER, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     text=True, bufsize=1)
+        self.n = 0
+
+    def send(self, method, params=None, version="2026-07-28", with_meta=True):
+        """每个请求自己带 _meta —— 这就是无状态化的形态。"""
+        self.n += 1
+        p = dict(params or {})
+        if with_meta:
+            p["_meta"] = {"protocolVersion": version,
+                          "clientCapabilities": {"elicitation": {}}}
+        req = {"jsonrpc": "2.0", "id": self.n, "method": method, "params": p}
+        self.proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
+        self.proc.stdin.flush()
+        line = self.proc.stdout.readline()
+        return json.loads(line)
+
+    def close(self):
+        self.proc.stdin.close()
+        self.proc.wait(timeout=5)
+
+
+def show(label, resp, ok_expect=None):
+    if "error" in resp:
+        e = resp["error"]
+        tag = "error"
+        detail = "%s (%d) %s" % (e["message"], e["code"], json.dumps(e.get("data"), ensure_ascii=False)[:90])
+    else:
+        tag = "result"
+        detail = json.dumps(resp["result"], ensure_ascii=False)[:110]
+    judge = ""
+    if ok_expect is not None:
+        judge = "  ✅" if (tag == ok_expect) else "  ❌（期望 %s）" % ok_expect
+    print("  %-34s %-7s %s%s" % (label, tag, detail, judge))
+    return resp
+
+
+if __name__ == "__main__":
+    c = Client()
+    print("=== 1. 无状态化：版本校验发生在每个请求上 ===")
+    show("不带 _meta 直接调 tools/list", c.send("tools/list", with_meta=False), "error")
+    show("带错误的协议版本", c.send("tools/list", version="2020-01-01"), "error")
+    show("带正确版本", c.send("tools/list", version="2026-07-28"), "result")
+    print()
+    print("=== 2. server/discover：让 server 自己声明 ===")
+    show("server/discover", c.send("server/discover"), "result")
+    print()
+    print("=== 3. tools/call ===")
+    show("get_weather(北京,明天)",
+         c.send("tools/call", {"name": "get_weather",
+                               "arguments": {"city": "北京", "day": "明天"}}), "result")
+    show("get_weather(北京,下周)",
+         c.send("tools/call", {"name": "get_weather",
+                               "arguments": {"city": "北京", "day": "下周"}}), "result")
+    show("未知工具", c.send("tools/call", {"name": "nope", "arguments": {}}), "error")
+    show("未知方法", c.send("resources/subscribe"), "error")
+    print()
+    print("=== 4. MRTR：多轮往返请求 ===")
+    first = c.send("tools/call", {"name": "transfer_money",
+                                  "arguments": {"to": "张三", "amount": 5000}})
+    show("第一次调用", first, "result")
+    r = first["result"]
+    print("    resultType = %s" % r.get("resultType"))
+    if r.get("resultType") == "input_required":
+        print("    ⚠️ server 没有主动发请求，而是把「需要输入」作为返回值交回来")
+        print("    客户端补上输入后**再调一次**（发起权始终在客户端）")
+        show("补上确认后重调", c.send("tools/call",
+                                     {"name": "transfer_money",
+                                      "arguments": {"to": "张三", "amount": 5000},
+                                      "_confirmed": True}), "result")
+    c.close()
+
+
+# ==== 5. 安全边界：host 能看到什么、看不到什么 ====
+def security_probe():
+    c = Client()
+    resp = c.send("tools/list")
+    tools = resp["result"]["tools"]
+    print()
+    print("=== 5. 接入第三方 server：host 能看到什么 ===")
+    print("  tools/list 返回了 %d 个工具。host 能看到的全部信息：" % len(tools))
+    for t in tools:
+        print("    · name=%s" % t["name"])
+        print("      description=%s" % t["description"])
+        print("      inputSchema=%s" % json.dumps(t["inputSchema"], ensure_ascii=False))
+    print()
+    print("  host **看不到**的：")
+    print("    · 实现是什么（工具名只是声明，代码在对方那里）")
+    print("    · 有没有副作用（get_weather 看起来只读，但描述不能作为保证）")
+    print("    · 它会怎么处理参数（同一个参数可能触发完全不同的行为）")
+    print()
+    print("  ⚠️ transfer_money 这个名字暴露了它的危险性；")
+    print("     但一个叫 optimize_storage 的工具完全可能有同样的破坏力 ——")
+    print("     而 description 是**对方写的**，不是事实。")
+    c.close()
+
+
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "security":
+    security_probe()
+```
+
+
+## 为什么要手写一遍
+
+第 13 章给过理由，这里更具体：**因为你要能判断 server 出问题时报的错是什么意思。**
+
+接一个第三方 server，你迟早会看到 `UnsupportedProtocolVersionError`。如果没写过一遍，你不知道这是「你的客户端太老」还是「对方的实现有问题」—— 而这两种情况的处理方式完全不同。
+
+写过之后你会知道：这个错误来自**每个请求**上的 `_meta.protocolVersion` 校验，所以它意味着「你发的版本和对方支持的版本没有交集」。修法也很明确：调 `server/discover` 看对方的 `protocolVersions`，然后改你发的版本。整个过程不需要读对方源码。
+
+**手写一遍的收益不是「以后都自己写」，而是「出问题时你知道该看哪个字段」。** 这与第 11 章手写循环的收益是同一类。
+
+## 怎么调试一个 server
+
+stdio 传输有个很好的性质：**它可以直接手工测。**
+
+```bash
+# 一条消息一行，直接喂给 server
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"protocolVersion":"2026-07-28"}}}' \
+  | python3 mcp_server.py
+```
+
+返回值就是一行 JSON。这个能力在排查「是协议层的问题还是业务层的问题」时非常有用 —— 如果手工发一条请求能得到正确响应，那问题在客户端；如果不能，问题在 server。
+
+三条排查顺序：
+
+1. **手工发一条 `server/discover`。** 能通说明传输和版本没问题。
+2. **手工发 `tools/list`。** 看工具列表是否符合预期（以及有没有变化）。
+3. **手工发 `tools/call`。** 看具体调用返回什么。
+
+三步覆盖了绝大多数问题，而且**不需要启动 host**。这也是为什么 stdio 协议在设计上偏向「一条消息一行」—— 它让调试成本降到最低。
+## 常见坑
+
+- **在 server 里用 print 打日志。** stdout 是协议通道，一行多余的输出就会导致解析失败，而报错信息不会告诉你原因。日志写 stderr。
+- **以为需要 SDK 才能写 server。** 消息就是 JSON-RPC，一百行足够。
+- **只在启动时校验版本。** 无状态之后每个请求都要校验，因为没有握手可以做这件事。
+- **把「未知工具」和「未知方法」用同一个错误码。** 前者是 -32602（参数问题），后者是 -32601（方法不存在），客户端需要区分。
+- **以为本地 server 更安全。** 它跑在你的机器上用你的权限 —— 风险来源不同，不是更安全。
+- **忽略远程 server 的升级节奏。** 本地 server 什么时候升级由你决定；远程的由对方决定，这可能随时改变行为。

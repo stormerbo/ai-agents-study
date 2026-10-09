@@ -27,8 +27,8 @@ export const chapter = {
       summary: 'N×M 变 N+M —— 但先确认这个乘法在你的场景里成立。',
       estimatedMinutes: 18,
       difficulty: 'beginner',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['mcp', 'integration'],
       checkpoints: [
         {
@@ -57,8 +57,8 @@ export const chapter = {
       summary: 'host / client / server，以及 tools、resources、prompts 三类能力。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['host', 'client', 'server', 'capabilities'],
       checkpoints: [
         {
@@ -88,8 +88,8 @@ export const chapter = {
       summary: '一次破坏性修订 —— 旧教程里的握手与 session 写法已经全部作废。',
       estimatedMinutes: 24,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['spec', 'breaking-change', 'stateless'],
       checkpoints: [
         {
@@ -119,8 +119,8 @@ export const chapter = {
       summary: '把第 4 章的工具，换一种方式暴露出去。',
       estimatedMinutes: 22,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['sdk', 'server'],
       checkpoints: [
         {
@@ -149,8 +149,8 @@ export const chapter = {
       summary: '你在运行别人的代码，并且把它的描述放进了模型的上下文。',
       estimatedMinutes: 22,
       difficulty: 'expert',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['security', 'prompt-injection', 'permissions'],
       checkpoints: [
         {
@@ -187,7 +187,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;

@@ -1,0 +1,240 @@
+---
+lesson: mcp/roles-and-capabilities
+title: 三个角色与它们交换什么
+status: drafting
+---
+
+MCP 的角色划分有一个容易被误解的地方：**client 不是「一个客户端」。**
+
+## 三个角色
+
+**host** 是用户面对的那个 AI 应用 —— 一个编码助手、一个客服系统、一个数据分析工具。它持有模型、上下文和用户界面。
+
+**server** 是能力提供方 —— 一个 GitHub 连接器、一个数据库查询服务、一个内部工单系统的适配器。
+
+**client** 是**一条连接的代表**。host 为每一个它要连的 server 创建一个对应的 client，每个 client 与自己的 server 维持一条专属连接。
+
+所以关系是：
+
+```text
+host
+ ├── client ──── server A（GitHub）
+ ├── client ──── server B（数据库）
+ └── client ──── server C（工单系统）
+```
+
+**为什么要把 client 单独拿出来？** 因为这样每个 server 的能力边界与生命周期就各自独立了：
+
+- server A 挂了，不影响 server B 的连接
+- 每个 server 有自己的版本协商（第 3 节会看到，版本信息是逐请求携带的）
+- host 可以把来自不同 server 的工具放在不同的权限桶里
+
+如果 client 是「一个全局的东西」，上面三件事都会变得很难表达 —— 你会需要在一个对象里管理所有连接的状态。**把「一条连接」做成一等公民，是无状态设计的前提。**
+
+## 三类能力：谁决定用它
+
+server 对外提供的不是只有工具。规范里主要定义了三类，区别在于**谁决定要用它**：
+
+| 能力 | 是什么 | 谁决定 |
+|---|---|---|
+| **tools** | 可被调用的动作，可能有副作用 | **模型**决定要不要调 |
+| **resources** | 可读的上下文数据（类似文件、记录） | **应用**决定要不要放进上下文 |
+| **prompts** | 预设的提示模板 | **用户**主动挑选的入口 |
+
+**这个「谁决定」的区分在接入第三方 server 时极其重要。** 因为它决定了你在多大程度上能控制「什么东西会进入模型的上下文」：
+
+- **tools** 是模型自主的。你只能通过工具描述和 schema 影响它（第 4 章），不能阻止它决定调用 —— 除非在执行层拦（第 9 章那套闸门）。
+- **resources** 通常在应用的控制下。是**你**决定把哪份数据读进来、放进哪个位置。这给了你一个明确的插入点。
+- **prompts** 是用户触发的。它进入上下文是显式的、可见的。
+
+所以当你要接一个不太放心的 server 时，一个很实际的策略是：**优先用它的 resources，谨慎使用它的 tools。** 因为 resources 的数据在你能控制的位置进入上下文，而 tools 是模型自己决定要不要调的。
+
+## 一个容易混淆的点：server 的「能力声明」
+
+server 在连接时会声明自己支持什么 —— 比如「我支持 tools，并且 tools 列表会变化」。
+
+这个声明**不是安全机制**，它只是让 host 知道该不该调用某些方法。一个恶意的 server 完全可以声明自己支持 X 却在实现里做 Y —— 协议层无法验证。
+
+所以读能力声明时要知道它的性质：**它是「接口是否可用」的信息，不是「它会做什么」的保证。** 第 5 节会详细讲这个区别为什么重要。
+
+<Mermaid
+  chart={`
+flowchart TB
+    H["host（AI 应用）"] --> M["模型 + 上下文 + 界面"]
+    H --> C1["client A"]
+    H --> C2["client B"]
+    H --> C3["client C"]
+    C1 <--> S1["server A：GitHub"]
+    C2 <--> S2["server B：数据库"]
+    C3 <--> S3["server C：工单系统"]
+    S1 --> T1["tools / resources / prompts"]
+    S2 --> T2["tools / resources / prompts"]
+    S3 --> T3["tools / resources / prompts"]
+    T1 -.-> D{"谁决定用它？"}
+    D -->|"模型"| D1["tools<br/>你只能靠描述影响"]
+    D -->|"应用"| D2["resources<br/>你有明确的插入点"]
+    D -->|"用户"| D3["prompts<br/>进入上下文是显式的"]
+`}
+/>
+
+## 为什么是三类而不是一类
+
+一个自然的疑问：既然 tools 已经能读数据了（写一个 get_file 工具），为什么还要单列 resources？
+
+原因在于**控制权的位置**。用 tools 读数据意味着「模型决定读什么」；用 resources 意味着「应用决定读什么」。两者在功能上重叠，在控制上完全不同。
+
+举个具体的例子：你希望每轮对话都带上团队的编码规范。用 resources，你的应用可以无条件把它放进上下文；用 tools，你得指望模型每次都记得去调那个工具 —— 而第 4 章的实测告诉我们，模型调不调工具取决于描述写得好不好，不是你能保证的。
+
+所以这三类能力的划分不是功能分类，而是**控制权分类**。理解了这一点，接第三方 server 时的取舍就清楚了。
+
+
+## 连接的生命周期
+
+理解了「client 就是一条连接」，生命周期就顺了。一条 MCP 连接大致经历四个阶段：
+
+**一、建立。** host 按配置启动或连接一个 server（本地进程或远程端点）。在旧版协议里，这里有一次 initialize 握手；2026-07-28 之后没有握手了 —— 第一次调用自己带着版本信息（第 3 节）。
+
+**二、发现。** host 问 server 有哪些 tools、resources、prompts。这是你能看到的全部信息 —— 第 5 节会详细讲这意味着什么。
+
+**三、调用。** 模型决定用某个工具，host 通过对应的 client 把它发出去，拿到结果回填。
+
+**四、关闭。** 连接结束。如果是有状态的实现，这里要清理状态；无状态之后，这一阶段变得很简单。
+
+**注意第二阶段是唯一一次「你了解对方」的机会。** 之后你能做的只有调用和拒绝。这个结构直接决定了第 5 节的安全策略 —— 必须在接入时评估，而不是运行时才发现。
+
+## 一个接入决策的实例
+
+把三类能力用到实际取舍上。假设团队要接入一个第三方的「代码审查」server，它提供：
+
+- tools：审查一段代码、自动修复问题
+- resources：团队的代码规范文档
+- prompts：几个常见的审查指令模板
+
+一个稳妥的接入顺序是：
+
+**第一步，只用 resources。** 把团队的规范文档读进来，放在上下文里，让**你自己的提示**去使用它。这一步的风险接近于零 —— 数据进入上下文的位置完全由你控制。
+
+**第二步，用 prompts。** 用户显式选择要执行哪个审查指令。用户知道自己在触发什么。
+
+**第三步，最后才考虑 tools。** 而且要先回答：审查工具会改我的代码吗？如果会，它是不可逆的吗？—— 如果是，那就该走第 9 章那套闸门，而不是直接交给模型。
+
+这个顺序的依据是「谁决定用它」那张表：**从控制权最强的能力开始用，把控制权最弱的留到最后。** 而多数人接入时的顺序正好相反 —— 因为 tools 看起来最有价值、最好演示。
+## 完整可运行代码
+
+下面这段代码里有一个最小的 server，它同时暴露了两类东西：一个 tools 列表，以及（在 server/discover 里）自己的能力声明。
+
+```python
+"""一个最小 MCP server（stdio + 换行分隔的 JSON-RPC 2.0）。
+
+按 2026-07-28 那版的**无状态**形态实现：
+  - 没有 initialize 握手，每个请求自己在 _meta 里带协议版本与客户端能力
+  - 版本不匹配 → UnsupportedProtocolVersionError
+  - server/discover 让 server 主动声明支持的版本
+  - 需要补充输入时不主动发请求，而是返回 InputRequiredResult（MRTR）
+
+它只在**形态**上照做，没有对接官方 SDK —— 所以它验证的是协议机制本身，
+而不是「官方实现是否如此」。实跑状态：2026-10-09。
+"""
+import json, sys
+
+SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25"]
+
+TOOLS = [
+    {"name": "get_weather",
+     "description": "查询某个城市某一天的最高气温。",
+     "inputSchema": {"type": "object",
+                     "properties": {"city": {"type": "string"},
+                                    "day": {"type": "string", "enum": ["明天", "后天"]}},
+                     "required": ["city", "day"]}},
+    {"name": "transfer_money",
+     "description": "给指定账户转账（不可逆）。",
+     "inputSchema": {"type": "object",
+                     "properties": {"to": {"type": "string"}, "amount": {"type": "number"}},
+                     "required": ["to", "amount"]}},
+]
+
+TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27}
+
+
+def error(req_id, code, message, data=None):
+    err = {"code": code, "message": message}
+    if data:
+        err["data"] = data
+    return {"jsonrpc": "2.0", "id": req_id, "error": err}
+
+
+def result(req_id, payload):
+    return {"jsonrpc": "2.0", "id": req_id, "result": payload}
+
+
+def handle(req):
+    """处理一个请求。注意：这里是**无状态**的 —— 没有 session 对象可查。"""
+    method = req.get("method")
+    req_id = req.get("id")
+    params = req.get("params", {})
+    meta = params.get("_meta", {})
+    version = meta.get("protocolVersion")
+
+    # --- 无状态化的核心：版本校验发生在**每个请求**上，而不是握手时 ---
+    if version not in SUPPORTED_VERSIONS:
+        return error(req_id, -32001, "UnsupportedProtocolVersionError",
+                     {"requested": version, "supported": SUPPORTED_VERSIONS})
+
+    if method == "server/discover":
+        return result(req_id, {"protocolVersions": SUPPORTED_VERSIONS,
+                               "capabilities": {"tools": {"listChanged": True}},
+                               "serverInfo": {"name": "demo-server", "version": "1.0.0"}})
+
+    if method == "tools/list":
+        return result(req_id, {"tools": TOOLS})
+
+    if method == "tools/call":
+        name = params.get("name")
+        args = params.get("arguments", {})
+
+        if name == "get_weather":
+            out = TEMP.get((args.get("city"), args.get("day")), {"error": "没有数据"})
+            return result(req_id, {"resultType": "complete",
+                                   "content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
+
+        if name == "transfer_money":
+            # MRTR：金额超过阈值时不主动发 elicitation，而是让客户端补输入后重调
+            if not params.get("_confirmed"):
+                return result(req_id, {
+                    "resultType": "input_required",
+                    "inputRequests": [{"id": "confirm",
+                                       "prompt": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
+                                       "schema": {"type": "boolean"}}]})
+            return result(req_id, {"resultType": "complete",
+                                   "content": [{"type": "text", "text": "已转账 %s 元给 %s"
+                                                % (args.get("amount"), args.get("to"))}]})
+
+        return error(req_id, -32602, "Unknown tool: %s" % name)
+
+    return error(req_id, -32601, "Method not found: %s" % method)
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except Exception as e:
+            print(json.dumps(error(None, -32700, "Parse error: %s" % e)), flush=True)
+            continue
+        print(json.dumps(handle(req), ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## 常见坑
+
+- **把 client 当成「一个全局客户端」。** 它是「一条连接的代表」，一个 host 会有多个。
+- **以为 tools 和 resources 只是功能分类。** 真正的区别是「谁决定用它」—— 也就是控制权在哪。
+- **把 server 的能力声明当安全保证。** 它只说明接口可用，协议层无法验证实现。
+- **在不放心的 server 上优先用它的 tools。** 应该优先用 resources，因为数据进入上下文的位置由你控制。
+- **以为一个 server 只能提供一类能力。** 三类可以同时提供，也可以只提供其中一类。

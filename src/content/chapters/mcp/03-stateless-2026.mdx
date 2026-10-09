@@ -1,0 +1,278 @@
+---
+lesson: mcp/stateless-2026
+title: 2026-07-28：协议被改成无状态
+status: drafting
+---
+
+2026-07-28 那一版是一次**破坏性**修订。它改掉了协议最基础的一个假设：连接是有状态的。
+
+这一节讲清楚改了什么、为什么这样改、以及它对你手上的代码意味着什么。
+
+## 改之前的形态
+
+旧版协议假设一条连接是一个**会话**，有明确的开始和结束：
+
+```text
+client → initialize（我带版本 X，我的能力是……）
+server → 我支持版本 X，我的能力是……
+client → notifications/initialized（我准备好了）
+        …… 之后的每个请求都隐含「在这个会话里」……
+```
+
+这个握手的目的是**协商**：双方各自声明版本与能力，谈拢之后才开始干活。协商的结果被存在连接上 —— 之后每个请求都不需要再说明版本，因为它隐含在会话里。
+
+而这个「存」的动作，就是有状态的具体含义。
+
+## 改了之后
+
+2026-07-28 把那三层都去掉了：**initialize 握手、notifications/initialized、协议级的会话（以及 `Mcp-Session-Id` 这类头）。**
+
+取而代之的是：**每个请求自己携带它需要的一切。**
+
+```json
+{"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+ "params": {"_meta": {"protocolVersion": "2026-07-28",
+                      "clientCapabilities": {"elicitation": {}}}}}
+```
+
+版本和客户端能力放进 `_meta`，跟着**每一个请求**走。server 每次收到请求都自己判断一次：这个版本我支持吗？
+
+不支持就返回 `UnsupportedProtocolVersionError`。
+
+同时新增了 `server/discover`，让 server 主动声明自己支持的版本和能力 —— 因为客户端不再有「握手时问一次」的机会，需要一个显式的发现方法。
+
+## 我在一个最小实现里验证的机制
+
+我按这个形态写了一个一百行的 server（第 4 节），用真正的子进程管道驱动它。三个关键点都如预期：
+
+```text
+不带 _meta 直接调 tools/list  → error  UnsupportedProtocolVersionError (-32001)
+                                      {"requested": null, "supported": ["2026-07-28", ...]}
+
+带错误的协议版本              → error  UnsupportedProtocolVersionError (-32001)
+                                      {"requested": "2020-01-01", ...}
+
+带正确版本                    → result {"tools": [...]}
+```
+
+（实跑数据，2026-10-09。这是按规范描述的形态自己实现的，不是对官方 SDK 的测试。）
+
+**关键观察**：同一个方法，因为请求里带的版本不同，结果完全不同。这在有状态的协议里是不可能的 —— 那里版本只在握手时检查一次，之后的请求不再重复校验。
+
+而 `requested: null` 这个细节值得注意：不带 `_meta` 时，server 看到的是「没有版本信息」，而不是「版本为空」。它选择**拒绝**而不是猜一个默认值 —— 这个选择让「忘记带版本」这个错误立刻暴露，而不是在某个后续行为里表现出来。
+
+## MRTR：服务端不再主动发请求
+
+这次修订里第二重要的变化，是**把服务端发起的请求改掉了**。
+
+旧版协议里，server 可以主动向 client 发请求，主要有三类：
+
+- `roots/list`：问客户端「你有哪些工作目录」
+- `sampling/createMessage`：**借用客户端的模型**生成一段内容
+- `elicitation/create`：让客户端向用户要一个输入
+
+这是「反向调用」—— 一次交互的发起权可以在双方之间来回。
+
+2026-07-28 把它换成了 **MRTR（多轮往返请求，Multi Round-Trip Requests）**：server 不再主动发请求，而是**把「我还需要输入」作为返回值交回去**。
+
+```json
+{
+  "resultType": "input_required",
+  "inputRequests": [
+    {"id": "confirm", "prompt": "确认给 张三 转账 5000 元？",
+     "schema": {"type": "boolean"}}
+  ]
+}
+```
+
+客户端补上输入后，**再调一次**。
+
+我的实现里完整跑通了这条路径：
+
+```text
+第一次调用     result  {"resultType": "input_required", "inputRequests": [...]}
+补上确认后重调  result  {"resultType": "complete", "content": [{"text": "已转账 5000 元给 张三"}]}
+```
+
+**发起权始终在客户端** —— 这是整个无状态化方向的必然结果。如果 server 能随时发起请求，那它就隐含地要求连接上存着上下文，而那正是这次修订要去掉的东西。
+
+## 这对安全边界是个改善
+
+MRTR 那一节最后有个附带结论，值得单独说：**它让「服务端能不能用你的模型」这件事从「随时可发生」变成了「在明确的一轮里发生」。**
+
+在旧版协议下，`sampling/createMessage` 是 server 主动发起的 —— 你在某个时刻会突然发现自己的模型被对方用了一次，用来干什么由对方决定。改成 MRTR 之后，同一个动作变成了：server 返回一个「我需要模型帮我生成一段内容」的请求，**你的客户端决定要不要满足它**。
+
+差别不在于能力，在于**你有了一个可以说不的时刻**。第 5 节会看到，这种「明确的决策点」是安全设计里最值钱的东西。
+
+## 对你的代码意味着什么
+
+最直接的结论：**任何写着「先 initialize 再调用」的教程或示例代码，在这个版本上都不再适用。** 你会遇到的第一个错误就是 `UnsupportedProtocolVersionError`，因为那些代码根本不带 `_meta`。
+
+迁移时要注意的四处：
+
+**一、版本从「连接级」变成「请求级」。** 如果你在某个地方缓存了协商结果，那个缓存现在是错的。
+
+**二、会话相关的代码全部作废。** `Mcp-Session-Id`、连接级的客户端能力存储、以会话为单位的清理逻辑 —— 都可以删掉。
+
+**三、资源订阅换了方法。** 从 `resources/subscribe` 改为 `subscriptions/listen`（一条长连接流）。注意这是少数几个**有状态**的残留 —— 订阅本身就是一种状态，所以它被明确地隔离成一个单独的流，而不是混在普通请求里。
+
+**四、任务相关的方法降级为扩展。** 如果你的代码依赖那些方法，要按扩展的方式接入，而不是核心协议。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["旧版：连接是一个会话"] --> A1["initialize 握手"]
+    A1 --> A2["协商结果存在连接上"]
+    A2 --> A3["之后每个请求都不带版本"]
+    B["2026-07-28：无状态"] --> B1["没有握手"]
+    B1 --> B2["每个请求自带 _meta<br/>（版本 + 客户端能力）"]
+    B2 --> B3["版本不匹配 → UnsupportedProtocolVersionError"]
+    B --> B4["新增 server/discover<br/>让 server 自己声明"]
+    A3 -.-> C["server 主动发请求：<br/>roots/list、sampling、elicitation"]
+    C -.-> D["MRTR 替换它：<br/>返回 input_required<br/>客户端补输入后重调"]
+    D -.-> E["发起权始终在客户端<br/>→ 你有明确的「说不」时刻"]
+`}
+/>
+
+
+## 为什么值得做这次修订
+
+把「有状态改成无状态」这个决定放到工程背景下看，收益是三条。
+
+**第一，部署变简单了。** 无状态的 server 可以随意水平扩展、随意重启 —— 任何一个实例都能处理任何一个请求，因为它们之间没有需要保持一致的会话。这是所有无状态设计的共同收益，MCP 只是把它应用到了工具协议上。
+
+**第二，失败恢复变简单了。** 有状态的连接断了之后，那些会话数据怎么处理是一个真问题：重连吗？恢复吗？超时了怎么办？无状态之后，连接断了就是断了，下一个请求重新带一遍 `_meta`` 即可。**这是把「分布式状态」这个难题整体删掉，而不是解决它。**
+
+**第三，代理和缓存变得可能。** 因为每个请求自包含，你可以把它放进队列、做负载均衡、甚至缓存那些幂等的请求。而这些在有状态的会话上都很难做。
+
+## 代价也很实在
+
+同一枚硬币的另一面：
+
+**每个请求都变大了。** 版本和能力信息要重复携带。这个开销在单次请求里很小（几十字节），但如果你的调用非常频繁，累积起来就不可忽略。
+
+**有些东西天然是有状态的。** 资源订阅就是最明显的例子 —— 「我订阅了这个资源，有变化通知我」这个过程本身跨越多次交互。协议的处理方式不是假装它不存在，而是**把它明确隔离成一条单独的流**（`subscriptions/listen`），而不是让它污染普通请求。
+
+**服务端要重复做同一件事。** 版本校验从「握手时一次」变成了「每次请求一次」。这是把复杂度从**状态管理**转移到了**重复计算**上 —— 而后者通常更容易做对（无状态、可测试、可缓存）。
+
+**这是一次典型的架构取舍：把状态从系统里拿掉，代价是每个请求多背一点东西。** 值不值取决于你的场景 —— 而 MCP 的选择说明，在「工具生态」这个场景里它认为值。
+## 完整可运行代码
+
+下面是最小 server 的无状态实现：版本校验在每个请求上、支持 server/discover、用 MRTR 处理需要补充输入的工具。
+
+```python
+"""一个最小 MCP server（stdio + 换行分隔的 JSON-RPC 2.0）。
+
+按 2026-07-28 那版的**无状态**形态实现：
+  - 没有 initialize 握手，每个请求自己在 _meta 里带协议版本与客户端能力
+  - 版本不匹配 → UnsupportedProtocolVersionError
+  - server/discover 让 server 主动声明支持的版本
+  - 需要补充输入时不主动发请求，而是返回 InputRequiredResult（MRTR）
+
+它只在**形态**上照做，没有对接官方 SDK —— 所以它验证的是协议机制本身，
+而不是「官方实现是否如此」。实跑状态：2026-10-09。
+"""
+import json, sys
+
+SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25"]
+
+TOOLS = [
+    {"name": "get_weather",
+     "description": "查询某个城市某一天的最高气温。",
+     "inputSchema": {"type": "object",
+                     "properties": {"city": {"type": "string"},
+                                    "day": {"type": "string", "enum": ["明天", "后天"]}},
+                     "required": ["city", "day"]}},
+    {"name": "transfer_money",
+     "description": "给指定账户转账（不可逆）。",
+     "inputSchema": {"type": "object",
+                     "properties": {"to": {"type": "string"}, "amount": {"type": "number"}},
+                     "required": ["to", "amount"]}},
+]
+
+TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27}
+
+
+def error(req_id, code, message, data=None):
+    err = {"code": code, "message": message}
+    if data:
+        err["data"] = data
+    return {"jsonrpc": "2.0", "id": req_id, "error": err}
+
+
+def result(req_id, payload):
+    return {"jsonrpc": "2.0", "id": req_id, "result": payload}
+
+
+def handle(req):
+    """处理一个请求。注意：这里是**无状态**的 —— 没有 session 对象可查。"""
+    method = req.get("method")
+    req_id = req.get("id")
+    params = req.get("params", {})
+    meta = params.get("_meta", {})
+    version = meta.get("protocolVersion")
+
+    # --- 无状态化的核心：版本校验发生在**每个请求**上，而不是握手时 ---
+    if version not in SUPPORTED_VERSIONS:
+        return error(req_id, -32001, "UnsupportedProtocolVersionError",
+                     {"requested": version, "supported": SUPPORTED_VERSIONS})
+
+    if method == "server/discover":
+        return result(req_id, {"protocolVersions": SUPPORTED_VERSIONS,
+                               "capabilities": {"tools": {"listChanged": True}},
+                               "serverInfo": {"name": "demo-server", "version": "1.0.0"}})
+
+    if method == "tools/list":
+        return result(req_id, {"tools": TOOLS})
+
+    if method == "tools/call":
+        name = params.get("name")
+        args = params.get("arguments", {})
+
+        if name == "get_weather":
+            out = TEMP.get((args.get("city"), args.get("day")), {"error": "没有数据"})
+            return result(req_id, {"resultType": "complete",
+                                   "content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
+
+        if name == "transfer_money":
+            # MRTR：金额超过阈值时不主动发 elicitation，而是让客户端补输入后重调
+            if not params.get("_confirmed"):
+                return result(req_id, {
+                    "resultType": "input_required",
+                    "inputRequests": [{"id": "confirm",
+                                       "prompt": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
+                                       "schema": {"type": "boolean"}}]})
+            return result(req_id, {"resultType": "complete",
+                                   "content": [{"type": "text", "text": "已转账 %s 元给 %s"
+                                                % (args.get("amount"), args.get("to"))}]})
+
+        return error(req_id, -32602, "Unknown tool: %s" % name)
+
+    return error(req_id, -32601, "Method not found: %s" % method)
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except Exception as e:
+            print(json.dumps(error(None, -32700, "Parse error: %s" % e)), flush=True)
+            continue
+        print(json.dumps(handle(req), ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## 常见坑
+
+- **照更早的教程写 initialize 握手。** 在这个版本上第一个请求就会拿到 UnsupportedProtocolVersionError。
+- **把版本当成连接级的属性缓存起来。** 无状态之后它是**每个请求**的属性，缓存它等于缓存了一个不存在的会话。
+- **以为「无状态」等于「不能有长连接」。** 资源订阅（subscriptions/listen）就是一条长连接流 —— 它是显式隔离出来的有状态部分。
+- **在 server 里主动向 client 发请求。** 应该返回 input_required，让客户端补输入后重调。
+- **把「忘记带 _meta」当成默认版本。** 正确做法是拒绝 —— 让错误立刻暴露，而不是在后续行为里显现。
+- **忽略 MRTR 对安全的改善。** 「明确的决策点」是这次修订里最有价值的副产品，第 5 节会用到。

@@ -1,0 +1,252 @@
+---
+lesson: mcp/why-protocol
+title: 为什么要一个协议
+status: drafting
+---
+
+第 4 章讲了工具调用。那一章里的工具都是你自己写的：函数在你手里、schema 由你定义、执行在你的进程里。
+
+这一章要讲的是另一件事：**当工具由别人提供时，你和他之间靠什么对话。**
+
+## N×M 问题
+
+假设有 N 个 AI 应用（编码助手、客服机器人、数据分析工具），M 个数据源（GitHub、数据库、内部工单系统、Slack）。如果每一对都要单独对接，你需要写 N×M 个集成。
+
+这就是 MCP 要解决的问题：**定义一个中间层协议，让 N 个应用和 M 个工具源各自实现一次，得到 N+M 个实现。**
+
+这个模式在工程史上出现过很多次 —— 打印机驱动、数据库驱动（ODBC/JDBC）、编辑器插件、LSP（语言服务器协议）。它们的共同结构是：
+
+**把「谁提供能力」和「谁消费能力」解耦，中间用一个双方都实现一次的协议连接。**
+
+MCP 的定位就是工具生态里的这一层。而它的直接参照物就是 LSP —— 都是「编辑器/宿主 + 能力提供方」的形态，都选择 JSON-RPC 作为消息格式。
+
+## 但协议能解决的问题有边界
+
+这是本节最重要的一部分：**说清楚 MCP 不负责什么。**
+
+MCP **不负责**：
+
+- **不负责模型怎么选工具。** 那是第 4 章讲的事 —— 工具描述怎么写、schema 怎么设计，MCP 只负责把描述和 schema 从 server 传到 host。
+- **不负责工具做什么。** 协议传的是「调用请求」和「返回结果」，中间的执行是 server 自己的事。
+- **不负责安全。** 它规定了怎么连、怎么调，没有规定「你能调什么」。第 5 节会展开：接入一个第三方 server 意味着什么。
+- **不负责编排。** 循环、预算、闸门 —— 那是第 10、11 章的事，MCP 不参与。
+
+**这个边界为什么重要？** 因为它决定了你该在哪里找问题。
+
+一个常见的误判是：接了一个 MCP server，模型开始乱调工具，于是怀疑协议。但协议只搬运消息，不乱调工具的是模型，描述写得不好的是 server —— 该查的地方在第 4 章和第 2 章，不在协议层。
+
+反过来也成立：如果连接建立失败、版本对不上、方法名不存在，那就是协议层的问题，查第 3 节那张变更清单。
+
+## 一个具体的判断：什么时候值得上协议
+
+不是所有场景都需要 MCP。判断方法和第 13 章选框架一样 —— 看**你换不换**。
+
+- **工具由你写、给一个应用用** → 不需要协议。直接按第 4 章写工具，几十行就够。
+- **同一批工具要给多个应用用** → 值得。这时 N×M 的成本是真实的。
+- **要用别人写的工具** → 需要。别人只提供 MCP 接口，你没有别的选择。
+- **工具源会频繁更换** → 值得。协议让更换成本从「重写集成」降到「改配置」。
+
+一个更简单的判据：**如果你这辈子只会有一个 host 和一个 server，协议是多余的。** 协议的价值全部来自「多方」。
+
+## 为什么是 JSON-RPC
+
+值得注意一个设计选择：MCP 用的是 **JSON-RPC 2.0**，一种很老的、很朴素的 RPC 格式。它只有四样东西：请求（method + params）、响应（result 或 error）、通知（没有 id）、错误码。
+
+这个选择带来几个实际好处：
+
+- **实现成本极低。** 第 4 节的 server 主体只有一百行左右，不需要任何 SDK。
+- **传输可以换。** 同一套消息格式既能走 stdio（本地进程），也能走 HTTP（远程）。协议与传输解耦。
+- **容易调试。** 一条消息就是一行 JSON，你可以直接打印、直接手写。
+
+而它的代价是**没有类型系统**。所有参数都是 JSON，schema 要单独声明。这正是第 3 节那个「每请求带 _meta」的设计能成立的原因 —— 协议本身不携带任何隐含状态。
+
+
+## 协议层的历史参照
+
+MCP 不是新发明，它复用了一个很成熟的模式。看几个先例有助于理解它该做什么、不该做什么。
+
+**ODBC / JDBC。** 数据库驱动层。没有它时，每个应用要为每种数据库写一套访问代码；有了它之后，应用面向 API 编程、数据库厂商提供驱动。注意这个类比的边界：ODBC 定义的是**怎么发 SQL、怎么取结果**，它不定义 SQL 该怎么写 —— 对应到 MCP，就是它定义怎么调工具，不定义工具该怎么设计。
+
+**LSP（语言服务器协议）。** 编辑器和语言服务之间。VS Code 不必为每种语言写补全逻辑，语言服务也不必为每个编辑器写插件。MCP 和它的形态几乎一样：都是「宿主 + 能力提供方」，都用 JSON-RPC，都区分「初始化」与「平时调用」两个阶段 —— 只不过 MCP 在 2026-07-28 那版把前者去掉了（第 3 节）。
+
+**打印机驱动 / 图像格式解码器。** 更早的同构模式：把 M 种输入和 N 种输出解耦。
+
+四个先例的共同点是：**协议层一旦稳定，上层的生态就开始长。** 而它们的共同风险也一样 —— 协议本身不保证对端行为，只保证消息能被理解。LSP 的服务器可以返回错误结果，数据库驱动可以给你错的数据。**这是协议层的固有边界，不是 MCP 的缺陷。**
+
+## 一个具体的前后对比
+
+把「没有协议」和「有协议」的成本摆在具体数字上。
+
+假设你有 3 个应用（编码助手、数据分析、客服机器人）和 4 个数据源（GitHub、Jira、内部数据库、Slack）。
+
+**没有协议**：每个应用为每个数据源写一套适配。3 × 4 = **12 套**。每套包含认证、参数转换、错误映射、分页处理 —— 而其中绝大部分逻辑是重复的。
+
+**有协议**：每个数据源实现一次 server（4 个），每个应用实现一次 client（3 个，而且 client 通常在框架里已经有了）。总共 **4 个 server + 1 套 client 代码**。
+
+从 12 套降到 4 套，而且**新增一个数据源的成本从「改 3 个应用」变成「加 1 个 server」。** 这就是 N×M 变成 N+M 的实际含义。
+
+注意这个账里有一个前提：**M 和 N 都不小。** 如果 M=1、N=1，那 12 变成 4 的收益不存在，你只是多了一层间接。这也是本节前面那条判据说「只有一个 host 和一个 server 时协议多余」的原因。
+
+## 它和函数调用的关系
+
+最后澄清一个最容易混的地方：**MCP 不是「另一种函数调用」，它是函数调用的搬运层。**
+
+第 4 章讲过工具调用的往返结构：模型输出 tool_use 块、代码执行、把 tool_result 回填。MCP 不改变这个结构 —— 它改变的是**执行那一步怎么发生**。
+
+- 工具是你写的：直接调函数
+- 工具在 MCP server 里：把调用请求编码成 JSON-RPC 发给 server，等它返回
+
+对模型来说，两者没有区别 —— 它看到的都是「工具定义 + 调用结果」。**MCP 对上完全透明**，这是它设计得好的地方：模型不需要知道工具从哪来。
+
+所以第 4 章那些结论（工具描述怎么写、错误怎么回填、工具数量影响成本）在 MCP 场景下**一条都不用改**。变的只是执行路径多了一跳，以及那一跳带来的新问题：连接失败、版本不匹配、server 挂了。
+
+## 一张图看它在哪一层
+
+<Mermaid
+  chart={`
+flowchart TB
+    subgraph 没有协议
+      A1["应用 1"] --> X1["GitHub 适配"]
+      A1 --> X2["Jira 适配"]
+      A2["应用 2"] --> X3["GitHub 适配"]
+      A2 --> X4["Jira 适配"]
+      A3["应用 3"] --> X5["GitHub 适配"]
+      A3 --> X6["Jira 适配"]
+    end
+    N["N × M 套集成"] -.-> 没有协议
+    subgraph 有协议
+      B1["应用 1"] --> C["MCP client"]
+      B2["应用 2"] --> C
+      B3["应用 3"] --> C
+      C <--> P["MCP 协议<br/>JSON-RPC 2.0"]
+      P <--> S1["GitHub server"]
+      P <--> S2["Jira server"]
+    end
+    M["N + M 个实现"] -.-> 有协议
+    有协议 -.-> Y["模型看到的仍是<br/>「工具定义 + 调用结果」<br/>MCP 对上完全透明"]
+    Y -.-> Z["所以第 4 章的结论<br/>在这里一条都不用改"]
+`}
+/>
+
+这张图里有个值得注意的对称：**左边那六条箭头是六份重复的工作，右边那五条箭头是五次不同的工作。** 协议的价值不在减少箭头的数量（6 到 5 差别不大），而在**每一条箭头只需要实现一次、而且实现方式相同**。
+
+M 和 N 越大，这个差别的绝对值越大 —— 但即使 M=2、N=3，收益也已经出现了：从「3 个应用各写 2 套适配」变成「2 个 server + 1 套 client」。
+## 完整可运行代码
+
+下面是一个最小的 MCP server：用 stdio 传输、换行分隔的 JSON-RPC 2.0，实现了第 4 节会展开的无状态形态。
+
+```python
+"""一个最小 MCP server（stdio + 换行分隔的 JSON-RPC 2.0）。
+
+按 2026-07-28 那版的**无状态**形态实现：
+  - 没有 initialize 握手，每个请求自己在 _meta 里带协议版本与客户端能力
+  - 版本不匹配 → UnsupportedProtocolVersionError
+  - server/discover 让 server 主动声明支持的版本
+  - 需要补充输入时不主动发请求，而是返回 InputRequiredResult（MRTR）
+
+它只在**形态**上照做，没有对接官方 SDK —— 所以它验证的是协议机制本身，
+而不是「官方实现是否如此」。实跑状态：2026-10-09。
+"""
+import json, sys
+
+SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25"]
+
+TOOLS = [
+    {"name": "get_weather",
+     "description": "查询某个城市某一天的最高气温。",
+     "inputSchema": {"type": "object",
+                     "properties": {"city": {"type": "string"},
+                                    "day": {"type": "string", "enum": ["明天", "后天"]}},
+                     "required": ["city", "day"]}},
+    {"name": "transfer_money",
+     "description": "给指定账户转账（不可逆）。",
+     "inputSchema": {"type": "object",
+                     "properties": {"to": {"type": "string"}, "amount": {"type": "number"}},
+                     "required": ["to", "amount"]}},
+]
+
+TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27}
+
+
+def error(req_id, code, message, data=None):
+    err = {"code": code, "message": message}
+    if data:
+        err["data"] = data
+    return {"jsonrpc": "2.0", "id": req_id, "error": err}
+
+
+def result(req_id, payload):
+    return {"jsonrpc": "2.0", "id": req_id, "result": payload}
+
+
+def handle(req):
+    """处理一个请求。注意：这里是**无状态**的 —— 没有 session 对象可查。"""
+    method = req.get("method")
+    req_id = req.get("id")
+    params = req.get("params", {})
+    meta = params.get("_meta", {})
+    version = meta.get("protocolVersion")
+
+    # --- 无状态化的核心：版本校验发生在**每个请求**上，而不是握手时 ---
+    if version not in SUPPORTED_VERSIONS:
+        return error(req_id, -32001, "UnsupportedProtocolVersionError",
+                     {"requested": version, "supported": SUPPORTED_VERSIONS})
+
+    if method == "server/discover":
+        return result(req_id, {"protocolVersions": SUPPORTED_VERSIONS,
+                               "capabilities": {"tools": {"listChanged": True}},
+                               "serverInfo": {"name": "demo-server", "version": "1.0.0"}})
+
+    if method == "tools/list":
+        return result(req_id, {"tools": TOOLS})
+
+    if method == "tools/call":
+        name = params.get("name")
+        args = params.get("arguments", {})
+
+        if name == "get_weather":
+            out = TEMP.get((args.get("city"), args.get("day")), {"error": "没有数据"})
+            return result(req_id, {"resultType": "complete",
+                                   "content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
+
+        if name == "transfer_money":
+            # MRTR：金额超过阈值时不主动发 elicitation，而是让客户端补输入后重调
+            if not params.get("_confirmed"):
+                return result(req_id, {
+                    "resultType": "input_required",
+                    "inputRequests": [{"id": "confirm",
+                                       "prompt": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
+                                       "schema": {"type": "boolean"}}]})
+            return result(req_id, {"resultType": "complete",
+                                   "content": [{"type": "text", "text": "已转账 %s 元给 %s"
+                                                % (args.get("amount"), args.get("to"))}]})
+
+        return error(req_id, -32602, "Unknown tool: %s" % name)
+
+    return error(req_id, -32601, "Method not found: %s" % method)
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except Exception as e:
+            print(json.dumps(error(None, -32700, "Parse error: %s" % e)), flush=True)
+            continue
+        print(json.dumps(handle(req), ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## 常见坑
+
+- **以为 MCP 负责「让模型更好地用工具」。** 它只搬运消息；工具描述的质量是第 4 章的事。
+- **以为 MCP 负责安全。** 它规定怎么连、怎么调，不规定你能调什么。接入第三方 server 的风险要自己评估。
+- **在一个 host 对一个 server 的场景上引入协议。** 没有「多方」，协议的价值为零，只剩一层间接。
+- **把 MCP 和某个具体框架绑定。** 它是一个协议；第 13 章那些框架只是它的消费者或提供者之一。
+- **以为它必须有 SDK 才能用。** 消息格式就是 JSON-RPC，手写一个 server 是一百行的事。
