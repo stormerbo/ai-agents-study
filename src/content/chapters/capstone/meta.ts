@@ -27,8 +27,8 @@ export const chapter = {
       summary: '项目失败最典型的原因不是做不出来，而是范围始终没定。',
       estimatedMinutes: 30,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['scoping', 'requirements'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '最小可用不等于最小正确 —— 有些东西第一天就得在。',
       estimatedMinutes: 40,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['implementation', 'skeleton'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '把前面几章的问句变成可勾选的清单。',
       estimatedMinutes: 50,
       difficulty: 'expert',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['hardening', 'checklist'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '交付物不是「能跑的代码」，而是别人能继续维护的系统。',
       estimatedMinutes: 40,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['delivery', 'documentation'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '把这个项目里被证伪的假设写下来 —— 那是整条路径最值钱的产出。',
       estimatedMinutes: 40,
       difficulty: 'expert',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['retrospective', 'learning'],
       checkpoints: [
         {
@@ -184,7 +184,7 @@ export const chapter = {
     ],
     cost: 'high',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;

@@ -1,0 +1,415 @@
+---
+lesson: capstone/skeleton
+title: 骨架：先跑通，但别绕过边界
+status: drafting
+---
+
+范围定好之后，第一版代码要"跑通"。但**跑通有一个陷阱：为了快点跑通，很容易把边界绕过去。**
+
+而边界一旦在第一版被绕过，后面就很难补回来 —— 因为那时"先跑通"的写法已经成了它的样子。
+
+## 一个具体的反面例子
+
+假设我要让一个 agent 能发回复。最快的写法是：
+
+```python
+def send_reply(to, body):
+    return {"sent": True, "to": to}
+
+# 循环里：
+for step in plan:
+    out = TOOLS[step.name](**step.args)     # 直接调，没有策略、没有审批
+```
+
+**这段代码能跑通，而且演示效果很好。** 但它把三件事绕过去了：执行策略（第 16 章）、审批（第 19 章）、轨迹（第 15 章）。
+
+而后面的代价是：**当你加那三样时，它们会变成"补丁"而不是"结构"。** 补丁的特征是分散在各处 —— 每个工具调用点都要改一遍，而漏掉一处不会有任何提示。
+
+所以骨架阶段的正确目标是：**把机制的位置留出来，哪怕机制本身还是最简版。**
+
+## 骨架要留的五个位置
+
+| 位置 | 最简版可以是什么 | 为什么必须先留 |
+|---|---|---|
+| **工具注册表** | 一个 dict + 装饰器 | 后面所有工具都从它走 |
+| **执行策略** | `default=deny` + 一张白名单 | 默认值是结构性的，改默认值很难 |
+| **轨迹** | 每步记工具名与原始参数 | 后补的轨迹会漏掉早期的调用点 |
+| **预算** | 一个计数器 + 上限 | 它是循环的控制条件，不是外层包装 |
+| **审批** | 不可逆动作返回 `input_required` | 它是**返回值协议**，不是 UI 层的事 |
+
+五行里，**"执行策略"和"审批"最容易被推迟**，因为它们在演示时"看不出效果"（反正都会通过）。而它们恰好是最难后补的两样：
+
+- 策略是**默认拒绝**的 —— 如果第一版是默认允许，后面改成默认拒绝会一次性拦掉所有没配规则的工具
+- 审批是**返回值协议** —— 如果第一版直接执行，后面改成"返回 input_required 让上层再调一次"，会把调用方的流程全改一遍
+
+## 一个具体的结构
+
+这一章的骨架按那五个位置组织。核心就是这几条：
+
+```text
+1. 工具注册表（第 11 章）
+   @tool(name, reversible=..., scopes=...)  → REGISTRY
+
+2. 执行策略（第 16 章）
+   POLICY = {"default": "deny", "allow": {...}}
+   check_policy(name) → (bool, why)
+
+3. 预算与熔断（第 18 章）
+   budget_ok() 在**每一轮开始前**检查
+
+4. 轨迹（第 15 章）
+   trace(kind, ...) 记工具名、原始参数、原始返回值
+
+5. 审批（第 19 章）
+   needs_approval(name) → 按**可逆性**判断，不按危险程度
+```
+
+注意第 5 条的判据来源：**按可逆性，不按危险程度。** 那是第 19 章的实测结论（按可逆性审批：2 次打断 / 0 漏网；按危险程度：1 次打断但放过了发邮件）。骨架阶段就把它定下来，后面就不会走偏。
+
+## 骨架跑通的标准
+
+"跑通"需要一个明确的判据，否则它会退化成"看起来能跑"。我用的标准是**六条可断言的用例**：
+
+| 用例 | 断言 |
+|---|---|
+| 正常流程 | 读两个工具，结果正确 |
+| 不可逆要审批 | 发回复时返回 `input_required` |
+| 批准后幂等 | 重复批准不会执行两次 |
+| 默认拒绝 | 未注册的工具被拦住 |
+| 预算生效 | 超步数时停下并**返回已有结果** |
+| 轨迹完整 | 有过工具名与原始返回值 |
+
+**这六条同时也是第 15 章那个"冒烟集"。** 骨架阶段就建立它有两个好处：一是"跑通"有了客观标准（6/6），二是后面每次改动都能立刻知道有没有碰坏。
+
+第六条（预算生效）里那个细节值得注意：**超限时返回的是"已有结果"而不是报错。** 那是第 18 章的结论 —— agent 跑到一半被截断时，已完成的部分往往已经能用了。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["骨架阶段"] --> B["反面：直接调用工具<br/>能跑通但绕过了三件事"]
+    B --> C["后果：后补的机制变成补丁<br/>分散在各调用点，漏一处无提示"]
+    A --> D["正面：先留五个位置"]
+    D --> D1["工具注册表"]
+    D --> D2["执行策略 default=deny"]
+    D --> D3["轨迹"]
+    D --> D4["预算（循环控制条件）"]
+    D --> D5["审批（返回值协议）"]
+    E["最难后补的两个"] --> E1["默认拒绝：改默认值会一次拦掉全部"]
+    E --> E2["审批协议：改它会动所有调用方"]
+    F["跑通的判据：六条可断言用例"] -.-> G["它同时就是冒烟集"]
+`}
+/>
+
+## 一个容易忽略的细节：骨架阶段不要优化
+
+最后一条：**骨架阶段不要做性能或成本优化。**
+
+理由：优化的前提是知道瓶颈在哪，而骨架阶段还没有真实负载。更实际的问题是，早期优化的代码通常在后面被删掉 —— 因为它优化的那个形态还没定型。
+
+一个例外：**成本上限（预算闸门）要在骨架阶段就有。** 它不是优化，是控制条件 —— 没有它，一个循环 bug 可能在你发现之前花掉很多钱（第 18 章：30 轮比单轮输入侧涨 405 倍）。
+
+
+## 一个具体的顺序：先写用例还是先写实现
+
+上面说骨架要留五个位置。但还有一个顺序问题：**六条冒烟用例是先写还是后写？**
+
+三种做法都试过，结论是**先写**：
+
+| 做法 | 结果 |
+|---|---|
+| 先实现，跑通了再补用例 | 用例会照着**实现**写，于是它只能验证"代码还按现在这样跑"，验证不了"需求有没有被满足" |
+| 先写用例，再实现 | 用例照着**需求**写；实现要迁就它 —— 而这个"迁就"通常就是正确的结构 |
+| 不写用例，靠手动验证 | 改一次跑一次，而且没有回归能力 |
+
+第一行的差别值得展开：**"照着实现写用例"和"照着需求写用例"看起来产出一样，但它们测的东西不同。**
+
+一个具体的例子。如果我先实现了循环，再补"预算生效"这条用例，我大概率会写成"跑十步，确认它在第六步停下" —— 那是照实现写的。
+
+而如果先写用例，我会先问：**预算超限时应该发生什么？** 然后才会想到第 18 章那个结论 —— 应该**返回已有结果，而不是报错**。这个结论只有从需求出发才能问出来；从实现出发，你只会验证"它确实停了"。
+
+所以那六条用例的措辞里，"超步数时停下并**返回已有结果**"这个断言是从第 18 章来的，不是从代码来的。**这也是为什么它们能当冒烟集用，而不只是"当前行为的快照"。**
+
+## 一个反过来的检查：位置留了但没用
+
+最后说一个常见形态：**五个位置都留了，但有两三个是空壳。**
+
+具体表现：策略表存在但只有一条 `default: deny`（没有任何工具被显式允许）；轨迹函数存在但没有任何地方调用它。
+
+这种"留了但没用"比"没留"更糟 —— 因为它给人已经做了的错觉。检验方式很简单：**每个位置问一句"如果我现在删掉它，会不会有测试失败"。**
+
+- 删掉策略表 → 用例 4（默认拒绝）会失败 ✅ 说明它在工作
+- 删掉轨迹函数 → 用例 6（轨迹完整）会失败 ✅
+
+**用测试来证明"这个机制是活的"，而不是靠读代码判断。** 这也正是那六条用例的第三个用途（除了当冒烟集、当需求文档之外）。
+## 完整可运行代码
+
+下面是这个骨架的完整实现，以及那六条冒烟用例。
+
+```python
+"""综合项目：一个最小的订单助手 agent。
+
+它把全书的生产化机制装进一个能跑的系统：
+  第 11 章  工具注册表 + 最小 agent 循环 + 幂等
+  第 15 章  轨迹记录（每步的原始参数与返回值）
+  第 16 章  执行策略（默认拒绝 + 最小权限）
+  第 18 章  预算闸门（三层：单次 / 任务 / 熔断）
+  第 19 章  审批（按可逆性，不按危险程度）
+  第 15/21 章 冒烟评测集
+
+不调用真实模型 —— 用脚本化的"模型"驱动，这样整条链路可复现、可断言。
+实跑状态：2026-10-09。
+"""
+import json, time
+
+# ═══════════════ 1. 工具注册表（第 11 章）═══════════════
+
+REGISTRY = {}
+
+
+def tool(name, *, reversible, scopes=()):
+    def deco(fn):
+        REGISTRY[name] = {"fn": fn, "reversible": reversible, "scopes": set(scopes)}
+        return fn
+    return deco
+
+
+@tool("get_order", reversible=True, scopes={"read:order"})
+def get_order(order_id):
+    return {"id": order_id, "status": "已发货", "amount": 1288.50}
+
+
+@tool("get_policy", reversible=True, scopes={"read:policy"})
+def get_policy(region):
+    return {"region": region, "return_days": 7}
+
+
+@tool("send_reply", reversible=False, scopes={"send:email"})
+def send_reply(to, body):
+    return {"sent": True, "to": to}
+
+
+# ═══════════════ 2. 执行策略（第 16 章）═══════════════
+
+POLICY = {
+    "default": "deny",
+    "allow": {
+        "get_order": {"read:order"},
+        "get_policy": {"read:policy"},
+        "send_reply": {"send:email"},
+    },
+}
+
+
+def check_policy(name):
+    if name not in POLICY["allow"]:
+        return False, "default=deny：没有规则"
+    if name not in REGISTRY:
+        return False, "未注册的工具"
+    missing = POLICY["allow"][name] - REGISTRY[name]["scopes"]
+    if missing:
+        return False, "权限不足：%s" % missing
+    return True, "ok"
+
+
+# ═══════════════ 3. 预算与熔断（第 18 章）═══════════════
+
+BUDGET = {"max_turns": 6, "max_tokens": 20000, "breaker_after": 3}
+STATE = {"tokens": 0, "turn": 0, "fails": 0, "spent": []}
+
+
+def spend(tokens, what):
+    STATE["tokens"] += tokens
+    STATE["spent"].append((what, tokens))
+
+
+def budget_ok():
+    if STATE["turn"] >= BUDGET["max_turns"]:
+        return False, "步数上限"
+    if STATE["tokens"] >= BUDGET["max_tokens"]:
+        return False, "预算上限"
+    if STATE["fails"] >= BUDGET["breaker_after"]:
+        return False, "熔断打开"
+    return True, "ok"
+
+
+# ═══════════════ 4. 轨迹（第 15 章）═══════════════
+
+TRACE = []
+
+
+def trace(kind, **kw):
+    TRACE.append({"step": STATE["turn"], "t": round(time.time() % 1000, 3),
+                  "kind": kind, **kw})
+
+
+# ═══════════════ 5. 审批（第 19 章）═══════════════
+
+APPROVALS = []
+
+
+def needs_approval(name):
+    """按可逆性判断 —— 不是按危险程度（第 19 章实测）。"""
+    return not REGISTRY[name]["reversible"]
+
+
+def ask(name, args):
+    APPROVALS.append({"action": name, "args": args, "why": "不可逆（发出后无法撤回）",
+                      "seen": False})
+    return {"result": "input_required", "action": name, "args": args,
+            "why": "不可逆（发出后无法撤回）"}
+
+
+# ═══════════════ 6. 循环 ═══════════════
+
+EXECUTED = []
+
+
+def call_tool(name, args, approved_ids=()):
+    ok, why = check_policy(name)
+    if not ok:
+        trace("deny", tool=name, why=why)
+        return {"error": why}
+    if needs_approval(name):
+        key = "%s:%s" % (name, json.dumps(args, sort_keys=True))
+        if key not in approved_ids:
+            trace("approval_requested", tool=name, args=args)
+            return ask(name, args)
+        if key in [e["key"] for e in EXECUTED]:          # 幂等（第 11 章）
+            trace("idempotent_skip", tool=name)
+            return {"skipped": True, "reason": "已执行过"};
+    out = REGISTRY[name]["fn"](**args)
+    EXECUTED.append({"key": "%s:%s" % (name, json.dumps(args, sort_keys=True)),
+                     "action": name, "args": args})
+    trace("result", tool=name, result=out)
+    return out
+
+
+def run(plan, approved_ids=()):
+    """plan 是脚本化的"模型决策"序列 —— 每一步是 (工具名, 参数字典)。"""
+    out = None
+    for name, args in plan:
+        STATE["turn"] += 1
+        ok, why = budget_ok()
+        if not ok:
+            trace("stopped", reason=why)
+            return {"stopped": why, "partial": out, "turns": STATE["turn"]}
+        spend(3000, name)
+        out = call_tool(name, args, approved_ids)
+        if "error" in out or out.get("result") == "input_required":
+            STATE["fails"] += 1
+        else:
+            STATE["fails"] = 0
+    return {"ok": True, "result": out, "turns": STATE["turn"]}
+
+
+def reset():
+    STATE.update({"tokens": 0, "turn": 0, "fails": 0, "spent": []})
+    TRACE.clear(); EXECUTED.clear(); APPROVALS.clear()
+
+# ═══════════════ 7. 冒烟评测集（第 15 章）═══════════════
+
+def case_1_normal_flow():
+    reset()
+    r = run([("get_order", {"order_id": "A-1001"}),
+             ("get_policy", {"region": "华东"})])
+    assert r["ok"] and r["result"]["return_days"] == 7, r
+    return "读两个工具正常，7 天"
+
+
+def case_2_irreversible_needs_approval():
+    reset()
+    r = run([("send_reply", {"to": "a@b.com", "body": "hi"})])
+    assert r["result"]["result"] == "input_required", r
+    return "不可逆动作停下来要审批"
+
+
+def case_3_approved_then_duplicate_is_idempotent():
+    reset()
+    args = {"to": "a@b.com", "body": "hi"}
+    key = "send_reply:%s" % json.dumps(args, sort_keys=True)
+    run([("send_reply", args)], approved_ids={key})
+    n1 = len(EXECUTED)
+    run([("send_reply", args)], approved_ids={key})
+    n2 = len(EXECUTED)
+    assert n1 == 1 and n2 == 1, (n1, n2)
+    return "重复批准不会执行两次"
+
+
+def case_4_policy_default_deny():
+    reset()
+    out = call_tool("delete_all", {})
+    assert "error" in out, out
+    return "未注册的工具被 default=deny 拦住"
+
+
+def case_5_budget_stops_loop():
+    reset()
+    plan = [("get_order", {"order_id": "A-100%d" % i}) for i in range(10)]
+    r = run(plan)
+    assert r.get("stopped"), r
+    return "超步数上限时停下并返回已有结果"
+
+
+def case_6_trace_has_raw_args():
+    reset()
+    run([("get_order", {"order_id": "A-1001"})])
+    kinds = [e["kind"] for e in TRACE]
+    assert "result" in kinds and any(e.get("tool") == "get_order" for e in TRACE)
+    return "轨迹里有工具名与原始返回值"
+
+
+CASES = [case_1_normal_flow, case_2_irreversible_needs_approval,
+         case_3_approved_then_duplicate_is_idempotent, case_4_policy_default_deny,
+         case_5_budget_stops_loop, case_6_trace_has_raw_args]
+
+
+if __name__ == "__main__":
+    print("=== 冒烟评测集（%d 条）===" % len(CASES))
+    passed = 0
+    for c in CASES:
+        try:
+            msg = c()
+            passed += 1
+            print("  ✅ %-28s %s" % (c.__name__[5:], msg))
+        except AssertionError as e:
+            print("  ❌ %-28s %s" % (c.__name__[5:], e))
+    print("  → %d/%d 通过" % (passed, len(CASES)))
+    print()
+
+    print("=== 一次完整的执行（含审批）===")
+    reset()
+    plan = [("get_order", {"order_id": "A-1001"}),
+            ("get_policy", {"region": "华东"}),
+            ("send_reply", {"to": "zhangsan@example.com", "body": "..."})]
+    r = run(plan)
+    print("  结果：%s" % json.dumps(r["result"], ensure_ascii=False))
+    print("  轨迹：")
+    for e in TRACE:
+        detail = e.get("tool") or e.get("reason") or ""
+        print("    第 %d 步 %-20s %s" % (e["step"], e["kind"], detail))
+    print()
+    print("  审批队列：%s" % json.dumps(APPROVALS[0]["why"], ensure_ascii=False))
+    print("  审批要展示三样：动作与目标 / 影响范围 / 可逆性")
+    print("  本实现只带了「为什么」—— 这是一个已知缺口，见复盘。")
+```
+
+
+## 一个具体的判断：骨架阶段该不该处理错误
+
+最后一个实践问题：骨架阶段要不要写错误处理？
+
+答案要分两类。**"机制性的错误"要在骨架阶段处理** —— 策略拒绝、审批、预算超限，它们是**协议的一部分**（返回值有明确定义），不处理会导致后面的调用方无法工作。
+
+**"实现性的错误"可以后补** —— 网络超时、JSON 解析失败、字段缺失。它们不影响协议，而且骨架阶段往往还没有真实的这几类输入。
+
+这个区分的判据是：**这个错误会不会改变返回值协议？** 会 → 现在处理；不会 → 后面补。
+
+一个例外值得注意：**"工具返回了错误结果"这一类要现在想。** 第 4 章实测过，不标 `is_error` 时模型会把错误当数据写进表格。它不改变协议（还是一个返回值），但它改变了调用方该怎么解读 —— 而"怎么解读"是协议的一部分。
+## 常见坑
+
+- **为了快点跑通而直接调用工具。** 策略、审批、轨迹会变成分散的补丁，漏一处没有提示。
+- **把默认值设成 allow。** 后面改成 deny 会一次性拦掉所有没配规则的工具 —— 骨架阶段就定成 deny。
+- **审批放在 UI 层。** 它是**返回值协议**（返回 input_required），放在 UI 层会让调用方无法处理。
+- **预算当作外层包装。** 它是循环的控制条件，必须在每一轮开始前检查。
+- **"跑通"没有判据。** 用可断言的用例（这里是六条），它同时就是冒烟集。
+- **骨架阶段做性能优化。** 那个形态还没定型，优化通常会被删掉 —— 但成本上限例外，它是控制条件。
