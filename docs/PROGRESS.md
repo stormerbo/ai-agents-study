@@ -52,6 +52,10 @@
 > **阶段 5 到此收口 —— 全书 23 章 / 112 节全部完成正文。**
 > 第 21 章读了真 LangChain 源码，**修正了第 13 章那个「抽象泄漏」的说法**（实为 parse_docstring 默认关闭）；
 > 第 22 章搭了一个真能跑的最小系统（六条冒烟用例全过），并按第 15-20 章的清单逐条自查。
+
+**章 21「工具与上手」** —— 5 节完整正文（2026-10-09 完成，插入在源码研读之前）
+
+> 这一章补的是「从知道到做出来」那一段：实测了向量库的交叉点（1 万到 5 万）、依赖冲突（langgraph 要 langchain-core>=1.4.7 而环境是 0.3.63）、本地 embedding 吞吐（246 块/秒）、以及 LangGraph 的检查点覆盖不到的那个窗口。
 **实验与交互补缺（2026-10-09）** —— Playground 增加**图像上传**，并补上第 8 章的 `lab-vision-extract`（视觉提取）。
   `vision` 从此不再是空置的 capability —— 补它的动因就是第二轮规划时点出的那个缺口。
 
@@ -72,7 +76,7 @@
 
 ### 6.2 进度明细
 
-> 下表由 scripts/content-stats.mjs 同源口径生成（当前 112/112 达标）。
+> 下表由 scripts/content-stats.mjs 同源口径生成（当前 117/117 达标）。
 
 | 节 | 中文 | 说明文字 | 图 | 代码块 | 达标 |
 |---|---:|---:|---:|---:|:--:|
@@ -184,6 +188,11 @@
 | tool-calling/03-poka-yoke | 1634 | 3103 | 1 | 1 | ✅ |
 | tool-calling/04-parallel-and-errors | 1899 | 3055 | 1 | 4 | ✅ |
 | tool-calling/05-tool-count | 1859 | 3222 | 1 | 2 | ✅ |
+| tooling/01-retrieval-stack | 1965 | 3009 | 2 | 5 | ✅ |
+| tooling/02-orchestration-stack | 1948 | 3018 | 1 | 5 | ✅ |
+| tooling/03-local-models | 2178 | 3013 | 1 | 3 | ✅ |
+| tooling/04-first-agent | 1944 | 3006 | 1 | 4 | ✅ |
+| tooling/05-agent-ui | 1908 | 3079 | 1 | 3 | ✅ |
 | what-is-an-agent/01-why-now | 2561 | 4293 | 1 | 5 | ✅ |
 | what-is-an-agent/02-what-counts-as-agent | 2106 | 3679 | 2 | 3 | ✅ |
 | what-is-an-agent/03-mindset-shift | 2446 | 3936 | 2 | 6 | ✅ |

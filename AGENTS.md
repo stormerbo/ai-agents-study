@@ -39,7 +39,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ```bash
 pnpm dev          # 本地开发，http://localhost:3000
-pnpm build        # 构建（152 个静态页面）
+pnpm build        # 构建（158 个静态页面）
 pnpm typecheck    # next typegen && tsc --noEmit
 pnpm test         # vitest，内容完整性 + SSE 编解码
 pnpm lint         # eslint
@@ -180,7 +180,7 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 
 ## 8. 待办清单
 
-**内容缺口：** 无 —— **全书 23 章 / 112 节全部完成正文**（2026-10-09 收口），每节都齐了「实测数据 + Mermaid 图 + 完整可运行代码 + 真实错误案例」。
+**内容缺口：** 无 —— **全书 24 章 / 117 节全部完成正文**（2026-10-09 收口），每节都齐了「实测数据 + Mermaid 图 + 完整可运行代码 + 真实错误案例」。
 
 **之后：**
 
@@ -195,7 +195,7 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 - [ ] 全文搜索（计划用 Pagefind）
 - [ ] 按 `VERIFY.md` 验证所有「未实跑」的代码
 
-**工具链现状**：`pnpm test`（63 断言 / 4 个文件）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（152 页）；内容体量 **112/112 达标**。**全部干净**。
+**工具链现状**：`pnpm test`（63 断言 / 4 个文件）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（158 页）；内容体量 **117/117 达标**。**全部干净**。
 
 ## 9. 给接手的会话的话
 
