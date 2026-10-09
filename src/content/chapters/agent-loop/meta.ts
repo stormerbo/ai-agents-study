@@ -27,8 +27,8 @@ export const chapter = {
       summary: '哪些事必须由你的代码决定，哪些可以交给模型 —— 这条线画错了，后面全是补丁。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['loop', 'stop-reason'],
       checkpoints: [
         {
@@ -57,8 +57,8 @@ export const chapter = {
       summary: '注册表不只是一张 name 到函数的映射 —— 它是权限、校验与错误的收口处。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['tool-registry', 'validation'],
       checkpoints: [
         {
@@ -86,8 +86,8 @@ export const chapter = {
       summary: '一个没有上限的循环不会失败，它只会一直花钱。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['budget', 'loop-detection'],
       checkpoints: [
         {
@@ -115,8 +115,8 @@ export const chapter = {
       summary: '长任务一定会中途断掉。区别只在于你能不能从断点接着跑。',
       estimatedMinutes: 24,
       difficulty: 'expert',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['durable-execution', 'checkpoint', 'idempotency'],
       checkpoints: [
         {
@@ -144,8 +144,8 @@ export const chapter = {
       summary: '手写一遍之后，选框架的标准才变得可判断。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['framework', 'abstraction'],
       checkpoints: [
         {
@@ -183,7 +183,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
