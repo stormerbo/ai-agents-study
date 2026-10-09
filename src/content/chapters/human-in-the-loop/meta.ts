@@ -27,8 +27,8 @@ export const chapter = {
       summary: '从「每步都确认」到「只在异常时找人」，中间的每一档都有代价。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['automation', 'levels'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '一个「确认 / 取消」按钮不是审批，它只是把责任转嫁给人。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['approval', 'ux'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '能暂停的 agent 才谈得上协作；而恢复的前提是幂等。',
       estimatedMinutes: 22,
       difficulty: 'expert',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['durable-execution', 'resume', 'idempotency'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '信任不是一次建立的，它是靠「可预测的中间状态」攒出来的。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['progress', 'trust', 'observability'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '同一份流式数据，组织方式决定了它是「看得见的进展」还是「刷屏」。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['streaming', 'ux'],
       checkpoints: [
         {
@@ -184,7 +184,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
