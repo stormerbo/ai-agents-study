@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import type { Resource } from '@/content/curriculum/schema';
 import { InlineMd } from '@/components/ui/inline-md';
 import {
@@ -6,6 +8,7 @@ import {
   RESOURCE_LANG_LABEL,
   RESOURCE_STATUS_LABEL,
 } from '@/lib/labels';
+import { hasReading } from '@/lib/content/reading';
 import { cn } from '@/lib/utils';
 
 /**
@@ -20,15 +23,15 @@ function CompactBadge({
   tone = 'default',
 }: {
   children: React.ReactNode;
-  tone?: 'default' | 'warning';
+  tone?: 'default' | 'warning' | 'accent';
 }) {
   return (
     <span
       className={cn(
         'shrink-0 rounded border px-1 py-px text-[10px] leading-4 whitespace-nowrap',
-        tone === 'warning'
-          ? 'border-amber-500/40 text-amber-600 dark:text-amber-500'
-          : 'border-border text-muted-foreground',
+        tone === 'warning' && 'border-amber-500/40 text-amber-600 dark:text-amber-500',
+        tone === 'accent' && 'border-accent/40 text-accent',
+        tone === 'default' && 'border-border text-muted-foreground',
       )}
     >
       {children}
@@ -41,19 +44,26 @@ export function ResourceCardCompact({ resource }: { resource: Resource }) {
 
   return (
     <li className="border-t border-border/70 px-3.5 py-3 first:border-t-0">
+      <Link
+        href={`/resources/${resource.id}`}
+        className="text-sm leading-snug font-medium underline-offset-4 hover:text-accent hover:underline"
+      >
+        {resource.title}
+      </Link>
       <a
         href={resource.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-sm leading-snug font-medium underline-offset-4 hover:text-accent hover:underline"
+        className="ml-1 text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
       >
-        {resource.title}
-        <span aria-hidden className="ml-1 text-[11px] text-muted-foreground">
+        原文
+        <span aria-hidden className="ml-0.5">
           ↗
         </span>
       </a>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-1 text-muted-foreground">
+        {hasReading(resource.id) && <CompactBadge tone="accent">精读</CompactBadge>}
         {resource.priority === 'must' && <CompactBadge>必读</CompactBadge>}
         <CompactBadge>{RESOURCE_KIND_LABEL[resource.kind]}</CompactBadge>
         <CompactBadge>{RESOURCE_LANG_LABEL[resource.lang]}</CompactBadge>

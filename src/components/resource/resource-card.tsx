@@ -1,5 +1,8 @@
+import Link from 'next/link';
+
 import type { Resource } from '@/content/curriculum/schema';
 import { InlineMd } from '@/components/ui/inline-md';
+import { hasReading } from '@/lib/content/reading';
 import {
   DIFFICULTY_LABEL,
   RESOURCE_KIND_LABEL,
@@ -13,7 +16,7 @@ function Badge({
   tone = 'default',
 }: {
   children: React.ReactNode;
-  tone?: 'default' | 'warning' | 'muted';
+  tone?: 'default' | 'warning' | 'muted' | 'accent';
 }) {
   return (
     <span
@@ -22,6 +25,7 @@ function Badge({
         tone === 'default' && 'border-border text-muted-foreground',
         tone === 'warning' && 'border-amber-500/40 text-amber-600 dark:text-amber-500',
         tone === 'muted' && 'border-border text-muted-foreground/60',
+        tone === 'accent' && 'border-accent/40 text-accent',
       )}
     >
       {children}
@@ -35,19 +39,29 @@ export function ResourceCard({ resource }: { resource: Resource }) {
   return (
     <li className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
+        {/* 标题走站内精读页，原链接降到旁边的小字 ——
+         *  列表页与章节侧栏都是这个原则：默认不把人送出站，
+         *  但跳原文仍然一步可达，只是不再是唯一入口。 */}
+        <Link
+          href={`/resources/${resource.id}`}
+          className="text-sm font-medium underline-offset-4 hover:text-accent hover:underline"
+        >
+          {resource.title}
+        </Link>
         <a
           href={resource.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm font-medium underline-offset-4 hover:text-accent hover:underline"
+          className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
-          {resource.title}
-          <span aria-hidden className="ml-1 text-xs text-muted-foreground">
+          原文
+          <span aria-hidden className="ml-0.5">
             ↗
           </span>
         </a>
 
         <span className="ml-auto flex flex-wrap items-center gap-1.5 text-muted-foreground">
+          {hasReading(resource.id) && <Badge tone="accent">站内精读</Badge>}
           {resource.priority === 'must' && <Badge>必读</Badge>}
           <Badge>{RESOURCE_KIND_LABEL[resource.kind]}</Badge>
           <Badge>{RESOURCE_LANG_LABEL[resource.lang]}</Badge>
