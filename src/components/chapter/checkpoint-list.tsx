@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getResources, getLesson } from '@/content/curriculum';
+import { getChapters, getResources, getLesson } from '@/content/curriculum';
 import type { Checkpoint, ClaimBasis } from '@/content/curriculum/schema';
 import { InlineMd } from '@/components/ui/inline-md';
 import { cn } from '@/lib/utils';
@@ -34,13 +34,21 @@ function BasisTag({ basis }: { basis: ClaimBasis }) {
   );
 }
 
+/** 章号 → 章。用来把答案里写的「第 N 章」变成可点链接。 */
+const CHAPTERS_BY_ORDER = getChapters()
+  .slice()
+  .sort((a, b) => a.order - b.order);
+
 export function CheckpointList({
   checkpoints,
   currentLessonId,
+  currentChapterId,
 }: {
   checkpoints: Checkpoint[];
   /** 没填 reviewLessonId 时，回看目标默认是本节 */
   currentLessonId?: string;
+  /** 当前节所属的章 —— 用来滤掉「第 N 章」里指向自己的那一条 */
+  currentChapterId?: string;
 }) {
   if (checkpoints.length === 0) return null;
 
@@ -52,6 +60,17 @@ export function CheckpointList({
         // 这样每条自检项都有一个「答不出来看哪里」的出口 —— 而答案本身就在本节的情况是多数。
         const reviewId = cp.reviewLessonId ?? currentLessonId;
         const review = reviewId ? getLesson(reviewId) : undefined;
+
+        // 答案里写到「第 N 章」时，把那个引用变成可点的链接。
+        //
+        // 为什么这么做，而不是给每条自检项手填 reviewLessonId：
+        // 我试过按关键词自动匹配目标**节**，但抽出来是错的（长标题会赢），
+        // 而答案里点名节标题的情况在全书是 0 条 —— 也就是说没有任何可靠信号。
+        // 猜一个错的复习目标比不给更糟。但「第 N 章」是作者自己写在答案里的，
+        // 它一定是对的，所以把它变成链接既准确又有用。
+        const cited = CHAPTERS_BY_ORDER.filter(
+          (c) => c.id !== currentChapterId && cp.answer.includes(`第 ${c.order} 章`),
+        );
 
         return (
           <li key={cp.id}>
@@ -92,6 +111,23 @@ export function CheckpointList({
                     </a>
                   ))}
                 </div>
+
+                {cited.length > 0 && (
+                  <p className="text-muted-foreground/70 mt-2 text-xs">
+                    <span>答案涉及：</span>
+                    {cited.map((c, i) => (
+                      <span key={c.id}>
+                        {i > 0 && <span className="mx-1">·</span>}
+                        <Link
+                          href={`/chapters/${c.id}`}
+                          className="text-accent underline-offset-2 hover:underline"
+                        >
+                          第 {c.order} 章《{c.title}》
+                        </Link>
+                      </span>
+                    ))}
+                  </p>
+                )}
 
                 {review && (
                   <p className="mt-3 text-xs">

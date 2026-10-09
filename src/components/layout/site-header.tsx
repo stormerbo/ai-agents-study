@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { SearchDialog } from '@/components/search/search-dialog';
 import { ThemeToggle } from './theme-toggle';
 
 const NAV = [
@@ -30,7 +31,8 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <SearchDialog />
           <ThemeToggle />
         </div>
       </div>

@@ -42,6 +42,9 @@ yarn-error.log*
 /.playwright-cli/
 /output/
 
+# Pagefind 搜索索引（由 pnpm build-search 生成，不入库）
+/public/pagefind/
+
 # vercel
 .vercel
 
