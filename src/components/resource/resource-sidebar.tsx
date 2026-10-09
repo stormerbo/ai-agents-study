@@ -8,7 +8,7 @@ import {
   RESOURCE_LANG_LABEL,
   RESOURCE_STATUS_LABEL,
 } from '@/lib/labels';
-import { hasReading } from '@/lib/content/reading';
+import { hasReading, hasTranslation } from '@/lib/content/reading';
 import { cn } from '@/lib/utils';
 
 /**
@@ -63,7 +63,11 @@ export function ResourceCardCompact({ resource }: { resource: Resource }) {
       </a>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-1 text-muted-foreground">
-        {hasReading(resource.id) && <CompactBadge tone="accent">精读</CompactBadge>}
+        {hasTranslation(resource.id) ? (
+          <CompactBadge tone="accent">全文</CompactBadge>
+        ) : (
+          hasReading(resource.id) && <CompactBadge tone="accent">导读</CompactBadge>
+        )}
         {resource.priority === 'must' && <CompactBadge>必读</CompactBadge>}
         <CompactBadge>{RESOURCE_KIND_LABEL[resource.kind]}</CompactBadge>
         <CompactBadge>{RESOURCE_LANG_LABEL[resource.lang]}</CompactBadge>

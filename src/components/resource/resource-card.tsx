@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import type { Resource } from '@/content/curriculum/schema';
 import { InlineMd } from '@/components/ui/inline-md';
-import { hasReading } from '@/lib/content/reading';
+import { hasReading, hasTranslation } from '@/lib/content/reading';
 import {
   DIFFICULTY_LABEL,
   RESOURCE_KIND_LABEL,
@@ -61,7 +61,11 @@ export function ResourceCard({ resource }: { resource: Resource }) {
         </a>
 
         <span className="ml-auto flex flex-wrap items-center gap-1.5 text-muted-foreground">
-          {hasReading(resource.id) && <Badge tone="accent">站内精读</Badge>}
+          {hasTranslation(resource.id) ? (
+            <Badge tone="accent">中文全文</Badge>
+          ) : (
+            hasReading(resource.id) && <Badge tone="accent">站内导读</Badge>
+          )}
           {resource.priority === 'must' && <Badge>必读</Badge>}
           <Badge>{RESOURCE_KIND_LABEL[resource.kind]}</Badge>
           <Badge>{RESOURCE_LANG_LABEL[resource.lang]}</Badge>
