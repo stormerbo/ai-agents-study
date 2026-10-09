@@ -27,8 +27,8 @@ export const chapter = {
       summary: '不是因为它会恶意，而是因为你无法穷举它会做什么。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['isolation', 'blast-radius'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '从「同一个进程」到「另一台机器」，成本与强度同步上升。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['container', 'vm', 'process'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '默认拒绝、按需开通 —— 这条你已经熟的原则在这里同样有效。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['least-privilege', 'allowlist'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '一旦被模型看到，它就同时存在于历史、日志与下一次请求里。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['secrets', 'credentials'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '上限、审计与可终止，是让「能动手」这件事可控的三件套。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['limits', 'audit'],
       checkpoints: [
         {
@@ -182,7 +182,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;

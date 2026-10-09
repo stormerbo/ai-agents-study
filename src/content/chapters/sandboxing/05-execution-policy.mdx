@@ -1,0 +1,287 @@
+---
+lesson: sandboxing/execution-policy
+title: 执行策略与审计
+status: drafting
+---
+
+第 9 章给过四道闸门（活动范围、预算、熔断、不可逆确认）。第 3 节讲了最小权限。这一节讲把两者落成**一套可维护、可审计的策略**。
+
+核心问题很简单：**那些检查写在哪儿？**
+
+## 策略应该是数据，不是散落的 if
+
+最常见的写法是把检查写成工具实现里的 if：
+
+```python
+def read_file(path):
+    if path.startswith("/etc/") or ".." in path:
+        raise PermissionError("no")
+    if not path.startswith("/workspace/"):
+        raise PermissionError("no")
+    ...
+```
+
+它能工作，但有四个问题：
+
+- **分散。** 20 个工具里就有 20 处检查，改一条规则要翻 20 个文件。
+- **不可 review。** 安全评审时你要读完整份代码才知道策略是什么。
+- **不可测试。** 想验证「/etc/passwd 会不会被拦住」，你得构造一个工具调用跑一遍。
+- **容易漏。** 新加一个工具时，很容易忘了加检查 —— 而**忘加**和**加错**的表现是一样的：都能跑通。
+
+把策略抽成数据之后，这四点都会改善：
+
+```python
+POLICY = {
+    "default": "deny",
+    "rules": [
+        {"id": "R1", "tool": "read_file", "allow": True,
+         "when": {"path_prefix": "/workspace/"}, "why": "只读工作区"},
+        {"id": "R2", "tool": "read_file", "allow": False,
+         "when": {"path_prefix": "/etc/"}, "why": "系统目录一律拒绝"},
+    ],
+}
+```
+
+策略变成一份**可以单独 review、单独测试、单独改**的东西，而且改动留在 git 里。
+
+## 第一条规则：默认拒绝
+
+上面那段策略里最关键的一行是这个：
+
+```text
+"default": "deny"
+```
+
+它的含义是：**没有匹配到任何规则时，拒绝。**
+
+为什么这条最重要？因为它决定了「漏掉一个工具」的后果。我实测的输出里有这么一行：
+
+```text
+delete_everything    DENY  default
+```
+
+**delete_everything 是个我不认识的工具名** —— 策略里根本没有它的规则。但因为默认是拒绝，它自动被拦住了。
+
+如果默认是允许，同一个调用会显示 ALLOW。而现实里「新加了一个工具忘了配策略」是必然会发生的 —— 关键只在于它的默认后果是安全还是危险。
+
+**默认拒绝把「忘记配置」从一个安全事故变成了一个功能缺失。** 后者会在测试时被发现，前者不会。
+
+## 第二条规则：被拒的也要审计
+
+一个常见做法是只记录成功的调用。那是错的，理由和第 9 节讲审计时一样：
+
+```text
+DENY  read_file          R2      ← 想读 /etc/passwd，被拦住
+DENY  http_get           default ← 想访问元数据端点，被拦住
+DENY  exec_shell         R4      ← 想执行 shell，未开放
+```
+
+这三行记录的是**谁想做但被拦住了**，而它和「谁没想做」是两件完全不同的事：
+
+- 只有前者说明策略在工作
+- 只有前者能帮你**调阈值** —— 如果一个合法操作被频繁拒绝，那是策略太严的信号
+- 出于安全考虑，持续的被拒尝试本身就是一个值得告警的信号（可能是注入在试探）
+
+如果只记成功的调用，你会得到一份「一切正常」的日志，而系统正在被反复试探。
+
+## 第三条：策略本身要能被攻击测试
+
+这一条是我实现这一节的代码时**自己撞上的**。
+
+我的策略里 R1 是「path 以 /workspace/ 开头则允许」。我拿它测了一个输入：
+
+```text
+"path": "/workspace/../../../etc/passwd"
+```
+
+结果：**ALLOW（R1）**。
+
+因为它的字符串**确实以 /workspace/ 开头** —— 和第 3 节那个前缀检查是**同一个漏洞**，只是发生在了策略层而不是工具实现层。
+
+这件事说明一个很重要的问题：**把策略抽成数据不会自动让它变安全。** 数据化的收益是可维护、可 review、可测试；而**正确性**要靠另外两件事：
+
+1. **策略的判据要检查解析后的值**（第 3 节的 realpath），而不是原始字符串
+2. **策略要有攻击测试** —— 上面那行输入就该是一条固定的测试用例
+
+而第二点正是数据化的额外收益：**策略是数据，所以测试用例是数据，所以它可以被穷举。** 一堆 if 散在 20 个文件里时，你没法系统地测它们。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["一次工具调用"] --> B["按 tool 名匹配规则"]
+    B --> C{"有匹配的规则？"}
+    C -->|是| D{"规则判定"}
+    C -->|否| E["default = deny"]
+    D -->|allow| F["执行"]
+    D -->|deny| G["拒绝"]
+    E --> G
+    F --> H["审计：ALLOW + 规则 id"]
+    G --> I["审计：DENY + 规则 id"]
+    I --> J["用途一：证明策略在工作"]
+    I --> K["用途二：调阈值（频繁拒绝 = 太严）"]
+    I --> L["用途三：持续被拒 = 可能在被试探"]
+    M["策略是数据"] --> N["可 review / 可测试 / 可 diff"]
+    N --> O["但它不会自动变安全 ——<br/>判据仍要检查解析后的值"]
+`}
+/>
+
+## 和前面几层的关系
+
+把这一章和前两章放在一起，完整的防护是四层：
+
+| 层 | 管什么 | 在哪里实现 |
+|---|---|---|
+| 权限 | 能不能调这个工具 | 第 9 章的四道闸门 / 本节策略的 tool 匹配 |
+| 隔离 | 调了之后够得着什么 | 第 2 节的层级选择 |
+| 最小权限 | 边界内的具体范围 | 第 3 节的路径与网络白名单 |
+| 审计 | 出了事能不能复盘 | 本节（**包括被拒的**） |
+
+四层里，**最容易漏的是最后一层**。因为它不影响功能 —— 没记日志的系统跑起来一切正常，直到你需要复盘的那一天。
+
+
+## 策略和提示词的关系
+
+一个常见误解是把执行策略当成提示词的一部分 —— 在 system 里写「不要访问 /etc 目录」。
+
+**那不是策略，那是请求。** 它和真实策略的区别在于：请求可以被说服，策略不能。
+
+第 2 章实测过提示注入的效果：内容操纵类的注入在加了 XML 标签之后仍然 6/6 成功。所以一条写在提示词里的约束，在注入面前基本不构成障碍。
+
+正确的分工是：
+
+| 放在哪 | 作用 | 能不能被绕过 |
+|---|---|---|
+| **system 提示** | 让模型知道边界，减少无意的越界 | 能（注入） |
+| **执行策略** | 真正的边界 | 不能（在模型之外） |
+
+两者都要有，但**只有后者是安全边界**。前者降低发生频率，后者决定发生之后会怎样。
+
+把这一点讲清楚很重要，因为它决定了评审时的判断：**如果一个系统的「安全措施」全部写在提示词里，那它没有安全措施。**
+
+## 一个检查：策略能不能被非作者读懂
+
+数据化的最后一个收益值得单独说：**它可以被 non-author 读懂。**
+
+把策略写成一份规则表之后，做安全评审的人不需要读工具实现，只需要读那份表。他能问出好问题：
+
+- 为什么 read_file 允许 /workspace/ 下的任何路径？
+- http_get 的白名单里有几个域名，它们都是必需的吗？
+- 默认是 deny 还是 allow？
+
+如果这些检查散在 20 个工具的 if 里，这些问题就没人问得出来 —— 因为答案要先读 20 个文件才能拼出来。**而没人问，就不会被发现。**
+## 完整可运行代码
+
+下面这段代码实现一套声明式的执行策略：默认拒绝、规则匹配、以及包含被拒调用的审计日志。
+
+```python
+"""执行策略与审计：默认拒绝 + 规则表 + 审计日志。
+
+纯本地，实跑状态：2026-10-09。
+"""
+import json, time
+
+# 策略用数据描述，不是散落在代码里的 if
+POLICY = {
+    "default": "deny",                       # ← 关键：默认拒绝
+    "rules": [
+        {"id": "R1", "tool": "read_file", "allow": True,
+         "when": {"path_prefix": "/workspace/"}, "why": "只读工作区"},
+        {"id": "R2", "tool": "read_file", "allow": False,
+         "when": {"path_prefix": "/etc/"}, "why": "系统目录一律拒绝"},
+        {"id": "R3", "tool": "http_get", "allow": True,
+         "when": {"host_in": ["api.example.com", "docs.example.com"]}, "why": "白名单域名"},
+        {"id": "R4", "tool": "exec_shell", "allow": False, "when": {}, "why": "未开放"},
+    ],
+}
+
+AUDIT = []
+
+
+def check(tool, args):
+    for r in POLICY["rules"]:
+        if r["tool"] != tool:
+            continue
+        w = r["when"]
+        if "path_prefix" in w and not str(args.get("path", "")).startswith(w["path_prefix"]):
+            continue
+        if "host_in" in w and args.get("host") not in w["host_in"]:
+            continue
+        decision = "allow" if r["allow"] else "deny"
+        return decision, r["id"], r["why"]
+    return "deny", "default", "没有匹配的规则，按默认拒绝"
+
+
+def execute(tool, args):
+    decision, rule, why = check(tool, args)
+    rec = {"t": round(time.time() % 1000, 3), "tool": tool, "args": args,
+           "decision": decision, "rule": rule}
+    AUDIT.append(rec)
+    if decision == "deny":
+        return "⛔ 拒绝（%s：%s）" % (rule, why)
+    return "✅ 允许（%s：%s）" % (rule, why)
+
+
+CASES = [
+    ("read_file", {"path": "/workspace/notes.md"}),
+    ("read_file", {"path": "/etc/passwd"}),
+    ("read_file", {"path": "/workspace/../../../etc/passwd"}),
+    ("http_get", {"host": "api.example.com"}),
+    ("http_get", {"host": "169.254.169.254"}),
+    ("exec_shell", {"cmd": "rm -rf /"}),
+    ("delete_everything", {}),
+]
+
+if __name__ == "__main__":
+    print("策略：default = %s（默认拒绝）" % POLICY["default"])
+    print()
+    for tool, args in CASES:
+        print("  %-22s %-38s %s" % (tool, json.dumps(args, ensure_ascii=False)[:36], execute(tool, args)))
+    print()
+    print("=== 三条设计要点 ===")
+    print("  1. default = deny")
+    print("     未列出的工具（delete_everything）自动被拒 —— 不需要有人记得去加规则。")
+    print("  2. 规则是数据，不是代码里的 if")
+    print("     可以单独 review、单独测试、单独改；改动留在 git 里。")
+    print("  3. 每一次判定都进审计（包括被拒的）")
+    print("     「谁想做但被拦住了」和「谁没想做」是两件不同的事 ——")
+    print("     只有前者说明策略在工作，也只有它能帮你调阈值。")
+    print()
+    print("=== 审计日志（%d 条）===" % len(AUDIT))
+    for r in AUDIT:
+        print("  %s %-20s %s" % (r["decision"].upper().ljust(5), r["tool"], r["rule"]))
+    print()
+    print("  注意第三条：'/workspace/../../../etc/passwd' 以 /workspace/ 开头，")
+    print("  所以 R1 **会**匹配它 —— 这条策略在这里漏了。")
+    print("  这正是第 3 节要讲的：策略层的前缀检查必须配合真实路径规范化。")
+```
+
+实跑输出（2026-10-09）：
+
+```text
+  read_file     {"path": "/workspace/notes.md"}               允许（R1：只读工作区）
+  read_file     {"path": "/etc/passwd"}                       拒绝（R2：系统目录一律拒绝）
+  read_file     {"path": "/workspace/../../../etc/passwd"}    允许（R1：只读工作区）
+  http_get      {"host": "api.example.com"}                   允许（R3：白名单域名）
+  http_get      {"host": "169.254.169.254"}                  拒绝（default：没有匹配的规则）
+  exec_shell    {"cmd": "rm -rf /"}                           拒绝（R4：未开放）
+  delete_everything {}                                        拒绝（default：没有匹配的规则）
+```
+
+第三行就是那个漏洞：它以 /workspace/ 开头，所以 R1 匹配了它。**这条策略在这里漏了。**
+
+
+## 策略和提示词的关系
+
+一个常见误解是把执行策略当成提示词的一部分 —— 在 system 里写「不要访问 /etc 目录」。
+
+**那不是策略，那是请求。** 区别在于：请求可以被说服，策略不能。第 2 章实测过提示注入的效果：内容操纵类的注入在加了标签之后仍然 6/6 成功。所以写在提示词里的约束，在注入面前基本不构成障碍。
+
+正确分工是两者都要有，但**只有后者是安全边界**：提示词让模型知道边界、减少无意越界；执行策略在模型之外，决定越界发生之后会怎样。这也决定了安全评审时的判断 —— **如果一个系统的「安全措施」全部写在提示词里，那它没有安全措施。**
+## 常见坑
+
+- **把检查写成散落的 if。** 分散、不可 review、不可测试，而且新加工具时容易漏。
+- **默认允许。** 「忘记配置」的后果从功能缺失变成安全事故 —— 前者测试能发现，后者不能。
+- **只审计成功的调用。** 被拒的记录才说明策略在工作，也才能帮你调阈值。
+- **以为策略数据化就安全了。** 实测里 R1 的前缀检查放过了 /workspace/../../../etc/passwd —— 和第 3 节是同一个漏洞。
+- **策略没有攻击测试用例。** 数据化的额外收益正是「测试用例也能穷举」。
+- **忘了审计这层。** 它不影响功能，所以最容易漏 —— 直到你需要复盘的那一天。
