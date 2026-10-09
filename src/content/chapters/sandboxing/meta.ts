@@ -165,7 +165,13 @@ export const chapter = {
       resourceIds: ['claude-agent-sdk', 'openhands'],
     },
   ],
-  resourceIds: ['claude-agent-sdk', 'twelve-factor-agents', 'openhands', 'mcp-docs', 'ai-engineering-huyen'],
+  resourceIds: [
+    'claude-agent-sdk',
+    'twelve-factor-agents',
+    'openhands',
+    'mcp-docs',
+    'ai-engineering-huyen',
+  ],
   backendMapping: {
     analogy: '沙箱 ≈ 你给一个第三方服务划的权限边界：最小权限、独立身份、可审计、可随时收回',
     transferable: [

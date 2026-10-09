@@ -165,10 +165,18 @@ export const chapter = {
       resourceIds: ['twelve-factor-agents', 'claude-agent-sdk'],
     },
   ],
-  resourceIds: ['mcp-docs', 'mcp-spec-changelog', 'twelve-factor-agents', 'ai-engineering-huyen', 'claude-agent-sdk', 'anthropic-building-effective-agents'],
+  resourceIds: [
+    'mcp-docs',
+    'mcp-spec-changelog',
+    'twelve-factor-agents',
+    'ai-engineering-huyen',
+    'claude-agent-sdk',
+    'anthropic-building-effective-agents',
+  ],
   labIds: ['lab-injection-probe'],
   backendMapping: {
-    analogy: 'agent 安全 ≈ 一个对外开放且有写权限的服务：威胁模型变了，但最小权限、纵深防御、审计这套方法论没变',
+    analogy:
+      'agent 安全 ≈ 一个对外开放且有写权限的服务：威胁模型变了，但最小权限、纵深防御、审计这套方法论没变',
     transferable: [
       '威胁建模的习惯：先列资产与入口，再看最坏后果',
       '最小权限、专用身份、出网白名单 —— 运维里怎么做，这里就怎么做',

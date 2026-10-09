@@ -35,8 +35,8 @@ export function ApprovalDemo() {
   return (
     <div className="not-prose my-6 space-y-4">
       {/* 进度：按动作，不按百分比 */}
-      <div className="border-border bg-card rounded-lg border p-4">
-        <p className="text-muted-foreground mb-3 text-xs font-medium">进度</p>
+      <div className="rounded-lg border border-border bg-card p-4">
+        <p className="mb-3 text-xs font-medium text-muted-foreground">进度</p>
         <ol className="space-y-1.5">
           {STEPS.map((s) => (
             <li key={s.text} className="flex items-baseline gap-2 text-sm">
@@ -49,7 +49,7 @@ export function ApprovalDemo() {
             </li>
           ))}
         </ol>
-        <p className="text-muted-foreground/70 mt-3 text-xs">
+        <p className="mt-3 text-xs text-muted-foreground/70">
           注意这里没有「60%」—— 步数事前不知道，百分比是虚假精度。
         </p>
       </div>
@@ -62,25 +62,27 @@ export function ApprovalDemo() {
 
         <dl className="space-y-2 text-sm">
           <div className="flex gap-3">
-            <dt className="text-muted-foreground w-20 shrink-0 text-xs leading-6">动作与目标</dt>
+            <dt className="w-20 shrink-0 text-xs leading-6 text-muted-foreground">动作与目标</dt>
             <dd className="leading-6">
               {APPROVAL.action} → <span className="font-mono text-xs">{APPROVAL.target}</span>
-              <span className="text-muted-foreground ml-1.5 text-xs">（{APPROVAL.targetKind}）</span>
+              <span className="ml-1.5 text-xs text-muted-foreground">
+                （{APPROVAL.targetKind}）
+              </span>
             </dd>
           </div>
           <div className="flex gap-3">
-            <dt className="text-muted-foreground w-20 shrink-0 text-xs leading-6">影响范围</dt>
+            <dt className="w-20 shrink-0 text-xs leading-6 text-muted-foreground">影响范围</dt>
             <dd className="leading-6">{APPROVAL.scope}</dd>
           </div>
           <div className="flex gap-3">
-            <dt className="text-muted-foreground w-20 shrink-0 text-xs leading-6">可逆性</dt>
+            <dt className="w-20 shrink-0 text-xs leading-6 text-muted-foreground">可逆性</dt>
             <dd className="leading-6 text-amber-700 dark:text-amber-500">{APPROVAL.reversible}</dd>
           </div>
         </dl>
 
         <details className="mt-3 text-sm">
-          <summary className="text-muted-foreground cursor-pointer text-xs">查看正文</summary>
-          <p className="text-muted-foreground mt-2 text-xs leading-relaxed">{APPROVAL.body}</p>
+          <summary className="cursor-pointer text-xs text-muted-foreground">查看正文</summary>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{APPROVAL.body}</p>
         </details>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -91,8 +93,8 @@ export function ApprovalDemo() {
               title={o.hint}
               className={
                 i === 0
-                  ? 'bg-foreground text-background rounded px-3 py-1.5 text-xs font-medium'
-                  : 'border-border hover:bg-muted rounded border px-3 py-1.5 text-xs'
+                  ? 'rounded bg-foreground px-3 py-1.5 text-xs font-medium text-background'
+                  : 'rounded border border-border px-3 py-1.5 text-xs hover:bg-muted'
               }
             >
               {o.label}
@@ -101,10 +103,9 @@ export function ApprovalDemo() {
           ))}
         </div>
 
-        <p className="text-muted-foreground/70 mt-3 text-xs leading-relaxed">
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground/70">
           四个选项而不是两个 —— 「修改后同意」和「换个方式」是最常见的真实需求。
-          只给同意/拒绝时，用户的反应通常是拒绝然后重说一遍，
-          而那会浪费 agent 已经做好的部分。
+          只给同意/拒绝时，用户的反应通常是拒绝然后重说一遍， 而那会浪费 agent 已经做好的部分。
         </p>
       </div>
     </div>

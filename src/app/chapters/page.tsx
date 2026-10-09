@@ -26,7 +26,7 @@ export default function ChaptersPage() {
         </p>
         <div className="mt-5 max-w-md">
           <ProgressBar lessonIds={allLessonIds} />
-          <p className="text-muted-foreground/70 mt-2 text-xs">
+          <p className="mt-2 text-xs text-muted-foreground/70">
             进度只存在这台设备的浏览器里，不上传、不需要账号。
           </p>
         </div>

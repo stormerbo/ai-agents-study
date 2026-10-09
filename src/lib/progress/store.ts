@@ -47,12 +47,16 @@ export interface ProgressAdapter {
 /** localStorage 实现。以后换服务端实现时，替换这个对象即可。 */
 export const localAdapter: ProgressAdapter = {
   load() {
-    if (typeof window === "undefined") return EMPTY_PROGRESS;
+    if (typeof window === 'undefined') return EMPTY_PROGRESS;
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return EMPTY_PROGRESS;
       const parsed = JSON.parse(raw) as Partial<ProgressState>;
-      if (parsed?.version !== 1 || typeof parsed.completed !== "object" || parsed.completed === null) {
+      if (
+        parsed?.version !== 1 ||
+        typeof parsed.completed !== 'object' ||
+        parsed.completed === null
+      ) {
         return EMPTY_PROGRESS;
       }
       return { version: 1, completed: parsed.completed as Record<string, string> };
@@ -62,7 +66,7 @@ export const localAdapter: ProgressAdapter = {
     }
   },
   save(state) {
-    if (typeof window === "undefined") return;
+    if (typeof window === 'undefined') return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
@@ -90,14 +94,13 @@ export function setProgressAdapter(next: ProgressAdapter): void {
  * **不会通知任何人**（那时还没订阅者），于是界面一直停在 0/N。
  * 这个 bug 是靠端到端测试（点完刷新、看进度条读数）才发现的，单看代码看不出来。
  */
-let snapshot: ProgressState =
-  typeof window === "undefined" ? EMPTY_PROGRESS : localAdapter.load();
+let snapshot: ProgressState = typeof window === 'undefined' ? EMPTY_PROGRESS : localAdapter.load();
 const listeners = new Set<() => void>();
 
 export function subscribe(fn: () => void): () => void {
   listeners.add(fn);
   // 换过 adapter、或别的标签页改过存储时，这里重新对齐一次
-  if (typeof window !== "undefined") {
+  if (typeof window !== 'undefined') {
     const loaded = adapter.load();
     if (loaded !== snapshot) {
       snapshot = loaded;

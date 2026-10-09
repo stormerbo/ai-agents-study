@@ -36,12 +36,7 @@ export const PROVIDERS = {
     baseUrl: 'https://api.anthropic.com',
     label: 'Anthropic（Claude）',
     keyHint: 'console.anthropic.com',
-    models: [
-      'claude-fable-5-1',
-      'claude-opus-5-5',
-      'claude-sonnet-5',
-      'claude-haiku-4-5-20251001',
-    ],
+    models: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5', 'claude-haiku-4-5-20251001'],
     defaultModel: 'claude-haiku-4-5-20251001',
   },
   deepseek: {

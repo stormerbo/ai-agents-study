@@ -6,6 +6,6 @@ export const bodies = {
   'injection-escalation': () => import('./01-injection-escalation.mdx'),
   'tools-as-untrusted-input': () => import('./02-tools-as-untrusted-input.mdx'),
   'supply-chain': () => import('./03-supply-chain.mdx'),
-  'exfiltration': () => import('./04-exfiltration.mdx'),
+  exfiltration: () => import('./04-exfiltration.mdx'),
   'defense-in-depth': () => import('./05-defense-in-depth.mdx'),
 } as const;

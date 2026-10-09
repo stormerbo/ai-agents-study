@@ -3,9 +3,9 @@ import 'server-only';
 
 /** 章 22（综合项目）的正文加载器。 */
 export const bodies = {
-  'scope': () => import('./01-scope.mdx'),
-  'skeleton': () => import('./02-skeleton.mdx'),
-  'hardening': () => import('./03-hardening.mdx'),
-  'deliver': () => import('./04-deliver.mdx'),
-  'retrospective': () => import('./05-retrospective.mdx'),
+  scope: () => import('./01-scope.mdx'),
+  skeleton: () => import('./02-skeleton.mdx'),
+  hardening: () => import('./03-hardening.mdx'),
+  deliver: () => import('./04-deliver.mdx'),
+  retrospective: () => import('./05-retrospective.mdx'),
 } as const;

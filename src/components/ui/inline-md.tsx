@@ -35,7 +35,7 @@ export function InlineMd({ text }: { text?: string | null }): ReactNode {
       {text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((token, i) => {
         if (token.length > 4 && token.startsWith('**') && token.endsWith('**')) {
           return (
-            <strong key={i} className="text-foreground font-semibold">
+            <strong key={i} className="font-semibold text-foreground">
               {token.slice(2, -2)}
             </strong>
           );
@@ -44,7 +44,7 @@ export function InlineMd({ text }: { text?: string | null }): ReactNode {
           return (
             <code
               key={i}
-              className="bg-muted rounded px-1 py-0.5 font-mono text-[0.85em] whitespace-nowrap"
+              className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] whitespace-nowrap"
             >
               {token.slice(1, -1)}
             </code>

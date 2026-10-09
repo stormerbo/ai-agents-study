@@ -23,7 +23,7 @@ function Anchor({ href = '', children, ...props }: React.ComponentProps<'a'>) {
     >
       {children}
       {isExternal && (
-        <span aria-hidden className="text-muted-foreground ml-0.5 text-xs">
+        <span aria-hidden className="ml-0.5 text-xs text-muted-foreground">
           ↗
         </span>
       )}

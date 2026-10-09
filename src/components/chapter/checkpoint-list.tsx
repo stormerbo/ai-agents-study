@@ -75,12 +75,12 @@ export function CheckpointList({
         return (
           <li key={cp.id}>
             {/* 用原生 details 折叠，不需要任何客户端 JS */}
-            <details className="border-border bg-card group rounded-lg border">
+            <details className="group rounded-lg border border-border bg-card">
               <summary className="cursor-pointer list-none px-4 py-3 text-sm marker:hidden">
                 <span className="flex items-baseline gap-2.5">
                   <span
                     aria-hidden
-                    className="text-muted-foreground/40 shrink-0 font-mono text-xs transition-transform group-open:rotate-90"
+                    className="shrink-0 font-mono text-xs text-muted-foreground/40 transition-transform group-open:rotate-90"
                   >
                     ▸
                   </span>
@@ -88,8 +88,8 @@ export function CheckpointList({
                 </span>
               </summary>
 
-              <div className="border-border border-t px-4 py-3 pl-10">
-                <p className="text-muted-foreground text-sm leading-relaxed">
+              <div className="border-t border-border px-4 py-3 pl-10">
+                <p className="text-sm leading-relaxed text-muted-foreground">
                   <InlineMd text={cp.answer} />
                 </p>
 
@@ -102,7 +102,7 @@ export function CheckpointList({
                       href={source.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-muted-foreground hover:text-accent border-border rounded border px-1.5 py-px text-[10px] leading-4 underline-offset-2 hover:underline"
+                      className="rounded border border-border px-1.5 py-px text-[10px] leading-4 text-muted-foreground underline-offset-2 hover:text-accent hover:underline"
                     >
                       {source.title}
                       <span aria-hidden className="ml-0.5">
@@ -113,7 +113,7 @@ export function CheckpointList({
                 </div>
 
                 {cited.length > 0 && (
-                  <p className="text-muted-foreground/70 mt-2 text-xs">
+                  <p className="mt-2 text-xs text-muted-foreground/70">
                     <span>答案涉及：</span>
                     {cited.map((c, i) => (
                       <span key={c.id}>
@@ -142,7 +142,7 @@ export function CheckpointList({
                 )}
 
                 {cp.note && (
-                  <p className="text-muted-foreground/70 border-border/60 mt-2.5 border-l-2 pl-3 text-xs leading-relaxed">
+                  <p className="mt-2.5 border-l-2 border-border/60 pl-3 text-xs leading-relaxed text-muted-foreground/70">
                     {cp.note}
                   </p>
                 )}

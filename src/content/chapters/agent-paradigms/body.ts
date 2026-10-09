@@ -6,6 +6,6 @@ export const bodies = {
   'five-paradigms': () => import('./01-five-paradigms.mdx'),
   'react-loop': () => import('./02-react-loop.mdx'),
   'plan-and-execute': () => import('./03-plan-and-execute.mdx'),
-  'reflection': () => import('./04-reflection.mdx'),
-  'choosing': () => import('./05-choosing.mdx'),
+  reflection: () => import('./04-reflection.mdx'),
+  choosing: () => import('./05-choosing.mdx'),
 } as const;

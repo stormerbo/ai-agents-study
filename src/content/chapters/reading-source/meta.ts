@@ -165,7 +165,14 @@ export const chapter = {
       resourceIds: ['ai-engineering-huyen', 'twelve-factor-agents'],
     },
   ],
-  resourceIds: ['claude-agent-sdk', 'openai-agents-sdk-python', 'langchain-docs', 'openhands', 'open-deep-research', 'twelve-factor-agents'],
+  resourceIds: [
+    'claude-agent-sdk',
+    'openai-agents-sdk-python',
+    'langchain-docs',
+    'openhands',
+    'open-deep-research',
+    'twelve-factor-agents',
+  ],
   backendMapping: {
     analogy: '读 agent 源码 ≈ 读一个你打算引入的中间件：先看它的关键路径与失败处理，再决定信不信它',
     transferable: [

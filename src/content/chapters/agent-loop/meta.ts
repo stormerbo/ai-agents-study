@@ -166,7 +166,13 @@ export const chapter = {
       resourceIds: ['claude-agent-sdk', 'openai-agents-sdk-python', 'twelve-factor-agents'],
     },
   ],
-  resourceIds: ['twelve-factor-agents', 'claude-agent-sdk', 'openai-agents-sdk-python', 'claude-messages-api', 'ai-engineering-huyen'],
+  resourceIds: [
+    'twelve-factor-agents',
+    'claude-agent-sdk',
+    'openai-agents-sdk-python',
+    'claude-messages-api',
+    'ai-engineering-huyen',
+  ],
   backendMapping: {
     analogy: 'agent 循环 ≈ 一个带外部副作用的工作流引擎：状态机 + 重试 + 幂等 + 看门狗',
     transferable: [

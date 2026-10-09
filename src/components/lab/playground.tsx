@@ -144,7 +144,7 @@ export function Playground({
 
   if (!provider) {
     return (
-      <div className="border-border text-muted-foreground rounded-lg border border-dashed p-6 text-sm">
+      <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
         这个实验没有可用的模型配置。
       </div>
     );
@@ -170,15 +170,15 @@ export function Playground({
   };
 
   return (
-    <section className="border-border bg-card not-prose overflow-hidden rounded-xl border">
+    <section className="not-prose overflow-hidden rounded-xl border border-border bg-card">
       {/* 头部：实验目标 */}
-      <header className="border-border border-b px-4 py-3">
+      <header className="border-b border-border px-4 py-3">
         <h3 className="text-sm font-medium">{lab.title}</h3>
-        <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           <InlineMd text={lab.goal} />
         </p>
         {lab.objectives.length > 0 && (
-          <ul className="text-muted-foreground mt-2 space-y-1 text-xs">
+          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
             {lab.objectives.map((o) => (
               <li key={o} className="flex gap-2">
                 <span className="text-muted-foreground/50" aria-hidden>
@@ -192,15 +192,15 @@ export function Playground({
       </header>
 
       {/* 端点配置 —— 厂商 / 地址 / 模型名 / Key 是**成套**保存的 */}
-      <div className="border-border space-y-3 border-b px-4 py-3">
+      <div className="space-y-3 border-b border-border px-4 py-3">
         {/* 配置切换：可以保存多套（比如「官方」与「某中转平台」） */}
         {mounted && byok.profiles.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-muted-foreground shrink-0 text-xs">配置</span>
+            <span className="shrink-0 text-xs text-muted-foreground">配置</span>
             <select
               value={byok.activeId ?? ''}
               onChange={(e) => mutate((s) => setActiveProfile(s, e.target.value))}
-              className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1.5 text-xs"
+              className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs"
             >
               {byok.profiles.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -221,14 +221,14 @@ export function Playground({
                   }),
                 )
               }
-              className="border-border hover:bg-muted shrink-0 rounded-md border px-2 py-1.5 text-xs"
+              className="shrink-0 rounded-md border border-border px-2 py-1.5 text-xs hover:bg-muted"
             >
               新建
             </button>
             <button
               type="button"
               onClick={() => profile && mutate((s) => deleteProfile(s, profile.id))}
-              className="border-border text-muted-foreground hover:bg-muted shrink-0 rounded-md border px-2 py-1.5 text-xs"
+              className="shrink-0 rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted"
             >
               删除
             </button>
@@ -240,7 +240,7 @@ export function Playground({
             <select
               value={providerId}
               onChange={(e) => changeProvider(e.target.value)}
-              className="border-border bg-background w-full rounded-md border px-2 py-1.5 text-xs"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
             >
               {providers.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -256,7 +256,7 @@ export function Playground({
               onChange={(e) => patch({ model: e.target.value })}
               list="lab-model-suggestions"
               placeholder="按你平台的叫法填"
-              className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs"
             />
             {/*
               用 datalist 给出建议但**不限制输入**：第三方平台的模型名往往不在
@@ -275,9 +275,9 @@ export function Playground({
             value={baseUrl}
             onChange={(e) => patch({ baseUrl: e.target.value })}
             placeholder="https://your-platform.com/v1"
-            className="border-border bg-background w-full rounded-md border px-2 py-1.5 font-mono text-xs"
+            className="w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs"
           />
-          <p className="text-muted-foreground/70 mt-1.5 text-[11px] leading-relaxed">
+          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground/70">
             {allowCustomEndpoint
               ? '服务端会校验：必须 https、不能指向内网或云元数据地址。'
               : '本站未开放自定义端点，只能用上面预填的地址。'}
@@ -294,7 +294,7 @@ export function Playground({
               </span>
               <button
                 type="button"
-                className="text-muted-foreground hover:text-foreground ml-auto underline-offset-2 hover:underline"
+                className="ml-auto text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                 onClick={() => patch({ apiKey: '' })}
               >
                 清除
@@ -315,7 +315,7 @@ export function Playground({
             onChange={(e) => setSystem(e.target.value)}
             disabled={lab.system?.locked}
             rows={3}
-            className="border-border bg-background disabled:opacity-60 w-full resize-y rounded-md border px-2 py-1.5 font-mono text-xs leading-relaxed"
+            className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs leading-relaxed disabled:opacity-60"
           />
         </Field>
       </div>
@@ -336,7 +336,7 @@ export function Playground({
                       .join('\n\n'),
                   )
                 }
-                className="border-border text-muted-foreground hover:bg-muted hover:text-foreground rounded-md border px-2 py-1 text-xs transition-colors"
+                className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {p.label}
               </button>
@@ -349,7 +349,7 @@ export function Playground({
           onChange={(e) => setInput(e.target.value)}
           rows={2}
           placeholder="输入一句话，观察模型的完整响应过程"
-          className="border-border bg-background w-full resize-y rounded-md border px-3 py-2 text-sm"
+          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm"
         />
 
         <div className="mt-2">
@@ -365,7 +365,7 @@ export function Playground({
               'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
               canRun
                 ? 'bg-foreground text-background hover:opacity-90'
-                : 'bg-muted text-muted-foreground cursor-not-allowed',
+                : 'cursor-not-allowed bg-muted text-muted-foreground',
             )}
           >
             {relay.state.running ? '生成中…' : '运行'}
@@ -375,53 +375,49 @@ export function Playground({
             <button
               type="button"
               onClick={relay.stop}
-              className="border-border hover:bg-muted rounded-md border px-3 py-1.5 text-sm"
+              className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
             >
               中断
             </button>
           )}
 
-          {!apiKey && (
-            <span className="text-muted-foreground text-xs">需要先填入你的 API Key</span>
-          )}
+          {!apiKey && <span className="text-xs text-muted-foreground">需要先填入你的 API Key</span>}
         </div>
       </div>
 
       {/* 输出区 */}
       {(relay.state.text || relay.state.thinking || relay.state.error) && (
-        <div className="border-border border-t px-4 py-3">
+        <div className="border-t border-border px-4 py-3">
           {relay.state.error && (
             <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs">
               <span className="font-medium text-amber-700 dark:text-amber-500">
                 {relay.state.error.code}
               </span>
-              <span className="text-muted-foreground ml-2">{relay.state.error.message}</span>
+              <span className="ml-2 text-muted-foreground">{relay.state.error.message}</span>
               {relay.state.error.code === 'unauthorized' && (
-                <div className="text-muted-foreground mt-1.5 space-y-1 leading-relaxed">
+                <div className="mt-1.5 space-y-1 leading-relaxed text-muted-foreground">
                   <p>两种可能，按可能性排序：</p>
                   <ul className="ml-4 list-disc space-y-0.5">
                     <li>
-                      <strong className="text-foreground/80 font-medium">Key 本身无效</strong>
+                      <strong className="font-medium text-foreground/80">Key 本身无效</strong>
                       　—— 复制不完整、已被吊销、或者不是「{provider.label}」的 Key
                     </li>
                     <li>
-                      <strong className="text-foreground/80 font-medium">厂商选错了</strong>
+                      <strong className="font-medium text-foreground/80">厂商选错了</strong>
                       　—— 在别家申请的 Key 用不到这里
                     </li>
                   </ul>
                   <p>
                     你当前这把 Key 的末尾四位是{' '}
-                    <code className="bg-background rounded px-1 font-mono">
-                      {apiKey.slice(-4)}
-                    </code>
+                    <code className="rounded bg-background px-1 font-mono">{apiKey.slice(-4)}</code>
                     ，可以拿它跟厂商后台里的 Key 核对一下。
                   </p>
                 </div>
               )}
               {relay.state.error.code === 'model_not_allowed' && (
-                <p className="text-muted-foreground mt-1.5 leading-relaxed">
-                  这个模型不在服务端的白名单里。白名单是为了防止中转端点被当成通用
-                  LLM 代理使用（见 AGENTS.md 的安全模型）。
+                <p className="mt-1.5 leading-relaxed text-muted-foreground">
+                  这个模型不在服务端的白名单里。白名单是为了防止中转端点被当成通用 LLM 代理使用（见
+                  AGENTS.md 的安全模型）。
                 </p>
               )}
             </div>
@@ -429,10 +425,10 @@ export function Playground({
 
           {relay.state.thinking && (
             <details className="mb-3">
-              <summary className="text-muted-foreground cursor-pointer text-xs">
+              <summary className="cursor-pointer text-xs text-muted-foreground">
                 思考过程（{relay.state.thinking.length} 字符）
               </summary>
-              <pre className="text-muted-foreground mt-2 max-h-60 overflow-auto text-xs whitespace-pre-wrap">
+              <pre className="mt-2 max-h-60 overflow-auto text-xs whitespace-pre-wrap text-muted-foreground">
                 {relay.state.thinking}
               </pre>
             </details>
@@ -457,7 +453,7 @@ export function Playground({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="text-muted-foreground mb-1 block text-xs">{label}</span>
+      <span className="mb-1 block text-xs text-muted-foreground">{label}</span>
       {children}
     </label>
   );
@@ -472,7 +468,7 @@ function UsageBar({
   if (total === 0) return null;
 
   return (
-    <div className="text-muted-foreground/70 mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-dashed pt-2 text-[11px]">
+    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-dashed pt-2 text-[11px] text-muted-foreground/70">
       <span>输入 {usage.inputTokens ?? 0}</span>
       {usage.cacheReadTokens ? <span>缓存命中 {usage.cacheReadTokens}</span> : null}
       <span>输出 {usage.outputTokens ?? 0}</span>
@@ -502,7 +498,7 @@ function ApiKeyInput({
 
   return (
     <div>
-      <span className="text-muted-foreground mb-1 block text-xs">
+      <span className="mb-1 block text-xs text-muted-foreground">
         API Key（{provider.label} 的 Key）
       </span>
       <div className="flex flex-wrap gap-2">
@@ -511,26 +507,26 @@ function ApiKeyInput({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="粘贴 API Key"
-          className="border-border bg-background min-w-0 flex-1 rounded-md border px-2 py-1.5 font-mono text-xs"
+          className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs"
         />
         <button
           type="button"
           disabled={draft.trim().length === 0}
           onClick={() => onSave(draft.trim())}
-          className="bg-foreground text-background rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+          className="rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background disabled:opacity-40"
         >
           保存
         </button>
       </div>
 
-      <p className="text-muted-foreground/70 mt-1.5 text-[11px] leading-relaxed">
+      <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground/70">
         Key 只存在你的浏览器里。运行时经本站服务器转发给模型厂商，
-        <strong className="text-foreground font-medium">服务端不存储、不记录日志</strong>。
+        <strong className="font-medium text-foreground">服务端不存储、不记录日志</strong>。
         建议用一把限额的、专用的 Key。
         {provider.keyHint && <> 申请地址：{provider.keyHint}</>}
       </p>
 
-      <label className="text-muted-foreground mt-2 flex items-start gap-2 text-[11px]">
+      <label className="mt-2 flex items-start gap-2 text-[11px] text-muted-foreground">
         <input
           type="checkbox"
           className="mt-0.5"
@@ -539,7 +535,7 @@ function ApiKeyInput({
         />
         <span>
           仅本次会话（不写入 localStorage，关闭标签页即失效）
-          <span className="text-muted-foreground/70 block">在共享电脑上建议勾选。</span>
+          <span className="block text-muted-foreground/70">在共享电脑上建议勾选。</span>
         </span>
       </label>
     </div>
@@ -645,10 +641,10 @@ function TraceCards({ trace }: { trace: TraceEntry[] }) {
   ].filter(Boolean) as string[];
 
   return (
-    <div className="border-border border-t">
-      <div className="border-border flex flex-wrap items-baseline gap-2 border-b px-4 py-2">
+    <div className="border-t border-border">
+      <div className="flex flex-wrap items-baseline gap-2 border-b border-border px-4 py-2">
         <span className="text-xs font-medium">轨迹</span>
-        <span className="text-muted-foreground/70 text-[11px]">
+        <span className="text-[11px] text-muted-foreground/70">
           {summaryParts.join(' + ') || '无内容'}
           {t.durationMs != null && ` · 耗时 ${t.durationMs}ms`}
         </span>
@@ -657,7 +653,7 @@ function TraceCards({ trace }: { trace: TraceEntry[] }) {
       <div className="space-y-2 p-4">
         {/* 思考过程 */}
         {t.thinking && (
-          <details className="border-border bg-muted/30 group rounded-lg border">
+          <details className="group rounded-lg border border-border bg-muted/30">
             <summary className="flex cursor-pointer list-none items-baseline gap-2 px-3 py-2 text-xs marker:hidden">
               <span
                 aria-hidden
@@ -666,9 +662,9 @@ function TraceCards({ trace }: { trace: TraceEntry[] }) {
                 ▸
               </span>
               <span className="font-medium">思考过程</span>
-              <span className="text-muted-foreground/60 ml-auto">{t.thinking.length} 字符</span>
+              <span className="ml-auto text-muted-foreground/60">{t.thinking.length} 字符</span>
             </summary>
-            <pre className="border-border text-muted-foreground overflow-x-auto border-t px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap">
+            <pre className="overflow-x-auto border-t border-border px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
               {t.thinking}
             </pre>
           </details>
@@ -681,28 +677,28 @@ function TraceCards({ trace }: { trace: TraceEntry[] }) {
               <span className="font-mono font-medium text-sky-700 dark:text-sky-400">
                 {tc.name}
               </span>
-              <span className="text-muted-foreground/50 ml-auto font-mono text-[10px]">
+              <span className="ml-auto font-mono text-[10px] text-muted-foreground/50">
                 {tc.id.slice(0, 24)}
               </span>
             </div>
             <div className="grid sm:grid-cols-2">
-              <div className="border-border border-b p-3 sm:border-r sm:border-b-0">
-                <p className="text-muted-foreground/60 mb-1 text-[10px] tracking-wide uppercase">
+              <div className="border-b border-border p-3 sm:border-r sm:border-b-0">
+                <p className="mb-1 text-[10px] tracking-wide text-muted-foreground/60 uppercase">
                   参数
                 </p>
-                <pre className="text-muted-foreground overflow-x-auto font-mono text-[11px]">
+                <pre className="overflow-x-auto font-mono text-[11px] text-muted-foreground">
                   {tc.input !== undefined
                     ? JSON.stringify(tc.input, null, 2)
                     : tc.argsText || '（无参数）'}
                 </pre>
               </div>
               <div className="p-3">
-                <p className="text-muted-foreground/60 mb-1 text-[10px] tracking-wide uppercase">
+                <p className="mb-1 text-[10px] tracking-wide text-muted-foreground/60 uppercase">
                   结果
                 </p>
-                <p className="text-muted-foreground text-[11px] leading-relaxed">
-                  本站实验暂不执行工具，只展示模型的调用意图与参数。
-                  工具的实际执行与结果回填是第 4 章的内容。
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  本站实验暂不执行工具，只展示模型的调用意图与参数。 工具的实际执行与结果回填是第 4
+                  章的内容。
                 </p>
               </div>
             </div>
@@ -711,8 +707,8 @@ function TraceCards({ trace }: { trace: TraceEntry[] }) {
 
         {/* 模型输出 */}
         {t.text && (
-          <div className="border-border bg-card rounded-lg border p-3">
-            <p className="text-muted-foreground/60 mb-1.5 text-[10px] tracking-wide uppercase">
+          <div className="rounded-lg border border-border bg-card p-3">
+            <p className="mb-1.5 text-[10px] tracking-wide text-muted-foreground/60 uppercase">
               模型输出
             </p>
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{t.text}</p>
@@ -720,7 +716,7 @@ function TraceCards({ trace }: { trace: TraceEntry[] }) {
         )}
 
         {/* 用量 */}
-        <div className="text-muted-foreground/70 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground/70">
           <span>输入 {t.usage.inputTokens ?? '-'}</span>
           {t.usage.cacheReadTokens ? <span>缓存命中 {t.usage.cacheReadTokens}</span> : null}
           <span>输出 {t.usage.outputTokens ?? '-'}</span>
@@ -729,8 +725,8 @@ function TraceCards({ trace }: { trace: TraceEntry[] }) {
 
         {/* 原始事件：折叠在最后。教学上你需要能核对「语义层与协议层对不对得上」 */}
         {t.total > 0 && (
-          <details className="border-border group rounded-lg border border-dashed">
-            <summary className="text-muted-foreground flex cursor-pointer list-none items-baseline gap-2 px-3 py-2 text-xs marker:hidden">
+          <details className="group rounded-lg border border-dashed border-border">
+            <summary className="flex cursor-pointer list-none items-baseline gap-2 px-3 py-2 text-xs text-muted-foreground marker:hidden">
               <span
                 aria-hidden
                 className="text-muted-foreground/40 transition-transform group-open:rotate-90"
@@ -738,26 +734,26 @@ function TraceCards({ trace }: { trace: TraceEntry[] }) {
                 ▸
               </span>
               <span>原始事件（协议层）</span>
-              <span className="text-muted-foreground/60 ml-auto">{t.total} 个</span>
+              <span className="ml-auto text-muted-foreground/60">{t.total} 个</span>
             </summary>
-            <ol className="border-border max-h-72 overflow-y-auto border-t">
+            <ol className="max-h-72 overflow-y-auto border-t border-border">
               {trace.map((entry) => {
                 const ev = entry.event as { type: string; [k: string]: unknown };
                 return (
-                  <li key={entry.id} className="border-border/40 border-b last:border-0">
+                  <li key={entry.id} className="border-b border-border/40 last:border-0">
                     <details>
-                      <summary className="hover:bg-muted/40 flex cursor-pointer list-none gap-2 px-3 py-1 text-[11px] marker:hidden">
-                        <span className="text-muted-foreground/40 w-7 shrink-0 font-mono tabular-nums">
+                      <summary className="flex cursor-pointer list-none gap-2 px-3 py-1 text-[11px] marker:hidden hover:bg-muted/40">
+                        <span className="w-7 shrink-0 font-mono text-muted-foreground/40 tabular-nums">
                           {String(entry.seq).padStart(3, '0')}
                         </span>
                         <span className={cn('w-20 shrink-0 font-mono', eventTone(ev.type))}>
                           {ev.type}
                         </span>
-                        <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono">
+                        <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">
                           {summarize(ev)}
                         </span>
                       </summary>
-                      <pre className="bg-muted/40 text-muted-foreground overflow-x-auto px-3 py-2 pl-12 font-mono text-[10px] leading-relaxed">
+                      <pre className="overflow-x-auto bg-muted/40 px-3 py-2 pl-12 font-mono text-[10px] leading-relaxed text-muted-foreground">
                         {JSON.stringify(ev, null, 2)}
                       </pre>
                     </details>

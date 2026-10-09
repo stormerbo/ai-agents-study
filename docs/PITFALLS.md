@@ -19,9 +19,9 @@
 
 **两次的具体触发条件不同**：
 
-| 次数 | 触发场景 | 原因 |
-|---|---|---|
-| 第一次 | 浅色模式全部代码块 | 没给 `pre` 设背景与前景 |
+| 次数   | 触发场景           | 原因                                                                                             |
+| ------ | ------------------ | ------------------------------------------------------------------------------------------------ |
+| 第一次 | 浅色模式全部代码块 | 没给 `pre` 设背景与前景                                                                          |
 | 第二次 | ````text` 纯文本块 | Shiki 对**无语法高亮**的内容不输出内联 CSS 变量，导致 `color: var(--shiki-light)` 取不到值而失效 |
 
 **修复**（见 `globals.css`）：给 `.prose pre` 显式设置 `background-color: var(--color-muted)` 和 `color: var(--color-foreground)` 兜底。
@@ -40,11 +40,11 @@
 
 记录这个过程，因为它是本项目准确性标准的**现实依据**：
 
-| 猜测 | 实际情况 |
-|---|---|
-| 「内联样式优先级高，加 `!important`」 | 错。span 上根本没有内联 `color` |
-| 「`.dark` 类没加上」 | 错。类加上了，规则也生效了 |
-| 真实根因 | `keepBackground: false` 没有配套的背景设置 |
+| 猜测                                  | 实际情况                                   |
+| ------------------------------------- | ------------------------------------------ |
+| 「内联样式优先级高，加 `!important`」 | 错。span 上根本没有内联 `color`            |
+| 「`.dark` 类没加上」                  | 错。类加上了，规则也生效了                 |
+| 真实根因                              | `keepBackground: false` 没有配套的背景设置 |
 
 **教训**：**不要猜运行时状态，去读它。** 装 playwright 之后可以直接截图与读计算样式（见 §5.2）。
 
@@ -66,15 +66,15 @@
 
 ### 4.6 其他技术坑
 
-| 坑 | 处理 |
-|---|---|
-| Turbopack 下 remark/rehype 插件必须用**字符串名**，不能传函数 | `next.config.ts` 里全用字符串 |
-| `mdx-components.tsx` 必须放在 `src/` 下 | 已就位 |
-| Tailwind 4 只为 `@theme` 里定义过的 `--color-*` 生成工具类，写错类名**不报错、静默失效** | 用 `grep` 构建产物验证过 |
-| Next 16 的 `params` 全是 Promise | 所有页面 `await props.params` |
-| `next build` 不再跑 lint | `typecheck` 脚本改为 `next typegen && tsc --noEmit` |
-| React 19 的 `react-hooks/set-state-in-effect` | 主题切换改用 `useSyncExternalStore` |
-| `useSearchParams` 在静态页必须包 `<Suspense>`，否则**生产构建失败**（开发环境不报） | 暂未用到，用到时注意 |
+| 坑                                                                                       | 处理                                                |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Turbopack 下 remark/rehype 插件必须用**字符串名**，不能传函数                            | `next.config.ts` 里全用字符串                       |
+| `mdx-components.tsx` 必须放在 `src/` 下                                                  | 已就位                                              |
+| Tailwind 4 只为 `@theme` 里定义过的 `--color-*` 生成工具类，写错类名**不报错、静默失效** | 用 `grep` 构建产物验证过                            |
+| Next 16 的 `params` 全是 Promise                                                         | 所有页面 `await props.params`                       |
+| `next build` 不再跑 lint                                                                 | `typecheck` 脚本改为 `next typegen && tsc --noEmit` |
+| React 19 的 `react-hooks/set-state-in-effect`                                            | 主题切换改用 `useSyncExternalStore`                 |
+| `useSearchParams` 在静态页必须包 `<Suspense>`，否则**生产构建失败**（开发环境不报）      | 暂未用到，用到时注意                                |
 
 ### 4.7 localStorage 导致的 hydration mismatch（**重犯**）
 
@@ -97,7 +97,11 @@ Hydration failed because the server rendered HTML didn't match the client
 
 ```ts
 const subscribeNothing = () => () => {};
-const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
+const mounted = useSyncExternalStore(
+  subscribeNothing,
+  () => true,
+  () => false,
+);
 ```
 
 所有依赖 localStorage 的渲染都加 `mounted &&` 门控。
@@ -114,9 +118,9 @@ const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
 
 同一个文件里还有第二种表现：MDX 正文里的 `**` 若**紧贴 CJK 标点**，CommonMark 的 flanking 规则会让它失效：
 
-| 写法 | 为什么失效 |
-|---|---|
-| `而**「独立」是关键词**` | 开头 `**` 后紧跟 `「`，且前面是普通字 → 不构成左闭合分隔符 |
+| 写法                          | 为什么失效                                                 |
+| ----------------------------- | ---------------------------------------------------------- |
+| `而**「独立」是关键词**`      | 开头 `**` 后紧跟 `「`，且前面是普通字 → 不构成左闭合分隔符 |
 | `采用**子词（subword）**方案` | 结尾 `**` 前紧贴 `）`，后面又是普通字 → 不构成右闭合分隔符 |
 
 **修复**：
@@ -135,12 +139,12 @@ const mounted = useSyncExternalStore(subscribeNothing, () => true, () => false);
 
 **根因**：正文要真正渲染，需要**四处**同时写对 —— 而它们之间没有任何编译期联系：
 
-| # | 位置 | 作用 |
-|---|---|---|
-| 1 | `meta.ts` 的 `hasBody: true` | 页面据此决定去不去取正文 |
-| 2 | 该章 `body.ts` 的 `'<slug>': () => import('./NN-<slug>.mdx')` | 把 MDX 接进编译图 |
-| 3 | 磁盘上的 `.mdx` 文件 | 实际内容 |
-| 4 | `src/lib/content/body.ts` 的 `REGISTRY` | 按章 id 找到该章的 loader |
+| #   | 位置                                                          | 作用                      |
+| --- | ------------------------------------------------------------- | ------------------------- |
+| 1   | `meta.ts` 的 `hasBody: true`                                  | 页面据此决定去不去取正文  |
+| 2   | 该章 `body.ts` 的 `'<slug>': () => import('./NN-<slug>.mdx')` | 把 MDX 接进编译图         |
+| 3   | 磁盘上的 `.mdx` 文件                                          | 实际内容                  |
+| 4   | `src/lib/content/body.ts` 的 `REGISTRY`                       | 按章 id 找到该章的 loader |
 
 `getLessonBody` 查不到时**返回 `undefined`**（这是设计使然 —— 正文没写时章节页要能展示大纲），页面于是静默退回占位。构建通过、测试曾经也全绿 —— 又一个 §4.1 / §4.8 家族的成员。
 
@@ -230,9 +234,11 @@ node -e "…扫描所有 resourceIds 与资源库 id 求差集…"   # 见本次
 **根因**：`InlineMd` 返回的是 **Fragment**，而调用方的 `<li>` 是 `flex` 容器：
 
 ```jsx
-<li className="flex gap-2 text-sm leading-relaxed">   {/* 父容器是 flex */}
+<li className="flex gap-2 text-sm leading-relaxed">
+  {' '}
+  {/* 父容器是 flex */}
   <span aria-hidden>!</span>
-  <InlineMd text={item} />                            {/* 返回 Fragment → 3 个 flex item */}
+  <InlineMd text={item} /> {/* 返回 Fragment → 3 个 flex item */}
 </li>
 ```
 

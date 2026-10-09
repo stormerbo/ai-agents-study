@@ -36,7 +36,7 @@ const MAX_BYTES = 4 * 1024 * 1024;
 
 function base64FromBytes(bytes: Uint8Array): string {
   // 分块拼接：一次性 apply 几十万字节会爆栈
-  let bin = "";
+  let bin = '';
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) {
     bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
@@ -45,33 +45,29 @@ function base64FromBytes(bytes: Uint8Array): string {
 }
 
 async function readImage(file: File): Promise<AttachedImage> {
-  if (!file.type.startsWith("image/")) throw new Error("请选择图片文件");
+  if (!file.type.startsWith('image/')) throw new Error('请选择图片文件');
 
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
   const width = Math.max(1, Math.round(bitmap.width * scale));
   const height = Math.max(1, Math.round(bitmap.height * scale));
 
-  const canvas = document.createElement("canvas");
+  const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext('2d');
   if (!ctx) {
     bitmap.close();
-    throw new Error("浏览器不支持 canvas 2d 上下文");
+    throw new Error('浏览器不支持 canvas 2d 上下文');
   }
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
 
   // 缩过的图转 JPEG：字节数能砍掉一半以上，而 token 完全不变（第 8 章实测）。
   // 没缩过的保持原格式 —— 截图里的细笔画在 PNG 下更干净。
-  const mediaType = scale < 1 ? "image/jpeg" : file.type || "image/png";
+  const mediaType = scale < 1 ? 'image/jpeg' : file.type || 'image/png';
   const blob: Blob = await new Promise((resolve, reject) =>
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("图片编码失败"))),
-      mediaType,
-      0.92,
-    ),
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('图片编码失败'))), mediaType, 0.92),
   );
   if (blob.size > MAX_BYTES) {
     throw new Error(`图片 ${(blob.size / 1048576).toFixed(1)}MB，超过 4MB 上限`);
@@ -104,37 +100,37 @@ export function ImageAttach({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
+      if (inputRef.current) inputRef.current.value = '';
     }
   };
 
   if (value) {
     return (
-      <div className="border-border bg-muted/40 flex items-center gap-3 rounded-md border px-2 py-1.5">
+      <div className="flex items-center gap-3 rounded-md border border-border bg-muted/40 px-2 py-1.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={`data:${value.mediaType};base64,${value.dataBase64}`}
           alt="将要发送的图片"
-          className="border-border h-9 w-9 rounded border object-cover"
+          className="h-9 w-9 rounded border border-border object-cover"
         />
         <div className="min-w-0 flex-1 text-xs leading-tight">
           <div className="text-foreground">
             {value.width}×{value.height}
             <span className="text-muted-foreground">
-              {" · "}
+              {' · '}
               {(value.bytes / 1024).toFixed(0)}KB
-              {" · 约 "}
+              {' · 约 '}
               {estimateImageTokens(value.width, value.height)} token
             </span>
           </div>
-          <div className="text-muted-foreground mt-0.5 truncate">
+          <div className="mt-0.5 truncate text-muted-foreground">
             会作为 content 数组里的一个 image 块发送，并按内容计费
           </div>
         </div>
         <button
           type="button"
           onClick={() => onChange(null)}
-          className="text-muted-foreground hover:text-foreground shrink-0 text-xs"
+          className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
         >
           移除
         </button>
@@ -155,11 +151,11 @@ export function ImageAttach({
         type="button"
         disabled={disabled || busy}
         onClick={() => inputRef.current?.click()}
-        className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 rounded-md border px-2 py-1 text-xs transition-colors"
+        className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
       >
-        {busy ? "处理中…" : "+ 图片"}
+        {busy ? '处理中…' : '+ 图片'}
       </button>
-      <span className="text-muted-foreground text-xs">
+      <span className="text-xs text-muted-foreground">
         长边会缩到 {MAX_EDGE}px —— 实测再大 token 也一样，只是白传字节
       </span>
       {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}

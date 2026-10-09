@@ -168,7 +168,8 @@ export const chapter = {
   resourceIds: ['ai-engineering-huyen', 'twelve-factor-agents', 'claude-agent-sdk'],
   projectIds: ['p1-reliable-extraction'],
   backendMapping: {
-    analogy: '交付一个 agent 项目 ≈ 交付一个你愿意半夜被叫醒去维护的服务：可靠性、可观测、可回滚、可交接，缺一不可',
+    analogy:
+      '交付一个 agent 项目 ≈ 交付一个你愿意半夜被叫醒去维护的服务：可靠性、可观测、可回滚、可交接，缺一不可',
     transferable: [
       '项目管理的通用能力：划范围、排优先级、验证交付',
       '运行手册与交接演练：你现在做服务交接的那套动作',

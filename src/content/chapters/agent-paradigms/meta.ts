@@ -167,7 +167,13 @@ export const chapter = {
       resourceIds: ['anthropic-building-effective-agents', 'twelve-factor-agents'],
     },
   ],
-  resourceIds: ['react-paper', 'reflexion-paper', 'self-refine-paper', 'anthropic-building-effective-agents', 'twelve-factor-agents'],
+  resourceIds: [
+    'react-paper',
+    'reflexion-paper',
+    'self-refine-paper',
+    'anthropic-building-effective-agents',
+    'twelve-factor-agents',
+  ],
   backendMapping: {
     analogy: '选范式 ≈ 选并发模型：先想清楚失败代价与环境可变性，再决定是乐观重试还是先立计划',
     transferable: [

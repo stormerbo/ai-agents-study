@@ -6,6 +6,6 @@ export const bodies = {
   'why-and-how': () => import('./01-why-and-how.mdx'),
   'picking-projects': () => import('./02-picking-projects.mdx'),
   'trace-one-task': () => import('./03-trace-one-task.mdx'),
-  'compare': () => import('./04-compare.mdx'),
-  'outputs': () => import('./05-outputs.mdx'),
+  compare: () => import('./04-compare.mdx'),
+  outputs: () => import('./05-outputs.mdx'),
 } as const;

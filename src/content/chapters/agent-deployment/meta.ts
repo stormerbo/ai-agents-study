@@ -136,9 +136,16 @@ export const chapter = {
       resourceIds: ['ai-engineering-huyen', 'twelve-factor-agents'],
     },
   ],
-  resourceIds: ['twelve-factor-agents', 'claude-agent-sdk', 'claude-model-migration', 'ai-engineering-huyen', 'openai-agents-sdk-python'],
+  resourceIds: [
+    'twelve-factor-agents',
+    'claude-agent-sdk',
+    'claude-model-migration',
+    'ai-engineering-huyen',
+    'openai-agents-sdk-python',
+  ],
   backendMapping: {
-    analogy: '交付一个 agent ≈ 交付一个调用链很长、依赖外部不确定服务、且有副作用的新服务：灰度、回滚、降级、审计一样都不能省',
+    analogy:
+      '交付一个 agent ≈ 交付一个调用链很长、依赖外部不确定服务、且有副作用的新服务：灰度、回滚、降级、审计一样都不能省',
     transferable: [
       '同步/异步的选型经验，以及取消语义的设计',
       '版本化与灰度：把 prompt 与工具也当制品来管',

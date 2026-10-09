@@ -56,12 +56,12 @@ export function Mermaid({ chart }: { chart: string }) {
   // 图表语法写错时不要把整页搞崩，而是显示原文 + 错误信息
   if (error) {
     return (
-      <div className="not-prose border-border my-6 rounded-lg border border-dashed p-4">
-        <p className="text-muted-foreground text-xs">
+      <div className="not-prose my-6 rounded-lg border border-dashed border-border p-4">
+        <p className="text-xs text-muted-foreground">
           图表渲染失败（这通常意味着 Mermaid 语法有误）：
         </p>
         <p className="mt-1 font-mono text-xs text-amber-600 dark:text-amber-500">{error}</p>
-        <pre className="text-muted-foreground mt-3 overflow-x-auto text-xs">{chart}</pre>
+        <pre className="mt-3 overflow-x-auto text-xs text-muted-foreground">{chart}</pre>
       </div>
     );
   }

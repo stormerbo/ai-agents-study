@@ -89,7 +89,8 @@ export const chapter = {
         },
         {
           id: 'max-tokens-truncation',
-          question: '为什么 max_tokens 设得过小会导致 JSON 解析失败？它和「输出太长」是同一回事吗？',
+          question:
+            '为什么 max_tokens 设得过小会导致 JSON 解析失败？它和「输出太长」是同一回事吗？',
           answer:
             '不是同一回事。max_tokens 是硬截断：达到上限就停，不会给你一个完整的结构。所以当你要求模型输出 JSON 而 max_tokens 不够时，拿到的是一个被腰斩的字符串 —— JSON.parse 会直接抛错。工程上必须同时做两件事：把上限设得比预期输出宽裕，以及检查 stop_reason，截断时走重试或降级而不是盲目解析。',
           basis: 'documented',

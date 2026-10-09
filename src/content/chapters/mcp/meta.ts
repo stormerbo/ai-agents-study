@@ -173,7 +173,8 @@ export const chapter = {
   ],
   resourceIds: ['mcp-docs', 'mcp-spec-changelog', 'claude-agent-sdk'],
   backendMapping: {
-    analogy: 'MCP ≈ 给工具生态定一套 RPC 协议：和当年从「每个服务各写各的客户端」走向标准协议是同一件事',
+    analogy:
+      'MCP ≈ 给工具生态定一套 RPC 协议：和当年从「每个服务各写各的客户端」走向标准协议是同一件事',
     transferable: [
       '接口协议设计的经验：能力协商、版本兼容、错误语义',
       '第三方依赖的治理习惯：权限最小化、锁版本、可移除',

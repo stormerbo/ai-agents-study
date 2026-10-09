@@ -23,11 +23,7 @@
  * 确认解析结果不是私有地址，并使用解析到的 IP 直连以防二次解析）。
  */
 
-const BLOCKED_HOSTNAMES = new Set([
-  'localhost',
-  'metadata.google.internal',
-  'metadata.goog',
-]);
+const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata.google.internal', 'metadata.goog']);
 
 /** 私有网段与保留地址 */
 function isPrivateOrReserved(host: string): boolean {

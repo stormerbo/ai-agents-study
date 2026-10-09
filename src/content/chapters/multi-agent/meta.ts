@@ -158,7 +158,13 @@ export const chapter = {
       resourceIds: ['twelve-factor-agents', 'anthropic-building-effective-agents'],
     },
   ],
-  resourceIds: ['anthropic-multi-agent-research', 'anthropic-context-engineering', 'anthropic-building-effective-agents', 'twelve-factor-agents', 'openhands'],
+  resourceIds: [
+    'anthropic-multi-agent-research',
+    'anthropic-context-engineering',
+    'anthropic-building-effective-agents',
+    'twelve-factor-agents',
+    'openhands',
+  ],
   backendMapping: {
     analogy: '多智能体 ≈ 把一个大服务拆成微服务：边界带来隔离与并行，也带来跨边界的契约与协调成本',
     transferable: [

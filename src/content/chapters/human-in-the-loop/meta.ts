@@ -166,9 +166,15 @@ export const chapter = {
       resourceIds: ['claude-streaming', 'claude-agent-sdk'],
     },
   ],
-  resourceIds: ['twelve-factor-agents', 'claude-agent-sdk', 'ai-engineering-huyen', 'claude-streaming'],
+  resourceIds: [
+    'twelve-factor-agents',
+    'claude-agent-sdk',
+    'ai-engineering-huyen',
+    'claude-streaming',
+  ],
   backendMapping: {
-    analogy: '人机协作 ≈ 给自动化流程加审批节点：和你在 CI/CD 里加人工放行、在工单系统里加审批流是同一件事',
+    analogy:
+      '人机协作 ≈ 给自动化流程加审批节点：和你在 CI/CD 里加人工放行、在工单系统里加审批流是同一件事',
     transferable: [
       '审批流设计：谁批、批什么、驳回后回哪去',
       '持久化执行与断点恢复：和你写过的任务队列是同一类问题',

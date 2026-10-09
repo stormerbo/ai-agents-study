@@ -4,7 +4,7 @@ import 'server-only';
 /** 章 20（部署与交付）的正文加载器。 */
 export const bodies = {
   'deployment-shape': () => import('./01-deployment-shape.mdx'),
-  'versioning': () => import('./02-versioning.mdx'),
+  versioning: () => import('./02-versioning.mdx'),
   'incident-response': () => import('./03-incident-response.mdx'),
   'ops-loop': () => import('./04-ops-loop.mdx'),
 } as const;

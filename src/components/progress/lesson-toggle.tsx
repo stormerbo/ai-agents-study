@@ -25,7 +25,7 @@ export function LessonToggle({ lessonId }: { lessonId: LessonId }) {
         'inline-flex items-center gap-2 rounded-md border px-3.5 py-2 text-sm transition-colors',
         done
           ? 'border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-500'
-          : 'border-border hover:bg-muted text-muted-foreground hover:text-foreground',
+          : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
       <span aria-hidden className="font-mono text-xs">

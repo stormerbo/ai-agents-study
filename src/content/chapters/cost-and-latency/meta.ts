@@ -166,9 +166,17 @@ export const chapter = {
       resourceIds: ['twelve-factor-agents', 'claude-agent-sdk'],
     },
   ],
-  resourceIds: ['claude-pricing', 'claude-prompt-caching', 'claude-models-overview', 'claude-streaming', 'ai-engineering-huyen', 'twelve-factor-agents'],
+  resourceIds: [
+    'claude-pricing',
+    'claude-prompt-caching',
+    'claude-models-overview',
+    'claude-streaming',
+    'ai-engineering-huyen',
+    'twelve-factor-agents',
+  ],
   backendMapping: {
-    analogy: 'agent 的成本与延迟 ≈ 一个调用链很长的服务：贵在重复传输，慢在串行往返，优化点在减少轮次而不是微调单次',
+    analogy:
+      'agent 的成本与延迟 ≈ 一个调用链很长的服务：贵在重复传输，慢在串行往返，优化点在减少轮次而不是微调单次',
     transferable: [
       '调用链追踪与成本归因：和后端做链路分析与分摊是同一件事',
       '缓存策略：前缀缓存与「哪些能缓存」的判断',

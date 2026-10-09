@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { CheckpointList } from '@/components/chapter/checkpoint-list';
 import { ProgressBar } from '@/components/progress/progress-bar';
-import { ResourceList } from '@/components/resource/resource-card';
+import { ResourceSidebar } from '@/components/resource/resource-sidebar';
 import { InlineMd, plainText } from '@/components/ui/inline-md';
 import {
   getChapter,
@@ -118,15 +118,18 @@ function CheckpointSummary({ chapter }: { chapter: Chapter }) {
         {groups.map(({ lesson, checkpoints }) => (
           <div key={lesson.id}>
             <h3 className="mb-2 text-xs text-muted-foreground">
-              <Link href={`/chapters/${chapter.id}/${lesson.slug}`} className="hover:text-foreground">
+              <Link
+                href={`/chapters/${chapter.id}/${lesson.slug}`}
+                className="hover:text-foreground"
+              >
                 来自《{lesson.title}》→
               </Link>
             </h3>
             <CheckpointList
-                checkpoints={checkpoints}
-                currentLessonId={lesson.id}
-                currentChapterId={chapter.id}
-              />
+              checkpoints={checkpoints}
+              currentLessonId={lesson.id}
+              currentChapterId={chapter.id}
+            />
           </div>
         ))}
       </div>
@@ -156,210 +159,216 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
   const hasAnyBody = chapter.lessons.some((l) => l.hasBody);
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
-      {/* 面包屑 */}
-      <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Link href="/chapters" className="hover:text-foreground">
-          章节
-        </Link>
-        {stage && (
-          <>
-            <span aria-hidden>/</span>
-            <span>{stage.title}</span>
-          </>
-        )}
-      </nav>
+    <main className="mx-auto max-w-6xl px-6 py-10">
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-10">
+        <div className="lg:col-start-1 lg:row-start-1">
+          {/* 面包屑 */}
+          <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Link href="/chapters" className="hover:text-foreground">
+              章节
+            </Link>
+            {stage && (
+              <>
+                <span aria-hidden>/</span>
+                <span>{stage.title}</span>
+              </>
+            )}
+          </nav>
 
-      {/* 标题区 */}
-      <header className="mt-5">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="font-mono text-sm text-muted-foreground tabular-nums">
-            {String(chapter.order).padStart(2, '0')}
-          </span>
-          <h1 className="text-2xl font-semibold tracking-tight">{chapter.title}</h1>
+          {/* 标题区 */}
+          <header className="mt-5">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="font-mono text-sm text-muted-foreground tabular-nums">
+                {String(chapter.order).padStart(2, '0')}
+              </span>
+              <h1 className="text-2xl font-semibold tracking-tight">{chapter.title}</h1>
+            </div>
+            {chapter.subtitle && <p className="mt-2 text-muted-foreground">{chapter.subtitle}</p>}
+            <p className="mt-4 leading-relaxed">
+              <InlineMd text={chapter.summary} />
+            </p>
+          </header>
         </div>
-        {chapter.subtitle && <p className="mt-2 text-muted-foreground">{chapter.subtitle}</p>}
-        <p className="mt-4 leading-relaxed">
-          <InlineMd text={chapter.summary} />
-        </p>
-      </header>
 
-      {/* 元信息 */}
-      <dl className="mt-6 grid grid-cols-2 gap-4 border-y border-border py-4 sm:grid-cols-4">
-        <MetaItem label="难度" value={DIFFICULTY_LABEL[chapter.difficulty]} />
-        <MetaItem label="预计用时" value={formatMinutes(chapter.estimatedMinutes)} />
-        <MetaItem label="小节" value={`${chapter.lessons.length} 节`} />
-        <MetaItem
-          label="正文状态"
-          value={hasAnyBody ? CONTENT_STATUS_LABEL[chapter.status] : '大纲完成，正文待写'}
-        />
-      </dl>
+        {/* 本章资源 —— 桌面端固定在右栏，默认折叠；窄屏落到正文之后 */}
+        <aside className="mt-8 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:self-start">
+          <ResourceSidebar resources={resources} title="本章延伸阅读" />
+        </aside>
 
-      {!hasAnyBody && (
-        <p className="mt-6 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-          这一章的正文还在撰写中。但下面的大纲、资源与自检问题已经是可用的 ——
-          你完全可以按小节标题自己去找答案，再用自检问题验证。
-        </p>
-      )}
-
-      <div className="mt-10 space-y-12">
-        {/* 学习目标 */}
-        <section>
-          <h2 className="text-sm font-medium">学完这一章你应该能做到</h2>
-          <ul className="mt-4 space-y-2.5">
-            {chapter.outcomes.map((outcome) => (
-              <li key={outcome} className="flex gap-2.5 text-sm leading-relaxed">
-                <span aria-hidden className="mt-px shrink-0 text-muted-foreground/50">
-                  —
-                </span>
-                <span>{outcome}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        {/* 后端视角对照 —— 全站差异化主线，放在最显眼的位置 */}
-        <BackendMappingPanel chapter={chapter} />
-
-        {/* 前置章节 */}
-        {prerequisites.length > 0 && (
-          <section>
-            <h2 className="text-sm font-medium">建议先读</h2>
-            <ul className="mt-3 flex flex-wrap gap-2">
-              {prerequisites.map((prereq) => (
-                <li key={prereq.id}>
-                  <Link
-                    href={`/chapters/${prereq.id}`}
-                    className="inline-block rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
-                  >
-                    {prereq.title}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2.5 text-xs text-muted-foreground">
-              只是建议，不是门槛。你随时可以跳到真正需要的章节。
-            </p>
-          </section>
-        )}
-
-        {/* 小节大纲 */}
-        <section>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-sm font-medium">小节</h2>
-            <ProgressBar
-              lessonIds={chapter.lessons.map((l) => l.id)}
-              className="w-40"
+        {/* 正文主体 —— 桌面端在第 1 列第 2 行；窄屏排在侧栏之后 */}
+        <div className="lg:col-start-1 lg:row-start-2">
+          {/* 元信息 */}
+          <dl className="mt-6 grid grid-cols-2 gap-4 border-y border-border py-4 sm:grid-cols-4">
+            <MetaItem label="难度" value={DIFFICULTY_LABEL[chapter.difficulty]} />
+            <MetaItem label="预计用时" value={formatMinutes(chapter.estimatedMinutes)} />
+            <MetaItem label="小节" value={`${chapter.lessons.length} 节`} />
+            <MetaItem
+              label="正文状态"
+              value={hasAnyBody ? CONTENT_STATUS_LABEL[chapter.status] : '大纲完成，正文待写'}
             />
-          </div>
-          <ol className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
-            {chapter.lessons.map((lesson, i) => (
-              <li key={lesson.id}>
-                <Link
-                  href={`/chapters/${chapter.id}/${lesson.slug}`}
-                  className="flex items-baseline gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50"
-                >
-                  <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground/50 tabular-nums">
-                    {i + 1}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium">{lesson.title}</span>
-                    {lesson.summary && (
-                      <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                        <InlineMd text={lesson.summary} />
-                      </span>
-                    )}
-                  </span>
-                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
-                    {lesson.estimatedMinutes} 分
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ol>
-        </section>
+          </dl>
 
-        {/* 代码实验 */}
-        {labs.length > 0 && (
-          <section>
-            <h2 className="text-sm font-medium">代码实验</h2>
-            <ul className="mt-4 space-y-3">
-              {labs.map((lab) => (
-                <li key={lab.id}>
-                  <Link
-                    href={`/labs/${lab.id}`}
-                    className="border-border bg-card hover:border-accent/60 block rounded-lg border p-4 transition-colors"
-                  >
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <span className="text-sm font-medium">{lab.title}</span>
-                      <span className="text-muted-foreground ml-auto text-[11px]">
-                        约 {lab.estimatedMinutes} 分钟
-                      </span>
-                    </div>
-                    <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                      <InlineMd text={lab.goal} />
-                    </p>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2.5 text-xs text-muted-foreground">
-              实验需要你自己的 API Key。Key 只存在你的浏览器里，不会上传。
+          {!hasAnyBody && (
+            <p className="mt-6 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+              这一章的正文还在撰写中。但下面的大纲、资源与自检问题已经是可用的 ——
+              你完全可以按小节标题自己去找答案，再用自检问题验证。
             </p>
-          </section>
-        )}
+          )}
 
-        {/* 自检清单 */}
-        <CheckpointSummary chapter={chapter} />
+          <div className="mt-10 space-y-12">
+            {/* 学习目标 */}
+            <section>
+              <h2 className="text-sm font-medium">学完这一章你应该能做到</h2>
+              <ul className="mt-4 space-y-2.5">
+                {chapter.outcomes.map((outcome) => (
+                  <li key={outcome} className="flex gap-2.5 text-sm leading-relaxed">
+                    <span aria-hidden className="mt-px shrink-0 text-muted-foreground/50">
+                      —
+                    </span>
+                    <span>{outcome}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-        {/* 实战作业 */}
-        {projects.length > 0 && (
-          <section>
-            <h2 className="text-sm font-medium">阶段作业</h2>
-            <ul className="mt-4 space-y-3">
-              {projects.map((project) => (
-                <li key={project.id} className="rounded-lg border border-border bg-card p-4">
-                  <span className="text-sm font-medium">{project.title}</span>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    {project.brief}
-                  </p>
-                  <p className="mt-2 text-[11px] text-muted-foreground/70">
-                    预计 {project.estimatedHours[0]}–{project.estimatedHours[1]} 小时 · 评分清单{' '}
-                    {project.rubric.length} 项
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+            {/* 后端视角对照 —— 全站差异化主线，放在最显眼的位置 */}
+            <BackendMappingPanel chapter={chapter} />
 
-        {/* 延伸阅读 */}
-        <ResourceList resources={resources} />
+            {/* 前置章节 */}
+            {prerequisites.length > 0 && (
+              <section>
+                <h2 className="text-sm font-medium">建议先读</h2>
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {prerequisites.map((prereq) => (
+                    <li key={prereq.id}>
+                      <Link
+                        href={`/chapters/${prereq.id}`}
+                        className="inline-block rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-muted"
+                      >
+                        {prereq.title}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2.5 text-xs text-muted-foreground">
+                  只是建议，不是门槛。你随时可以跳到真正需要的章节。
+                </p>
+              </section>
+            )}
+
+            {/* 小节大纲 */}
+            <section>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-sm font-medium">小节</h2>
+                <ProgressBar lessonIds={chapter.lessons.map((l) => l.id)} className="w-40" />
+              </div>
+              <ol className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
+                {chapter.lessons.map((lesson, i) => (
+                  <li key={lesson.id}>
+                    <Link
+                      href={`/chapters/${chapter.id}/${lesson.slug}`}
+                      className="flex items-baseline gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50"
+                    >
+                      <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground/50 tabular-nums">
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium">{lesson.title}</span>
+                        {lesson.summary && (
+                          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                            <InlineMd text={lesson.summary} />
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
+                        {lesson.estimatedMinutes} 分
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
+            {/* 代码实验 */}
+            {labs.length > 0 && (
+              <section>
+                <h2 className="text-sm font-medium">代码实验</h2>
+                <ul className="mt-4 space-y-3">
+                  {labs.map((lab) => (
+                    <li key={lab.id}>
+                      <Link
+                        href={`/labs/${lab.id}`}
+                        className="block rounded-lg border border-border bg-card p-4 transition-colors hover:border-accent/60"
+                      >
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <span className="text-sm font-medium">{lab.title}</span>
+                          <span className="ml-auto text-[11px] text-muted-foreground">
+                            约 {lab.estimatedMinutes} 分钟
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                          <InlineMd text={lab.goal} />
+                        </p>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2.5 text-xs text-muted-foreground">
+                  实验需要你自己的 API Key。Key 只存在你的浏览器里，不会上传。
+                </p>
+              </section>
+            )}
+
+            {/* 自检清单 */}
+            <CheckpointSummary chapter={chapter} />
+
+            {/* 实战作业 */}
+            {projects.length > 0 && (
+              <section>
+                <h2 className="text-sm font-medium">阶段作业</h2>
+                <ul className="mt-4 space-y-3">
+                  {projects.map((project) => (
+                    <li key={project.id} className="rounded-lg border border-border bg-card p-4">
+                      <span className="text-sm font-medium">{project.title}</span>
+                      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                        {project.brief}
+                      </p>
+                      <p className="mt-2 text-[11px] text-muted-foreground/70">
+                        预计 {project.estimatedHours[0]}–{project.estimatedHours[1]} 小时 · 评分清单{' '}
+                        {project.rubric.length} 项
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+
+          {/* 上一章 / 下一章 */}
+          <nav className="mt-14 grid gap-3 border-t border-border pt-6 sm:grid-cols-2">
+            {prevChapter ? (
+              <Link
+                href={`/chapters/${prevChapter.id}`}
+                className="rounded-lg border border-border p-3.5 transition-colors hover:bg-muted/50"
+              >
+                <span className="block text-[11px] text-muted-foreground">上一章</span>
+                <span className="mt-1 block text-sm">{prevChapter.title}</span>
+              </Link>
+            ) : (
+              <span />
+            )}
+            {nextChapter && (
+              <Link
+                href={`/chapters/${nextChapter.id}`}
+                className="rounded-lg border border-border p-3.5 text-right transition-colors hover:bg-muted/50 sm:col-start-2"
+              >
+                <span className="block text-[11px] text-muted-foreground">下一章</span>
+                <span className="mt-1 block text-sm">{nextChapter.title}</span>
+              </Link>
+            )}
+          </nav>
+        </div>
       </div>
-
-      {/* 上一章 / 下一章 */}
-      <nav className="mt-14 grid gap-3 border-t border-border pt-6 sm:grid-cols-2">
-        {prevChapter ? (
-          <Link
-            href={`/chapters/${prevChapter.id}`}
-            className="rounded-lg border border-border p-3.5 transition-colors hover:bg-muted/50"
-          >
-            <span className="block text-[11px] text-muted-foreground">上一章</span>
-            <span className="mt-1 block text-sm">{prevChapter.title}</span>
-          </Link>
-        ) : (
-          <span />
-        )}
-        {nextChapter && (
-          <Link
-            href={`/chapters/${nextChapter.id}`}
-            className="rounded-lg border border-border p-3.5 text-right transition-colors hover:bg-muted/50 sm:col-start-2"
-          >
-            <span className="block text-[11px] text-muted-foreground">下一章</span>
-            <span className="mt-1 block text-sm">{nextChapter.title}</span>
-          </Link>
-        )}
-      </nav>
     </main>
   );
 }

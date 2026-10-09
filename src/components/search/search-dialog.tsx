@@ -14,7 +14,7 @@ interface Hit {
   sub: string | null;
 }
 
-type Status = "idle" | "ready" | "unavailable";
+type Status = 'idle' | 'ready' | 'unavailable';
 
 /**
  * 全文搜索。
@@ -28,9 +28,9 @@ type Status = "idle" | "ready" | "unavailable";
  */
 export function SearchDialog() {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
-  const [status, setStatus] = useState<Status>("idle");
+  const [status, setStatus] = useState<Status>('idle');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const pagefindRef = useRef<Awaited<ReturnType<typeof loadPagefind>> | null>(null);
@@ -57,17 +57,17 @@ export function SearchDialog() {
   // 注意这里不设 "loading" 状态 —— "还没好" 由 `status === "idle" && open` 推导，
   // 因为**在 effect 体里同步 setState 会触发级联渲染**（eslint react-hooks/set-state-in-effect）。
   useEffect(() => {
-    if (!open || pagefindRef.current || status !== "idle") return;
+    if (!open || pagefindRef.current || status !== 'idle') return;
     let cancelled = false;
     loadPagefind()
       .then(async (pf) => {
         await pf.init?.();
         if (cancelled) return;
         pagefindRef.current = pf;
-        setStatus("ready");
+        setStatus('ready');
       })
       .catch(() => {
-        if (!cancelled) setStatus("unavailable");
+        if (!cancelled) setStatus('unavailable');
       });
     return () => {
       cancelled = true;
@@ -79,7 +79,7 @@ export function SearchDialog() {
     const query = q.trim();
     // 清空查询时重置在 onChange 里做（事件处理器），不在这里 ——
     // effect 体里同步 setState 会触发级联渲染。
-    if (!query || status !== "ready" || !pagefindRef.current) return;
+    if (!query || status !== 'ready' || !pagefindRef.current) return;
 
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -109,7 +109,7 @@ export function SearchDialog() {
   }, []);
 
   function onInputKey(e: React.KeyboardEvent) {
-    if (e.key === "ArrowDown") {
+    if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActive((i) => Math.min(i + 1, hits.length - 1));
     } else if (e.key === 'ArrowUp') {
@@ -125,12 +125,12 @@ export function SearchDialog() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="border-border text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm transition-colors"
+        className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         aria-label="搜索"
       >
         <span aria-hidden>⌕</span>
         <span className="hidden sm:inline">搜索</span>
-        <kbd className="border-border bg-muted/60 hidden rounded border px-1 font-mono text-[10px] sm:inline">
+        <kbd className="hidden rounded border border-border bg-muted/60 px-1 font-mono text-[10px] sm:inline">
           ⌘K
         </kbd>
       </button>
@@ -142,14 +142,16 @@ export function SearchDialog() {
           role="presentation"
         >
           <div
-            className="bg-background border-border w-full max-w-xl overflow-hidden rounded-xl border shadow-lg"
+            className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-background shadow-lg"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-label="全文搜索"
           >
-            <div className="border-border flex items-center gap-3 border-b px-4">
-              <span aria-hidden className="text-muted-foreground">⌕</span>
+            <div className="flex items-center gap-3 border-b border-border px-4">
+              <span aria-hidden className="text-muted-foreground">
+                ⌕
+              </span>
               <input
                 ref={inputRef}
                 value={q}
@@ -163,28 +165,28 @@ export function SearchDialog() {
                 }}
                 onKeyDown={onInputKey}
                 placeholder="搜索全书正文…"
-                className="placeholder:text-muted-foreground/60 h-12 flex-1 bg-transparent text-sm outline-none"
+                className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
               />
-              <kbd className="border-border text-muted-foreground rounded border px-1 font-mono text-[10px]">
+              <kbd className="rounded border border-border px-1 font-mono text-[10px] text-muted-foreground">
                 ESC
               </kbd>
             </div>
 
             <div className="max-h-[55vh] overflow-y-auto">
-              {status === "unavailable" && (
-                <p className="text-muted-foreground px-4 py-6 text-sm leading-relaxed">
-                  搜索索引还没生成。先跑 <code className="font-mono text-xs">pnpm build</code> 再跑{" "}
+              {status === 'unavailable' && (
+                <p className="px-4 py-6 text-sm leading-relaxed text-muted-foreground">
+                  搜索索引还没生成。先跑 <code className="font-mono text-xs">pnpm build</code> 再跑{' '}
                   <code className="font-mono text-xs">pnpm build-search</code>。
                 </p>
               )}
-              {status === "idle" && open && (
-                <p className="text-muted-foreground px-4 py-6 text-sm">加载索引…</p>
+              {status === 'idle' && open && (
+                <p className="px-4 py-6 text-sm text-muted-foreground">加载索引…</p>
               )}
-              {status === "ready" && q.trim() && hits.length === 0 && (
-                <p className="text-muted-foreground px-4 py-6 text-sm">没有匹配的内容。</p>
+              {status === 'ready' && q.trim() && hits.length === 0 && (
+                <p className="px-4 py-6 text-sm text-muted-foreground">没有匹配的内容。</p>
               )}
-              {status === "ready" && !q.trim() && (
-                <p className="text-muted-foreground px-4 py-6 text-sm leading-relaxed">
+              {status === 'ready' && !q.trim() && (
+                <p className="px-4 py-6 text-sm leading-relaxed text-muted-foreground">
                   输入关键词。索引覆盖全书正文（不含代码块内的高频词）。
                 </p>
               )}
@@ -195,18 +197,18 @@ export function SearchDialog() {
                   onMouseEnter={() => setActive(i)}
                   onClick={() => go(h.url)}
                   className={cn(
-                    'border-border/60 block w-full border-b px-4 py-3 text-left transition-colors last:border-b-0',
+                    'block w-full border-b border-border/60 px-4 py-3 text-left transition-colors last:border-b-0',
                     i === active ? 'bg-muted' : 'hover:bg-muted/50',
                   )}
                 >
                   <span className="block text-sm font-medium">{h.title}</span>
                   {h.sub && (
-                    <span className="text-muted-foreground/70 mt-0.5 block text-[11px]">
+                    <span className="mt-0.5 block text-[11px] text-muted-foreground/70">
                       {h.sub}
                     </span>
                   )}
                   <span
-                    className="text-muted-foreground mt-1 block text-xs leading-relaxed [&_mark]:bg-amber-500/25 [&_mark]:text-foreground [&_mark]:rounded-[2px]"
+                    className="mt-1 block text-xs leading-relaxed text-muted-foreground [&_mark]:rounded-[2px] [&_mark]:bg-amber-500/25 [&_mark]:text-foreground"
                     dangerouslySetInnerHTML={{ __html: h.excerpt }}
                   />
                 </button>

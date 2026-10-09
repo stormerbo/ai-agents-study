@@ -165,9 +165,16 @@ export const chapter = {
       resourceIds: ['mcp-docs', 'twelve-factor-agents'],
     },
   ],
-  resourceIds: ['claude-messages-api', 'twelve-factor-agents', 'mcp-docs', 'anthropic-context-engineering', 'claude-agent-sdk'],
+  resourceIds: [
+    'claude-messages-api',
+    'twelve-factor-agents',
+    'mcp-docs',
+    'anthropic-context-engineering',
+    'claude-agent-sdk',
+  ],
   backendMapping: {
-    analogy: '界面自动化 ≈ 用坐标代替接口：动作空间更通用，但没有类型约束、没有错误码、也没有幂等语义',
+    analogy:
+      '界面自动化 ≈ 用坐标代替接口：动作空间更通用，但没有类型约束、没有错误码、也没有幂等语义',
     transferable: [
       '你写过 UI 自动化测试 —— 等待、重试、选择器稳定性是同一套问题',
       '幂等与「状态未知」的处理经验：先观测再决定，不要盲目重试',

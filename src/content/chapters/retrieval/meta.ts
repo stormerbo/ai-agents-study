@@ -165,9 +165,16 @@ export const chapter = {
       resourceIds: ['anthropic-context-engineering', 'anthropic-building-effective-agents'],
     },
   ],
-  resourceIds: ['rag-paper', 'anthropic-context-engineering', 'ragflow', 'open-deep-research', 'langchain-docs'],
+  resourceIds: [
+    'rag-paper',
+    'anthropic-context-engineering',
+    'ragflow',
+    'open-deep-research',
+    'langchain-docs',
+  ],
   backendMapping: {
-    analogy: '检索 ≈ 给一堆非结构化文档建索引，再对外暴露一个由模型生成的查询接口 —— 而查询语句本身不可靠',
+    analogy:
+      '检索 ≈ 给一堆非结构化文档建索引，再对外暴露一个由模型生成的查询接口 —— 而查询语句本身不可靠',
     transferable: [
       '索引设计、分词、倒排与向量索引的取舍经验',
       '召回率 / 精确率的评估方法，以及「先量再调」的排查习惯',

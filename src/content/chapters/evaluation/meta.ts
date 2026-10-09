@@ -165,7 +165,13 @@ export const chapter = {
       resourceIds: ['twelve-factor-agents', 'ai-engineering-huyen'],
     },
   ],
-  resourceIds: ['ai-engineering-huyen', 'claude-agent-sdk', 'openai-agents-sdk-python', 'open-deep-research', 'twelve-factor-agents'],
+  resourceIds: [
+    'ai-engineering-huyen',
+    'claude-agent-sdk',
+    'openai-agents-sdk-python',
+    'open-deep-research',
+    'twelve-factor-agents',
+  ],
   labIds: ['lab-eval-contrast'],
   backendMapping: {
     analogy: '评估 ≈ 单元测试 + APM：一个保证「没变坏」，一个让你在出事时能定位到具体哪一步',

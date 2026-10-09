@@ -12,9 +12,7 @@ export function generateStaticParams() {
   return Object.keys(curriculum.labs).map((labId) => ({ labId }));
 }
 
-export async function generateMetadata(
-  props: PageProps<'/labs/[labId]'>,
-): Promise<Metadata> {
+export async function generateMetadata(props: PageProps<'/labs/[labId]'>): Promise<Metadata> {
   const { labId } = await props.params;
   const lab = getLab(labId);
   if (!lab) return {};
@@ -33,7 +31,7 @@ export default async function LabPage(props: PageProps<'/labs/[labId]'>) {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
-      <nav className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs">
+      <nav className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <Link href="/labs" className="hover:text-foreground">
           实验
         </Link>
@@ -49,10 +47,10 @@ export default async function LabPage(props: PageProps<'/labs/[labId]'>) {
 
       <header className="mt-5">
         <h1 className="text-2xl font-semibold tracking-tight">{lab.title}</h1>
-        <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           <InlineMd text={lab.goal} />
         </p>
-        <p className="text-muted-foreground/70 mt-2 text-xs">
+        <p className="mt-2 text-xs text-muted-foreground/70">
           约 {lab.estimatedMinutes} 分钟 · 需要你自己的 API Key
         </p>
       </header>
@@ -70,13 +68,13 @@ export default async function LabPage(props: PageProps<'/labs/[labId]'>) {
           <h2 className="text-sm font-medium">遇到问题时</h2>
           <ul className="mt-3 space-y-2">
             {lab.troubleshooting.map((t) => (
-              <li key={t.symptom} className="border-border bg-card rounded-lg border p-3 text-xs">
+              <li key={t.symptom} className="rounded-lg border border-border bg-card p-3 text-xs">
                 <p className="font-medium">{t.symptom}</p>
-                <p className="text-muted-foreground mt-1.5">
+                <p className="mt-1.5 text-muted-foreground">
                   <span className="text-foreground/70">可能原因：</span>
                   {t.cause}
                 </p>
-                <p className="text-muted-foreground mt-1">
+                <p className="mt-1 text-muted-foreground">
                   <span className="text-foreground/70">怎么办：</span>
                   {t.fix}
                 </p>

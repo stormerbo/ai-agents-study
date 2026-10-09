@@ -5,7 +5,7 @@ import 'server-only';
 export const bodies = {
   'cost-model': () => import('./01-cost-model.mdx'),
   'latency-sources': () => import('./02-latency-sources.mdx'),
-  'caching': () => import('./03-caching.mdx'),
-  'routing': () => import('./04-routing.mdx'),
+  caching: () => import('./03-caching.mdx'),
+  routing: () => import('./04-routing.mdx'),
   'budget-guardrails': () => import('./05-budget-guardrails.mdx'),
 } as const;

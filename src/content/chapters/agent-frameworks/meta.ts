@@ -166,7 +166,14 @@ export const chapter = {
       resourceIds: ['langchain-docs', 'google-adk-docs', 'langchain-academy'],
     },
   ],
-  resourceIds: ['langchain-docs', 'openai-agents-sdk-python', 'claude-agent-sdk', 'twelve-factor-agents', 'google-adk-docs', 'langchain-academy'],
+  resourceIds: [
+    'langchain-docs',
+    'openai-agents-sdk-python',
+    'claude-agent-sdk',
+    'twelve-factor-agents',
+    'google-adk-docs',
+    'langchain-academy',
+  ],
   backendMapping: {
     analogy: '框架选型 ≈ 选 Web 框架：真正的差别不在功能表，而在「默认帮你做的那部分」是否合你的意',
     transferable: [

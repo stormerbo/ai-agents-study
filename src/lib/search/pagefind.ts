@@ -43,7 +43,7 @@ interface PagefindModule {
   init?: () => Promise<void>;
 }
 
-const PAGEFIND_PATH = "/pagefind/pagefind.js";
+const PAGEFIND_PATH = '/pagefind/pagefind.js';
 
 let cached: Promise<PagefindModule> | null = null;
 
@@ -57,5 +57,5 @@ export function loadPagefind(): Promise<PagefindModule> {
 
 /** 索引还没生成时（比如本地 `pnpm dev` 且没跑过 build-search），给出可读的提示。 */
 export function isSearchAvailable(): boolean {
-  return typeof window !== "undefined";
+  return typeof window !== 'undefined';
 }

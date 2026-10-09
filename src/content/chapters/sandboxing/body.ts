@@ -6,6 +6,6 @@ export const bodies = {
   'why-isolate': () => import('./01-why-isolate.mdx'),
   'isolation-levels': () => import('./02-isolation-levels.mdx'),
   'least-privilege': () => import('./03-least-privilege.mdx'),
-  'secrets': () => import('./04-secrets.mdx'),
+  secrets: () => import('./04-secrets.mdx'),
   'execution-policy': () => import('./05-execution-policy.mdx'),
 } as const;

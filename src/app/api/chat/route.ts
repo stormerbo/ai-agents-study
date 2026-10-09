@@ -2,12 +2,7 @@ import type { NextRequest } from 'next/server';
 
 import { isModelAllowed, resolveProvider } from '@/lib/llm/registry';
 import { encodeSSE, encodeSSEComment } from '@/lib/llm/sse';
-import {
-  UpstreamError,
-  type AgentMessage,
-  type ChatParams,
-  type ToolSpec,
-} from '@/lib/llm/types';
+import { UpstreamError, type AgentMessage, type ChatParams, type ToolSpec } from '@/lib/llm/types';
 import { isCustomBaseUrlAllowed, validateCustomBaseUrl } from '@/lib/llm/url-guard';
 
 /**
@@ -216,19 +211,13 @@ export async function POST(req: NextRequest) {
   // 用户自己的第三方服务，不属于这个风险模型。若在这里强制它，用户就没法用
   // 自己的模型名了。
   if (!customBaseUrl && !isModelAllowed(parsed.provider, parsed.model)) {
-    return badRequest(
-      requestId,
-      `模型 ${parsed.model} 不在允许列表中`,
-      'model_not_allowed',
-      400,
-    );
+    return badRequest(requestId, `模型 ${parsed.model} 不在允许列表中`, 'model_not_allowed', 400);
   }
 
   // ---- 阶段二：流式转发。此后所有错误都只能以事件形式发出 ----
 
   const upstream = new AbortController();
-  const abortUpstream = (reason: string) =>
-    upstream.abort(new DOMException(reason, 'AbortError'));
+  const abortUpstream = (reason: string) => upstream.abort(new DOMException(reason, 'AbortError'));
 
   // 客户端断开时中断上游，否则会为孤儿请求付费
   req.signal.addEventListener('abort', () => abortUpstream('client aborted'), { once: true });

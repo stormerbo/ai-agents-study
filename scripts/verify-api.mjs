@@ -42,7 +42,10 @@ function loadEnvLocal() {
     const eq = trimmed.indexOf('=');
     if (eq === -1) continue;
     const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    const value = trimmed
+      .slice(eq + 1)
+      .trim()
+      .replace(/^["']|["']$/g, '');
     if (value) env[key] = value;
   }
   return env;
@@ -210,10 +213,24 @@ async function countTokens() {
 /** 4. 错误行为 —— 采集真实的报错响应原文 */
 async function errorBehaviour() {
   const cases = [
-    { label: '空模型名', body: { model: '', max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] } },
+    {
+      label: '空模型名',
+      body: { model: '', max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+    },
     { label: '缺 max_tokens', body: { model, messages: [{ role: 'user', content: 'hi' }] } },
-    { label: '传 temperature', body: { model, max_tokens: 16, temperature: 0.2, messages: [{ role: 'user', content: 'hi' }] } },
-    { label: '超小 max_tokens 触发截断', body: { model, max_tokens: 5, messages: [{ role: 'user', content: '讲一个很长的故事' }] } },
+    {
+      label: '传 temperature',
+      body: {
+        model,
+        max_tokens: 16,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    },
+    {
+      label: '超小 max_tokens 触发截断',
+      body: { model, max_tokens: 5, messages: [{ role: 'user', content: '讲一个很长的故事' }] },
+    },
   ];
 
   const out = {};
@@ -261,7 +278,10 @@ const report = { baseUrl, model, ranAt: new Date().toISOString(), results };
 await writeFile(join(OUT_DIR, 'report.json'), JSON.stringify(report, null, 2));
 
 if (results.find((r) => r.name.startsWith('2.') && r.ok)?.raw) {
-  await writeFile(join(OUT_DIR, 'stream-raw.txt'), results.find((r) => r.name.startsWith('2.'))?.raw ?? '');
+  await writeFile(
+    join(OUT_DIR, 'stream-raw.txt'),
+    results.find((r) => r.name.startsWith('2.'))?.raw ?? '',
+  );
 }
 
 console.log(`\n结果已写入 verify-output/（该目录已 gitignore）`);

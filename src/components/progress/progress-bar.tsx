@@ -26,7 +26,7 @@ export function ProgressBar({
   return (
     <div className={cn('flex items-center gap-2.5', className)}>
       <div
-        className="bg-muted h-1.5 w-full min-w-16 overflow-hidden rounded-full"
+        className="h-1.5 w-full min-w-16 overflow-hidden rounded-full bg-muted"
         role="progressbar"
         aria-valuenow={pct}
         aria-valuemin={0}
@@ -42,7 +42,7 @@ export function ProgressBar({
         />
       </div>
       {showLabel && (
-        <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
+        <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
           {shown}/{total}
         </span>
       )}

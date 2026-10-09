@@ -162,7 +162,10 @@ export interface ProviderAdapter {
  * 这张表本身就是教学内容：两家的取值集合并不一一对应，
  * 「映射」这个动作必然会丢信息 —— 这里用 unknown 兜底而不是硬塞一个近似值。
  */
-export function normalizeStopReason(provider: ProviderId, raw: string | null | undefined): StopReason {
+export function normalizeStopReason(
+  provider: ProviderId,
+  raw: string | null | undefined,
+): StopReason {
   if (!raw) return 'unknown';
 
   if (provider === 'anthropic') {

@@ -110,8 +110,7 @@ describe('章节结构', () => {
     for (const chapter of chapters) {
       const total = chapter.lessons.length;
       const written = chapter.lessons.filter((l) => l.hasBody).length;
-      const expected =
-        written === 0 ? 'outlined' : written === total ? 'published' : 'drafting';
+      const expected = written === 0 ? 'outlined' : written === total ? 'published' : 'drafting';
       expect(
         chapter.status,
         `章 ${chapter.id}：${written}/${total} 节有正文，status 应为 '${expected}'，实际是 '${chapter.status}'`,
@@ -513,7 +512,6 @@ describe('粗体标记的位置（CommonMark flanking）', () => {
   });
 });
 
-
 /**
  * 正文登记的四方一致性。
  *
@@ -532,7 +530,10 @@ describe('正文登记一致性', () => {
   const root = join(process.cwd(), 'src/content/chapters');
   const registrySrc = readFileSync(join(process.cwd(), 'src/lib/content/body.ts'), 'utf8');
   const registeredChapters = new Set(
-    [...registrySrc.matchAll(/^\s*'([a-z0-9-]+)':\s*\w+Bodies,/gm)].map((m) => m[1]!),
+    // 注意：引号是可选的 —— prettier 的 quoteProps 默认是 "as-needed"，
+    // 会把 `'retrieval': x` 规范成 `retrieval: x`。
+    // 这个正则若写死引号，一次 pnpm format 就会让本条测试误报「章 retrieval 没注册」。
+    [...registrySrc.matchAll(/^\s*'?([a-z0-9-]+)'?:\s*\w+Bodies,/gm)].map((m) => m[1]!),
   );
 
   it('每章 body.ts 的 key 与 hasBody 的节完全一一对应', () => {
@@ -581,10 +582,9 @@ describe('正文登记一致性', () => {
         ).toBe(true);
       }
       for (const slug of hasBodySlugs) {
-        expect(
-          bySlug.has(slug),
-          `节 ${chapter.id}/${slug} 标了 hasBody 但磁盘上没有 .mdx`,
-        ).toBe(true);
+        expect(bySlug.has(slug), `节 ${chapter.id}/${slug} 标了 hasBody 但磁盘上没有 .mdx`).toBe(
+          true,
+        );
       }
     }
   });
@@ -601,4 +601,3 @@ describe('正文登记一致性', () => {
     }
   });
 });
-

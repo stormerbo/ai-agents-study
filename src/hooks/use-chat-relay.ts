@@ -90,7 +90,10 @@ export function useChatRelay() {
     const push = (event: NormalizedEvent) => {
       setState((s) => ({
         ...s,
-        trace: [...s.trace, { id: `${seqRef.current}`, seq: seqRef.current++, at: Date.now(), event }],
+        trace: [
+          ...s.trace,
+          { id: `${seqRef.current}`, seq: seqRef.current++, at: Date.now(), event },
+        ],
       }));
     };
 
@@ -142,7 +145,11 @@ export function useChatRelay() {
     // 流式解析
     const reader = response.body?.getReader();
     if (!reader) {
-      setState((s) => ({ ...s, running: false, error: { code: 'no_body', message: '响应没有 body' } }));
+      setState((s) => ({
+        ...s,
+        running: false,
+        error: { code: 'no_body', message: '响应没有 body' },
+      }));
       return;
     }
 
