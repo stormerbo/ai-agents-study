@@ -27,8 +27,8 @@ export const chapter = {
       summary: '把第 9 章那五个零件当清单，逐项对照。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['abstraction', 'checklist'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '图、agent-runner、session-hooks —— 它们对「一个 agent 是什么」的回答不同。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['langgraph', 'agents-sdk', 'claude-agent-sdk'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '四个最常见的下探触发点，选型时就该问清楚。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['leaky-abstraction', 'customization'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '「agent = 确定性软件 + 少量 LLM 决策点」—— 这个立场值得认真对待。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['build-vs-buy', 'determinism'],
       checkpoints: [
         {
@@ -144,8 +144,8 @@ export const chapter = {
       summary: '把选型还原成几个可回答的问题，并给迁移留出余地。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['selection', 'migration'],
       checkpoints: [
         {
@@ -182,7 +182,7 @@ export const chapter = {
     ],
     cost: 'low',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
