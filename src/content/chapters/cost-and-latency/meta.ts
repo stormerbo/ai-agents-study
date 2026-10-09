@@ -27,8 +27,8 @@ export const chapter = {
       summary: '输入、输出、工具定义、以及被忽略的那一块：重发。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['cost', 'tokens'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '在 agent 里，延迟通常不是「模型慢」，而是「轮次多」。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['latency', 'round-trips'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '能缓存的只有「不变的」那部分，而它恰好是最贵的那部分。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['caching', 'prompt-caching'],
       checkpoints: [
         {
@@ -115,8 +115,8 @@ export const chapter = {
       summary: '不是每个步骤都值得用最强的模型 —— 但也不是每个都值得省钱。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['routing', 'model-selection'],
       checkpoints: [
         {
@@ -144,8 +144,8 @@ export const chapter = {
       summary: '超限时的行为要在设计阶段定好 —— 因为它在生产里一定会被走到。',
       estimatedMinutes: 18,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['budget', 'circuit-breaker'],
       checkpoints: [
         {
@@ -183,7 +183,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;

@@ -15,6 +15,7 @@ import { bodies as mcpBodies } from '@/content/chapters/mcp/body';
 import { bodies as evaluationBodies } from '@/content/chapters/evaluation/body';
 import { bodies as sandboxingBodies } from '@/content/chapters/sandboxing/body';
 import { bodies as agentSecurityBodies } from '@/content/chapters/agent-security/body';
+import { bodies as costAndLatencyBodies } from '@/content/chapters/cost-and-latency/body';
 import { bodies as promptEngineeringBodies } from '@/content/chapters/prompt-engineering/body';
 import { bodies as retrievalBodies } from '@/content/chapters/retrieval/body';
 import { bodies as structuredOutputBodies } from '@/content/chapters/structured-output/body';
@@ -51,6 +52,7 @@ const REGISTRY: Record<string, Record<string, BodyLoader>> = {
   'evaluation': evaluationBodies,
   'sandboxing': sandboxingBodies,
   'agent-security': agentSecurityBodies,
+  'cost-and-latency': costAndLatencyBodies,
 };
 
 /** 取某一节的正文组件。没写正文时返回 undefined（页面会渲染大纲占位）。 */
