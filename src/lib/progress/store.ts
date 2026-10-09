@@ -80,14 +80,30 @@ export function setProgressAdapter(next: ProgressAdapter): void {
   listeners.forEach((fn) => fn());
 }
 
-let snapshot: ProgressState = EMPTY_PROGRESS;
+/**
+ * 模块级快照。
+ *
+ * ⚠️ 必须在**模块加载时**就读一次存储 —— 不能在 subscribe 里读。
+ *
+ * 原因是 React 的调用顺序：首次渲染 → `getSnapshot()` → 之后才调 `subscribe()`。
+ * 如果只在 subscribe 里加载，首次渲染拿到的是空进度，而 subscribe 里的加载
+ * **不会通知任何人**（那时还没订阅者），于是界面一直停在 0/N。
+ * 这个 bug 是靠端到端测试（点完刷新、看进度条读数）才发现的，单看代码看不出来。
+ */
+let snapshot: ProgressState =
+  typeof window === "undefined" ? EMPTY_PROGRESS : localAdapter.load();
 const listeners = new Set<() => void>();
 
 export function subscribe(fn: () => void): () => void {
-  if (listeners.size === 0 && typeof window !== "undefined") {
-    snapshot = adapter.load();      // 首次订阅时才真正读存储
-  }
   listeners.add(fn);
+  // 换过 adapter、或别的标签页改过存储时，这里重新对齐一次
+  if (typeof window !== "undefined") {
+    const loaded = adapter.load();
+    if (loaded !== snapshot) {
+      snapshot = loaded;
+      fn();
+    }
+  }
   return () => {
     listeners.delete(fn);
   };
@@ -122,7 +138,8 @@ export function markComplete(id: LessonId): void {
 
 export function unmarkComplete(id: LessonId): void {
   if (!(id in snapshot.completed)) return;
-  const { [id]: _removed, ...rest } = snapshot.completed;
+  const rest = { ...snapshot.completed };
+  delete rest[id];
   commit({ version: 1, completed: rest });
 }
 

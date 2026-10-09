@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { CheckpointList } from '@/components/chapter/checkpoint-list';
+import { ProgressBar } from '@/components/progress/progress-bar';
 import { ResourceList } from '@/components/resource/resource-card';
 import { InlineMd, plainText } from '@/components/ui/inline-md';
 import {
@@ -240,7 +241,13 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
 
         {/* 小节大纲 */}
         <section>
-          <h2 className="text-sm font-medium">小节</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-sm font-medium">小节</h2>
+            <ProgressBar
+              lessonIds={chapter.lessons.map((l) => l.id)}
+              className="w-40"
+            />
+          </div>
           <ol className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
             {chapter.lessons.map((lesson, i) => (
               <li key={lesson.id}>

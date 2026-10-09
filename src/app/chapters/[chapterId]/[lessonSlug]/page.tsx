@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { CheckpointList } from '@/components/chapter/checkpoint-list';
+import { LessonToggle } from '@/components/progress/lesson-toggle';
 import { ResourceList } from '@/components/resource/resource-card';
 import { InlineMd, plainText } from '@/components/ui/inline-md';
 import { getAdjacentLessons, getChapters, getLesson, getResources } from '@/content/curriculum';
@@ -112,6 +113,14 @@ export default async function LessonPage(props: PageProps<'/chapters/[chapterId]
           <ResourceList resources={resources} title="本节延伸阅读" />
         </div>
       )}
+
+      {/* 学完标记 —— 进度存在浏览器本地，不上传（见 lib/progress/store.ts 的说明） */}
+      <div className="border-border mt-12 flex flex-wrap items-center gap-3 border-t pt-6">
+        <LessonToggle lessonId={lesson.id} />
+        <span className="text-muted-foreground/70 text-xs">
+          进度只存在这台设备上。换设备或清缓存会重置。
+        </span>
+      </div>
 
       {/* 翻页 */}
       <nav className="mt-14 grid gap-3 border-t border-border pt-6 sm:grid-cols-2">

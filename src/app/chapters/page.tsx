@@ -2,8 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 
-import { getChaptersByStage, getStages } from '@/content/curriculum';
+import { getChapters, getChaptersByStage, getStages } from '@/content/curriculum';
 import { InlineMd } from '@/components/ui/inline-md';
+import { ProgressBar } from '@/components/progress/progress-bar';
 import { DIFFICULTY_LABEL, formatMinutes } from '@/lib/labels';
 
 export const metadata: Metadata = {
@@ -13,6 +14,8 @@ export const metadata: Metadata = {
 
 export default function ChaptersPage() {
   const stages = getStages();
+  // 总体进度的分母：全书所有节
+  const allLessonIds = getChapters().flatMap((c) => c.lessons.map((l) => l.id));
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
@@ -21,6 +24,12 @@ export default function ChaptersPage() {
         <p className="mt-3 leading-relaxed text-muted-foreground">
           按学习阶段分组。每个阶段都有自己的定位与出阶段时应达到的状态。
         </p>
+        <div className="mt-5 max-w-md">
+          <ProgressBar lessonIds={allLessonIds} />
+          <p className="text-muted-foreground/70 mt-2 text-xs">
+            进度只存在这台设备的浏览器里，不上传、不需要账号。
+          </p>
+        </div>
       </header>
 
       <div className="mt-10 space-y-12">
