@@ -40,6 +40,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ```bash
 pnpm dev          # 本地开发，http://localhost:3000
 pnpm build        # 构建（158 个静态页面）
+pnpm build-search # 生成搜索索引（必须在 build 之后跑）
 pnpm typecheck    # next typegen && tsc --noEmit
 pnpm test         # vitest，内容完整性 + SSE 编解码
 pnpm lint         # eslint
@@ -191,9 +192,9 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 - [x] **章 7「记忆」5 节正文**（2026-10-08 完成）：6 组实测（上下文上限 104 万 token、13 万 token 海捞针、12 轮成本 6.5 倍、写入策略对照、误召回静默改写、冲突裁决各跑 3 次）
 - [x] **给 Playground 加图像上传 + 第 8 章的视觉实验 `lab-vision-extract`**（2026-10-09）
 - [x] **章 8「多模态输入」5 节正文**（2026-10-08 完成）：6 组实测（图像 token 阶梯 186→996、URL 图服务端下载 400、PDF 三路线 59/337/123、分辨率 290↔1061 准确率相同、对比度与 JPEG 未复现、一致性校验召回 67% 精确 100%）
-- [ ] 实现学习进度（兑现章 0-4 的说明）
-- [ ] 全文搜索（计划用 Pagefind）
-- [ ] 按 `VERIFY.md` 验证所有「未实跑」的代码
+- [x] **实现学习进度**（2026-10-09）—— localStorage + `ProgressAdapter` 服务端扩展点；节页面标记、章页面与知识地图进度条
+- [x] **全文搜索**（2026-10-09）—— Pagefind，索引 158 页；`pnpm build-search`（须在 `pnpm build` 之后跑）；⌘K 打开
+- [x] **按 `VERIFY.md` 验证**（2026-10-09）—— ch1 的 SDK 脚本已实跑，修掉 3 个真实缺陷（详见 `VERIFY.md` 顶部）；prompt caching 等 4 项受限于兼容端点，待官方 Key
 
 **工具链现状**：`pnpm test`（63 断言 / 4 个文件）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（158 页）；内容体量 **117/117 达标**。**全部干净**。
 
