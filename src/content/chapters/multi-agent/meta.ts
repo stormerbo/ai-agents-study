@@ -27,8 +27,8 @@ export const chapter = {
       summary: 'supervisor / pipeline / swarm —— 差别在控制权放在哪一层。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['supervisor', 'pipeline', 'swarm'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '同一个问题「多智能体贵不贵」，换个对照组能把答案从 8 倍变成 0.4 倍。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['cost', 'comparison'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '不是「多个角色更聪明」，而是「每个角色只看到自己该看的」。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['context-isolation', 'attention'],
       checkpoints: [
         {
@@ -107,8 +107,8 @@ export const chapter = {
       summary: '信息在主 agent 与子 agent 之间被有损压缩，而损失对调用方不可见。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['failure-modes', 'handoff'],
       checkpoints: [
         {
@@ -136,8 +136,8 @@ export const chapter = {
       summary: '在付出协调成本之前，先试试更便宜的三种做法。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['alternatives', 'simplicity'],
       checkpoints: [
         {
@@ -174,7 +174,7 @@ export const chapter = {
     ],
     cost: 'high',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
