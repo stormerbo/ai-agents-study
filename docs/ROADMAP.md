@@ -19,7 +19,7 @@
 阶段 2 原语（6 章）    ✅ 章 4-9 全部完成正文（阶段 2 收口）
 阶段 3 编排（5 章）    ✅ 章 10-14 全部完成正文（阶段 3 收口）
 阶段 4 生产化（6 章）  ✅ 章 15-20 全部完成正文（阶段 4 收口）
-阶段 5 实战（2 章）    章 21-22 已注册（大纲）<- 当前所在
+阶段 5 实战（2 章）    ✅ 章 21-22 全部完成正文（**全书收口**）
 ```
 
 > ⚠️ 注意：`stages.ts` 里 `chapterIds` 已被**移除**（改为从 `Chapter.stageId` 派生），所以「有哪些章」取决于 `content/chapters/index.ts` 里注册了什么。当前注册 23 章，顺序为：0 what-is-an-agent / 1 llm-api-basics / 2 prompt-engineering / 3 context-engineering / 4 tool-calling / 5 structured-output / 6 retrieval / 7 memory / 8 multimodal / 9 computer-use / 10 agent-paradigms / 11 agent-loop / 12 multi-agent / 13 agent-frameworks / 14 mcp / 15 evaluation / 16 sandboxing / 17 agent-security / 18 cost-and-latency / 19 human-in-the-loop / 20 agent-deployment / 21 reading-source / 22 capstone。

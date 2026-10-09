@@ -44,6 +44,14 @@
 
 > **阶段 4 到此收口。** 生产化的六章全部有正文：评估（怎么知道做对了）、沙箱（够得着什么）、安全（输入变成动作）、成本（两笔账）、人机协作（在哪里停）、部署（上线之后）。
 > 这一轮里最有价值的几组实测：**注入 7 次全部未复现（并给出「动作合法只改目标」的正确攻击设计）**、**朴素路径检查 4/6 被绕过**、**延迟由输出主导（输入涨 34 倍首 token 仅 +0.24s）**、**审批按可逆性而非危险程度**。
+
+**章 21「源码研读」** —— 5 节完整正文（2026-10-09 完成）
+
+**章 22「综合项目」** —— 5 节完整正文（2026-10-09 完成）
+
+> **阶段 5 到此收口 —— 全书 23 章 / 112 节全部完成正文。**
+> 第 21 章读了真 LangChain 源码，**修正了第 13 章那个「抽象泄漏」的说法**（实为 parse_docstring 默认关闭）；
+> 第 22 章搭了一个真能跑的最小系统（六条冒烟用例全过），并按第 15-20 章的清单逐条自查。
 **实验与交互补缺（2026-10-09）** —— Playground 增加**图像上传**，并补上第 8 章的 `lab-vision-extract`（视觉提取）。
   `vision` 从此不再是空置的 capability —— 补它的动因就是第二轮规划时点出的那个缺口。
 
@@ -64,7 +72,7 @@
 
 ### 6.2 进度明细
 
-> 下表由 scripts/content-stats.mjs 同源口径生成（当前 102/102 达标）。
+> 下表由 scripts/content-stats.mjs 同源口径生成（当前 112/112 达标）。
 
 | 节 | 中文 | 说明文字 | 图 | 代码块 | 达标 |
 |---|---:|---:|---:|---:|:--:|
@@ -74,7 +82,7 @@
 | agent-deployment/04-ops-loop | 2398 | 3345 | 1 | 3 | ✅ |
 | agent-frameworks/01-what-frameworks-give | 2508 | 3411 | 1 | 4 | ✅ |
 | agent-frameworks/02-abstraction-models | 2152 | 3037 | 1 | 4 | ✅ |
-| agent-frameworks/03-leaky-abstractions | 2202 | 3264 | 1 | 5 | ✅ |
+| agent-frameworks/03-leaky-abstractions | 2374 | 3709 | 1 | 5 | ✅ |
 | agent-frameworks/04-build-vs-buy | 2310 | 3223 | 1 | 1 | ✅ |
 | agent-frameworks/05-selection-matrix | 2305 | 3128 | 1 | 3 | ✅ |
 | agent-loop/01-minimal-loop | 2267 | 3083 | 1 | 3 | ✅ |
@@ -92,6 +100,11 @@
 | agent-security/03-supply-chain | 2241 | 3206 | 1 | 3 | ✅ |
 | agent-security/04-exfiltration | 2130 | 3009 | 1 | 2 | ✅ |
 | agent-security/05-defense-in-depth | 2138 | 3003 | 1 | 2 | ✅ |
+| capstone/01-scope | 2255 | 3095 | 1 | 3 | ✅ |
+| capstone/02-skeleton | 2250 | 3203 | 1 | 3 | ✅ |
+| capstone/03-hardening | 2171 | 3158 | 1 | 1 | ✅ |
+| capstone/04-deliver | 2195 | 3135 | 1 | 2 | ✅ |
+| capstone/05-retrospective | 2219 | 3220 | 1 | 2 | ✅ |
 | computer-use/01-what-differs | 1977 | 3044 | 1 | 4 | ✅ |
 | computer-use/02-observe-act-loop | 1997 | 3152 | 1 | 3 | ✅ |
 | computer-use/03-failure-modes | 2069 | 3046 | 1 | 4 | ✅ |
@@ -147,6 +160,11 @@
 | prompt-engineering/03-few-shot | 2021 | 3001 | 1 | 1 | ✅ |
 | prompt-engineering/04-chain-of-thought | 1854 | 3063 | 1 | 4 | ✅ |
 | prompt-engineering/05-reliability | 2945 | 4733 | 2 | 2 | ✅ |
+| reading-source/01-why-and-how | 2136 | 3132 | 1 | 4 | ✅ |
+| reading-source/02-picking-projects | 2287 | 3159 | 1 | 4 | ✅ |
+| reading-source/03-trace-one-task | 1608 | 3024 | 1 | 9 | ✅ |
+| reading-source/04-compare | 1873 | 3058 | 1 | 3 | ✅ |
+| reading-source/05-outputs | 2072 | 3071 | 1 | 4 | ✅ |
 | retrieval/01-why-retrieval | 2095 | 3257 | 1 | 4 | ✅ |
 | retrieval/02-chunking | 1771 | 3197 | 1 | 3 | ✅ |
 | retrieval/03-vector-limits | 2114 | 3270 | 1 | 3 | ✅ |
