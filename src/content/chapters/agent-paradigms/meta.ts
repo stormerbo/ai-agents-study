@@ -27,8 +27,8 @@ export const chapter = {
       summary: 'ReAct、Plan-Execute、Reflexion、Tree-of-Thoughts、Multi-Agent —— 差别的本质在哪。',
       estimatedMinutes: 20,
       difficulty: 'beginner',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['react', 'plan-execute', 'taxonomy'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '把推理外化成可观察的步骤 —— 这是它有效的原因，也是它失效的原因。',
       estimatedMinutes: 22,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['react', 'loop', 'failure-modes'],
       checkpoints: [
         {
@@ -86,8 +86,8 @@ export const chapter = {
       summary: '先规划的全部价值来自「计划不会中途作废」这个假设 —— 而它会作废。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['planning', 'replanning'],
       checkpoints: [
         {
@@ -115,8 +115,8 @@ export const chapter = {
       summary: '「再读一遍自己的答案」几乎没用；「换一个方法重算一遍」有用。',
       estimatedMinutes: 23,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['reflexion', 'self-critique', 'evaluation'],
       checkpoints: [
         {
@@ -145,8 +145,8 @@ export const chapter = {
       summary: '把范式选择还原成两个可回答的问题。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['selection', 'trade-offs'],
       checkpoints: [
         {
@@ -183,7 +183,7 @@ export const chapter = {
     ],
     cost: 'medium',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;

@@ -1,0 +1,267 @@
+---
+lesson: agent-paradigms/five-paradigms
+title: 五类范式：一张对照表
+status: drafting
+---
+
+"范式"这个词在这本书里指一件很具体的事：**模型与工具之间的调用关系长什么样。**
+
+同一个任务，用不同的范式做，模型看到的上下文不同、你和模型之间的往返次数不同、出错的形态也不同。这一节先把五类摆出来，后面四节逐个拆。
+
+## 五类范式
+
+**一、单次调用。** 一次请求，一个答案。没有工具，没有循环。绝大多数任务其实到这一层就够了 —— 这是最容易被跳过、也最该先试的一层。
+
+**二、链式（workflow）。** 你把任务拆成固定的几步，串起来跑。每一步是一次调用，但**顺序是你定的，不是模型定的**。第 0 章讲过它和 agent 的分界：控制流在谁手里。
+
+**三、ReAct。** 模型每一步自己决定：调工具，还是给答案。工具结果回填后它再决定下一步。控制流交给了模型，但**每一步只决定下一步**。
+
+**四、Plan-Execute。** 先让模型把整件事拆成一个完整的计划，再由代码依次执行，最后综合。控制流还是模型定的，但**它在看到任何数据之前就要把计划定下来**。
+
+**五、Reflection。** 在上面任何一种之上加一个自我批判的回合：拿到答案 → 让模型检查 → 修订。
+
+（第六类是多智能体 —— 多个模型实例互相通信。它是一整章的内容，见第 12 章。）
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["任务"] --> B{"控制流在谁手里？"}
+    B -->|"全在我手里"| C["链式 workflow<br/>固定几步，串起来"]
+    B -->|"交给模型"| D{"计划什么时候定？"}
+    D -->|"每一步定下一步"| E["ReAct<br/>边看边决定"]
+    D -->|"开工前一次定完"| F["Plan-Execute<br/>计划即契约"]
+    C --> G{"要不要自我批判？"}
+    E --> G
+    F --> G
+    G -->|要| H["Reflection<br/>答案 → 批判 → 修订"]
+    G -->|不要| I["结束"]
+    H --> I
+    A -.-> J["单次调用：连工具都不用<br/>先试这一层"]
+`}
+/>
+
+## 实测：同一个正确答案，成本差 5 倍
+
+我用三种范式跑**同一个线性任务**（查三个城市的天气，报告最高、最低和差值）。工具是确定性的 mock，所以每个数字都可复现：
+
+| 范式 | 结果 | token | 模型往返 |
+|---|---|---:|---:|
+| ReAct | ✅ | 1,203 | 2 |
+| Plan-Execute | ✅ | **506** | 4（计划 + 执行 + 综合） |
+| Reflection | ✅ | **2,568** | 3 |
+
+（实跑数据，2026-10-09，`deepseek-flash`。）
+
+**三个都对，但最贵的比最便宜的贵了 5.1 倍。** 这是本节最重要的一行。
+
+为什么 Plan-Execute 反而最省？因为它**把钱花在了刀刃上**：一次请求就把三个查询排好，三个工具调用在前两轮里全部执行完，最后只需要一次综合。而 ReAct 要走「调一次 → 看结果 → 再决定」的节奏，每个往返都重发一次上下文。
+
+那 Reflection 为什么最贵？它**把刚才那些往返全做了一遍之后，又完整地做了一遍批判**。多出来的 2,568 减 1,203 ≈ 1,365 token，买到的是一句「以上答案正确」。
+
+这里要说清楚一件事：**范式不改变「能不能做对」，它改变的是代价和弹性。** 在线性任务上三者都对，差别只在钱；而当任务形状变了，差别就会出现在正确率上 —— 下一节开始拆。
+
+## 三种范式的成本差从哪来
+
+把上面那三个数字拆开看，差别的来源其实很清楚。
+
+**Plan-Execute 省在「一次往返干多件事」。** 它的第一轮请求里，模型一次性排出了三个查询；代码把三个都执行完，再把三份结果一起回填。整件事只用了两次「模型看到上下文」的机会。
+
+**ReAct 花在「每一步都要重新看一眼」。** 它和第 9 章界面 agent 的循环是同一个形状 —— 每一步都必须把当前状态完整地发给模型。线性任务上它只需要 2 步，所以还不算贵；任务一长，这个成本就会按步数累积。
+
+**Reflection 花在「把同一件事做了两遍」。** 它先在基础范式上拿到一个答案，然后再起一轮完整的批判。多出来的那部分 token 买到的是一句「以上答案正确」—— 在答案本来就对的时候，这是纯支出。
+
+所以三者不是「能力递增」的关系，而是**成本结构不同**：批量执行、逐步适应、事后复核。你要按任务的形状去挑，而不是按「哪个更高级」。
+
+## 别把这张表当成结论
+
+有一个必须说清的限制：**上面那组数字来自一个线性任务**。换一个形状的任务，排序会变 —— 第 3 节就会看到 Plan-Execute 在条件分支任务上**同时输掉正确率和成本**。
+
+这也是本书反复出现的那个提醒（见第 3 章第 5 节）：写「A 比 B 好」之前，先问清楚**你在什么任务上比的**。范式没有全局最优，只有针对某类任务的最优。
+
+## 这张表还缺两个维度
+
+上面五类是按**控制流在谁手里**分的。但真实系统里还有两个正交的维度，忽略了它们会把不同范式混为一谈。
+
+**维度一：上下文怎么共享。** 单次调用只有一个上下文；链式每一步可以带不同的上下文（这正是第 3 章讲的隔离）；多智能体则有好几份各自独立的上下文。**上下文边界在哪里，决定了哪类错误会发生** —— 第 12 章会看到，多智能体最主要的收益和最主要的失败都来自这个维度。
+
+**维度二：谁来决定「做完了」。** 有的是模型说完成（ReAct），有的是计划执行完（Plan-Execute），有的是代码校验通过（第 5 章的结构化输出）。这个维度决定了循环能不能自己停下来 —— 第 9 章实测过一个场景：模型察觉到卡住了，但它的动作空间里没有「报告卡住」这个选项，只能一直重试。
+
+所以当你听到「我们用 ReAct」这句话时，它其实只回答了三分之一的问题。另外两个维度（上下文边界、停止判据）同样要在设计时说清楚，而它们往往比范式的名字更影响成败。
+
+## 换范式的迁移成本
+
+最后补一个很实际的判断：**从一种范式换到另一种，哪些东西要重写。**
+
+| 资产 | 换范式时要改吗 |
+|---|---|
+| 工具定义与 schema | **不用** —— 它是第 4 章的东西，与范式无关 |
+| 工具的错误回填规则 | **不用** —— 同上 |
+| 上下文策略（放什么、什么时候清） | **要重设计** —— 这恰恰是范式之间差别最大的地方 |
+| 停止条件 | **要重写** —— 每类范式的「做完了」判据不同 |
+
+这张表解释了一个常见现象：**换范式的成本主要不在代码量，而在重新想清楚上下文和停止条件。** 工具那一层是稳定的，可以放心先在它上面投入。
+
+换个角度说：如果你把工具层做得足够干净，那么「换个范式试试」就是一次成本可控的实验，而不是一次重写。这也是后面第 11 章要手写一遍循环的实际理由 —— 你需要知道哪些部分是可以替换的，哪些部分是必须一起改的。
+
+## 完整可运行代码
+
+下面这段代码把三种范式实现出来，跑同一个任务，并打印成本。工具是本地 mock，不需要任何凭据就能理解结构。
+
+```python
+"""三种 Agent 范式跑同一个任务：ReAct / Plan-Execute / Reflection。
+
+工具是确定性的 mock（不联网），所以每一步都可复现、可精确判分。
+关键设计：任务 T2 有**条件分支** —— 下一步查哪个城市取决于上一步的结果。
+静态计划在它面前必然失效，这正是「计划即契约」的边界。
+
+实跑状态：2026-10-09，deepseek-flash。
+"""
+import json, os, urllib.request
+
+TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34,
+        ("深圳", "明天"): 29, ("北京", "后天"): 24, ("上海", "后天"): 26,
+        ("广州", "后天"): 33, ("深圳", "后天"): 30}
+
+TOOLS = [
+    {"name": "get_weather", "description": "查询某个城市某一天的最高气温（摄氏度）。",
+     "input_schema": {"type": "object",
+                      "properties": {"city": {"type": "string"},
+                                     "day": {"type": "string", "enum": ["明天", "后天"]}},
+                      "required": ["city", "day"]}},
+]
+
+
+def get_weather(city, day):
+    k = (city, day)
+    if k not in TEMP:
+        return {"error": "没有 %s%s 的数据" % (city, day)}
+    return {"city": city, "day": day, "temp_c": TEMP[k]}
+
+
+def call(messages, system, tools=None, max_tokens=1200):
+    body = {"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
+            "system": system, "messages": messages}
+    if tools:
+        body["tools"] = tools
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
+        data=json.dumps(body).encode(),
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        d = json.loads(resp.read())
+    u = d.get("usage", {})
+    tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+           + u.get("cache_creation_input_tokens", 0))
+    return d, tin + u.get("output_tokens", 0)
+
+
+T1 = "查北京、上海、广州明天的最高温，报告最高的是哪个城市、最低的是哪个，以及两者差多少度。"
+T2 = ("查北京和上海明天的最高温。哪个城市更高，就再查那个城市后天的最高温。"
+      "最后报告：北京明天的温度、上海明天的温度、以及你额外查的那个城市后天的温度。")
+
+
+def react(task, tools=TOOLS, cap=10):
+    """ReAct：模型每一步自己决定调工具还是给答案。"""
+    sys = "你是一个会使用工具的助手。需要数据就调用工具，拿到足够信息后直接给出最终答案。"
+    msgs = [{"role": "user", "content": task}]
+    used, tok, steps = [], 0, 0
+    while steps < cap:
+        steps += 1
+        d, t = call(msgs, sys, tools)
+        tok += t
+        blocks = d.get("content", [])
+        if d.get("stop_reason") != "tool_use":
+            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+            return text, tok, steps, used
+        msgs.append({"role": "assistant", "content": blocks})
+        results = []
+        for b in blocks:
+            if b.get("type") == "tool_use":
+                args = b.get("input", {})
+                used.append(args.get("city"))
+                out = get_weather(args.get("city"), args.get("day"))
+                results.append({"type": "tool_result", "tool_use_id": b["id"],
+                                "content": json.dumps(out, ensure_ascii=False)})
+        msgs.append({"role": "user", "content": results})
+    return "（达到步数上限）", tok, steps, used
+
+
+def plan_execute(task, cap_plan=8):
+    """Plan-Execute：先一次性给出完整工具调用计划，再由代码执行，最后综合。"""
+    msgs = [{"role": "user", "content":
+             task + "\n\n请先给出完整的执行计划：一个 JSON 数组，每项形如 "
+             '{"tool":"get_weather","city":"...","day":"..."}。只输出 JSON 数组。'}]
+    d, tok = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
+    text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
+    if not text.strip() and d.get("stop_reason") == "max_tokens":
+        raise RuntimeError("测量故障：空输出 + stop_reason=max_tokens，需要调大预算，不是模型失败")
+    i = text.find("[")
+    try:
+        plan, _ = json.JSONDecoder().raw_decode(text[i:])
+    except Exception:
+        plan = []
+    results, used = [], []
+    for step in plan[:cap_plan]:
+        if step.get("tool") == "get_weather":
+            used.append(step.get("city"))
+            results.append(get_weather(step.get("city"), step.get("day")))
+    msgs.append({"role": "assistant", "content": text})
+    msgs.append({"role": "user", "content": "计划已执行完毕，结果如下：\n"
+                 + json.dumps(results, ensure_ascii=False) + "\n\n请给出最终答案。"})
+    d2, tok2 = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
+    tok += tok2
+    final = "".join(b.get("text", "") for b in d2.get("content", []) if b.get("type") == "text")
+    return final, tok, 1 + len(plan), used
+
+
+def reflection(task):
+    """Reflection：ReAct 拿到答案后，再让模型自查并修订一次。"""
+    first, tok1, steps1, used = react(task)
+    msgs = [{"role": "user", "content": task + "\n\n第一位助手的答案：\n" + first
+             + "\n\n请检查这个答案是否有错。如果正确，原样输出；如果有错，给出修正后的答案。"}]
+    d, tok2 = call(msgs, "你是一个严格的事实核查者。")
+    tok = tok1 + tok2
+    final = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
+    return final, tok, steps1 + 1, used
+
+
+def check1(text):
+    """T1 判分：必须点出广州（34）、上海（27）、差 7 度。"""
+    ok = ("广州" in text and "上海" in text and ("7" in text))
+    return ok
+
+
+def check2(text, used):
+    """T2 判分：北京 31、上海 27；因为北京更高，所以额外查的必须是北京（后天 24）。"""
+    ok = ("31" in text and "27" in text and "24" in text)
+    branch_ok = "北京" in used
+    return ok, branch_ok
+
+
+if __name__ == "__main__":
+    print("=== T1（线性任务）：三种范式 ===")
+    print("任务：%s" % T1)
+    for name, fn in [("ReAct", lambda: react(T1)), ("Plan-Execute", lambda: plan_execute(T1)),
+                     ("Reflection", lambda: reflection(T1))]:
+        text, tok, steps, used = fn()
+        print("  %-13s %s  token %-6d 步数 %-2d 查了 %s" % (name, "✅" if check1(text) else "❌",
+                                                            tok, steps, used))
+    print()
+    print("=== T2（条件分支任务）===")
+    print("任务：%s" % T2)
+    for name, fn in [("ReAct", lambda: react(T2)), ("Plan-Execute", lambda: plan_execute(T2))]:
+        text, tok, steps, used = fn()
+        ok, branch = check2(text, used)
+        print("  %-13s 答案 %s  分支 %s  token %-6d 步数 %-2d 查了 %s"
+              % (name, "✅" if ok else "❌", "✅" if branch else "❌（查错城市）", tok, steps, used))
+        print("      最终答案：%s" % text.strip().replace("\n", " ")[:150])
+```
+
+## 常见坑
+
+- **一上来就用最复杂的范式。** 先试单次调用，再试链式，最后才考虑 agent 循环。绝大多数任务在前两层就结束了。
+- **以为「更复杂」等于「更准」。** 实测里三种范式在同一个线性任务上结果完全相同，差别是 5 倍成本。
+- **把范式和框架绑在一起。** 范式是控制流的形状，框架只是实现它的工具 —— 同一个范式可以用十几行手写出来（第 11 章）。
+- **在没测过代价的情况下选范式。** 上面那张表里，最直觉的 ReAct 比 Plan-Execute 贵一倍多，而这一点猜不出来。

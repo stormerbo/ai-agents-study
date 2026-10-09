@@ -7,6 +7,7 @@ import { bodies as llmApiBasicsBodies } from '@/content/chapters/llm-api-basics/
 import { bodies as memoryBodies } from '@/content/chapters/memory/body';
 import { bodies as multimodalBodies } from '@/content/chapters/multimodal/body';
 import { bodies as computerUseBodies } from '@/content/chapters/computer-use/body';
+import { bodies as agentParadigmsBodies } from '@/content/chapters/agent-paradigms/body';
 import { bodies as promptEngineeringBodies } from '@/content/chapters/prompt-engineering/body';
 import { bodies as retrievalBodies } from '@/content/chapters/retrieval/body';
 import { bodies as structuredOutputBodies } from '@/content/chapters/structured-output/body';
@@ -35,6 +36,7 @@ const REGISTRY: Record<string, Record<string, BodyLoader>> = {
   'memory': memoryBodies,
   'multimodal': multimodalBodies,
   'computer-use': computerUseBodies,
+  'agent-paradigms': agentParadigmsBodies,
 };
 
 /** 取某一节的正文组件。没写正文时返回 undefined（页面会渲染大纲占位）。 */
