@@ -1,0 +1,314 @@
+---
+lesson: computer-use/failure-modes
+title: 失败模式
+status: drafting
+---
+
+文本任务的失败通常是可见的：JSON 不合法、字段缺失、答案是错的。界面自动化的失败不一样 —— **它经常看起来像成功了**。
+
+这一节用三种注入测它的失败形态。
+
+## 实测一：目标一小，它会反复点同一个错位置
+
+把 Create 按钮从 180×52 缩到 **44×26**（其他一切不变），跑 12 次：
+
+| 结果 | 次数 |
+|---|---:|
+| ✅ 成功 | 9 |
+| ❌ 失败 | 3 |
+
+（实跑数据，2026-10-09，`deepseek-flash`。12 次里 3 次失败，成功率 75%。）
+
+失败长什么样？把其中一次的落空距离按顺序列出来：
+
+```text
+click:name → type → click:email → type
+  → click:空空间  (离按钮中心 41 px)
+  → click:空空间  (41 px)
+  → click:空空间  (43 px)
+  → click:空空间  (42 px)
+  → click:空空间  (43 px)
+  → click:空空间  (45 px)
+  → click:空空间  (323 px)
+```
+
+三个细节值得注意。
+
+**第一，它一直在点同一个错位置。** 距离在 41 到 45 之间小幅漂移，但没有一次靠近按钮。也就是说它**没有根据新截图更新坐标** —— 它在重复一个「看起来合理」的位置，那个位置大约就是原来大按钮所在的区域。
+
+**第二，界面上没有任何提示。** 点是点了，只是落在空白处。截图上看不出「刚刚有人点空了」这件事，模型只能靠自己意识到「点了没变化」。
+
+**第三，最后那一跳是 323 px。** 那是一次完全失控的点击 —— 它显然意识到不对劲，开始乱试。
+
+成本上的代价非常直接：成功的运行约 5,000 token，而这两次失败分别是 **19,209** 和 **26,568** —— **3.8 倍到 5.3 倍**。失败不仅没有结果，还比成功贵好几倍。
+
+## 实测二：点击无效时，它会一直重试但不会上报
+
+第二个注入更阴险：让点 Create **完全没反应** —— 界面不变、没有报错、没有加载动画。
+
+结果：它**察觉到了**异常。动作序列是：
+
+```text
+click:name → type → click:email → type → click:submit × 4
+```
+
+它没有傻傻地立刻宣布「完成」，而是连续重试了 4 次 —— 这个行为是对的，说明它确实注意到「点了没变化」。
+
+**但它没有「报告卡住」这个出口。** 动作空间里只有 click / type / done 三个，没有一个能表达「我试了但没成功」。于是它只能一直重试，直到撞上我设的 8 步上限。
+
+（实跑两次都是这个形状：8 步、约 12,000 token，是成功案例的 2.4 倍。）
+
+这个结果直接决定了两件事，第 4 节会展开：
+
+**一，停止条件必须由你的代码给出**，而不能指望模型自己停。「连续 N 步界面无变化」这类检测必须写在循环里。
+
+**二，动作空间里应该留一个「报告失败」的动作。** 只要加一个 `{"action":"stuck","reason":"..."}`，模型就有了表达困境的通道，而不是用重试来暗示。
+
+## 实测三：相邻的诱饵按钮 —— 未复现
+
+第三个注入是在 Create 旁边并排放一个同样显眼的 Cancel（点了会清空表单），看它会不会点错。
+
+结果：**4 次全部点对了 Create。** 相邻按钮的混淆在我这个环境里没有复现 —— 这一条如实记下来。
+
+（原因可能是我的两个按钮文字对比足够强、位置也分得开。界面上如果有两个图标相同、文案相近的按钮，情况可能会不一样 —— 但那是推断，我没有实测。）
+
+## 真正危险的不是「点不中」
+
+把三个注入放在一起看，失败可以分成两类，而它们的后果完全不对称：
+
+| 失败类型 | 表现 | 后果 |
+|---|---|---|
+| **点不中** | 反复点空白、卡住、成本翻几倍 | 昂贵，但**可见**（有结果就是没结果） |
+| **点错了** | 点中了另一个按钮、把值填进错误的字段 | **不可见**，而且可能不可逆 |
+
+这一节的实测全部落在第一类 —— 因为我的合成环境里**没有不可逆的后果**。但在真实系统里，第二类才是要防的：把测试数据的「删除」当成「编辑」点了，或者把金额填进数量字段然后提交。
+
+而它危险的原因和第 8 节的视觉错误一模一样：**格式正确、看起来合理、结构上无法发现**。一个填错了字段的表单，提交成功后返回的是一个完全正常的成功页面。
+
+所以界面自动化的验收标准应该比文本任务更严：不是「它跑完了」，而是**跑完之后的目标状态与预期状态逐字段一致** —— 而这件事只能由代码去核对，不能靠模型说完成了。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["一个界面动作"] --> B{"点中目标了吗？"}
+    B -->|"没点中"| C["界面不变"]
+    C --> D{"模型意识到没变化？"}
+    D -->|是| E["重试 —— 但没有「报告卡住」的出口"]
+    E --> F["撞到步数上限<br/>实测成本 2.4 倍"]
+    D -->|否| G["误以为完成"]
+    B -->|"点中了"| H{"点对了吗？"}
+    H -->|对| I["继续"]
+    H -->|"点到别的元素"| J["⚠️ 静默错误<br/>界面照样往前走，结果已经错了"]
+    J -.-> K["只有「跑完后逐字段核对目标状态」能发现"]
+`}
+/>
+
+## 怎么让「点错了」变得可见
+
+第一类失败（点不中）自己会暴露；第二类（点错了）不会。所以要专门为它设计可见性。四个做法，按可靠性排序：
+
+**一，跑完之后核对目标状态，而不是核对界面。** 不要问模型「成功了吗」，也不要用「看到了成功页」当判据 —— 错误的操作同样可能产生一个成功页。正确的做法是**回到数据源去查**：那条记录真的建出来了吗？每个字段的值都对吗？这一步必须是代码，而且要在循环之外。
+
+**二，关键动作前留一张截图。** 每一步的截图本来就要发给模型，顺手落盘就得到一条完整的审计轨迹。事后排查「它到底点了什么」时这是唯一可靠的东西 —— 模型自己说不出来，因为它的输出只有一个坐标。
+
+**三，让动作尽量幂等。** 「设置 Name = Zhang San」比「在 Name 后面追加 Zhang San」安全得多 —— 后者重试一次就变成 `Zhang SanZhang San`。界面自动化天然容易重试（点不中就会重试），所以幂等是必需项，不是加分项。
+
+**四，不可逆动作单独走确认。** 这一条第 4 节会展开，判据可以先给出来：**如果一个动作失败之后无法用另一个动作撤销，它就不该由循环自动执行。**
+
+四条合起来是一句话：**界面自动化的结果验收必须落在数据层，不能落在界面层。** 界面上「看起来对了」和「真的对了」之间，隔着一整类静默失败。
+## 完整可运行代码
+
+这个脚本把三种失败注入都做进去了：小目标、诱饵按钮、点击无效。环境是本地绘制的，跑起来完全可复现。
+
+```python
+"""失败模式注入：小目标 / 诱饵按钮 / 点击无效。
+
+自包含 —— 环境、循环、三种失败注入都在这个文件里。
+
+实跑状态：2026-10-09，deepseek-flash。
+"""
+import base64, json, os, urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+W, H = 820, 520
+BASE = {"name": (60, 150, 500, 196), "email": (60, 250, 500, 296)}
+
+# 三种失败注入。submit 的尺寸直接决定「点得中吗」
+VARIANTS = {
+    "normal": {"submit": (60, 380, 240, 432)},                 # 180x52
+    "tiny":   {"submit": (60, 380, 104, 406)},                 # 44x26
+    "decoy":  {"submit": (60, 380, 240, 432), "cancel": (270, 380, 430, 432)},
+    "noop":   {"submit": (60, 380, 240, 432)},                 # 点了毫无反应
+}
+
+
+def render(state, els):
+    img = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(img)
+    f = lambda s: ImageFont.truetype(FONT, s)
+    d.rectangle([0, 0, W, 64], fill=(240, 244, 250))
+    d.text((60, 24), "NEW USER FORM", fill=(20, 30, 50), font=f(20))
+    d.text((60, 110), "Name", fill=(90, 100, 115), font=f(14))
+    d.text((60, 210), "Email", fill=(90, 100, 115), font=f(14))
+    for key in ("name", "email"):
+        x0, y0, x1, y1 = els[key]
+        on = state["focus"] == key
+        d.rectangle([x0, y0, x1, y1], outline=(60, 120, 220) if on else (170, 180, 195),
+                    width=3 if on else 1)
+        d.text((x0 + 12, y0 + 14), state["v"][key], fill=(20, 20, 20), font=f(18))
+    x0, y0, x1, y1 = els["submit"]
+    small = (x1 - x0) < 100
+    d.rectangle([x0, y0, x1, y1], fill=(30, 110, 220))
+    d.text((x0 + 12, y0 + 6), "Create", fill="white", font=f(15 if small else 18))
+    if "cancel" in els:
+        cx0, cy0, cx1, cy1 = els["cancel"]
+        d.rectangle([cx0, cy0, cx1, cy1], fill=(235, 238, 243))
+        d.text((cx0 + 26, cy0 + 15), "Cancel", fill=(60, 70, 90), font=f(18))
+    if state["err"]:
+        d.rectangle([60, 452, W - 60, 486], fill=(255, 238, 238))
+        d.text((72, 460), state["err"], fill=(190, 40, 40), font=f(14))
+    if state["done"]:
+        d.rectangle([0, 0, W, H], fill=(240, 252, 245))
+        d.text((60, 200), "SUCCESS", fill=(20, 140, 70), font=f(34))
+    b = BytesIO()
+    img.save(b, format="PNG")
+    return b.getvalue()
+
+
+SYS = "\n".join([
+    "你是一个通过截屏操作界面的 agent。只输出一个 JSON 对象，不要解释、不要代码块。",
+    '{"action":"click","x":<整数>,"y":<整数>} 或 {"action":"type","text":"..."}' + ' 或 {"action":"done"}',
+])
+TASK = "在表单里填入 Name = Zhang San、Email = zhang@example.com，然后点 Create。"
+
+
+def ask(history):
+    body = json.dumps({"model": os.environ["VERIFY_MODEL"], "max_tokens": 600,
+                       "system": SYS, "messages": history}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read())
+    u = data.get("usage", {})
+    tok = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+           + u.get("cache_creation_input_tokens", 0)) + u.get("output_tokens", 0)
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    return text.strip(), tok
+
+
+def run(variant, max_steps=12):
+    els = dict(BASE)
+    els.update(VARIANTS[variant])
+    if variant != "decoy":
+        els.pop("cancel", None)
+    st = {"focus": None, "v": {"name": "", "email": ""}, "err": None, "done": False}
+    hist = [{"role": "user", "content": [{"type": "text", "text": TASK + "\n当前屏幕："},
+             {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+              "data": base64.b64encode(render(st, els)).decode()}}]}]
+    steps, toks, seq, hit, miss = 0, 0, [], 0, []
+    while steps < max_steps and not st["done"]:
+        steps += 1
+        text, t = ask(hist)
+        toks += t
+        i = text.find("{")
+        try:
+            act, _ = json.JSONDecoder().raw_decode(text[i:])
+        except Exception:
+            seq.append("PARSE_FAIL")
+            break
+        kind = act.get("action")
+        if kind == "done":
+            seq.append("done")
+            break
+        if kind == "click":
+            x, y = float(act["x"]), float(act["y"])
+            target, best = None, 1e9
+            for k, (x0, y0, x1, y1) in els.items():
+                cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+                best = min(best, ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5)
+                if x0 <= x <= x1 and y0 <= y <= y1:
+                    target = k
+            seq.append("click:" + (target or "空空间"))
+            if target is None:
+                miss.append(round(best, 0))
+            if target in ("name", "email"):
+                st["focus"], st["err"] = target, None
+            elif target == "cancel":
+                st["v"], st["focus"], st["err"] = {"name": "", "email": ""}, None, None
+            elif target == "submit":
+                if variant == "noop":
+                    pass                                   # 界面完全不变
+                elif st["v"]["name"] and st["v"]["email"]:
+                    st["done"] = True
+                else:
+                    st["err"] = "Name and Email are both required."
+            else:
+                st["focus"], st["err"] = None, "Clicked empty space."
+            hit += 1 if target else 0
+        elif kind == "type":
+            seq.append("type")
+            if st["focus"]:
+                st["v"][st["focus"]] += str(act.get("text", ""))
+            else:
+                st["err"] = "Nothing is focused."
+        hist.append({"role": "assistant", "content": text})
+        if st["done"]:
+            break
+        hist.append({"role": "user", "content": [{"type": "text", "text": "新的屏幕："},
+                     {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                      "data": base64.b64encode(render(st, els)).decode()}}]})
+    return st, steps, toks, seq, miss
+
+
+if __name__ == "__main__":
+    for variant, n, cap in [("tiny", 4, 12), ("decoy", 2, 12), ("noop", 1, 8)]:
+        print("=== %s ===" % variant)
+        for i in range(n):
+            st, steps, toks, seq, miss = run(variant, cap)
+            ok = st["done"] and st["v"]["name"] == "Zhang San"
+            print("  #%d %s 步数 %-2d token %-6d %s" % (i + 1, "✅" if ok else "❌", steps, toks,
+                                                        "落空距离 " + str(miss) if miss else ""))
+            if not ok:
+                print("     序列：%s" % " → ".join(seq))
+        print()
+```
+
+实跑输出（2026-10-09）：
+
+```text
+=== tiny ===
+  #1 ✅ 步数 5  token 5015   
+  #2 ❌ 步数 10 token 19209  落空距离 [39.0, 40.0, 39.0, 39.0, 39.0]
+     序列：click:name → type → click:email → type → click:空空间 → click:空空间 → click:空空间 → click:空空间 → click:空空间 → PARSE_FAIL
+  #3 ❌ 步数 12 token 26568  落空距离 [41.0, 41.0, 43.0, 42.0, 43.0, 45.0, 323.0]
+     序列：click:name → type → click:email → type → click:空空间 ×7 → PARSE_FAIL
+  #4 ✅ 步数 5  token 5027   
+
+=== decoy ===
+  #1 ✅ 步数 5  token 5024   
+  #2 ✅ 步数 5  token 5041   
+
+=== noop ===
+  #1 ❌ 步数 8  token 11827   
+     序列：click:name → type → click:email → type → click:submit → click:submit → click:submit → click:submit
+```
+
+## 本节小结
+
+1. **点不中是可见的、但很贵**：实测成功率 75%，而失败时的成本是成功的 3.8 到 5.3 倍。
+2. **点错了是不可见的**：界面照样往前走，最终页看起来完全正常，只有逐字段核对才能发现。
+3. **模型不会说「我卡住了」**：它的动作空间里没有这个表达方式，所以要么给它一个，要么在代码里检测。
+4. **结果验收落在数据层**，不落在界面层 —— 这是本节唯一能同时防住两类失败的做法。
+## 常见坑
+
+- **用「跑完了没有」判断成功。** 实测里模型会误以为完成，而且更常见的是它一直重试到上限 —— 两种都不是成功。
+- **指望模型自己说「我卡住了」。** 它的动作空间里没有这个表达方式，所以它只能用重试暗示。要么给它一个报告动作，要么在代码里检测。
+- **对结果不做逐字段核对。** 点错元素的失败是静默的：界面照样往前走，最终页看起来完全正常。
+- **把目标缩小当成难度调节。** 实测从 180×52 缩到 44×26，成功率从接近 100% 掉到 75%，而且失败时成本翻 4 到 5 倍。
+- **忽略失败的成本。** 失败的运行比成功贵得多（实测 3.8 到 5.3 倍），因为它会在原地打转。预算要按「失败路径」算，不能按成功路径算。
+- **把一次没复现的担心当成结论。** 诱饵按钮这条我 4 次都没复现 —— 如实记下，但不要因此认为「相邻按钮永远不会点错」。

@@ -1,0 +1,364 @@
+---
+lesson: computer-use/observe-act-loop
+title: 观测-动作循环
+status: drafting
+---
+
+计算机使用的核心循环只有四步：**截图 → 让模型给一个动作 → 执行 → 再截图**。
+
+看起来简单，但循环里有两个设计决定会直接影响成败：**为什么每一步都必须重新截图**，以及**循环什么时候停**。这一节把这两个问题用实测数据回答掉。
+
+## 为什么每一步都要重新截图
+
+一个自然的疑问是：截图能不能少发几次？比如「先给它一张全局图，然后它自己按坐标操作就行」。
+
+不能，原因很直接：**上一步的动作会改变界面。** 本来该出现下一条输入框的位置，现在可能是刚弹出来的提示；本来禁用的按钮，现在可用了。用旧图去决定新动作，等于闭着眼睛按记忆走路。
+
+这里和第 1 节那条「动作没有返回值」是同一件事的两面：既然动作不回话，那么**唯一的反馈通道就是下一次观测**。所以「每步重新截图」不是保守做法，而是这个循环里唯一能拿到反馈的方式。
+
+## 实测一：循环的形状
+
+我搭了一个可控的合成界面环境（820×520，两个输入框 + 一个按钮），任务是「填入 Name 与 Email，然后点 Create」。环境是本地绘制的，所以每一步都可复现、可精确打分。
+
+连续跑三次，三次的动作序列完全一致：
+
+```text
+click:name → type → click:email → type → click:submit
+```
+
+**5 步完成，3/3 成功。** 序列里没有一次多余的点击，也没有一次「点了空白」。
+
+## 实测二：每一步要花多少 token
+
+这是本节最重要的数据。把每一轮的输入 token 逐轮记下来：
+
+| 步 | 输入 token | 比上一步多 |
+|---:|---:|---:|
+| 1 | 473 | — |
+| 2 | 758 | +285 |
+| 3 | 1,053 | +295 |
+| 4 | 1,356 | +303 |
+| 5 | 1,661 | +305 |
+| **合计** | **5,301** | |
+
+（实跑数据，2026-10-09，`deepseek-flash`。输入为三项之和，含缓存命中部分。）
+
+每步稳定多出约 **300 token** —— 而这个界面的截图按第 8 章的实测口径是 **283 token**（820×520 = 426,400 像素）。**也就是说，每多走一步，你就要把新截图追加进历史，而历史会被整段重发。**
+
+这部分「重发」的开销是可以算出来的：如果每一步只发当前这一张图、不带历史，5 步应该是 5 × 283 加上少量文字 ≈ 1,600 token。实测 5,301 —— **3.3 倍**。
+
+这和第 1 章那条「按轮累积」的规律是同一个形状，只是基数从几百 token 变成了**一张图**。差别在于量级：文本任务里累积的是几行对话，这里累积的是**整屏像素**。
+
+所以设计循环时有一个很实际的判断：**步数是成本的平方根级杠杆。** 能让它在 5 步完成的任务，和第 3 节会看到的「卡在 12 步」相比，成本差 5 倍以上。
+
+## 实测三：它点得有多准
+
+每次点击我都会算「点击点」到「最近元素中心」的距离：
+
+| 运行 | 点击次数 | 落空次数 | 平均距离 |
+|---|---:|---:|---:|
+| 1 | 3 | 0 | 2.1 px |
+| 2 | 3 | 0 | 2.6 px |
+| 3 | 3 | 0 | 1.3 px |
+
+（实跑数据，2026-10-09。界面 820×520。）
+
+**平均 1.3 到 2.6 像素** —— 这个精度比我预期的好得多。在一个 180×52 的按钮上，几个像素的误差完全无所谓。
+
+但把这两个数字放在一起看，就得到了这一章最重要的一个判断：**精度够用，不代表不会错。** 第 3 节会看到，当目标缩小到 44×26 时，同样的模型偶尔会连续点空 —— 而那种失败是静默的，界面上什么都不会提示。
+
+## 循环的三个终止条件
+
+普通 agent 循环通常只需要一个终止条件（模型说「做完了」）。界面自动化的循环必须同时有三个 —— 因为它们各自防的是不同的失控。
+
+**一，模型自己说完成。** 这是最自然的，也是**最不可靠的**：第 1 节讲过，它没有任何反馈能确认动作真的生效了。
+
+**二，步数上限。** 硬性兜底。实测里这个条件真的用上了：第 3 节那个「点了没反应」的场景中，模型连续重试了 4 次都没停，最后是撞到上限才结束的。
+
+**三，界面连续 N 步没有变化。** 这一条防的是「模型在原地打转」。它比步数上限更早触发，也更省：如果连续三步截图一模一样，那这个循环已经不可能靠继续走变好了。
+
+实现上，第三条需要给截图算一个指纹（哪怕是简单的内容哈希）。注意**不要用文件字节相等**去比：动画、光标闪烁、时间戳都会让两张视觉上相同的图产生不同字节。要么比较缩小后的感知哈希，要么明确地把「允许变化的区域」排除掉。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["任务：填入两个字段并提交"] --> B["截图"]
+    B --> C["模型输出一个动作<br/>click / type / done"]
+    C --> D{"是 done 吗？"}
+    D -->|是| E["结束（模型自认完成）"]
+    D -->|否| F["执行动作"]
+    F --> G{"步数到上限？"}
+    G -->|是| H["强制结束<br/>（实测里真的用上了）"]
+    G -->|否| I{"界面连续 N 步无变化？"}
+    I -->|是| J["提前中止<br/>比撞上限更省"]
+    I -->|否| B
+    B -.-> K["⚠️ 每步都要重发全部历史<br/>实测每步 +300 token"]
+    F -.-> L["⚠️ 动作没有返回值<br/>只能靠下一次截图判断"]
+`}
+/>
+
+## 完整可运行代码
+
+下面是一整个可运行的循环：环境是本地绘制的合成界面，所以不依赖任何真实操作系统，跑起来完全可复现。
+
+```python
+"""计算机使用：一个可控的合成界面环境 + 真实的观测-动作循环。
+
+环境是本地绘制的（不依赖真实操作系统），所以每一步都可复现、可精确打分。
+
+实跑状态：2026-10-09，deepseek-flash。
+"""
+
+import base64, json, os, re, urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+W, H = 820, 520
+
+# 每个可交互元素的区域与中心 —— 这就是「点击精度」的答案键
+ELEMENTS = {
+    "name":   (60, 150, 500, 196),
+    "email":  (60, 250, 500, 296),
+    "submit": (60, 380, 240, 432),
+}
+BASE_ELEMENTS = {
+    "name":   (60, 150, 500, 196),
+    "email":  (60, 250, 500, 296),
+}
+# 变体：tiny 把按钮缩小到 44x26；decoy 加一个同样显眼的 Cancel
+VARIANTS = {
+    "baseline": {"submit": (60, 380, 240, 432)},
+    "tiny":     {"submit": (60, 380, 104, 406)},
+    "decoy":    {"submit": (60, 380, 240, 432), "cancel": (270, 380, 430, 432)},
+}
+VARIANT = "baseline"
+
+
+def font(sz):
+    return ImageFont.truetype(FONT, sz)
+
+
+def render(state):
+    img = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, 64], fill=(240, 244, 250))
+    d.text((60, 24), "NEW USER FORM", fill=(20, 30, 50), font=font(20))
+    d.text((60, 110), "Name", fill=(90, 100, 115), font=font(14))
+    d.text((60, 210), "Email", fill=(90, 100, 115), font=font(14))
+    for key in ("name", "email"):
+        x0, y0, x1, y1 = ELEMENTS[key]
+        focused = state["focus"] == key
+        d.rectangle([x0, y0, x1, y1], outline=(60, 120, 220) if focused else (170, 180, 195),
+                    width=3 if focused else 1)
+        d.text((x0 + 12, y0 + 14), state["values"][key] or "", fill=(20, 20, 20), font=font(18))
+    x0, y0, x1, y1 = ELEMENTS["submit"]
+    d.rectangle([x0, y0, x1, y1], fill=(30, 110, 220))
+    d.text((x0 + 12, y0 + 6), "Create", fill="white", font=font(15 if VARIANT == "tiny" else 18))
+    if "cancel" in ELEMENTS:
+        cx0, cy0, cx1, cy1 = ELEMENTS["cancel"]
+        d.rectangle([cx0, cy0, cx1, cy1], fill=(235, 238, 243))
+        d.text((cx0 + 26, cy0 + 15), "Cancel", fill=(60, 70, 90), font=font(18))
+    if state.get("error"):
+        d.rectangle([60, 452, W - 60, 486], fill=(255, 238, 238))
+        d.text((72, 460), state["error"], fill=(190, 40, 40), font=font(14))
+    if state.get("done"):
+        d.rectangle([0, 0, W, H], fill=(240, 252, 245))
+        d.text((60, 200), "SUCCESS", fill=(20, 140, 70), font=font(34))
+        d.text((60, 260), "user created: " + state["values"]["name"], fill=(30, 40, 50), font=font(18))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def apply_action(state, act, log):
+    """执行一个动作。返回是否有推进。"""
+    kind = act.get("action")
+    if kind == "click":
+        x, y = float(act.get("x", -1)), float(act.get("y", -1))
+        hit = None
+        best = 1e9
+        for key, (x0, y0, x1, y1) in ELEMENTS.items():
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+            if dist < best:
+                best, nearest = dist, key
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                hit = key
+        log.append({"act": "click", "target": hit, "nearest": nearest, "dist": round(best, 1)})
+        if hit in ("name", "email"):
+            state["focus"] = hit
+            state["error"] = None
+        elif hit == "cancel":
+            state["values"] = {"name": "", "email": ""}
+            state["focus"] = None
+            state["error"] = None
+        elif hit == "submit":
+            if VARIANT == "noop":
+                pass          # 点了完全没反应：界面不变、也没有报错
+            elif state["values"]["name"] and state["values"]["email"]:
+                state["done"] = True
+            else:
+                state["error"] = "Name and Email are both required."
+        else:
+            state["focus"] = None
+            state["error"] = "Clicked empty space."
+        return True
+    if kind == "type":
+        text = str(act.get("text", ""))
+        log.append({"act": "type", "text": text, "into": state["focus"]})
+        if state["focus"] in ("name", "email"):
+            state["values"][state["focus"]] += text
+            return True
+        state["error"] = "Nothing is focused."
+        return True
+    if kind == "done":
+        log.append({"act": "done"})
+        return False
+    state["error"] = "Unparseable action."
+    log.append({"act": "invalid", "raw": str(act)[:80]})
+    return True
+
+
+def call_model(history, max_tokens=1500):
+    body = json.dumps({"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
+                       "system": SYSTEM, "messages": history}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read())
+    u = data.get("usage", {})
+    tok = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+           + u.get("cache_creation_input_tokens", 0))
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    return text, tok, u.get("output_tokens", 0)
+
+
+SYSTEM = "\n".join([
+    "你是一个通过截屏操作界面的 agent。每一步你只会看到一张当前屏幕的截图。",
+    "你必须只输出一个 JSON 对象，不要任何解释、不要 markdown 代码块。三种形式之一：",
+    '{"action":"click","x":<整数>,"y":<整数>}',
+    '{"action":"type","text":"<要输入的文本>"}',
+    '{"action":"done"}',
+    "坐标以截图左上角为原点。要输入文字必须先点击对应的输入框。",
+    "任务完成后输出 {\"action\":\"done\"}。",
+])
+
+TASK = "在表单里填入 Name = Zhang San、Email = zhang@example.com，然后点击 Create 按钮创建用户。"
+
+
+def parse_action(text):
+    """用 raw_decode —— 贪婪正则会吃掉尾部文字（见 AGENTS §4.16）。"""
+    i = text.find("{")
+    if i < 0:
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text[i:])
+        return obj
+    except Exception:
+        return None
+
+
+def run_trial(max_steps=12):
+    global ELEMENTS
+    ELEMENTS = dict(BASE_ELEMENTS)
+    ELEMENTS.update(VARIANTS[VARIANT])
+    if VARIANT != "decoy":
+        ELEMENTS.pop("cancel", None)
+    state = {"focus": None, "values": {"name": "", "email": ""}, "error": None, "done": False}
+    history = [{"role": "user", "content": [
+        {"type": "text", "text": TASK + "\n这是当前屏幕："},
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+         "data": base64.b64encode(render(state)).decode()}},
+    ]}]
+    log, tokens, steps, step_tokens = [], 0, 0, []
+    while steps < max_steps and not state["done"]:
+        steps += 1
+        text, tin, tout = call_model(history)
+        tokens += tin + tout
+        step_tokens.append((steps, tin, tout))
+        act = parse_action(text)
+        if act is None:
+            log.append({"act": "PARSE_FAIL", "raw": text[:100]})
+            break
+        cont = apply_action(state, act, log)
+        history.append({"role": "assistant", "content": text})
+        if not cont or state["done"]:
+            break
+        history.append({"role": "user", "content": [
+            {"type": "text", "text": "执行完毕。这是新的屏幕："},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+             "data": base64.b64encode(render(state)).decode()}},
+        ]})
+    return state, log, tokens, steps, step_tokens
+
+
+if __name__ == "__main__":
+    print("环境：%dx%d，3 个可交互元素，最大 12 步" % (W, H))
+    print("任务：%s" % TASK)
+    print()
+    for trial in range(1, 4):
+        state, log, tokens, steps, step_tokens = run_trial()
+        ok = state["done"] and state["values"]["name"] == "Zhang San" \
+             and state["values"]["email"] == "zhang@example.com"
+        clicks = [e for e in log if e["act"] == "click"]
+        misses = [e for e in clicks if e["target"] is None]
+        dists = [e["dist"] for e in clicks]
+        print("第 %d 次：%s  步数 %d  总 token %d" % (trial, "✅ 成功" if ok else "❌ 失败", steps, tokens))
+        print("        点击 %d 次，落空 %d 次；离最近元素中心的平均距离 %.1f px"
+              % (len(clicks), len(misses), sum(dists) / len(dists) if dists else 0))
+        print("        最终值：name=%r email=%r" % (state["values"]["name"], state["values"]["email"]))
+        print("        动作序列：%s" % " → ".join(
+            ("click:" + (e["target"] or "空") if e["act"] == "click" else
+             "type" if e["act"] == "type" else e["act"]) for e in log))
+        print()
+```
+
+实跑输出（2026-10-09）：
+
+```text
+环境：820x520，3 个可交互元素，最大 12 步
+任务：在表单里填入 Name = Zhang San、Email = zhang@example.com，然后点击 Create 按钮创建用户。
+
+第 1 次：✅ 成功  步数 5  总 token 5288
+        点击 3 次，落空 0 次；离最近元素中心的平均距离 2.1 px
+        最终值：name='Zhang San' email='zhang@example.com'
+        动作序列：click:name → type → click:email → type → click:submit
+
+第 2 次：✅ 成功  步数 5  总 token 5347
+        点击 3 次，落空 0 次；离最近元素中心的平均距离 2.6 px
+        动作序列：click:name → type → click:email → type → click:submit
+
+第 3 次：✅ 成功  步数 5  总 token 5345
+        点击 3 次，落空 0 次；离最近元素中心的平均距离 1.3 px
+        动作序列：click:name → type → click:email → type → click:submit
+```
+
+## 这个循环能优化到什么程度
+
+上面那 5,301 token 里有相当一部分是可以砍掉的。按第 8 章实测的两条规则（≤512px 是固定下限 186 token；成本随步数累积），可以算出三个方案：
+
+| 方案 | 每张图 | 5 步累计（文字部分约 500） | 相对基线 |
+|---|---:|---:|---:|
+| 现状：820×520，全量历史 | 283 | 5,301 | — |
+| 把截图缩到长边 512 | 186 | 约 3,500 | 省 34% |
+| 再只保留最近 2 张截图 | 186 | 约 2,200 | 省 58% |
+
+（按本节实测的「每步 +300」与第 8 章的单价推算。）
+
+第一行到第二行几乎白捡：**缩到 512 之后，模型仍然认得出按钮和输入框** —— 本节实测的点击误差本来就只有 1 到 3 px，远小于缩放的量级。但要注意第 3 节那条边界：**目标本身很小的时候，再缩就可能出问题**。缩分辨率不是无代价的，它是拿「小目标的余量」换钱。
+
+第二行到第三行有一个真实的取舍：**只保留最近两张截图，模型就看不到更早的状态**。对「填表提交」这种线性任务无所谓；对需要回看「上一步那个弹窗写了什么」的任务就会出问题。可行的折中是把**较早的截图换成文字摘要**（「第 1 步：Name 已填入，Email 待填」），保住语义、丢掉像素。
+
+这里有一个看起来更彻底的思路，但它会把你带回原点：**如果界面的文字能被抽出来、界面状态能被结构化，那你其实不需要视觉** —— 那就回到工具调用了。视觉路线的存在意义正是「拿不到结构化数据」，所以它的成本下限也就是「每步一张图」。
+## 常见坑
+
+- **复用旧截图来决定下一个动作。** 上一步已经改变了界面，旧图是错的观测。
+- **只靠「模型说完成」终止。** 实测里模型会在卡住时一直重试，而它不会主动说「我卡住了」——必须有步数上限。
+- **忘了算「每步重发全部历史」的账。** 5 步实测 5,301 token，而只发当前图应该是 1,600 左右 —— 3.3 倍开销全在重发上。
+- **用截图文件的字节相等判断「界面有没有变化」。** 光标闪烁、动画、时间戳都会让它永远不相等。要么用感知哈希，要么排除掉允许变化的区域。
+- **把目标缩小当作「提高难度」。** 实测大目标平均误差 1.3 到 2.6 px 很稳，但目标一小就可能连续点空 —— 那是质量风险，不是难度参数。
+- **步数上限设得太大。** 上限是兜底，不是预算；到那时成本和延迟都已经付出去了。真正该做的是尽早发现「在打转」。

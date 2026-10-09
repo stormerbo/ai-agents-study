@@ -1,0 +1,225 @@
+---
+lesson: computer-use/what-differs
+title: 它和工具调用的三点区别
+status: drafting
+---
+
+有一大类任务没有 API：只能在一个界面上点。
+
+这类任务的做法叫「计算机使用」（computer use）—— 给模型一张截图，它回一个动作，你执行，然后再给它一张新截图。看起来和前面几章的工具调用很像：都是模型决定下一步做什么，你的代码去执行。
+
+但把它们当成同一件事，会在几个地方被绊住。这一节把三点区别摆清楚，每一点都有实测支撑。
+
+## 区别一：观测是像素，不是结构化数据
+
+工具调用的返回值是**为你设计过的数据结构**：一个 JSON，字段名、类型、含义都由你决定。
+
+计算机使用的观测是**一张位图**。实测里我用一个 820×520 的合成界面，截出来是 8,187 字节的 PNG，模型拿到的输入是 382 token —— 而其中没有任何字段名、没有 id、没有类型信息。**它看到的只是像素。**
+
+这个差别带来一个直接后果：**模型必须自己从像素里「认」出哪里是输入框、哪里是按钮**。而这个「认」是概率性的 —— 第 3 节会看到它偶尔会认错。
+
+## 区别二：动作是通用原语，不含领域语义
+
+工具调用里，每个工具都是为任务定制的：`create_user(name, email)` 这个名字本身就携带了「创建用户」这层意思，而且它的参数是类型化的。
+
+计算机使用的动作空间小得惊人。实测里我只给了三个：
+
+```json
+{"action": "click", "x": 280, "y": 171}
+{"action": "type", "text": "Zhang San"}
+{"action": "done"}
+```
+
+**这三个动作能表达任何界面操作，也能造成任何后果。** 同一个 `click`，点在「Create」上是建一个用户，点在「删除全部数据」上就是灾难 —— 而**动作本身分不出这两者**。
+
+这正是这一章要反复强调的一件事：**通用性带来的不是能力，是风险**。工具调用的动作空间是封闭的（你定义了 8 个工具，模型就只能做这 8 件事），而计算机使用的动作空间是**开放**的 —— 只要界面上有那个东西，它就能点。
+
+## 区别三：动作没有返回值
+
+这是三点里最容易被忽略、也最麻烦的一点。
+
+工具调用失败时你会拿到一个明确的信号：HTTP 400 加上原因，或者 `is_error: true` 加一句说明（第 4 章实测过，模型看到这个会调整策略）。
+
+而 `click` 这个动作**什么都不返回**。它只是一个坐标。点了之后发生了什么，只能靠**下一次截图**去看：
+
+- 界面变了 → 大概生效了
+- 界面没变 → 可能没点中、可能点了但没反应、也可能它本来就不该有反应
+
+**这三种情况在下一次截图里长得一模一样。** 第 3 节会实测这个困境：当点击确实无效时，模型会怎么做。
+
+## 实测：一步的完整往返
+
+把上面前两点落成一个最小可运行例子 —— 渲染一张界面，问模型一个动作：
+
+| 提问 | 模型输出 | 输入 token |
+|---|---|---:|
+| 把光标放到 Name 输入框里 | `{"action":"click","x":280,"y":171}` | 382 |
+| 在已聚焦的框里输入 | `{"action":"type","text":"Zhang San"}` | 384 |
+
+（实跑数据，2026-10-09，`deepseek-flash`。）
+
+第一条值得细看：Name 输入框的实际区域是 x∈[60,500]、y∈[150,196]，中心是 (280, 173)。**模型点了 (280, 171) —— 差 2 个像素。**
+
+这个精度相当高（第 2 节会看到一整轮循环的平均误差是 1.3 到 2.6 px）。但它也说明「认位置」这件事是**概率性**的：一个 2px 的误差在 180×52 的大按钮上无所谓，在一个 44×26 的小按钮上就可能直接落空 —— 而那个失败是**静默**的。
+
+<Mermaid
+  chart={`
+flowchart TB
+    A["工具调用"] --> B["观测：结构化 JSON<br/>字段名与类型都由你定"]
+    A --> C["动作：定制工具<br/>create_user / search / ..."]
+    A --> D["反馈：400 + 原因<br/>或 is_error + 说明"]
+    E["计算机使用"] --> F["观测：一张位图<br/>只有像素，没有字段名"]
+    E --> G["动作：通用原语<br/>click / type / done"]
+    E --> H["反馈：什么都没有<br/>只能靠下一次截图猜"]
+    H -.-> I["⚠️ 界面没变有三种可能：<br/>没点中 / 点了没反应 / 本来就没反应"]
+    G -.-> J["⚠️ 同一个 click<br/>能建用户也能删库"]
+`}
+/>
+
+## 那为什么还要用它
+
+上面三点全是不利的。那为什么这一章还要花一整章讲它？
+
+因为有一类任务**真的没有 API**：
+
+- 内部的老后台系统，只有网页界面，没有对外开放的接口
+- 第三方 SaaS 的免费版不给 API 权限
+- 桌面软件（财务、设计工具）根本没有 HTTP 接口
+- 一次性任务：只是要把 20 条记录录进一个表单，为它单独写一个 API 集成不值当
+
+这些场景的共同点是：**要么没有接口，要么写集成的成本高于点界面的成本**。计算机使用是这类任务里唯一的自动化手段。
+
+还有一类任务 **API 能做但不值得做**。比如「把这个网站上的价格抄下来」：理论上你可以分析它的接口、处理反爬、维护解析逻辑 —— 但那是一个需要持续维护的集成，而对方一改版你就得跟着改。视觉方案不需要对方的任何配合。
+
+所以这一章的定位不是「推荐你用」，而是：**当你确实没有别的选择时，让你知道代价在哪、边界该画在哪。**
+
+## 一整轮循环长什么样
+
+把单步串起来就是一个循环。用一个合成表单环境跑一次真实任务（填两个字段再提交），动作序列是：
+
+```text
+click:name → type → click:email → type → click:submit
+```
+
+5 步、5 次模型往返、约 5,300 token，三次运行三次成功。
+
+注意「步」和「往返」在这里是同一个数：**每一步都要把当前屏幕重新发给模型一次**。而且历史会累积 —— 每步的输入 token 分别是 473、758、1053、1356、1661，**每步大约多出一张截图的成本**（这一节那个 820×520 的界面约 283 token）。
+
+第 2 节会把这条循环拆开讲：为什么必须每步重新观测、终止条件该怎么设计、以及成本为什么是二次的。
+## 三点区别分别落在哪一节
+
+- **观测是像素** → 第 2 节的观测-动作循环（为什么每步必须重新截图）、第 3 节（为什么偶尔会点空）
+- **动作是通用原语** → 第 4 节的权限与活动范围（动作空间开放，等于风险面开放）
+- **没有返回值** → 第 3 节（点了没反应时会发生什么）、第 4 节（确认点该放在哪一层）
+
+读后面几节时如果觉得某条结论有点突然，回到这张对照上通常能对上。
+
+还有一点值得先记下：**这三条不是三个独立的问题，而是同一个根源的三种表现。** 工具调用之所以好做，是因为**你为任务设计了一个受限的接口**；计算机使用之所以难做，是因为它面对的是**一个没有为你做任何让步的真实界面**。后面每一节的具体结论，最后都能回到这一句。
+## 完整可运行代码
+
+这段代码渲染一张界面，然后让模型回一个动作 —— 它把上面三点都摆在一屏里。
+
+```python
+"""最小的一步：看一眼像素，回一个动作。
+
+它把「计算机使用与函数调用的三点区别」摆在一屏里：
+  观测是像素、动作是通用原语、而你无法从返回值知道动作有没有生效。
+
+实跑状态：2026-10-09，deepseek-flash。
+"""
+import base64, json, os, urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+W, H = 820, 520
+BUTTON = (60, 380, 240, 432)          # Create 按钮的区域
+
+
+def render(focus=None, value=""):
+    img = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, 64], fill=(240, 244, 250))
+    d.text((60, 24), "NEW USER FORM", fill=(20, 30, 50), font=ImageFont.truetype(FONT, 20))
+    d.text((60, 110), "Name", fill=(90, 100, 115), font=ImageFont.truetype(FONT, 14))
+    d.text((60, 210), "Email", fill=(90, 100, 115), font=ImageFont.truetype(FONT, 14))
+    d.rectangle([60, 150, 500, 196], outline=(60, 120, 220) if focus == "name" else (170, 180, 195),
+                width=3 if focus == "name" else 1)
+    d.rectangle([60, 250, 500, 296], outline=(60, 120, 220) if focus == "email" else (170, 180, 195),
+                width=3 if focus == "email" else 1)
+    d.text((72, 164), value, fill=(20, 20, 20), font=ImageFont.truetype(FONT, 18))
+    d.rectangle(list(BUTTON), fill=(30, 110, 220))
+    d.text((BUTTON[0] + 26, BUTTON[1] + 15), "Create", fill="white", font=ImageFont.truetype(FONT, 18))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+SYSTEM = "\n".join([
+    "你是一个通过截屏操作界面的 agent。你必须只输出一个 JSON 对象，不要解释。",
+    '{"action":"click","x":<整数>,"y":<整数>} 或 {"action":"type","text":"..."}' + ' 或 {"action":"done"}',
+    "坐标以截图左上角为原点。",
+])
+
+
+def step(prompt, focus=None, value=""):
+    png = render(focus, value)
+    body = json.dumps({"model": os.environ["VERIFY_MODEL"], "max_tokens": 400, "system": SYSTEM,
+                       "messages": [{"role": "user", "content": [
+                           {"type": "text", "text": prompt + "\n这是当前屏幕："},
+                           {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                            "data": base64.b64encode(png).decode()}},
+                       ]}]}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read())
+    u = data.get("usage", {})
+    tok = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+           + u.get("cache_creation_input_tokens", 0))
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    return text.strip(), tok, png
+
+
+if __name__ == "__main__":
+    kind, n = "PNG", 0
+    for probe in [
+        ("点击 Name 输入框", "把光标放到 Name 输入框里。"),
+        ("在已聚焦的框里输入", "在已聚焦的输入框里输入 Zhang San。"),
+    ]:
+        label, prompt = probe
+        text, tok, png = step(prompt, focus="name" if "已聚焦" in prompt else None)
+        n += 1
+        print("[%s] 输入 %d token（图 %d 字节）" % (label, tok, len(png)))
+        print("   模型输出：%s" % text[:120].replace("\n", " "))
+    print()
+    print("两点观察：")
+    print("1) 观测是一张 %dx%d 的位图 —— 模型看到的是像素，不是 DOM 或字段名。" % (W, H))
+    print("2) 动作只有 click / type / done 三个 —— 它们是通用原语，不含任何领域语义。")
+    print("   同一个 \"click\" 既能点提交，也能删库；模型自己分不清这两者的后果。")
+```
+
+实跑输出（2026-10-09）：
+
+```text
+[点击 Name 输入框] 输入 382 token（图 8187 字节）
+   模型输出：{"action":"click","x":280,"y":171}
+[在已聚焦的框里输入] 输入 384 token（图 8189 字节）
+   模型输出：{"action":"type","text":"Zhang San"}
+
+两点观察：
+1) 观测是一张 820x520 的位图 —— 模型看到的是像素，不是 DOM 或字段名。
+2) 动作只有 click / type / done 三个 —— 它们是通用原语，不含任何领域语义。
+   同一个 "click" 既能点提交，也能删库；模型自己分不清这两者的后果。
+```
+
+## 常见坑
+
+- **把它当成「带截图参数的工具调用」。** 观测是像素、动作是通用原语、而且没有返回值 —— 三点都不同。
+- **以为动作空间小就安全。** `click` 只有两个参数，但它能触发界面上任何后果，包括不可逆的。
+- **用「界面变了没有」判断动作是否成功。** 没变有三种完全不同的原因，而下一次截图分不出来。
+- **把坐标精度当成「模型的能力问题」。** 实测平均误差 1.3 到 2.6 px，已经很准了；真正的风险是**小目标 + 静默失败**的组合（第 3 节实测）。
+- **忽略「观测里没有语义」。** 工具调用里模型能靠字段名理解数据；这里它只能靠画面，所以界面越规整、越符合常见惯例，成功率越高。

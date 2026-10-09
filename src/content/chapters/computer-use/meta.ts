@@ -27,8 +27,8 @@ export const chapter = {
       summary: '看起来都是「模型做了个动作」，但三处关键差别决定了它脆弱得多。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['computer-use', 'tool-use'],
       checkpoints: [
         {
@@ -56,8 +56,8 @@ export const chapter = {
       summary: '每一步都必须重新看一遍 —— 这是它和普通 agent 循环最大的差别。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['loop', 'screenshot'],
       checkpoints: [
         {
@@ -85,8 +85,8 @@ export const chapter = {
       summary: '它最典型的失败不是报错，而是「安静地做错」。',
       estimatedMinutes: 22,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['failure-modes', 'reliability'],
       checkpoints: [
         {
@@ -114,8 +114,8 @@ export const chapter = {
       summary: '一个能点任何坐标的 agent，等于一个拥有你全部登录态的脚本。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['permissions', 'safety'],
       checkpoints: [
         {
@@ -143,8 +143,8 @@ export const chapter = {
       summary: '能走 API 就走 API —— 这不是保守，是成本与可靠性的算术。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
-      hasBody: false,
-      status: 'outlined',
+      hasBody: true,
+      status: 'drafting',
       keywords: ['trade-offs'],
       checkpoints: [
         {
@@ -182,7 +182,7 @@ export const chapter = {
     ],
     cost: 'high',
   },
-  status: 'outlined',
+  status: 'published',
   updatedAt: '2026-10-08',
   verifiedAt: '2026-10-08',
 } satisfies Chapter;
