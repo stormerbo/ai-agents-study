@@ -19,7 +19,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 | 什么时候读           | 读哪一份                             | 里面有什么                                     |
 | -------------------- | ------------------------------------ | ---------------------------------------------- |
-| **动笔写内容之前**   | [docs/PITFALLS.md](docs/PITFALLS.md) | 16 条真实踩过的坑（原 §4）                     |
+| **动笔写内容之前**   | [docs/PITFALLS.md](docs/PITFALLS.md) | 17 条真实踩过的坑（原 §4）                     |
 | **引用实测数字时**   | [docs/DATA.md](docs/DATA.md)         | 全部实测数据 +「未复现」清单（原 §6.3 / §6.4） |
 | **决定接下来做什么** | [docs/PROGRESS.md](docs/PROGRESS.md) | 各章完成情况 + 逐节进度表（原 §6.1 / §6.2）    |
 | **规划与设计依据**   | [docs/ROADMAP.md](docs/ROADMAP.md)   | 章节大纲、未实现功能、推进策略（原 §7）        |
@@ -39,7 +39,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ```bash
 pnpm dev          # 本地开发，http://localhost:3000
-pnpm build        # 构建（158 个静态页面）
+pnpm build        # 构建（206 个静态页面）
 pnpm build-search # 生成搜索索引（必须在 build 之后跑）
 pnpm typecheck    # next typegen && tsc --noEmit
 pnpm test         # vitest，内容完整性 + SSE 编解码
@@ -196,7 +196,7 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 - [x] **全文搜索**（2026-10-09）—— Pagefind，索引 158 页；`pnpm build-search`（须在 `pnpm build` 之后跑）；⌘K 打开
 - [x] **按 `VERIFY.md` 验证**（2026-10-09）—— ch1 的 SDK 脚本已实跑，修掉 3 个真实缺陷（详见 `VERIFY.md` 顶部）；prompt caching 等 4 项受限于兼容端点，待官方 Key
 
-**工具链现状**：`pnpm test`（63 断言 / 4 个文件）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（158 页）；内容体量 **117/117 达标**。**全部干净**。
+**工具链现状**：`pnpm test`（63 断言 / 4 个文件）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（206 页）；内容体量 **117/117 达标**；资源精读 **48/48**。**全部干净**。
 
 ## 9. 给接手的会话的话
 
