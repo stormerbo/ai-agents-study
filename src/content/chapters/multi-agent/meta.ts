@@ -157,6 +157,36 @@ export const chapter = {
       ],
       resourceIds: ['twelve-factor-agents', 'anthropic-building-effective-agents'],
     },
+    {
+      id: 'multi-agent/failure-modes-collaboration',
+      chapterId: 'multi-agent',
+      slug: 'failure-modes-collaboration',
+      title: '协作层的三种失败：并发、趋同、级联',
+      summary: '8 个 agent 并发读改写，期望 8 实际 1 —— 而且没有任何报错。',
+      estimatedMinutes: 26,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'published',
+      keywords: ['concurrency', 'homogenization', 'cascade', 'multi-agent-failure'],
+      checkpoints: [
+        {
+          id: 'concurrent-write',
+          basis: 'documented',
+          sourceIds: ['anthropic-multi-agent-research'],
+          question: '为什么「读-改-写」在 agent 场景下比在普通程序里更容易出问题？',
+          answer:
+            '因为**冲突窗口的长度 = 思考时间**，而 agent 的思考时间比普通程序长几个数量级（一次模型调用几百毫秒到几秒）。实测：8 个 agent 各做一次读-改-写，期望结果 8，**实际结果是 1 —— 丢失 7 次更新，而且没有任何报错**，每个 agent 都报告成功。这类失败难查是因为三个性质叠加：**静默**（无异常）、**非确定**（换时间跑丢失次数不同）、**业务层不可见**（你看到的是最终值不对，不是某次更新失败）。排查时最容易走错的方向是去查模型「是不是它算错了」，而真实原因在它外面。判据：**如果同样输入重跑得到不同结果，先怀疑并发。** 缓解用锁、单写者、或乐观并发（版本号）—— 这是三种协作失败里唯一有成熟标准解法的。',
+        },
+        {
+          id: 'homogenization',
+          basis: 'inferred',
+          question: '怎么判断多个 agent 是否同质趋同？本节的第一版测量错在哪？',
+          answer:
+            '第一版用 **Jaccard 相似度**衡量，量出两两均值只有 0.24（很低），差点得出「没有趋同」的结论。但那个指标测的是**用词重叠**，而趋同发生在**结论层**。读五条输出的第一条就会发现，五个方案说的其实是同一件事（「agent 只给建议，最终决策留给人」），只是措辞不同。**「表述多样」和「观点多样」是两件事。** 修正后的判据是：**把每个 agent 的结论压成一句话，再比那五句话。** 如果它们指向同一个方案，那这个多视角就没带来多样性，只是带来五份改写。想要真的多样性只有两条路：**给不同的上下文**（不同资料切片），或者**给不同的目标或角色**（一个专门找失败场景，一个专门找成本问题）。差异必须来自输入或角色，不能指望来自模型。',
+        },
+      ],
+      resourceIds: ['anthropic-multi-agent-research', 'open-deep-research'],
+    },
   ],
   resourceIds: [
     'anthropic-multi-agent-research',

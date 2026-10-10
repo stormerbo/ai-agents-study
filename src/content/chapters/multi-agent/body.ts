@@ -8,4 +8,5 @@ export const bodies = {
   'isolation-is-the-point': () => import('./03-isolation-is-the-point.mdx'),
   'failure-modes': () => import('./04-failure-modes.mdx'),
   alternatives: () => import('./05-alternatives.mdx'),
+  'failure-modes-collaboration': () => import('./06-failure-modes-collaboration.mdx'),
 } as const;
