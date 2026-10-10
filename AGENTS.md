@@ -19,7 +19,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 | 什么时候读           | 读哪一份                             | 里面有什么                                     |
 | -------------------- | ------------------------------------ | ---------------------------------------------- |
-| **动笔写内容之前**   | [docs/PITFALLS.md](docs/PITFALLS.md) | 17 条真实踩过的坑（原 §4）                     |
+| **动笔写内容之前**   | [docs/PITFALLS.md](docs/PITFALLS.md) | 18 条真实踩过的坑（原 §4）                     |
 | **引用实测数字时**   | [docs/DATA.md](docs/DATA.md)         | 全部实测数据 +「未复现」清单（原 §6.3 / §6.4） |
 | **决定接下来做什么** | [docs/PROGRESS.md](docs/PROGRESS.md) | 各章完成情况 + 逐节进度表（原 §6.1 / §6.2）    |
 | **规划与设计依据**   | [docs/ROADMAP.md](docs/ROADMAP.md)   | 章节大纲、未实现功能、推进策略（原 §7）        |
