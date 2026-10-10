@@ -184,6 +184,96 @@ export const chapter = {
         },
       ],
     },
+    {
+      id: 'context-engineering/chat-template',
+      chapterId: 'context-engineering',
+      slug: 'chat-template',
+      title: 'Chat Template：你写的消息，模型看到的 token',
+      summary: '同样的内容，拆成 10 轮比合并成 1 轮多 25% 的 token。',
+      estimatedMinutes: 22,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'published',
+      keywords: ['chat-template', 'tokenization', 'message-structure'],
+      checkpoints: [
+        {
+          id: 'structure-costs',
+          basis: 'documented',
+          sourceIds: ['claude-messages-api'],
+          question: '同样的内容，拆成多轮比合并成一轮贵多少？为什么？',
+          answer:
+            '**Chat Template 是「消息数组 → token 串」的渲染层 —— 你写的输入不等于模型的输入。** 实测：同样 310 字符的规则块加一句问题，合并成一轮 user 时 input 是 238，拆成 10 轮 user + 10 条 assistant 应答时是 298 —— **差 60 token（25%），而内容字符数完全相同**。多出来的部分是 20 个角色边界的控制标记。位置也会影响：同一段规则放 system 是 234、放第一条 user 是 238、拆两轮问同一句是 254。三个推论：**一、能用一轮说完的别拆多轮**（但要权衡注意力稀释）；**二、结构变化不是免费操作** —— 缓存哈希是对渲染后的 token 串做的，所以改消息顺序、插系统提醒都可能断缓存；**三、不要手写 token 估算公式**，用响应里的 usage 字段对比实测。',
+        },
+        {
+          id: 'where-to-add',
+          basis: 'inferred',
+          question: '要往长会话里加一条每次都适用的规则，应该加在哪里？',
+          answer:
+            '加在**稳定前缀里**（通常就是 system），不要加在每轮的 user 消息前。理由是位置决定了它是「付一次」还是「付每一次」：放 system 里它是稳定前缀的一部分，之后每轮都命中缓存；放 user 消息里则每轮都不同，**前缀从那条消息开始就断了，缓存全废**。而且后者还有第二个问题：**它会随轮次累积** —— 20 轮之后历史里有 20 句几乎相同的话，既占 token，又可能让模型以为那是 20 条独立的约束。所以规则是：**「每次都适用」的放稳定前缀，「只在这一轮适用」的放末尾**。这个差别在长会话里会被放大几十倍。',
+        },
+      ],
+      resourceIds: ['claude-messages-api', 'claude-prompt-caching'],
+    },
+    {
+      id: 'context-engineering/kv-cache',
+      chapterId: 'context-engineering',
+      slug: 'kv-cache',
+      title: 'KV Cache：为什么前缀一改，成本就翻倍',
+      summary: '改一个词，input 从 181 涨回 1205 —— 这是位置化存储的必然。',
+      estimatedMinutes: 24,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'published',
+      keywords: ['kv-cache', 'prompt-cache', 'prefix-stability'],
+      checkpoints: [
+        {
+          id: 'why-prefix',
+          basis: 'documented',
+          sourceIds: ['claude-prompt-caching'],
+          question: '为什么缓存按「前缀」失效，而不是按「内容」？',
+          answer:
+            '**因为 KV Cache 是按位置累积的，Prompt Cache 只是它跨请求的延伸。** 模型为每个 token 算一对 Key/Value，第 i 个 token 的值依赖它前面所有 token。所以你在**开头**插入一个词，从那个位置往后的每一个 token 的 K/V 都变了，缓存整体作废；而在**末尾**追加，前面完全不受影响。这不是实现偷懒 —— **存储单位就是位置化的 Key/Value，它没法按语义判断这段有没有真的变**。实测：前缀约 1800 token，第 2 次请求自动命中 1024，改一个词后命中归零、input 从 181 涨回 1205（6.7 倍）。由此得出四条架构约束：稳定内容在前变化内容在后；工具定义顺序要固定；压缩有缓存代价；effort 这类参与提示渲染的参数不能中途改。',
+        },
+        {
+          id: 'cache-arch-constraint',
+          basis: 'inferred',
+          question: '「前缀稳定」为什么是架构约束而不是优化技巧？它带来哪几条具体约束？',
+          answer:
+            '是架构约束，因为它决定了**什么样的上下文结构是可用的**，而不只是能不能更快。四条具体约束：**一、稳定内容必须在前面、变化内容必须在后面** —— 把时间戳或请求 id 写进 system 开头会导致缓存永远不命中，而请求完全正常、没有任何警告。**二、工具定义顺序要固定** —— 如果每次由无序字典生成，缓存就是零。**三、压缩和改写历史有缓存代价** —— 缓存从被改写的位置断开，这是第 4 节「压缩更贵」的一个底层原因。**四、参与提示渲染的参数不能中途改** —— 第 1 章记过：同一会话里改顶层的 effort 会让之前的缓存失效，为了省钱降 effort 反而可能花更多钱。另外两点：命中缓存时 input_tokens 只算未命中部分（实测 181 vs 1205），所以判断真实成本必须把 cache_read 一起看；以及凡是参与前缀拼接的结构，序列化必须是确定的（排序或有序结构），不能依赖语言默认遍历顺序。',
+        },
+      ],
+      resourceIds: ['claude-prompt-caching', 'claude-pricing'],
+    },
+    {
+      id: 'context-engineering/agent-skills',
+      chapterId: 'context-engineering',
+      slug: 'agent-skills',
+      title: 'Agent Skills：可组合的上下文单元',
+      summary: '只给索引省 71%，但正确率掉一个 —— 必须两阶段加载。',
+      estimatedMinutes: 24,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'published',
+      keywords: ['agent-skills', 'lazy-loading', 'instruction-packages'],
+      checkpoints: [
+        {
+          id: 'index-only-danger',
+          basis: 'documented',
+          sourceIds: ['openai-agents-sdk-python'],
+          question: '只给技能索引（不给完整指令）的危险是什么？实测差多少？',
+          answer:
+            '**因为缺规则时模型不会停下来问，它会用通用直觉给一个看起来合理的错答案。** 实测：6 个 skill、5 个任务，全部预载正文时 5/5 正确（input 516）；只给索引时 4/5 正确（input 148，省 71%）—— 错的那个是「按业务键去重」，完整指令里有一条「大小写与首尾空格不敏感」，索引的简短描述里没有，于是模型按字面把 A1、a1、A2 当成三条。**你写的每一条规则都是「通用直觉会出错」的证据；把它藏起来，等于把错误放出来。** 正确形态是两阶段：索引 → 模型选中 → 加载该 skill 正文 → 再答。实测两阶段 3/3 正确、两轮总 token 201，同样任务下全部预载是 516 —— **省 61% 且正确率不掉**。',
+        },
+        {
+          id: 'skill-vs-tool',
+          basis: 'inferred',
+          question: 'skill 和 tool 有什么区别？它们怎么配合？',
+          answer:
+            '**工具描述「能做什么」（能力），skill 描述「该怎么做」（规则）。** 工具的典型粒度是一次操作（查订单、发通知），由你的代码执行；skill 的典型粒度是一类任务的做法（退款金额怎么算），由模型自己按规则执行。加载方式也不同：工具定义必须在上下文里（否则模型不知道有它），skill 的元数据常驻、正文按需加载。它们会配合：一个 skill 里可以写「先调用 lookup_order，再按下面规则判断」，把工具调用顺序也固化下来。**这时候 skill 实际上在承担一部分工作流编排的职责** —— 这是它比工具描述更强的地方，也是它更危险的地方：规则写错了它照做，而且不会报错。',
+        },
+      ],
+      resourceIds: ['openai-agents-sdk-python', 'anthropic-context-engineering'],
+    },
   ],
   resourceIds: [
     'anthropic-context-engineering',
