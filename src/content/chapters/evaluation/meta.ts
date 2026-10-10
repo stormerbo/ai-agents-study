@@ -107,6 +107,36 @@ export const chapter = {
       resourceIds: ['open-deep-research', 'ai-engineering-huyen'],
     },
     {
+      id: 'evaluation/contamination',
+      chapterId: 'evaluation',
+      slug: 'contamination',
+      title: '数据泄漏与「模型出题」的陷阱',
+      summary: '评测集坏了不会报错 —— 它会继续给你绿色的勾。',
+      estimatedMinutes: 26,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'drafting',
+      keywords: ['contamination', 'leakage', 'synthetic-data'],
+      checkpoints: [
+        {
+          id: 'three-kinds',
+          basis: 'inferred',
+          question: '数据泄漏有哪三种？自己项目里最危险的是哪一种？',
+          answer:
+            '三种：**训练集泄漏**（测试题在模型预训练时见过，你基本无能为力，只能靠选新题）、**提示词泄漏**（评测时把参考答案或相似样例放进了上下文，常见于 few-shot 例子与测试集内容重合）、**迭代泄漏**（反复用同一套评测集调参，直到分数好看）。**自己项目里最危险的是第三种** —— 它不需要任何外部条件，只要你有「改一版、跑一下、再改一版」这个循环，它就在发生。危害在于分数此时代表的是「你对这套题的拟合程度」，而不是能力。唯一有效的对抗办法是留一份**从不参与调优的留出集**，只在做最终判断时打开。',
+        },
+        {
+          id: 'generated-questions',
+          basis: 'documented',
+          sourceIds: ['open-deep-research'],
+          question: '让模型批量生成单选题，实测会出哪三个问题？',
+          answer:
+            '三个都可测。**一、答案分布严重偏斜**：两次独立运行里 B 占 60% 与 73.7%，而 D **一次都没出现**，卡方统计量 16.80 远超临界值 7.81 —— 一个「总是选 B」的策略能拿 70 分。**二、考点高度重复**：名义 19 道题按语义归并后只覆盖 6 个概念（重复率 68%），而且措辞会漂移 ——「中间遗失」「位置偏差」「位置偏见」在字面上是三条，实际是一条。**三、格式并不总是听话**：同样的严格格式要求，一次 8 道里 3 道解析不出答案（62.5% 合规），另一次 20 道里只 1 道不合格（95%）—— 失败率不可复现，所以必须准备解析失败的重试与兜底。结论：模型生成的题只能当**候选池**，准入环节要人工筛、配平答案分布、补齐缺失概念。',
+        },
+      ],
+      resourceIds: ['open-deep-research', 'ai-engineering-huyen'],
+    },
+    {
       id: 'evaluation/llm-as-judge',
       chapterId: 'evaluation',
       slug: 'llm-as-judge',

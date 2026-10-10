@@ -6,7 +6,8 @@ export const bodies = {
   'define-good': () => import('./01-define-good.mdx'),
   'pass-k': () => import('./02-pass-k.mdx'),
   dataset: () => import('./03-dataset.mdx'),
-  'llm-as-judge': () => import('./04-llm-as-judge.mdx'),
-  traces: () => import('./05-traces.mdx'),
-  regression: () => import('./06-regression.mdx'),
+  contamination: () => import('./04-contamination.mdx'),
+  'llm-as-judge': () => import('./05-llm-as-judge.mdx'),
+  traces: () => import('./06-traces.mdx'),
+  regression: () => import('./07-regression.mdx'),
 } as const;
