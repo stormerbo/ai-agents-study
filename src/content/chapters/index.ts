@@ -16,6 +16,7 @@ import { chapter as mcp } from './mcp/meta';
 import { chapter as multimodal } from './multimodal/meta';
 import { chapter as computerUse } from './computer-use/meta';
 import { chapter as evaluation } from './evaluation/meta';
+import { chapter as codingAgent } from './coding-agent/meta';
 import { chapter as sandboxing } from './sandboxing/meta';
 import { chapter as agentSecurity } from './agent-security/meta';
 import { chapter as costAndLatency } from './cost-and-latency/meta';
@@ -54,6 +55,7 @@ export const chapters: Chapter[] = [
   multimodal,
   computerUse,
   evaluation,
+  codingAgent,
   sandboxing,
   agentSecurity,
   costAndLatency,
