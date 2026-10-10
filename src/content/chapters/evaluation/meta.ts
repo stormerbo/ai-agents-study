@@ -137,6 +137,95 @@ export const chapter = {
       resourceIds: ['open-deep-research', 'ai-engineering-huyen'],
     },
     {
+      id: 'evaluation/eval-env',
+      chapterId: 'evaluation',
+      slug: 'eval-env',
+      title: '评测环境：分数是「模型 + 环境」的结果',
+      summary: '模型答 5 而真实值是 3 —— 错的不是模型，是环境没重置。',
+      estimatedMinutes: 24,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'drafting',
+      keywords: ['eval-environment', 'state-isolation', 'reproducibility'],
+      checkpoints: [
+        {
+          id: 'five-elements',
+          basis: 'inferred',
+          question: '一个能复现的评测环境，至少要把哪五件事定清楚？',
+          answer:
+            '五件：**初始状态**（开始前世界是什么样 —— 不定清楚就会跑出本节那个「第二次结果变了」）、**工具集**（有哪些工具、返回什么格式 —— 换了工具描述就说不清分数变化来自模型还是环境）、**终止条件**（什么算做完了 —— 否则有的跑 3 步有的跑 20 步，成本与成功率都不可比）、**验证器**（判成功的依据 —— 没有它分数不可复现）、**隔离方式**（用例之间怎么互不影响 —— 否则用例顺序会改变结果）。其中**初始状态与隔离方式是工程上最容易漏、后果最严重的两条**：它们不会让评测报错，只会让分数悄悄偏移。',
+        },
+        {
+          id: 'setup-teardown',
+          basis: 'inferred',
+          question: '为什么 teardown 应该「只检查不修复」？setup 为什么要深拷贝？',
+          answer:
+            '**teardown 只检查不修复**：如果它顺手帮你把状态重置了，那么忘记调 setup 的用例仍然能跑对 —— 污染被自愈掩盖了。让它只做断言（assert self.state == self.initial），忘记 setup 的代码就会在下一次跑时立刻失败。**让问题暴露比让它自愈更有价值**，因为自愈掩盖的是「你的评测框架有 bug」这个事实。**setup 必须深拷贝**：直接赋值 self.state = self.initial 会让第一次运行改掉 initial 本身，于是第二次的「初始状态」已经不是初始状态了 —— 这是最隐蔽的一类污染，因为它只在跑第二遍时才出现。',
+        },
+      ],
+      resourceIds: ['open-deep-research', 'ai-engineering-huyen'],
+    },
+    {
+      id: 'evaluation/ablation',
+      chapterId: 'evaluation',
+      slug: 'ablation',
+      title: '消融：怎么知道哪个改动真的有用',
+      summary: '单独去掉都没事、两个都去掉才掉分 —— 单变量消融会低估。',
+      estimatedMinutes: 24,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'drafting',
+      keywords: ['ablation', 'interaction-effect', 'attribution'],
+      checkpoints: [
+        {
+          id: 'single-vs-combined',
+          basis: 'documented',
+          sourceIds: ['open-deep-research'],
+          question: '为什么单变量消融会低估组件的价值？',
+          answer:
+            '**单变量消融会系统性低估**：实测里去掉角色定义、去掉格式要求，各自对约束合规得分的影响都是 0；但**两个一起去掉**分数掉到 7.0，而且掉分那一次明细是 8 8 3 8 8 —— 五次里有一次严重不合格。原因是这两个组件**互为兜底**：只去掉一个时另一个还在起作用，两个都去掉兜底才消失。所以消融必须做成**组合消融**：至少覆盖每个组件单独去掉、以及全部去掉两个端点。第二个发现是去掉约束后**输出 token 反而变长**（2404 → 2872），因为格式要求同时禁止了模型写前言与后记 —— 约束不只是为了好解析，它也在省输出成本。第三条是**重复次数不够会出假阴性**：8 8 3 8 8 如果只跑一次恰好抽到 8，就会得出「完全没影响」的错误结论。',
+        },
+        {
+          id: 'metric-layers',
+          basis: 'inferred',
+          question: '为什么消融的指标不能只用 0/1 的均值？',
+          answer:
+            '因为 0/1 的均值丢掉了两种关键信息。**一、失败得有多严重**：8 8 3 8 8 的均值是 7.0，而假设的 7 7 7 7 7 均值也是 7.0，但前者是「四次完美一次崩」、后者是「每次都差一点」—— 前者要查那个偶发坏输入，后者要整体调提示词。**二、失败的频率与尾部**：均值会把偶尔的严重失败平均掉，而生产上你关心的正是尾部 —— 那 20% 的概率完全不合格，比均值掉 1 分严重得多。所以指标至少要分两层：**分级分数**（知道差多少）与**合格率/最小值**（知道多久崩一次）。这也是消融跑完要同时记录 mean 与 min 的原因。',
+        },
+      ],
+      resourceIds: ['open-deep-research', 'ai-engineering-huyen'],
+    },
+    {
+      id: 'evaluation/paired-comparison',
+      chapterId: 'evaluation',
+      slug: 'paired-comparison',
+      title: '配对比较：为什么排名比绝对分可靠',
+      summary: '正确率分不出差别时，配对能把任务级噪声消掉 17%。',
+      estimatedMinutes: 26,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'drafting',
+      keywords: ['paired-comparison', 'sign-test', 'sensitivity'],
+      checkpoints: [
+        {
+          id: 'why-paired',
+          basis: 'documented',
+          sourceIds: ['open-deep-research'],
+          question: '配对比较为什么比绝对比较灵敏？它能消掉哪部分噪声、消不掉哪部分？',
+          answer:
+            '**配对把任务级的差异消掉，所以更灵敏。** 实测：同 8 个任务上比较两个提示词变体，绝对比较下 A 组标准差 321.0、B 组 625.7，标准误 248.6；配对后看每个任务内部的差值，差值标准差 584.8，标准误 206.8 —— **降到约 83%，即灵敏度提升 17%**。降下来的是「任务本身造成的波动」（优惠券核销天然写得长、发票开具天然写得短），这部分在两组的绝对值里都存在、会互相干扰，做差之后被消掉，只剩同一任务下两个条件的差别。注意它只降 17% 不是降到零，因为任务对改动的敏感度本身也有差异（优惠券核销 B 长 1297、余额提现 B 短 534）。**但配对只整理数据、不给结论**，还要做检验：符号检验 6/8 同向、p≈0.145，**不显著** —— 方向明确但 8 个样本不足以判定。按这个方向性估算，要 p<0.05 约需 15~20 个任务。',
+        },
+        {
+          id: 'write-denominator',
+          basis: 'inferred',
+          question: '为什么报告分数必须写清分母？本节犯的是一个什么错？',
+          answer:
+            '因为「7 分」看不出对错。本节的配对实验里每个格子都是 7，我第一反应是「16 次运行全是 7/8，说明有一条约束从未被满足，这不正常」，差点把它当成一个发现写进正文。回去数约束列表才发现那里只有 **7 条**，**7 就是满分**，从头到尾没有任何约束失败。这个错误有两个特点：**它是静默的**（分数本身看不出分母对不对，起了疑心才会去数），以及**它会生成假发现**（「有一条约束从不通过」听起来像个真问题，不核对就会变成一个假的改进任务）。所以规则是：**报告任何分数都要写清分母**，「7/7」与「7/8」是完全不同的结论；而且分母也该尽量由代码算，不要人工填。',
+        },
+      ],
+      resourceIds: ['open-deep-research', 'ai-engineering-huyen'],
+    },
+    {
       id: 'evaluation/llm-as-judge',
       chapterId: 'evaluation',
       slug: 'llm-as-judge',
@@ -193,6 +282,36 @@ export const chapter = {
         },
       ],
       resourceIds: ['claude-agent-sdk', 'openai-agents-sdk-python'],
+    },
+    {
+      id: 'evaluation/confidence',
+      chapterId: 'evaluation',
+      slug: 'confidence',
+      title: '置信区间：1pp 的提升需要多少样本',
+      summary: 'p=0.9 时分辨 1pp 要一万四千次 —— 有些实验你根本做不起。',
+      estimatedMinutes: 26,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'drafting',
+      keywords: ['confidence-interval', 'sample-size', 'wilson'],
+      checkpoints: [
+        {
+          id: 'baseline-matters',
+          basis: 'documented',
+          sourceIds: ['ai-engineering-huyen'],
+          question: '为什么基线成功率会改变所需样本量？差多少？',
+          answer:
+            '因为**方差是 p(1-p)**。样本量公式里那一项在分子上：n = 4·z²·p(1-p)/delta²。p=0.5 时 p(1-p)=0.25 最大；p=0.9 时是 0.09；p=0.99 时只剩 0.0099 —— 约前者的 1/25，所以所需样本也小约 25 倍。实测：分辨 1pp，p=0.5 要 38,416 次，p=0.9 要 13,830 次，p=0.99 只要 1,522 次。直觉上也能理解：一个 99% 成功率的系统，失败本身很稀有，少数几次失败就能说明分布；而 50% 的系统两种结果各一半，需要更多样本才能确认偏离。这条推论的实用价值是：**基线在 50% 附近时不要指望靠评测看出 1~2pp 的改进**，那种改进要靠机制证据或换指标，而不是刷样本。',
+        },
+        {
+          id: 'how-many-runs',
+          basis: 'inferred',
+          question: '为什么「跑 20 次全绿」不足以断言成功率 ≥95%？正确数字是多少？',
+          answer:
+            '因为「平均多久失败一次」和「置信下界」是两件事。我第一版写的是 n = 1/(1-0.95) = 20，思路是「95% 的反面是 5%，所以 20 次里错一次」。但这算的是**平均失败间隔**，而我们要的是「在 5% 的概率下真实成功率仍然低于 95%」这个条件，它是**乘积**关系：0.95^n <= 0.05，解得 n >= ln(0.05)/ln(0.95) = 58.4，即 **59 次**，不是 20 次 —— 差了三倍。这个错误诱人之处在于 20 这个数字「看起来合理」（「跑 20 次全绿就稳了」是常听到的说法），而它把置信要求放松了。判断办法：**凡是「至少需要多少次」的问题，先写出要满足的不等式再解它**，不要凭直觉套除法。',
+        },
+      ],
+      resourceIds: ['open-deep-research', 'ai-engineering-huyen'],
     },
     {
       id: 'evaluation/regression',
