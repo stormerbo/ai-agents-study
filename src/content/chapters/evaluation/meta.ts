@@ -49,6 +49,35 @@ export const chapter = {
       resourceIds: ['ai-engineering-huyen', 'claude-agent-sdk'],
     },
     {
+      id: 'evaluation/pass-k',
+      chapterId: 'evaluation',
+      slug: 'pass-k',
+      title: 'Pass@k 与 Pass^k：能力和可靠性是两件事',
+      summary: '一个看「能不能做对」，一个看「稳不稳」—— k 越大，两者差得越远。',
+      estimatedMinutes: 24,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'drafting',
+      keywords: ['pass@k', 'reliability', 'ceiling-effect'],
+      checkpoints: [
+        {
+          id: 'at-vs-pow',
+          basis: 'inferred',
+          question: 'Pass@k 和 Pass^k 分别在测什么？为什么必须一起报？',
+          answer:
+            'Pass@k 测的是**能力上限** —— k 次里至少成功一次，回答「它到底会不会做」；Pass^k 测的是**可靠性下限** —— k 次全部成功，回答「它稳不稳」。k=1 时两者相等，k 越大差得越远：前者只升不降，后者只降不升。必须一起报的理由很直接 —— **只报 Pass@k 会掩盖失败率**。「Pass@5 有 95%」听起来很好，但如果 Pass^5 只有 60%，意思是每五个用户里就有两个会遇到至少一次失败。它们在规模化时的差距还会被放大：单步 99% 的任务，50 步之后全对率只剩 60.5%。所以低 k 看能力、高 k 看可靠性，两个数字对应两种完全不同的工程动作 —— 能力不足要换模型或改提示词，可靠性不足要加重试、检查点与幂等。',
+        },
+        {
+          id: 'saturated-eval',
+          basis: 'inferred',
+          question: '评测集跑出来一片绿、Pass@k 与 Pass^k 都是 100%，第一个要怀疑什么？',
+          answer:
+            '**先怀疑评测集饱和，而不是庆幸模型稳定。** 这是天花板效应：任务太简单，分数顶在 100%，于是任何改动都测不出差异。它的危险在于**静默** —— 评测集不会报错，只会一直给你绿色的勾，直到线上出事你才发现它从来没测到过东西。判断办法是看成功率分布：一批题全对或全错，这批题对该模型就是无效的，你要的是成功率落在 50%~90% 的区间。修法是四条：从**真实失败轨迹**造题（而不是凭空想，因为你能想到的都是模型会做的）、让难度可调（同一个任务做简单/标准/困难三版）、看方差而不只看总分（同题跑五次，是否每次都一致）、以及**给评测集记一个「当前成功率」当监控指标** —— 长期 100% 不是好信号，是该加难度了。',
+        },
+      ],
+      resourceIds: ['open-deep-research', 'ai-engineering-huyen'],
+    },
+    {
       id: 'evaluation/dataset',
       chapterId: 'evaluation',
       slug: 'dataset',
