@@ -38,8 +38,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## 0. 快速上手
 
 ```bash
-pnpm dev          # 本地开发，http://localhost:3000
-pnpm build        # 构建（206 个静态页面）
+pnpm dev          # 本地开发，http://localhost:3001
+pnpm build        # 构建（225 个静态页面）
 pnpm build-search # 生成搜索索引（必须在 build 之后跑）
 pnpm typecheck    # next typegen && tsc --noEmit
 pnpm test         # vitest，内容完整性 + SSE 编解码
@@ -144,7 +144,7 @@ node scripts/check-links.mjs   # 巡检所有外链可用性
 
 ```bash
 export PWCLI="$HOME/.codex/skills/playwright/scripts/playwright_cli.sh"
-PORT=3100 pnpm start &
+npx next start -p 3100 &   # 换端口跑视觉验证（脚本里默认是 3001，用 -p 覆盖）
 "$PWCLI" open "http://localhost:3100/chapters/..."
 "$PWCLI" resize 1300 1000
 "$PWCLI" eval "() => { document.documentElement.className='light'; ... }"   # 切主题
@@ -186,7 +186,12 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 
 ## 8. 待办清单
 
-**内容缺口：** 无 —— **全书 24 章 / 117 节全部完成正文**（2026-10-09 收口），每节都齐了「实测数据 + Mermaid 图 + 完整可运行代码 + 真实错误案例」。
+**内容缺口：** 无 —— **全书 26 章 / 134 节全部完成正文**（2026-10-10 收口），每节都齐了「实测数据 + Mermaid 图 + 完整可运行代码 + 真实错误案例」。
+
+> 2026-10-10 按 [docs/GAP-ANALYSIS.md](docs/GAP-ANALYSIS.md) 补齐五项缺口：评估章 5→11 节、新增 Coding Agent 章（5 节）、
+> 上下文工程补机制层 3 节（Chat Template / KV Cache / Agent Skills）、多 Agent 补协作层失败模式、新增持续进化章（2 节）。
+> 章序相应调整：coding-agent=23、continuous-evolution=24、capstone=25。
+> 改章号可用 `node verify-output/check-refs.mjs` 核对「第 N 章」引用，当前悬空引用为 0。
 
 **之后：**
 
@@ -201,7 +206,10 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 - [x] **全文搜索**（2026-10-09）—— Pagefind，索引 158 页；`pnpm build-search`（须在 `pnpm build` 之后跑）；⌘K 打开
 - [x] **按 `VERIFY.md` 验证**（2026-10-09）—— ch1 的 SDK 脚本已实跑，修掉 3 个真实缺陷（详见 `VERIFY.md` 顶部）；prompt caching 等 4 项受限于兼容端点，待官方 Key
 
-**工具链现状**：`pnpm test`（63 断言 / 4 个文件）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（206 页）；内容体量 **117/117 达标**；资源精读 **48/48**。**全部干净**。
+**工具链现状**：`pnpm test`（63 断言 / 4 个文件）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（225 页）；内容体量 **134/134 达标**；资源精读 **48/48**，其中 33 篇有中译全文。**全部干净**。
+
+**端口**：`pnpm dev` / `pnpm start` 默认 **3001**（脚本里写死 `-p 3001`）。要换端口用 `npx next start -p 3100` ——
+**不要用 `PORT=3100 pnpm start`**，CLI 参数会压过环境变量。
 
 ## 9. 给接手的会话的话
 
