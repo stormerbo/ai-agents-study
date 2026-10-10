@@ -14,6 +14,7 @@ import { bodies as agentFrameworksBodies } from '@/content/chapters/agent-framew
 import { bodies as mcpBodies } from '@/content/chapters/mcp/body';
 import { bodies as evaluationBodies } from '@/content/chapters/evaluation/body';
 import { bodies as codingAgentBodies } from '@/content/chapters/coding-agent/body';
+import { bodies as continuousEvolutionBodies } from '@/content/chapters/continuous-evolution/body';
 import { bodies as sandboxingBodies } from '@/content/chapters/sandboxing/body';
 import { bodies as agentSecurityBodies } from '@/content/chapters/agent-security/body';
 import { bodies as costAndLatencyBodies } from '@/content/chapters/cost-and-latency/body';
@@ -57,6 +58,7 @@ const REGISTRY: Record<string, Record<string, BodyLoader>> = {
   mcp: mcpBodies,
   evaluation: evaluationBodies,
   'coding-agent': codingAgentBodies,
+  'continuous-evolution': continuousEvolutionBodies,
   sandboxing: sandboxingBodies,
   'agent-security': agentSecurityBodies,
   'cost-and-latency': costAndLatencyBodies,
