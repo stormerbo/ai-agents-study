@@ -27,7 +27,7 @@ host
 
 - server A 挂了，不影响 server B 的连接
 - 每个 server 有自己的版本协商（第 3 节会看到，版本信息是逐请求携带的）
-- host 可以把来自不同 server 的工具放在不同的权限桶里
+- host 可以把来自不同 server 的工具放在不同的权限桶里（「权限桶」= 一份按 server 维度维护的允许清单：调用前先查「这个 server 的这个工具在不在允许范围内」，见本节末尾的可执行写法）
 
 如果 client 是「一个全局的东西」，上面三件事都会变得很难表达 —— 你会需要在一个对象里管理所有连接的状态。**把「一条连接」做成一等公民，是无状态设计的前提。**
 
@@ -87,6 +87,82 @@ flowchart TB
 
 所以这三类能力的划分不是功能分类，而是**控制权分类**。理解了这一点，接第三方 server 时的取舍就清楚了。
 
+
+## 三类能力长什么样
+
+上面那张表是判据，这里给三种能力的**实际报文形态** —— 没有这个，接一个 server 时你还是不知道 `resources` 该怎么用。（以下报文为示例：构造数据，未实跑；字段按规范里的常见形态。第 4 节那个 server 只实现了 tools，没有实现下面这两个方法。）
+
+**resources：可读数据。** `resources/list` 返回一份目录，每一项至少三个字段 —— `uri`（它是什么，唯一标识）、`name`（给人看的名字）、`mimeType`（读回来是什么格式）：
+
+```json
+{"jsonrpc": "2.0", "id": 2, "result": {"resources": [
+  {"uri": "file:///team/coding-standards.md",
+   "name": "团队编码规范",
+   "mimeType": "text/markdown"},
+  {"uri": "db://orders/schema",
+   "name": "订单表结构",
+   "mimeType": "application/json"}
+]}}
+```
+
+`resources/read` 是**你**（应用）主动发起的，不是模型 —— 请求与响应成对：
+
+```json
+{"jsonrpc": "2.0", "id": 3, "method": "resources/read",
+ "params": {"_meta": {"protocolVersion": "2026-07-28"},
+            "uri": "file:///team/coding-standards.md"}}
+```
+
+```json
+{"jsonrpc": "2.0", "id": 3, "result": {"contents": [
+  {"uri": "file:///team/coding-standards.md", "mimeType": "text/markdown",
+   "text": "# 编码规范@@S@@n1. 所有接口必须幂等……"}
+]}}
+```
+
+**读回来放哪里？** 这是 resources 与 tools 最实际的差别。tools 的结果由模型那一轮决定、出现在 tool_result 里；resources 的内容由你决定，通常拼进**system 段**（适合每轮都要遵守的规范）或**第一条 user 消息**（适合本次任务的数据）。理由和第 3 章讲过的一样：放成固定前缀，前缀缓存才有效。
+
+**prompts：用户显式挑选的模板。** `prompts/list` 的每一项要带 `arguments` 定义，host 才能渲染出参数输入框：
+
+```json
+{"jsonrpc": "2.0", "id": 4, "result": {"prompts": [
+  {"name": "review_code",
+   "description": "按团队规范审查一段代码",
+   "arguments": [
+     {"name": "language", "description": "代码语言", "required": true},
+     {"name": "focus", "description": "关注点，如 security / perf", "required": false}
+   ]}
+]}}
+```
+
+用户在界面上选了 `review_code`、填了参数之后，host 把模板取回来渲染，**作为一条普通的 user 消息**发给模型：
+
+```text
+（用户选择 review_code，language=python，focus=security）
+→ 取回模板后渲染成一条 user 消息：
+「请以 python 代码审查者的身份，重点检查 security 问题。下面是代码：……」
+```
+
+**三类能力在 host 侧怎么合并进同一条请求：** tools 编译成模型 API 的 `tools` 数组（就是第 4 章那个形态）；resources 的内容拼进 system 或首条 user 消息；prompts 只在用户触发时变成一条 user 消息。三者最终都汇进同一次模型调用 —— 模型自己分不出哪个来自哪类能力，这正是第 1 节说的「MCP 对上完全透明」。
+
+**权限桶的可执行写法。** 落在代码里就是一张按 server 维度维护的允许清单，调用前查表：
+
+```python
+# 每个 server 一条记录：被允许调用哪些工具，以及哪些必须人工确认
+ALLOW = {
+  "github":  {"allowed": {"get_issue", "list_prs"}, "confirm": set()},
+  "tickets": {"allowed": {"create_ticket"}, "confirm": {"close_ticket"}},
+  "review":  {"allowed": {"read_file"}, "confirm": set()},
+}
+
+def permitted(server_name, tool_name):
+    bucket = ALLOW.get(server_name, {"allowed": set(), "confirm": set()})
+    if tool_name not in bucket["allowed"]:
+        return "deny"                      # 不在清单里 → 直接拒绝
+    return "confirm" if tool_name in bucket["confirm"] else "allow"
+```
+
+这条清单是第 5 节那份接入检查清单的落点：**不放心就先把它的 tools 桶清空，只用 resources** —— 「优先用 resources」因此在代码上是可执行的，而不只是一条建议。
 
 ## 连接的生命周期
 

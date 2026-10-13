@@ -55,10 +55,12 @@ MCP **不负责**：
 这个选择带来几个实际好处：
 
 - **实现成本极低。** 第 4 节的 server 主体只有一百行左右，不需要任何 SDK。
-- **传输可以换。** 同一套消息格式既能走 stdio（本地进程），也能走 HTTP（远程）。协议与传输解耦。
+- **传输可以换。** 同一套消息格式既能走 stdio（标准输入输出：两个进程之间最朴素的传输，一方往 stdin 写一行，另一方从 stdout 读一行），也能走 HTTP（远程）。所谓「换传输」只换管道，消息格式一个字不动。
 - **容易调试。** 一条消息就是一行 JSON，你可以直接打印、直接手写。
 
-而它的代价是**没有类型系统**。所有参数都是 JSON，schema 要单独声明。这正是第 3 节那个「每请求带 _meta」的设计能成立的原因 —— 协议本身不携带任何隐含状态。
+而它的代价是**没有类型系统**。所有参数都是 JSON，schema 要单独声明。这也是第 3 节那个设计能成立的原因 —— 协议本身不携带任何隐含状态。
+
+顺带解释一个后面会反复出现的词：`_meta`。它是每个请求 `params` 里的一个保留字段，用来放「这个请求自己的元信息」——2026-07-28 版把协议版本与客户端能力都塞在这里，让它跟着**每一个请求**走，而不是在握手时协商一次（第 3 节展开）。
 
 
 ## 协议层的历史参照
@@ -99,6 +101,63 @@ MCP 不是新发明，它复用了一个很成熟的模式。看几个先例有�
 对模型来说，两者没有区别 —— 它看到的都是「工具定义 + 调用结果」。**MCP 对上完全透明**，这是它设计得好的地方：模型不需要知道工具从哪来。
 
 所以第 4 章那些结论（工具描述怎么写、错误怎么回填、工具数量影响成本）在 MCP 场景下**一条都不用改**。变的只是执行路径多了一跳，以及那一跳带来的新问题：连接失败、版本不匹配、server 挂了。
+
+### 那一跳具体长什么样
+
+先把第 4 章那两个词展开，因为后面会一直用到：
+
+- **tool_use 块**：模型返回的结构化「我要调这个工具」请求，里面有工具名和参数 —— 注意它只有请求，没有结果。
+- **tool_result 回填**：你的代码执行完，把结果按工具调用 id 包成一个 tool_result 块放回消息列表，模型下一轮才能看到。
+
+**没有 MCP 时**，你的代码在这两者之间直接调自己的函数。**有 MCP 时**，同一段代码改成把 tool_use 编码成 JSON-RPC 发给 server，再把返回的 result 填回 tool_result。对模型来说这完全一样。如果 server 需要补充输入，它也不主动发请求，而是返回一个 `input_required` 结果 —— 这套机制叫 **MRTR（多轮往返请求，Multi Round-Trip Requests）**，第 3 节展开。
+
+下面这一对报文就是这一跳的两端（示例：构造数据，未实跑；字段形态按本节 server 的实现）。第一段是 host 把模型的 tool_use 转成 `tools/call`：
+
+```json
+{"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+ "params": {"_meta": {"protocolVersion": "2026-07-28",
+                      "clientCapabilities": {"elicitation": {}}},
+            "name": "get_weather",
+            "arguments": {"city": "北京", "day": "明天"}}}
+```
+
+第二段是 server 的返回，host 把它填回模型那次的 tool_result（`tool_use_id` 用来和模型那次的调用对应）：
+
+```json
+{"jsonrpc": "2.0", "id": 7,
+ "result": {"resultType": "complete",
+            "content": [{"type": "text", "text": "{\"北京明天\": 31}"}]}}
+```
+
+host 侧的适配函数只有十几行（依赖第 4 节那个 `Client`）：
+
+```python
+def handle_tool_use(tool_use, client):
+    """模型返回的 tool_use → JSON-RPC tools/call → 回填 tool_result。
+
+    这是本章和第 4 章之间的接缝：模型看到的东西不变，
+    变的是「执行」这一步从本地函数调用换成了跨进程的一次往返。
+    """
+    resp = client.send("tools/call", {
+        "name": tool_use["name"],
+        "arguments": tool_use["input"],
+    })
+    if "error" in resp:
+        # 协议层错误翻成 is_error 的 tool_result，而不是抛异常 ——
+        # 模型需要看到失败才能换一条路径
+        return {"type": "tool_result", "tool_use_id": tool_use["id"],
+                "is_error": True,
+                "content": json.dumps(resp["error"], ensure_ascii=False)}
+    out = resp["result"]
+    if out.get("resultType") == "input_required":
+        # MRTR：不是错误。把「还需要什么输入」交回上层去问用户（第 3 节）
+        return {"type": "tool_result", "tool_use_id": tool_use["id"],
+                "content": "需要用户补充输入：" + json.dumps(out["inputRequests"], ensure_ascii=False)}
+    return {"type": "tool_result", "tool_use_id": tool_use["id"],
+            "content": out["content"][0]["text"]}
+```
+
+三个判据说明为什么这样写：请求要**原样带回同一个 `tool_use_id`**（回填时才能对上模型那次调用）；协议层错误要翻成 `is_error` 的 tool_result 而不是抛异常（模型需要看到失败才能换路子）；`input_required` 不是错误，回填成一条普通结果、交给上层去问用户（第 3 节）。
 
 ## 一张图看它在哪一层
 
@@ -242,6 +301,18 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+### 怎么把它跑起来
+
+这段 server 单独存成 `mcp_server.py` 就能跑 —— 但**它需要有人给它发请求**，否则你会看到它一直等 stdin：
+
+```bash
+# 一条消息一行，直接喂给 server
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"protocolVersion":"2026-07-28"}}}' \
+  | python3 mcp_server.py
+```
+
+返回就是一行 JSON。要跑完整的七个场景（含 MRTR 往返），用第 4 节那个 `Client` —— 它用真正的子进程与管道驱动同一个 `mcp_server.py`。**本节只给 server，是因为本节的主题是「协议解决什么、不解决什么」；能跑通的完整往返在第 4 节。**
 
 ## 常见坑
 

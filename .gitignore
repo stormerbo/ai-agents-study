@@ -38,6 +38,9 @@ yarn-error.log*
 # 验证脚本的输出（含真实 API 响应，不提交）
 /verify-output/
 
+# 章 3 第 4 节「状态与恢复」示例的运行产物（正文里 STATE = "al-messages.json"）
+/al-messages.json
+
 # 视觉验证的临时产物（playwright 截图与快照）
 /.playwright-cli/
 /output/

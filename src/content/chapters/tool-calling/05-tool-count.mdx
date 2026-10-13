@@ -52,7 +52,7 @@ status: drafting
 
 **5 个工具都在查订单**（`search_orders` / `find_order` / `query_orders_by_status` / `list_recent_orders` / `get_order_detail`），问同一个问题 5 次：
 
-```
+```text
 find_order / find_order / find_order / find_order / find_order
 → 出现 1 种选择，稳定
 ```
@@ -77,6 +77,23 @@ find_order / find_order / find_order / find_order / find_order
 
 **5 题里只有 1 题是货真价实的选择错误。** 另外两题是模型按前几节观察到的习惯「先追问」（不可逆操作 + 缺必填参数），一题是我的答案键本身站不住。
 
+**5 题里只有 1 题是货真价实的选择错误。** 另外两题是模型按前几节观察到的习惯「先追问」（不可逆操作 + 缺必填参数），一题是我的答案键本身站不住。
+
+### 答案键必须唯一且可机判
+
+先把这个词定义清楚：**答案键就是评测里每道题的「标准答案」** —— 在这里是「这题应该选哪个工具」。它必须满足两条，缺一条整组数据就作废：
+
+1. **唯一** —— 只有一个工具是正确的；
+2. **可机判** —— 能用字符串比较判对错，不需要人来读输出。
+
+上面第 5 题恰好违反了唯一性：「之前归档的那个订单我要再看」—— 期望是 `restore_order`，但 `get_order` 同样能回答「这个订单现在怎么样」。模型选 `get_order` 不算错，是我的题目有歧义。改法是把意图钉死到只有一个工具能满足：
+
+| | 题目 | 唯一答案 | 为什么唯一 |
+|---|---|---|---|
+| ❌ 有歧义 | 之前归档的那个订单我要再看。 | `restore_order`？（有争议） | `get_order` 也能满足「再看」 |
+| ✅ 无歧义 | 把已归档的订单 ORD-9001 恢复为进行中。 | `restore_order` | 要改状态，`get_order` 不产生任何状态变更 |
+
+**复核方法（别用同一套直觉检查同一套直觉）：** 把题目和完整工具集交给另一个模型，问「所有能达成这个目标的工具编号，列出全部」。如果它给出两个以上，这题的答案键就要改，或者题目要改。这一步比人工复核便宜，也比「我觉得应该选它」可靠。
 所以这一组的真实结论只能说这么远：**动词相近的工具确实会带来困惑**（至少出现了一次选错），但我的实验设计不足以量化它 —— 它被「模型会先追问」这个行为淹没了。
 
 <Mermaid
@@ -100,6 +117,71 @@ flowchart TB
 
 **两边一起看**：成本一定会涨；准确率涨不涨、跌不跌，只有测了才知道。假如你的准确率一直没掉，那「分组加载」对你来说就是纯成本优化 —— 那也是个正当理由，但要知道自己在优化什么。
 
+## 分组按需加载怎么写
+
+结论说「要么预设常驻上限，要么按场景分组加载」，但分组加载不能只有一句话。下面是它的最小实现，分三步：**核心工具常驻、用一个路由工具选组、按组拼 tools。**
+
+```python
+CORE = [get_order, list_orders]        # 几乎每轮都要用，永远在
+
+GROUPS = {
+    "orders":   [create_order, update_order, cancel_order, refund_order],
+    "billing":  [get_invoice, apply_coupon, reconcile],
+    "shipping": [create_shipment, track_shipment],
+}
+
+GROUP_TOOL = {
+    "name": "select_tool_group",
+    "description": (
+        "选择接下来要用的一组工具。先判断用户的任务属于哪一类，再选组。"
+        "不确定时选 orders —— 它覆盖最常见的订单操作。"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {"group": {"type": "string", "enum": list(GROUPS)}},
+        "required": ["group"],
+    },
+}
+
+
+def route(system: str, user: str) -> str:
+    """第 1 轮：只给路由工具 + 核心工具，让模型表达「我要换到哪一组」。"""
+    resp = client.messages.create(
+        model=MODEL, max_tokens=64,
+        system=system + "\n如果任务需要订单/账单/物流之外的专用工具，先调用 select_tool_group。",
+        tools=[GROUP_TOOL, *CORE], messages=[{"role": "user", "content": user}],
+    )
+    for b in resp.content:
+        if b.type == "tool_use" and b.name == "select_tool_group":
+            return b.input["group"]
+    return "orders"                     # 没选就落到默认组
+
+
+def tools_for(group: str) -> list:
+    """核心工具常驻 + 该场景组的工具。"""
+    return [*CORE, *GROUPS[group]]
+```
+
+用法是在主循环里：第 1 轮走 `route()` 拿到组名，之后每一轮 `client.messages.create(..., tools=tools_for(group))`。
+
+三个必须知道的代价：
+
+- **换组会改写 tools 前缀，缓存从第一个工具就断开**（第 3 章第 7 节）。所以一次任务里最多换一次组，别每轮重选。
+- **路由本身要花一次调用。** 任务短的时候，这一次调用的成本可能超过省下的定义 token。
+- **核心工具必须真正常驻**，否则模型在组里找不到最常用的那几个，会绕更远的路。
+
+### 它和 3.8 的 skill 两阶段是同一个模式
+
+| | skill 两阶段（第 3 章第 8 节） | 工具分组（本节） |
+|---|---|---|
+| 常驻的是什么 | 名字 + 一句话描述 | 核心工具定义 |
+| 选择层放在哪 | 一段索引文本 | 一个 `select_tool_group` 工具 |
+| 选中后加载什么 | skill 正文（指令） | 该组的工具定义 |
+| 省的是什么 | 正文 token | 工具定义 token |
+| 共同代价 | 多一轮往返；换组/换 skill 会改前缀、断缓存 | 同左 |
+| 共同前提 | 选择层的描述要能区分，否则选错 | 同左 |
+
+认清这一点很有用：**你不需要为「skill 加载」和「工具分组」各写一套机制** —— 它们都是「常驻索引 + 按需加载正文」，区别只在加载的是指令还是工具定义。
 ## 完整可运行代码
 
 ```python
@@ -202,6 +284,25 @@ if __name__ == "__main__":
 - 报错容易被发现，成本曲线不容易被发现，它需要你主动去算，或者有按 token 计费的监控
 - 所以「什么时候该收敛工具数量」**不能等指标来提醒**：要么预设常驻上限（比如单轮不超过 20 个），要么按场景分组加载
 
+- 你不会收到任何警告 —— 系统照常工作，只是慢而且贵
+- 报错容易被发现，成本曲线不容易被发现，它需要你主动去算，或者有按 token 计费的监控
+- 所以「什么时候该收敛工具数量」**不能等指标来提醒**：要么预设常驻上限（比如单轮不超过 20 个），要么按场景分组加载
+
+**怎么持续监控单价。** 工具定义那部分的成本可以精确拆出来：同一个请求发两次，一次带完整 `tools`、一次带空 `tools`，两次输入 token 的差就是工具定义的成本。每次请求都打这两个点，按天看趋势：
+
+```python
+def tools_overhead(usage_with: object, usage_without: object) -> int:
+    """工具定义每一轮固定吃掉多少输入 token（三项之和，见第 0 章）。"""
+    def total(u: object) -> int:
+        return (
+            (u.input_tokens or 0)
+            + (u.cache_read_input_tokens or 0)
+            + (u.cache_creation_input_tokens or 0)
+        )
+    return total(usage_with) - total(usage_without)
+```
+
+把这个差值除以工具数，就是**你自己那套描述的单价**（本节实测是约 60 token 一个，那是极简 schema 的值）。描述写得越详细，这个数字越大 —— 而它每一轮都付。所以它是「该不该收敛工具数量」唯一需要盯的指标。
 ## 常见坑
 
 **以为「工具多了效果一定变差」。** 本节的两次设计里，8 → 86 个工具选对率始终是 8/8，语义重叠的 5 个工具也没出现摇摆。**确定会变差的是成本，不是准确率** —— 至少在这组测试里是这样。

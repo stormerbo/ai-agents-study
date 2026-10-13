@@ -195,6 +195,66 @@ if __name__ == "__main__":
     print("  而如果没有熔断，它会一直失败到第 30 轮 —— 22 次无用调用。")
 ```
 
+## 把常量换成从 usage 累加
+
+上面那段演示里 `TOKENS_PER_TURN = 3000` 是常量，真实循环里必须从**每一轮响应的 `usage`** 累加，而且口径要和第 1 / 3 节接上：**总输入 = input_tokens + cache_read + cache_create**（缓存命中也要计入总输入，否则命中之后闸门会误以为没花钱）。
+
+下面这段跑的正是第 1 节那 4 条真实记录（实跑 2026-10-12）：
+
+```python
+"""预算闸门：从每轮响应的 usage 累加，而不是用一个常量。"""
+RECORDS = [
+    {"turn": 1, "input_tokens": 341, "cache_read": 0, "cache_create": 0, "output_tokens": 129, "stop_reason": "tool_use"},
+    {"turn": 2, "input_tokens": 227, "cache_read": 256, "cache_create": 0, "output_tokens": 57, "stop_reason": "tool_use"},
+    {"turn": 3, "input_tokens": 169, "cache_read": 384, "cache_create": 0, "output_tokens": 56, "stop_reason": "tool_use"},
+    {"turn": 4, "input_tokens": 238, "cache_read": 384, "cache_create": 0, "output_tokens": 22, "stop_reason": "end_turn"},
+]
+BUDGET = 2000
+
+def billed_input(u):
+    return u["input_tokens"] + u["cache_read"] + u["cache_create"]
+
+def run(records, budget):
+    used = 0
+    for r in records:
+        if used + billed_input(r) > budget:      # 每轮开始前检查（用本轮实际 usage）
+            return "budget", used, "第 %d 轮触发：累计 %d + 本轮 %d > %d" % (
+                r["turn"], used, billed_input(r), budget)
+        used += billed_input(r)
+        if r["stop_reason"] == "max_tokens":     # 截断记异常，不当正常结果
+            return "truncated", used, "第 %d 轮 stop_reason=max_tokens，记异常并重试" % r["turn"]
+    return "ok", used, "完成 %d 轮" % len(records)
+
+if __name__ == "__main__":
+    for budget in (2000, 1500, 1200):
+        outcome, used, why = run(RECORDS, budget)
+        print("预算 %-5d -> %-9s 已用 %-5d %s" % (budget, outcome, used, why))
+```
+
+实跑输出：
+
+```text
+预算 2000  -> ok        已用 1999  完成 4 轮
+预算 1500  -> budget    已用 1377  第 4 轮触发：累计 1377 + 本轮 622 > 1500
+预算 1200  -> budget    已用 824   第 3 轮触发：累计 824 + 本轮 553 > 1200
+```
+
+**和常量版的区别有三处，都要改：**
+
+1. **提前量用本轮实际值。** 常量版假设「每轮固定 3000」；真实 usage 版直接用**本轮响应的三项之和**判断 —— 但严格说这是「事后」的：更稳的写法是用上一轮的实际值外推本轮（多留一点余量），或者在请求前按「上轮 × 增长率」估。上面为了可复现，用了逐轮实际值直接判。
+2. **缓存命中不减免预算判断。** `cache_read` 便宜但**不是免费**，而且它同样占总输入——累计口径必须三项相加（上面 `billed_input` 就是干这个）。只读 `input_tokens` 会让命中轮次看起来「没花钱」，闸门永远不触发。
+3. **`max_tokens` 单独记一类。** 它不是「预算超限」，而是「输出预算不够」—— 动作不同（重试/加预算），所以状态要分开，不能混进 `budget`。
+
+## 超限和熔断都要有告警出口
+
+L90 说「如果这个停止没有告警，你不会知道有多少任务被截断了」。落成两个计数器和一条规则：
+
+- `agent_budget_exceeded_total{task_kind}` —— 被预算截断的任务数。它的**变化率**比绝对值有用：突然上升通常意味着某条路径变长或进了循环。
+- `agent_truncated_total{model}` —— `stop_reason=max_tokens` 的次数。它和上一个分开，因为含义不同（输出预算 vs 任务预算）。
+- 规则：**任一指标的周同比翻倍就告警**，而不是等绝对阈值。原因是预算上限本身可能被调过，绝对数失去了可比性。
+
+**失败形态：** 只在日志里打一行「budget exceeded」。它不聚合、不告警，等于没有 —— 直到账单出来才发现某一类任务被反复截断了一整个月。
+
 ## 常见坑
 
 - **只设单次调用的 `max_tokens`。** agent 累计 30 轮后单看每轮都正常，加起来是 30 倍。

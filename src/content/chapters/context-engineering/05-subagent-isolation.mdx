@@ -6,6 +6,8 @@ status: drafting
 
 子智能体（subagent）通常被讲成「并行提速」的手段。但在生产系统里，用它最常见的理由其实是另一个：**上下文隔离**。
 
+先把定义落下，不然后面全是反推。**子智能体是一次独立的模型调用序列**：它有自己的 system、自己的上下文、自己的工具循环和轮次上限。它对外只暴露一个最终结果 —— 中间那几十次工具往返留在它自己的上下文里，**不进主 agent**。对应地，**主 agent** 是那个派活、取回结果、决定下一步的编排者，它的上下文里只有子 agent 的结论，没有子 agent 看过的东西。
+
 并行只是它的表亲 —— 而且只在子任务之间真正独立时才存在。隔离才是那个一直成立的收益。
 
 不过「子智能体更贵」这个说法**不是无条件成立的**。本节测了两个方向相反的场景，它们共同指向一条统一的规律。
@@ -20,6 +22,8 @@ status: drafting
 | B 子智能体 | 子 agent 扫描 20 篇，只回传「哪几篇 + 负责人」 | **9182** | **1258** |
 
 （实测数据，`deepseek-flash`，2026-10-08。总 token 为该路线所有调用之和。）
+
+**「主上下文峰值」怎么量**：把主 agent 每一次请求的输入 token 数（system + 历史 + 本轮工具结果）记下来，取其中的最大值。它回答两个问题 —— 最坏一轮要付多少钱、离窗口上限还有多远。平均值会掩盖最坏情况，所以看峰值。
 
 **隔离在总 token 上也更省，而且主上下文小到只有 1/5。**
 
@@ -77,7 +81,7 @@ flowchart TB
 
 ## 一个直接的优化：别让共享背景重复装载
 
-实测二那 8 倍，**大部分是可以省掉的**。共享背景是每个子 agent 都要用的固定前缀 —— 这正是 **prompt caching** 的场景（第 1 章）：同一份前缀重复出现时，它会被缓存，后续的命中成本远低于首次写入。
+实测二那 8 倍，**大部分是可以省掉的**。共享背景是每个子 agent 都要用的固定前缀 —— 这正是 **prompt caching** 的场景：把逐字相同的前缀在服务端存下来，后续请求命中就不必重算，只按更低的单价计费（机制见第 1 章第 5 节，成本影响见本章第 7 节）。同一份前缀重复出现时，它会被缓存，后续的命中成本远低于首次写入。
 
 缓存不会让「重复装载」在逻辑上消失，但会把上面那 68548 这个数字显著压低。**这也是为什么第 1 章要先讲缓存** —— 很多上下文工程的成本问题，最后的答案都落在它身上。
 
@@ -97,12 +101,18 @@ flowchart TB
 
 ```python
 # subagent_cost.py
-"""算清「用子智能体」在你的场景里是省还是费。
+"""算清「用子智能体」在你的场景里是省还是费，并给出一个真正的最小 subagent。
 
 核心公式：总成本 ≈ Σ(每份内容 × 它被装载的次数)
 把「同一份内容被装了几次」数清楚，结论就出来了。
+
+运行前需要三个环境变量（第 1 章讲过怎么拿）：
+  ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN —— 厂商控制台签发的密钥
+  ANTHROPIC_BASE_URL                         —— 用兼容端点时填，官方端点可留空
+  VERIFY_MODEL                               —— 要测的模型名
 """
 
+import json
 import os
 
 import anthropic
@@ -116,13 +126,52 @@ client = anthropic.Anthropic(
 )
 MODEL = os.environ["VERIFY_MODEL"]
 
-# ⚠️ 必须给足输出预算。设小了会得到**空文本 + stop_reason=max_tokens**，
-#    你会误判成「模型做不出来」（本次写作里踩过三次）。
+# ⚠️ 必须给足输出预算。设小了会得到空文本 + stop_reason=max_tokens，
+#    你会误判成「模型做不出来」（本文实测里踩过三次）。
 MAX_TOKENS = 6000
+MAX_ROUNDS = 4          # 子 agent 自己的轮次上限，与主循环无关
 
-SHARED_BRIEF = """..."""     # 每个子任务都要用的共享背景
-ITEMS: list[str] = [...]     # 待检查的 N 个子任务
-TASK = "..."
+# ── 待检查项与规则（示例：构造数据，未实跑）────────────────────
+ITEMS = {
+    "ITEM-01": ("io",     "f = open(path)\nlines = f.readlines()"),
+    "ITEM-02": ("errors", "try:\n    run()\nexcept Exception:\n    pass"),
+    "ITEM-03": ("naming", "def GetUser(ID): ..."),
+    "ITEM-04": ("io",     "resp = requests.get(url)"),
+}
+RULES = {
+    "io":     ["文件读写必须显式指定编码", "网络调用必须设超时"],
+    "errors": ["不要吞异常", "错误信息必须给出下一步动作"],
+    "naming": ["函数名用小写下划线", "常量用全大写"],
+}
+ALL_RULES = "\n".join(f"- {r}" for rules in RULES.values() for r in rules)
+SHARED_BRIEF = (
+    "你是代码规范审计员。团队规范手册：\n" + ALL_RULES +
+    "\n逐项给出结论：每项要么指出违反的规则，要么写「未发现问题」。"
+)
+
+CHECK_TOOL = {
+    "name": "check_item",
+    "description": "取回一条待检查项的源码，以及适用于它的规则。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "item_id": {"type": "string", "description": "形如 ITEM-01"},
+        },
+        "required": ["item_id"],
+    },
+}
+
+
+def check_item(item_id: str) -> tuple[dict, bool]:
+    """返回 (回填内容, 是否失败)。区分「不存在」与「暂不可用」两种取不到。"""
+    if item_id not in ITEMS:
+        return {
+            "error": "not_found",
+            "message": f"没有 {item_id} 这一项。",
+            "retryable": False,
+        }, True
+    tag, code = ITEMS[item_id]
+    return {"code": code, "rules": RULES[tag]}, False
 
 
 def total_tokens(resp) -> int:
@@ -136,50 +185,145 @@ def total_tokens(resp) -> int:
     )
 
 
-def call(system: str, user: str) -> tuple[str, int]:
+def call(system: str, user: str):
     resp = client.messages.create(
         model=MODEL, max_tokens=MAX_TOKENS, system=system,
         messages=[{"role": "user", "content": user}],
     )
-    text = "".join(b.text for b in resp.content if b.type == "text")
     if resp.stop_reason == "max_tokens":
         raise RuntimeError("输出被截断 —— 提高 MAX_TOKENS 后重跑，别解释这个空结果")
-    return text, total_tokens(resp)
+    return resp
+
+
+def pick_relevant(item_id: str) -> str:
+    """只带这一项真正需要的规则，而不是整本手册。
+
+    真实项目里这一层离线做（按标签切分规则手册）；这里用标签做最小演示。
+    """
+    return "\n".join(RULES[ITEMS[item_id][0]])
+
+
+# ── 一个真正的最小 subagent：独立上下文 + 自己的工具循环 + 结构化结论 ──
+def run_subagent(task: str, brief: str) -> tuple[dict, int]:
+    """一次独立的模型调用序列。它与「多调一次模型」的区别有三点：
+
+      1. 有自己的 messages（独立上下文）和自己的工具循环；
+      2. 有自己的轮次上限，失败不会把主循环拖进去；
+      3. 只回传固定的三个字段，主 agent 因此能区分
+         「确实没有」与「查的时候失败了」。
+    """
+    sub_messages = [{"role": "user", "content": task}]
+    used = 0
+    not_found: list[str] = []
+    failed: list[str] = []
+
+    for _ in range(MAX_ROUNDS):
+        resp = client.messages.create(
+            model=MODEL, max_tokens=MAX_TOKENS, system=brief,
+            tools=[CHECK_TOOL], messages=sub_messages,
+        )
+        used += total_tokens(resp)
+        if resp.stop_reason != "tool_use":
+            break
+
+        sub_messages.append({"role": "assistant", "content": resp.content})
+        results = []
+        for b in resp.content:
+            if b.type != "tool_use":
+                continue
+            content, is_error = check_item(**b.input)
+            if is_error:
+                if content.get("error") == "not_found":
+                    not_found.append(b.input.get("item_id", "?"))
+                else:
+                    failed.append(b.input.get("item_id", "?"))
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": b.id,
+                "is_error": is_error,
+                "content": json.dumps(content, ensure_ascii=False),
+            })
+        sub_messages.append({"role": "user", "content": results})
+
+    # 收尾：只要三段结论，不要过程。子 agent 的 messages 到此丢弃。
+    final = client.messages.create(
+        model=MODEL, max_tokens=MAX_TOKENS,
+        system=(
+            "只输出 JSON，字段固定为 did / failed / not_found。"
+            "did 写检查结论；failed 写执行失败（超时、被拒绝等）；"
+            "not_found 写确实不存在的编号。不要复述过程。"
+        ),
+        messages=[*sub_messages, {"role": "user", "content": "给出结论。"}],
+    )
+    used += total_tokens(final)
+    text = "".join(b.text for b in final.content if b.type == "text")
+    try:
+        summary = json.loads(text[text.index("{"): text.rindex("}") + 1])
+    except (ValueError, json.JSONDecodeError):
+        summary = {"did": [], "failed": failed or ["unparseable_summary"],
+                   "not_found": not_found}
+    return summary, used
 
 
 def single_agent() -> int:
     """共享背景装载 1 次，所有子任务在同一上下文里处理。"""
-    body = "\n\n".join(f"【{i + 1}】{item}" for i, item in enumerate(ITEMS))
-    _, tokens = call(SHARED_BRIEF, f"{TASK}\n\n{body}")
-    return tokens
+    body = "\n\n".join(f"【{k}】{v[1]}" for k, v in ITEMS.items())
+    return total_tokens(call(SHARED_BRIEF, f"逐项检查下面的代码：\n\n{body}"))
 
 
-def with_subagents() -> int:
-    """每个子任务一个子 agent —— 共享背景装载 len(ITEMS) 次。"""
+def with_subagents(narrow: bool = False) -> int:
+    """每个子任务一个独立子 agent —— 共享背景装载 len(ITEMS) 次。"""
     total = 0
-    results = []
-    for item in ITEMS:
-        text, tokens = call(SHARED_BRIEF, f"{TASK}\n\n{item}")
-        total += tokens
-        results.append(text)
+    summaries = []
+    for item_id in ITEMS:
+        brief = pick_relevant(item_id) if narrow else SHARED_BRIEF
+        summary, used = run_subagent(f"检查 {item_id} 是否符合规范。", brief)
+        total += used
+        summaries.append(json.dumps(summary, ensure_ascii=False))
 
-    # 主 agent 汇总：不再装载共享背景
-    _, tokens = call("汇总子智能体的结论。", "\n\n".join(results))
-    return total + tokens
+    # 主 agent 只拿三段结论：不装载共享背景，也不接触子 agent 的工具轨迹
+    main = call("汇总子智能体的结论。", "\n\n".join(summaries))
+    return total + total_tokens(main)
 
 
 if __name__ == "__main__":
     a = single_agent()
-    b = with_subagents()
+    b = with_subagents(narrow=False)
+    c = with_subagents(narrow=True)
     print(f"子任务数：{len(ITEMS)}")
-    print(f"  单 agent     : {a:>7} token（共享背景装载 1 次）")
-    print(f"  子智能体      : {b:>7} token（共享背景装载 {len(ITEMS)} 次）")
-    print(f"  比值：{b / a:.2f}x")
-    print("\n共享背景越大、子任务越多，这个比值越大 ——")
-    print("先试着把共享背景收窄到每个子任务真正需要的部分。")
+    print(f"  单 agent            : {a:>7} token（共享背景装载 1 次）")
+    print(f"  子智能体（原样背景）: {b:>7} token（装载 {len(ITEMS)} 次）")
+    print(f"  子智能体（收窄背景）: {c:>7} token（每项只带相关规则）")
+    print(f"  比值：{b / a:.2f}x / {c / a:.2f}x")
+    print("\n先试着把共享背景收窄到每个子任务真正需要的部分 ——")
+    print("上面的 c 用 pick_relevant 演示了这一步。")
 ```
 
-> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。其中 `run_subagent` 是可运行的最小实现（独立上下文 + 工具循环 + JSON 收尾），不是伪代码。
+
+### 子 agent 交给主 agent 的那份东西
+
+下面是 `run_subagent` 返回的产物（示例：构造数据，未实跑）：
+
+```json
+{
+  "did":       ["ITEM-01 未指定编码；ITEM-04 未设超时"],
+  "failed":    ["ITEM-03 读取超时，未能得出结论"],
+  "not_found": ["ITEM-99"]
+}
+```
+
+三个字段各有用途，缺一不可：
+
+| 字段 | 含义 | 主 agent 该做什么 |
+|---|---|---|
+| did | 已完成的检查结论 | 直接采信，必要时再核对一处 |
+| failed | 执行失败（超时、被拒、解析失败） | 知道这是**查询失败**，可换方式或重试一次 |
+| not_found | 目标确实不存在 | 不要再派一次同样的活（这正是下面失败模式②的修法） |
+
+主 agent 把这份 dict 作为一条消息追加进自己的上下文（如果子 agent 是被工具派出的，就作为那条 `tool_result` 的内容），**不追加子 agent 的原始轨迹**。隔离真正发生的位置就在这里 —— 如果连原始轨迹一起带回来，你只是把上下文搬了个家，没有任何节省。
+
+还有一个收尾细节：让子 agent 用一次**独立的收尾调用**输出 JSON，而不是要求它在工具循环里顺便说出来。工具循环里的回复容易被工具结果带偏；单独的收尾调用只做格式化，成功率高得多，也让「结论」和「过程」在结构上分开。
 
 ## 子智能体的失败模式
 
@@ -187,7 +331,7 @@ if __name__ == "__main__":
 
 **① 摘要丢信息，而主 agent 无从察觉。** 上一节实测过：压缩会丢掉关键约束，且丢掉之后在无指令时模型会直接给出确定结论。子智能体是同一机制的放大版 —— 子 agent 的摘要成了主 agent 的事实来源，一旦它漏掉那条硬约束，主 agent 连「原本有什么」都不知道。
 
-**② 子 agent 的失败会被压缩成一句「没找到」。** 子 agent 内部调了 5 次工具全部超时，到了摘要里往往只剩一句结论。主 agent 看到的是「无相关信息」，于是它会**再派一个子 agent 去做同一件事** —— 你付了两次钱，而且在监控上看不出这是重试。
+**② 子 agent 的失败会被压缩成一句「没找到」。** 子 agent 内部调了 5 次工具全部超时，到了摘要里往往只剩一句结论。主 agent 看到的是「无相关信息」，于是它会**再派一个子 agent 去做同一件事** —— 你付了两次钱，而且在监控上看不出这是重试。修法就是上面那个 `failed` 字段：让子 agent 把「查不动」和「确实没有」分成两栏上报，主 agent 才有依据决定要不要重试。
 
 **③ 并行子 agent 之间无法协商。** 它们各自独立工作、各自写摘要，冲突要到主 agent 汇总时才暴露。两个子 agent 给出互相矛盾的结论时，主 agent 手里没有裁决依据，只能再花一次调用去核对。
 

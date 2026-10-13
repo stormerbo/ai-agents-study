@@ -116,6 +116,50 @@ flowchart TB
 **四，不可逆动作单独走确认。** 这一条第 4 节会展开，判据可以先给出来：**如果一个动作失败之后无法用另一个动作撤销，它就不该由循环自动执行。**
 
 四条合起来是一句话：**界面自动化的结果验收必须落在数据层，不能落在界面层。** 界面上「看起来对了」和「真的对了」之间，隔着一整类静默失败。
+
+### 一个具体的注入：把 email 填进 name
+
+上面那段话说起来抽象，把注入做出来就很具体。给合成环境加一个 `swap` 变体：**点 Name 框时把焦点设到 Email，点 Email 框时设到 Name** —— 界面看起来完全正常。
+
+模型的动作序列（示例：构造数据，未实跑）仍然是标准的那五步：
+
+```text
+click:name → type "Zhang San" → click:email → type "zhang@example.com" → click:submit
+```
+
+但因为两个框的焦点被对调，最终写进去的是：`name="zhang@example.com"`、`email="Zhang San"`。两个字段都非空，所以提交**成功**，页面显示：
+
+```text
+SUCCESS
+user created: zhang@example.com
+```
+
+**从界面层看，这是一次完美的成功；从数据层看，两个字段全填反了。** 而模型自己的动作序列里没有任何一步是错的 —— 它点的每个坐标都对。
+
+唯一的发现手段就是回到数据源逐字段核对：
+
+```python
+def check_record(created, expected, fields=("name", "email")):
+    """created: 从数据库/API 查回的记录；expected: 预期的字段值。返回不一致项。"""
+    bad = []
+    for k in fields:
+        if created.get(k) != expected.get(k):
+            bad.append("%s: 期望 %r，实际 %r" % (k, expected.get(k), created.get(k)))
+    return bad
+```
+
+跑一遍就是下面这样（注入与轨迹为构造，核对函数本次真跑，2026-10-12）：
+
+```text
+[界面层] SUCCESS 页显示：user created: zhang@example.com  -> 看起来成功 ✅
+[数据层] 查回记录 {'name': 'zhang@example.com', 'email': 'Zhang San'} -> ❌ 2 处不一致
+   name: 期望 'Zhang San'，实际 'zhang@example.com'
+   email: 期望 'zhang@example.com'，实际 'Zhang San'
+
+[对照：正确提交] -> ✅ 一致
+```
+
+这就是「验收落在数据层」的可执行形态：**不是看页面说了什么，而是查记录里存了什么。** 字段少、判据明确的任务，这几行就够；字段多的时候把 `fields` 换成必填字段清单即可。
 ## 完整可运行代码
 
 这个脚本把三种失败注入都做进去了：小目标、诱饵按钮、点击无效。环境是本地绘制的，跑起来完全可复现。
@@ -127,6 +171,7 @@ flowchart TB
 
 实跑状态：2026-10-09，deepseek-flash。
 """
+import os
 import base64, json, os, urllib.request
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont

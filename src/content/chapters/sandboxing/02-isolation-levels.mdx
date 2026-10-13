@@ -18,7 +18,7 @@ status: drafting
 
 这一层能拦住「资源耗尽」这一类风险，也把崩溃隔离开（子进程挂了不影响主进程）。但它**默认仍然能读写文件、访问网络** —— 资源限制管的是「用多少」，不是「碰什么」。
 
-**L3：容器。** 文件系统、网络、能力（capabilities）可以各自单独收。只读挂载、禁网、丢弃特权 —— 这些都是容器层能做到的。
+**L3：容器。** 容器就是本机上的一个受约束进程：它用**命名空间**（namespace，把进程看到的文件树、网络、进程列表切开，让它看不见宿主的那一份）和 **capabilities**（内核权限位，比如「能不能重新挂载文件系统」「能不能发原始网络包」）来收窄能力。文件系统、网络、能力可以各自单独收。只读挂载、禁网、丢弃特权 —— 这些都是容器层能做到的。
 
 **L4：虚拟机 / 微虚拟机。** 最强的一层，内核都是独立的。代价是启动时间（从毫秒级变成秒级）和资源占用。
 
@@ -215,6 +215,122 @@ if __name__ == "__main__":
 选择依据仍然是爆炸半径：**如果任务之间不该互相看见，就必须每任务重建。** 这条在压测时看不出问题 —— 信息泄露只在真实的多任务场景里才出现。
 
 一个折中做法是**沙箱实例复用、但文件系统每任务新建**：启动开销摊掉了，状态仍然是隔离的。
+## L3 的实体：一段可复制的容器配置
+
+L3 不是一句「用容器」，它是一组具体的开关。下面这段可以直接改路径后运行（用 Docker / containerd 一类运行时；gVisor、Firecracker 是同一档里更重的选择，接口不同、目标一致）：
+
+```bash
+docker run --rm \
+  --read-only \
+  --tmpfs /workspace:rw,size=64m,mode=1777 \
+  --network none \
+  --user 65534:65534 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --pids-limit 64 \
+  --memory 256m --memory-swap 256m \
+  --cpus 0.5 \
+  --mount type=bind,src="$(pwd)/task-input",dst=/input,readonly \
+  python:3.12-alpine python /app/runner.py
+```
+
+每个开关对应一个失效模式，不是装饰：
+
+| 开关 | 没有它会怎样 |
+|---|---|
+| `--read-only` + `--tmpfs` | 容器内能写宿主可见的任何路径；只读根让它只能写显式挂载的 tmpfs |
+| `--network none` | 默认可以出网（第 3 节的通道问题），也能访问同宿主上的其他服务 |
+| `--user` | 默认 root；即使丢了 capabilities，root 仍能碰更多东西 |
+| `--cap-drop ALL` | 默认保留一批 capability，其中若干足以做越权操作 |
+| `--pids-limit / --memory / --cpus` | 一段跑飞的代码能拖垮整台宿主（第 2 节 L2 的老问题） |
+| `src=...,readonly` | 把宿主目录读写挂进去 = 容器隔离形同虚设（本节 L89 那条结论的实体） |
+
+**边界必须说清楚：容器共享宿主内核。** 所以内核漏洞、以及上面那些配置错误，仍是逃逸路径。这也是 L89 那句「用了容器不等于隔离做对了」的由来 —— 强度取决于配置，不取决于「用了容器」这个事实。
+
+## 验证：把「我们用了容器」变成可复跑的结果
+
+L93 说「每一层都要验证」。验证的做法不是读配置，而是**在沙箱里跑一个探针，逐项报告隔离是否成立**。下面这段脚本放进容器执行（本次实跑：Docker 29.3.1，镜像 `python:3.12-alpine`，实跑数据 2026-10-12）：
+
+```python
+import os
+
+def t_write_blocked():          # 根文件系统只读
+    try:
+        open('/probe_write', 'w').write('x'); return False, '根目录可写'
+    except OSError as e:
+        return True, type(e).__name__
+
+def t_no_eth():                 # --network none：没有路由网卡
+    lines = open('/proc/net/dev').read().splitlines()[2:]
+    ifaces = [l.split(':')[0].strip() for l in lines if ':' in l]
+    eth = [i for i in ifaces if i.startswith('eth')]
+    return (not eth), '路由网卡=%s（全部网卡：%d 个）' % (eth, len(ifaces))
+
+def t_non_root():               # 非 root
+    return (os.getuid() != 0), 'uid=%d' % os.getuid()
+
+def t_host_mount_hidden():      # 没挂进来的宿主路径不可见
+    return (not os.path.exists('/hosttmp/host-marker')), 'exists=%s' % os.path.exists('/hosttmp/host-marker')
+
+def t_workspace_writable():     # 该能写的地方能写
+    try:
+        open('/workspace/ok.txt', 'w').write('x'); return True, '可写'
+    except OSError as e:
+        return False, type(e).__name__
+
+for name, fn in [('只读根文件系统', t_write_blocked), ('无 eth 网卡（--network none）', t_no_eth),
+                 ('非 root 用户', t_non_root), ('宿主挂载点未泄露', t_host_mount_hidden),
+                 ('tmpfs 工作目录可写', t_workspace_writable)]:
+    ok, detail = fn()
+    print('  %-4s %-22s %s' % ('PASS' if ok else 'FAIL', name, detail))
+```
+
+在这一节的配置下跑（宿主 `/tmp` 里先放一个 `host-marker`，但不挂进容器）：
+
+```text
+=== 配置正确（--read-only --network none --user 65534 --tmpfs /workspace）===
+  PASS 只读根文件系统                OSError
+  PASS 无 eth 网卡（--network none） 路由网卡=[]（全部网卡：10 个）
+  PASS 非 root 用户              uid=65534
+  PASS 宿主挂载点未泄露               exists=False
+  PASS tmpfs 工作目录可写           可写
+```
+
+把配置换成「默认 root + 默认网络 + 把宿主 `/tmp` 挂进去」，同一个脚本立刻翻车：
+
+```text
+=== 配置错误（默认 root + 默认网络 + 挂载宿主 /tmp）===
+  FAIL 只读根文件系统                根目录可写
+  FAIL 无 eth 网卡（--network none） 路由网卡=['eth0']（全部网卡：11 个）
+  FAIL 非 root 用户              uid=0
+  FAIL 宿主挂载点未泄露               exists=True
+  FAIL tmpfs 工作目录可写           FileNotFoundError
+```
+
+**这就是「验证过的隔离」和「配了隔离」的区别。** 两边的架构描述可以写得一模一样，探针的输出不会撒谎。把这段探针纳入 CI 或启动自检，配置被人改坏时会立刻暴露。
+
+> 一处如实说明：最初用「能不能连上 `1.1.1.1:443`」测网络，两次运行都返回被禁（TimeoutError）——**本机的网络策略让这个测法在这里不可靠**，它分不出「容器禁网」和「宿主本来就出不去」。换成「有没有 eth 网卡」之后才有确定信号。这也是本项目对待未复现结果的一贯做法：测不出来就说测不出来，换一个能分辨的判据。
+
+## 生命周期：谁创建、清理什么、怎么验证清理干净
+
+L119 提了「每任务重建 / 复用但清理 / 全局共享」三种，但没说这三件事谁做、做什么。补上：
+
+**谁创建。** 由**调度层**（跑 agent 循环的那个服务）在任务开始时创建，不是在工具里临时创建 —— 工具作者不该负责沙箱生命周期，否则又会散成 20 处。
+
+**清理什么。** 一份清单，按「跨任务泄露」的风险排序：
+
+| 要清的东西 | 不清会怎样 |
+|---|---|
+| 可写目录里的文件与临时文件 | 上一个任务的输出被下一个任务读到 |
+| 环境变量里注入的凭据 | 下一个任务拿到了不属于它的身份 |
+| 已打开的 socket / 连接 | 复用进程时，上一任务的连接继续可用 |
+| 进程表里的残留进程 | 后台进程活过任务边界，继续占资源 |
+| 本地缓存（如 pip / npm cache） | 缓存投毒跨任务传递 |
+
+**怎么验证清理干净。** 判断方式是**下一个任务开始前先跑一个「洁净探针」**，而不是靠 review 清理代码：探针检查「可写目录文件数 == 0」「环境变量与白名单一一对应」「上一任务写的 marker 文件不存在」。三项全过才继续；任一项失败就把这个实例标记为脏、销毁重建。这与上面的隔离探针是同一个套路：**把「我以为清干净了」变成一个可复跑的结果。**
+
+**选哪种。** 判据还是爆炸半径：如果任务之间不该互相看见，就每任务重建；确实要摊启动开销时，用「实例复用 + 文件系统每任务新建（挂一个新建的 tmpfs）」，绝不要「全局共享 + 清理」—— 因为清理的遗漏是静默的，而进程与环境的残留最难查。
+
 ## 常见坑
 
 - **把语言层黑名单当安全边界。** 它有已知绕过手法，只适合防误用。

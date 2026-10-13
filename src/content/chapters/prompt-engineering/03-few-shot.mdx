@@ -94,6 +94,90 @@ flowchart LR
 > 这是本项目第三个「未复现」的常见说法（前两个是「否定式指令更不稳」与「中间位置被忽略」）。
 > 它们共同说明一件事：**这个领域里流传的很多经验之谈没有实测支撑**，包括我写的这一条。
 
+### 「加了示例有没有提升」怎么判断
+
+本节开头那张表是每个配置**跑一遍**得到的结果。要把它变成判据，还差三样东西：**测试集、重复次数、阈值。**
+
+| 要素 | 这里怎么定 | 理由 |
+|---|---|---|
+| 测试集 | 固定那 10 条，其中 **4 条是边界题** | 10 条总数偏少，够发现「明显提升」，不够发现小提升 —— 想分辨 10 个百分点按第 1 章的算法要上百条 |
+| 重复次数 | **5 遍**，看每遍是否一致 | 单次差异可能来自采样噪声，不是示例的作用。注意：第 2 节实测过 `temperature=0` 也不保证可复现 |
+| 阈值 | **边界题全对**（4/4），且**5 遍都全对** | 边界题才是示例要修的东西；典型题本来就会做，它们全对不构成「提升」 |
+
+**判据一句话**：只有当你删掉某条示例后，`边界题从全对变成有错`（且在 5 遍里稳定复现），那条示例才算真的在起作用。否则它就是每轮都在付 token 的陪跑项。
+
+```python
+# ablate_examples.py
+"""验证一条示例到底有没有用：删掉它，边界题还全对吗？"""
+
+import os
+import re
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY")
+    or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+# 边界题：模型在零样本下会判错的那类（这里是反讽 / 委婉否定 / 混合评价）
+BOUNDARY_TESTS = [
+    ("东西是好东西，就是太贵", "中性"),
+    ("不是不好用，只是不适合我", "中性"),
+    ("总算没搞砸，但也就那样", "负面"),
+]
+
+EXAMPLES = [
+    ("东西是好东西，就是太贵", "中性"),        # 与测试集同型
+    ("总算没搞砸，但也就那样", "负面"),
+    ("不是不好用，只是不适合我", "中性"),
+]
+
+BASE = "把用户评论分类为『正面』『负面』或『中性』，只回复类别名。"
+RUNS = 5
+
+
+def classify(system: str, text: str) -> str:
+    resp = client.messages.create(
+        model=MODEL, max_tokens=800, system=system,
+        messages=[{"role": "user", "content": text}],
+    )
+    out = "".join(b.text for b in resp.content if b.type == "text").strip()
+    m = re.search(r"正面|负面|中性", out)
+    return m.group(0) if m else out[:6]
+
+
+def score(examples: list[tuple[str, str]]) -> int:
+    """返回边界题在 RUNS 遍里的总对数（满分 = 题数 × RUNS）。"""
+    system = BASE if not examples else BASE + "\n\n示例：\n" + "\n".join(
+        f"「{t}」→ {c}" for t, c in examples
+    )
+    return sum(
+        classify(system, text) == expect
+        for _ in range(RUNS)
+        for text, expect in BOUNDARY_TESTS
+    )
+
+
+if __name__ == "__main__":
+    full = score(EXAMPLES)
+    total = len(BOUNDARY_TESTS) * RUNS
+    print(f"全部 {len(EXAMPLES)} 条示例: {full}/{total}")
+
+    # 逐条消融：一次删一条，看分数掉不掉
+    for i in range(len(EXAMPLES)):
+        ablated = EXAMPLES[:i] + EXAMPLES[i + 1:]
+        s = score(ablated)
+        verdict = "这条在起作用" if s < full else "删掉没差别 → 陪跑"
+        print(f"删掉第 {i + 1} 条: {s}/{total}   {verdict}")
+```
+
+> **实跑状态：未实跑。** 这个脚本是本次新写的（消融式验证），**没在这台机器上跑过**。它的测试题与示例取自本节上面那份实测脚本，但**分数是你自己跑出来的才对**。
+
+> 跑之前注意一件事：如果全部示例的分数已经是满分，删一条仍可能不掉分 —— **那正说明这条示例在陪跑**，而不是说明实验失败。
+
 ## 完整可运行代码
 
 ```python

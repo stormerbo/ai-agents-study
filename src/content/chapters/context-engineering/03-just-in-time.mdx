@@ -71,7 +71,7 @@ flowchart TB
 
 于是当需要读 20 篇时：
 
-```
+```text
 第 1 轮：目录 + 问题                      → 读 4 篇
 第 2 轮：上面全部 + 4 篇内容               → 再读 5 篇
 第 3 轮：上面全部 + 9 篇内容               → 再读 6 篇
@@ -80,7 +80,7 @@ flowchart TB
 
 输入量随轮次累积，总成本近似 O(N²) —— 这正是第 0 章讲多轮对话成本时算过的那个结构。
 
-> 有个缓解手段：**prompt caching**（第 1 章）。每轮重复的前缀是可以命中缓存的，能把「重发历史」的成本大幅压低。缓存**不能**免除复杂性，但能改变上面这些数字 —— 这也是为什么第 1 章要单独讲它。
+> 有个缓解手段：**prompt caching**。它的机制是：把每轮请求里**逐字相同**的开头一段在服务端存下来，下次请求命中就不必重算，只按更低的单价计费。所以它能把「重发历史」的成本大幅压低，但**不能**免除复杂性 —— 只要前缀里有一个字变了，从那个位置往后全部失效（第 7 节讲这层机制）。这也是为什么第 1 章要单独讲它。
 
 ## 那到底该怎么选
 
@@ -95,12 +95,42 @@ flowchart TB
 
 ### 中间形态：只给目录
 
-最后一行值得单独说，因为它是实际系统里最常见的做法，也是两个 checkpoint 里那个「文件路径模式」：
+最后一行值得单独说，因为它是实际系统里最常见的做法，也是两个 checkpoint 里那个「文件路径模式」（本站的 checkpoint 指每节末尾的自检题，不是框架的持久化检查点 —— 后者见第 11 章）：
 
 **把「索引」和「内容」分开。**
 
 - **索引**（标题、路径、一句话摘要）很便宜 —— 20 篇的目录约 400 token，60 篇约 1200 token。可以常驻上下文
 - **内容**很贵 —— 每篇 250 token 起，只在被选中时才加载
+
+一份索引长这样（示例：构造数据，未实跑）：
+
+```text
+DOC-01  灾备演练规范          ops/dr-drill.md          演练窗口、参与人、演练期间的变更禁令
+DOC-02  支付渠道对账流程       billing/reconcile.md     T+1 对账口径、差异分类与处理时限
+DOC-03  线上故障分级标准       ops/incident-level.md     P0~P3 的判定条件与响应要求
+DOC-04  退款到账时间说明       billing/refund-sla.md    各渠道的到账口径与影响因素
+DOC-05  数据导出权限申请       security/export.md       申请流程、审批人、有效期
+...（其余 15 条同格式）
+```
+
+索引的三个字段各有明确用途，别省也别加：
+
+| 字段 | 谁用 | 怎么写 |
+|---|---|---|
+| 编号 | 模型回传给你 | 稳定、唯一；正文换了编号不能变，否则历史记录对不上 |
+| 标题 | 人看，也帮模型定位 | 用文档自己的标题，不要改写成营销式短语 |
+| 一句话摘要 | 模型判断「该不该读它」 | 20~40 字，写**这篇讲什么、什么时候该读**，不要写结论 |
+
+**摘要由离线任务生成，不要在请求时现算。** 建索引时对每篇文档做一次摘要并落库；如果等用户提问时临时摘要，你为了省 token 反而多花了一轮调用，还多了一处不确定性。粒度上，摘要只写到「主题」层：写「各渠道的到账口径与影响因素」，不要写「退款 3~5 个工作日到账」—— 后者是正文里的结论，摘要里写了会诱导模型直接作答而不去读原文。
+
+模型拿到目录后，「选中」发生在同一次工具调用里 —— 它不需要你额外设计一轮选择对话，目录加问题就是那一轮的输入，它要读哪篇就直接调工具（示例：构造数据，未实跑）：
+
+```text
+输入：目录（DOC-01 ~ DOC-20 各一行）+ 问题「灾备演练期间允许改生产配置吗？」
+输出：tool_use  read_doc({"id": "DOC-01"})
+```
+
+所以「选得准不准」完全取决于索引里那三样东西写得好不好：摘要写的是主题，模型才知道 DOC-01 与问题相关；如果摘要只写「运维文档」四个字，它就只能乱读。
 
 这个做法顺带解决了另一个问题：**模型不知道自己不知道什么**。先给它一张地图，它才会去问对的问题。本站在做代码检索类任务时用的就是这条路（[aider 的 repo-map](https://aider.chat/docs/repomap.html) 是同一思路的成熟实现）。
 
@@ -113,6 +143,7 @@ flowchart TB
 关键：按需取必须**累加所有轮次的输入 token** —— 只看单轮会得出完全错误的结论。
 """
 
+import json
 import os
 
 import anthropic
@@ -126,7 +157,8 @@ client = anthropic.Anthropic(
 )
 MODEL = os.environ["VERIFY_MODEL"]
 
-DOCS: list[dict] = [...]      # [{"id": "DOC-01", "title": "...", "content": "..."}]
+# 换成你自己的资料库。summary 就是上面那种一句话摘要，索引只用它，不用正文。
+DOCS: list[dict] = [...]      # [{"id","title","summary","content"}, ...]
 NEEDED_IDS: list[str] = [...] # 这个任务到底需要哪几篇
 QUESTION = "..."
 
@@ -166,11 +198,21 @@ def preload() -> int:
 
 
 def on_demand() -> int:
-    catalogue = "\n".join(f"{d['id']}  {d['title']}" for d in DOCS)
+    # 索引里的三样东西都要拼上：只给 id + title，就等于让模型在不知道
+    # 「这篇讲什么」的情况下决定读不读 —— 摘要才是它做选择唯一的依据。
+    catalogue = "\n".join(
+        f"{d['id']}  {d['title']}  {d['summary']}" for d in DOCS
+    )
     messages = [
         {
             "role": "user",
-            "content": f"可查阅以下资料（只给目录）：\n\n{catalogue}\n\n{QUESTION}",
+            "content": (
+                f"可查阅以下资料（只给目录，不含正文）：\n\n{catalogue}\n\n"
+                f"{QUESTION}\n\n"
+                "如果正文是回答所必需的，调用 read_doc 取回它 —— "
+                "只在你确定必要时才读，每次读取都会增加一轮往返与上下文占用。"
+                "如果目录里没有相关文档，直接说明，不要猜。"
+            ),
         }
     ]
     total = 0
@@ -185,20 +227,34 @@ def on_demand() -> int:
             return total
 
         messages.append({"role": "assistant", "content": resp.content})
-        messages.append({
-            "role": "user",
-            "content": [
-                {
+
+        results = []
+        for b in resp.content:
+            if b.type != "tool_use":
+                continue
+            doc = next((d for d in DOCS if d["id"] == b.input.get("id")), None)
+            if doc is None:
+                # is_error 是 tool_result 上的一个布尔字段：它告诉模型
+                # 「这一条不是结果，是一次失败」。不标它，模型会把错误
+                # 当成资料读进去（第 4 章有对照实测）。
+                results.append({
                     "type": "tool_result",
                     "tool_use_id": b.id,
-                    "content": next(
-                        (d["content"] for d in DOCS if d["id"] == b.input.get("id")),
-                        f"未找到 {b.input.get('id')}",
-                    ),
-                }
-                for b in resp.content if b.type == "tool_use"
-            ],
-        })
+                    "is_error": True,
+                    "content": json.dumps({
+                        "error": "not_found",
+                        "message": f"资料库中没有 {b.input.get('id')} 的正文，"
+                                   "索引可能是过期快照。",
+                        "retryable": False,
+                    }, ensure_ascii=False),
+                })
+            else:
+                results.append({
+                    "type": "tool_result",
+                    "tool_use_id": b.id,
+                    "content": doc["content"],
+                })
+        messages.append({"role": "user", "content": results})
     return total
 
 
@@ -231,7 +287,47 @@ if __name__ == "__main__":
 
 > **按需取的可靠性，取决于你把「取不到」这件事回填得有多清楚，而不是取决于模型的自觉。**
 
-所以设计按需取时，要像设计接口错误码一样设计「取不到」：文档不存在、暂时不可用、无权访问，这三者该对应模型完全不同的下一步动作。
+所以设计按需取时，要像设计接口错误码一样设计「取不到」：文档不存在、暂时不可用、无权访问，这三者该对应模型完全不同的下一步动作。三种回填各长这样（示例：构造数据，未实跑）：
+
+```json
+// ① 文档不存在 —— 索引过期了，换一篇或者回来问用户
+{
+  "error": "not_found",
+  "message": "资料库中没有 DOC-07 的正文，索引可能是过期快照。",
+  "retryable": false,
+  "hint": "换一篇候选，或向用户确认标题后重新检索。"
+}
+```
+
+```json
+// ② 暂时不可用 —— 重试可能成功，但要有次数上限
+{
+  "error": "unavailable",
+  "message": "文档服务本次请求超时，未能取回 DOC-07。",
+  "retryable": true,
+  "hint": "可以原样重试一次；仍失败就如实说明，并继续其余部分。"
+}
+```
+
+```json
+// ③ 无权限 —— 重试没有意义，也不能拿别的文档凑
+{
+  "error": "forbidden",
+  "message": "当前凭据无权读取 DOC-07。",
+  "retryable": false,
+  "hint": "不要重试，也不要用其它文档替代；向用户说明缺少哪一项权限。"
+}
+```
+
+映射到动作上就是一张表。**三种错误必须给出三种不同的动作**，否则模型只能猜，而它猜的时候会倾向于编一个看起来合理的答案：
+
+| 回填的 error | 模型该做什么 | 模型不该做什么 |
+|---|---|---|
+| `not_found` | 换候选，或向用户确认 | 编一个答案；反复读同一篇 |
+| `unavailable` | 原样重试一次 | 无限重试；把失败当「没有这篇」 |
+| `forbidden` | 如实说明权限不足 | 用别的文档凑答案；绕过权限 |
+
+一个容易忽略的细节：**`retryable` 要给出动作而不只是布尔值**。只写 `retryable: true` 的实测后果是模型原地重试同样的参数（第 4 章有对照），所以真正有用的是 `hint` 里那句「能做什么」。
 
 ## 让索引不容易过期
 

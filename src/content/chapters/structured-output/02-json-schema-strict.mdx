@@ -12,6 +12,13 @@ status: drafting
 
 模型也确实调用了工具，返回的 JSON 也通过了你的解析。**问题出在一个常见的误解上：你以为 `input_schema` 是一道闸门，实际上它只是一份说明书。**
 
+这一节会撞上四个名词，先按它们各自管什么分开：
+
+- **token**：模型按**词表切分后的片段**逐段生成输出（第 1 章）。理解这一点就够了 —— 屏蔽一个 token，等于否决一次候选；`type: integer` 这种约束的代价，最终都要折算成「每一步要检查多少 token」。
+- **`oneOf` / `$ref` / `additionalProperties`**：你现在可以直接把它们当成**你熟悉的 HTTP 接口校验库里的关键字**：`oneOf` 相当于联合类型（多选一），`$ref` 相当于「引用另一个类型定义」，`additionalProperties: false` 相当于「不许出现接口没声明的字段」。后端读者对这套东西的直觉基本可迁移。
+- **约束解码**（constrained decoding）：**采样阶段**就按 schema 屏蔽掉会导致非法输出的 token（下一小节展开）。
+- **Pydantic**：Python 里做运行时类型校验的库。你在本节看到的用法等价于把 JSON Schema 写成一个类，由它负责「解析 + 校验 + 报错」这三件事。
+
 ## 实测：schema 到底强制了什么
 
 方法：每种关键字单独建一个工具，输入**故意引诱模型违反该约束**，然后用强制工具调用跑 3 次（关闭思考，让 schema 成为唯一约束来源）。
@@ -43,6 +50,21 @@ status: drafting
 ## 约束解码是什么，不是什么
 
 真正的**约束解码**（constrained decoding）发生在采样阶段：每一步都屏蔽掉会导致非法输出的 token，让「生成非法结构」在机制上不可能。这是编译器级别的保证。
+
+**掩码是怎么来的**，决定了它为什么不是默认能力。链条是这样：
+
+1. 你的 schema 被**编译成一个状态机**（「下一步允许出现哪些字符」）。
+2. 状态机再被折算成**当前这一步允许的 token 集合**。
+3. 采样时把其余 token 的概率压成 0。
+
+第 2 步是全部代价的来源：**约束是字符级的，而模型是按 token 生成的**，两者必须逐 token 对齐。于是：
+
+- **它必须用这家厂商自己的 tokenizer 编译。** tokenizer 不同，同一个 schema 编译出的掩码就不同 —— 这就是为什么它没法像 JSON Schema 那样「写一次到处用」。
+- **schema 的表达力越强，状态机越大。** 递归类型要让状态机自我引用、联合类型（`oneOf`）要并行维护多个候选分支，编译时间和内存都会往上走。
+- **中文边界尤其贵。** 一个汉字可能是一个 token，也可能是半个多字节 token；`enum` 里放中文取值时，掩码必须在 token 粒度上把这些切法全部覆盖。
+- **它会压缩模型的表达空间。** 模型不能先输出一段自然语言「想清楚」，因为那些 token 不在允许集合里 —— 这就是第 1 节「强制工具调用必须关掉思考」在机制层的同一条原因。
+
+**哪些产品真的做了这件事**（以下为已知产品特性的方向性对照，不是本书实测）：OpenAI 的 Structured Outputs 在支持的模型上用约束解码，并把自己的 schema 子集明确写成文档；llama.cpp 走的是另一条路 —— 你写一份 GBNF 文法（也可以用它的 `json_schema` 转换），它按文法在本地约束采样。两者的共同点是：**支持的关键字是有限的、且随版本变**。所以「换一家就自动有结构保证」这个假设，在任何厂商那里都不成立。
 
 而工具调用的 `input_schema` 是一份**给模型看的接口说明**。在这个端点上，它的行为更像「模型读了这份说明并尽量遵守」，而不是「采样器照着它屏蔽 token」—— 上表里 `maximum` 与 `pattern` 的结果就是证据。
 
@@ -119,10 +141,15 @@ RAW = """{
 
 try:
     refund = Refund.model_validate_json(RAW)
-    print("schema 与约束都通过")
-    print("业务规则问题：", refund.check_business_rules())
+    problems = refund.check_business_rules()
 except ValidationError as exc:
-    print(exc)
+    # 失败路径：把每个错误拆成结构化的一份，交给下一节的重试或降级分支
+    problems = [{"type": e["type"], "field": e["loc"][0], "msg": e["msg"],
+                 "input": e.get("input")} for e in exc.errors()]
+    refund = None
+
+print("校验结果：", "通过" if refund else "不通过")
+print("问题清单：", problems)
 ```
 
 真实运行输出：
@@ -136,6 +163,42 @@ issue_type
   Input should be 'refund' or 'repair' [type=literal_error, input_value='question', input_type=str]
     For further information visit https://errors.pydantic.dev/2.9/v/literal_error
 ```
+
+**校验通过之后，下游拿到的到底是什么？** 这是第二层最容易被含糊过去的一步。它是两个东西：一个**结构化的问题清单**（失败时），以及一个**可以直接落库的对象**（成功时）。上面那段代码把它们都打了出来：
+
+```text
+校验结果： 不通过
+问题清单： [{'type': 'multiple_of', 'field': 'amount', 'msg': 'Input should be a multiple of 100', 'input': 1234}, {'type': 'literal_error', 'field': 'issue_type', 'msg': "Input should be 'refund' or 'repair'", 'input': 'question'}]
+
+通过时的下游对象：
+  业务规则问题： []
+  落库用： {'amount': 1200, 'issue_type': 'refund', 'start_date': '2026-10-01', 'end_date': '2026-10-15'}
+```
+
+注意「问题清单」的每一项都是 `type` / `field` / `msg` / `input` 四个字段 —— 它有三个消费方，缺一个都不行：
+
+1. **写法务日志**：`field` 与 `input` 决定了你能不能事后回答「是哪个字段一直过不去」。
+2. **喂给模型重试**：`msg` 是唯一能告诉模型「错在哪」的东西（下一节实测：只说「没通过校验」的修正率是 0/6，给了这一项才是 6/6）。
+3. **做降级决策**：`type` 决定这次失败属于哪一类 —— 形状 / 约束 / 业务规则。三类走不同的分支，下一节会给完整的实现。
+
+而下面这段是**跨字段业务规则失败**的样子：格式和约束全过，问题清单里只剩第三层。
+
+```text
+校验结果： 不通过
+问题清单： [{'type': 'business_rule', 'field': 'end_date', 'msg': 'end_date 早于 start_date：区间不可满足'}]
+```
+
+（上面是跨字段示例：构造数据，未实跑。）
+
+```python
+def consume(refund, problems):
+    """下游唯一该看的一行代码：先看问题清单，为空才落库。"""
+    if problems:
+        return {"action": "retry", "report": problems}
+    return {"action": "store", "payload": refund.model_dump()}
+```
+
+`consume` 之所以值得单列出来，是因为它把「谁来消费校验结果」这件事写死了：**校验器绝不自己重试、也绝不自己落库** —— 它只返回清单，由调用方按清单分流。这样重试上限、降级路径、埋点位置才有唯一一处可以放。
 
 注意这段输出里有两类信息，它们在下一节会派上不同的用场：
 

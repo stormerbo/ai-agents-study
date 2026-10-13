@@ -28,6 +28,8 @@ status: drafting
 
 （实测数据，`deepseek-flash`，2026-10-08，每组 6 次，`temperature=1`。）
 
+`temperature` 是采样参数里最常被提到的一个：**它控制每次采样从概率分布里挑 token 时的随机程度** —— 设成 0，模型几乎总是挑概率最高的那个，输出最确定；设成 1，低概率候选也有机会被挑到，输出更发散。本节的实验把它固定为 1，理由不是「1 更好」，而是**让三组策略面对同样的随机性**：如果一组用 0、一组用 1，修正率的差别里就混进了一个与策略无关的变量。这也是后文反复出现「6 次采样、`temperature=1`，噪声完全可能有这个量级」那句话的来源。
+
 「原样重发」为什么是 0？因为**重试这个动作本身不携带任何新信息**。模型面对的是完全相同的输入，它只能重新采样一次 —— 那是在掷骰子，不是在解决问题。而它每一次都掷出了同一个结果，恰恰说明模型认为 1234 就是对的。
 
 ## 到底是哪个成分起作用
@@ -102,6 +104,8 @@ flowchart TB
 - 本节：模型发出调用意图 → **你只取它的 `input` 当作结构化数据** → 结束。
 
 这里的工具是一个**借用的通道** —— 用来把输出收窄成对象，函数体从头到尾不存在。所以本节不需要回填 `tool_result`，不存在幂等问题，重试也是干净的操作。
+
+`tool_result` 是标准工具调用里的一个消息块，形状大致是 `{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "...", "content": "..."}]}` —— **它的作用是把「你执行函数得到的返回值」送回给模型**。本节没有函数可执行，所以这个块永远不会出现；模型给出 `tool_use` 之后，这次对话就结束了。区分这一点很重要：一旦你把它和真正的工具调用混起来，就会开始怀疑「不回填结果是不是不合规」，而实际上这里根本没有第二个回合。
 
 这个区别值得单独记住，因为两种用法在代码上几乎一模一样，语义上却完全不同：**一个是「让模型动手」，一个是「让模型交一份填好的表」。**
 
@@ -189,6 +193,124 @@ exc.json() 才是该发回去的形式：
 ```
 
 > **实跑状态**：报错原文与 `exc.json()` 的输出均在本地 Python 3.10 + Pydantic 2.9.2 上实跑得到。上面的 SDK 调用片段与实测采集脚本字段一致，但未在官方端点跑过。
+
+## 重试耗尽之后：降级分支与埋点
+
+上面那个 `extract_refund` 只回答了「怎么重试」，没回答**重试耗尽之后那一步**。而那张降级表的三行选择，落到代码里就是三个不同的返回值 —— 它们必须在写代码之前定下来。
+
+先定义这套系统的**产物**，也就是无论成功失败都会产生的那条记录（**构造示例，未实跑**）：
+
+```json
+{
+  "request_id": "req_8f21",
+  "task": "extract_refund",
+  "attempts": 3,
+  "first_round_ok": false,
+  "error_type": "business_rule",
+  "action": "human_queue",
+  "payload": {"raw_input": "...", "last_report": [{"type": "business_rule", "field": "end_date", "msg": "end_date 早于 start_date"}]}
+}
+```
+
+它的字段就是埋点的四件事：**试了几次**（`attempts`）、**首轮是否合格**（`first_round_ok`）、**错在哪一类**（`error_type`）、**最后走去哪**（`action`）。`error_type` 的取值与上面那张表一一对应：`shape` / `constraint` / `information` / `business_rule`。
+
+```python
+# degrade.py
+"""重试耗尽之后：降级分支 + 埋点。
+
+用假 client 演示控制流：三个字段的埋点、以及三种降级分支各自的载荷。
+本地 Python 3.10 + Pydantic 2.9.2 上跑通（未连官方端点）。
+"""
+
+import json
+import uuid
+from typing import Optional
+
+from pydantic import BaseModel, Field, ValidationError
+
+
+class Refund(BaseModel):
+    amount: int = Field(multiple_of=100)
+    reason: str
+
+
+def classify(exc: ValidationError) -> str:
+    """把 Pydantic 的错误类型映射到四类之一 —— 分类决定走哪条降级分支。"""
+    kinds = {e["type"] for e in exc.errors()}
+    if "multiple_of" in kinds or "greater_than" in kinds:
+        return "constraint"
+    if kinds & {"missing", "string_type", "int_type"}:
+        return "shape"
+    return "business_rule"
+
+
+def emit(event: dict) -> None:
+    """埋点：每次尝试都落一行。真实系统里这行进日志或时序库。"""
+    print("[metric] " + json.dumps(event, ensure_ascii=False))
+
+
+def run(ask: str, extract) -> dict:
+    """包住 extract：负责埋点与降级，extract 只管重试。
+
+    extract 是上一段代码里的函数，返回 (Refund | None, 首轮是否合格, 最后一次的错误类型)。
+    """
+    request_id = "req_" + uuid.uuid4().hex[:4]
+    result, first_ok, error_type = extract(ask)
+    attempts = 1 if first_ok else 3          # 简化：没首轮通过就按打满上限记
+
+    if result is not None:
+        record = {"request_id": request_id, "attempts": attempts,
+                  "first_round_ok": first_ok, "error_type": None,
+                  "action": "store", "payload": result.model_dump()}
+    else:
+        # 三种降级分支：不可逆动作进人工队列，可容忍误差给保守默认值，
+        # 大 schema 里只有个别字段过不去就拆小重试。
+        action = "human_queue" if error_type in ("business_rule", "information") else "conservative_default"
+        record = {"request_id": request_id, "attempts": attempts,
+                  "first_round_ok": first_ok, "error_type": error_type,
+                  "action": action,
+                  "payload": {"raw_input": ask, "last_report": "见上一次尝试的 exc.json()"}}
+
+    # 关键：无论成功失败都发同一条事件，只是 action 不同
+    emit({k: record[k] for k in ("request_id", "attempts", "first_round_ok", "error_type", "action")})
+    if record["action"] == "human_queue":
+        # 入队载荷必须自带原始输入 —— 处理的人不该去翻日志找它
+        print("[queue] 入队:", json.dumps(record["payload"], ensure_ascii=False))
+    return record
+
+
+if __name__ == "__main__":
+    # 假 client：模拟「首轮越界、第二轮修正」与「三轮都做不到」两种情况
+    def fake_extract_fixed(ask: str):
+        return Refund(amount=1200, reason=ask), False, None
+
+    def fake_extract_failed(ask: str):
+        return None, False, "business_rule"
+
+    for label, extract in (("两轮内修正", fake_extract_fixed),
+                           ("重试耗尽", fake_extract_failed)):
+        print("==", label)
+        print("  ->", json.dumps(run("打车费 1234 元", extract), ensure_ascii=False))
+```
+
+`classify` 这个小函数值得单独看一眼 —— 它把「Pydantic 报了什么错」翻译成「走哪条降级分支」：
+
+```text
+amount=1234（constraint）        -> constraint
+reason 缺失（shape）             -> shape
+end_date 早于 start_date（业务）  -> business_rule
+```
+
+（分类结果上示：本地 Python 3.10 + Pydantic 2.9.2 实跑得到；分支动作是上表的直接翻译。）
+
+这段代码里有两个设计决定值得单独说：
+
+1. **降级分支由 `error_type` 决定，不由调用方临时判断。** 「信息缺失」与「业务规则冲突」进人工队列，「约束越界」给保守默认值 —— 因为后者还能事后补救，而前者不能。
+2. **成功与失败发同一条事件。** 只在失败时埋点，你就永远算不出首轮合格率（分母丢了）。下一小节会说明它是这套系统最有价值的指标。
+
+**入队载荷里必须带原始输入。** 处理队列的人不应该被迫去翻日志、把上下文拼回来 —— 那是把成本从系统转嫁给人，而人工队列的单价是这套链路里最高的。
+
+最后一条纪律：**降级路径也要有测试。** 触发它最简单的方式是把上限设成 0（`MAX_ATTEMPTS = 0`），跑一遍主流程，确认入队载荷与埋点事件都正确 —— 否则这条分支只有在上线后第一次真出事时才会被执行。
 
 ## 重试不是万能的：降级路径必须在设计阶段定
 

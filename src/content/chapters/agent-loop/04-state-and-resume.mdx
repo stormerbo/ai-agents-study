@@ -115,7 +115,100 @@ flowchart TB
 
 选哪一种，取决于你能不能接受重复。如果能（操作幂等），选简单的那种；如果不能，选诚实的那种。
 
+### 把「补一条 tool_result」写成代码
+
+下面这段是自包含的（示例：构造数据，未实跑 —— 崩溃现场是脚本构造的；脚本本身本次已跑通）。它读回一份「工具执行完、结果还没写回就崩了」的消息历史，扫描出孤立的 `tool_use`，再补一条说清状态未知的 `tool_result`：
+
+```python
+"""崩溃恢复：读回完整消息历史，修补孤立的 tool_use。
+
+场景：assistant 发出了 tool_use，工具也执行了，但 tool_result 还没写回就崩了。
+自包含，不需要凭据。
+实跑状态：2026-10-12。
+"""
+import json
+
+STATE = "al-messages.json"
+
+
+def save(messages):
+    with open(STATE, "w") as f:
+        json.dump(messages, f, ensure_ascii=False)
+
+
+def load():
+    return json.load(open(STATE))
+
+
+def orphan_tool_uses(messages):
+    """哪些 tool_use.id 在后续消息里找不到对应的 tool_result？"""
+    answered = set()
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, list):
+            for b in c:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    answered.add(b["tool_use_id"])
+    orphans = []
+    for m in messages:
+        c = m.get("content")
+        if m.get("role") == "assistant" and isinstance(c, list):
+            for b in c:
+                if isinstance(b, dict) and b.get("type") == "tool_use" and b["id"] not in answered:
+                    orphans.append(b)
+    return orphans
+
+
+def repair(messages):
+    """给孤立的 tool_use 补一条 tool_result，内容说明状态未知。"""
+    orphans = orphan_tool_uses(messages)
+    if not orphans:
+        return messages, []
+    patch = [{"type": "tool_result", "tool_use_id": b["id"],
+              "content": "上一步的状态未知：工具可能已经执行，请勿重复执行有副作用的操作。"}
+             for b in orphans]
+    return messages + [{"role": "user", "content": patch}], patch
+
+
+if __name__ == "__main__":
+    crashed = [
+        {"role": "user", "content": "创建订单 ORD-1"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "call_00_ORD1", "name": "create_order",
+             "input": {"id": "ORD-1"}}]},
+    ]
+    save(crashed)
+    msgs = load()
+    print("恢复时读回的消息条数：%d" % len(msgs))
+    print("孤立 tool_use：%s" % [b["id"] for b in orphan_tool_uses(msgs)])
+    msgs, patch = repair(msgs)
+    print("补完后共 %d 条消息，最后一条：" % len(msgs))
+    print(json.dumps(msgs[-1], ensure_ascii=False, indent=2))
+```
+
+实跑输出（2026-10-12）：
+
+```text
+恢复时读回的消息条数：2
+孤立 tool_use：['call_00_ORD1']
+补完后共 3 条消息，最后一条：
+{
+  "role": "user",
+  "content": [
+    {
+      "type": "tool_result",
+      "tool_use_id": "call_00_ORD1",
+      "content": "上一步的状态未知：工具可能已经执行，请勿重复执行有副作用的操作。"
+    }
+  ]
+}
+```
+
+补完之后这份历史就合法了：每个 `tool_use.id` 都有对应的 `tool_result.tool_use_id`（判据见第 1 节那条 400）。**注意补进去的是「状态未知」，不是「成功」或「失败」** —— 因为你确实不知道。
+
 ## 完整可运行代码
+
+> 说明：下面这个实验为了把变量隔离干净，**只把 `step` 落盘** —— 那是为了暴露「副作用 vs 进度」这条缝，不是推荐的持久化格式。真实系统要按上一节存完整消息历史，恢复逻辑见上一小节的代码。
 
 下面这个脚本就是上面那张表的来源。它跑两次：一次朴素版、一次幂等版，都在同一个位置注入崩溃。
 
@@ -129,8 +222,8 @@ flowchart TB
 """
 import json, os
 
-RECORDS = "verify-output/al-records.jsonl"
-STATE = "verify-output/al-state.json"
+RECORDS = "al-records.jsonl"
+STATE = "al-state.json"
 
 PLAN = [("create_record", {"id": "u1", "name": "张三"}),
         ("create_record", {"id": "u2", "name": "李四"}),

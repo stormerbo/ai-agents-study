@@ -6,7 +6,11 @@ status: drafting
 
 我们先用一个真实的失败开场。
 
-你写了一个 LLM 调用，为了让它「稳定」，把 `temperature` 设成 `0`。然后你写了这个测试：
+你写了一个 LLM 调用，为了让它「稳定」，把 `temperature` 设成 `0`。
+
+> `temperature` 是什么：模型每生成一个 token，都是从一张「下一个 token 的概率分布表」里**采样**出来的。`temperature` 是这张表的**平坦度旋钮** —— 调低会让分布更尖（几乎只取概率最高的那个），调高会更平（低概率选项也有机会）。所以它影响的是**随机性**，不是「正确性」。后面第 2 章会给出实测曲线，并说明这个旋钮在新一代 Claude 模型上已经无法设置。
+
+然后你写了这个测试：
 
 ```python
 def test_extract_company_name():
@@ -54,7 +58,7 @@ flowchart TB
 
 同一个提示，`temperature = 0`，连跑三次：
 
-```
+```text
 #1  三味咖啡
 #2  三味咖啡
 #3  三咖小馆        ← 第三次不同
@@ -98,15 +102,59 @@ def test_extract_company_name():
 
 更完整的做法是**用样本集统计成功率**：
 
-```python
-def test_extraction_success_rate():
-    """要求的是统计意义上的可靠，不是逐次相同。"""
-    cases = load_test_cases()          # 至少几十条
-    passed = sum(1 for c in cases if is_valid(extract(c.input), c.expected))
-    rate = passed / len(cases)
+但「统计成功率」这句话本身要落到三样具体的东西上，否则那两个函数 `load_test_cases()` / `is_valid()` 就是两个空壳：**样本从哪来、判据怎么定、阈值怎么定。**
 
-    assert rate >= 0.95, f"抽取成功率 {rate:.1%}，低于 95% 阈值"
+**样本从哪来**：从你生产日志里抽真实输入，**抽最近 N 条**（而不是你手挑的好例子 —— 手挑的样本一定偏简单）。N 取多少取决于你要检测多大的差异：按本站第 1 章（评估章）的二项模型计算，想分辨 10 个百分点的差异，每组大约要 **195 条**；只想看个位数级别的波动，几十条是不够的。先跑 100 条拿到基线，再决定要不要加到 200。
+
+**判据怎么定**：把「对」写成代码，不写成印象。`extract()` 返回的是结构化的 dict，所以判据也应该是结构化的 —— 每次只检查一条可判定的规则，而不是「看起来对不对」。
+
+**阈值怎么定**：不是先定 0.95 再看结果，而是**先跑基线、再看噪声**。把同一批样本在未改动的版本上跑 3 遍，观察成功率的波动范围；阈值取「基线 − 噪声」。`0.95` 只是一个常见起手值，**不是标准** —— 一个从 0.70 基线出发的链路，卡 0.95 只会永远红着。
+
+```python
+# success_rate_test.py
+"""把「抽取是否可靠」做成一个可跑的统计验收。"""
+
+import json
+import re
+from collections.abc import Iterable
+
+# 1) 样本：从生产日志里抽出来的真实输入 + 人工/下游系统确认过的期望结果
+#    （示例：构造数据，未实跑 —— 真实跑请把这里换成你自己日志里抽出的至少 100 条）
+CASES = [
+    {"input": "张三上周加入了字节跳动",   "expected": {"company": "字节跳动"}},
+    {"input": "李四从腾讯离职，去了小米", "expected": {"company": "小米"}},
+    {"input": "王五还在阿里",             "expected": {"company": "阿里"}},
+]
+
+# 2) 判据：每条都可判定，不靠「看起来像」
+def is_valid(got: dict, expected: dict) -> bool:
+    """逐字段比对；公司名允许后缀差异，所以用包含判定而不是 =="""
+    if set(expected) - set(got):
+        return False                      # 缺字段直接判错
+    for key, want in expected.items():
+        have = got.get(key)
+        if not isinstance(have, str) or not have.strip():
+            return False                  # 空串也算错（第 5 章的「必填逼幻觉」）
+        if want not in have and have not in want:
+            return False
+    return True
+
+
+def success_rate(cases: Iterable[dict], min_rate: float) -> float:
+    cases = list(cases)
+    passed = sum(is_valid(extract(c["input"]), c["expected"]) for c in cases)
+    rate = passed / len(cases)
+    # 阈值必须来自你自己的基线，不能照抄；下面这个 0.9 是示例值
+    assert rate >= min_rate, f"抽取成功率 {rate:.1%}，低于阈值 {min_rate:.0%}"
+    return rate
+
+
+if __name__ == "__main__":
+    print(f"{success_rate(CASES, min_rate=0.9):.1%}")
+    # 上线前把同一批样本跑 3 遍，看这个数字的抖动范围 —— 那才是你的噪声底线
 ```
+
+> （上面这段是**示例代码：构造数据，未实跑**。它的作用是给出「样本 / 判据 / 阈值」三件事的落点，`extract()` 换成你自己的抽取函数。）
 
 注意这里有个连锁后果：**`temperature` 在新一代 Claude 模型上已经无法设置了**（第 2 章）。所以「调低温度换稳定」这条路现在完全走不通 —— 你**只能**从测试和校验层面解决。
 
@@ -183,7 +231,7 @@ if response.stop_reason == "max_tokens":
 
 实验设计：把一条极其明确的机械约束（「回答的最后一行输出 `CHECKPOINT-OK`」）放在一段长干扰文本的不同位置，看模型是否遵守。
 
-```
+```text
 干扰文本 12164 字符
 
 约束位置 | 遵守 | 输入 token
@@ -213,6 +261,70 @@ if response.stop_reason == "max_tokens":
 这恰好呼应本站的一个核心主张：**在 AI 领域，「某个结论是否还成立」本身就需要持续验证。**
 
 > 如果你想自己测，建议用**真实任务**而不是机械标记：在一份长文档的中间埋一个「只有读了才能正确回答」的问题，看模型能否答对。这比测试「能否输出一个标记」更接近论文的原始设定。
+
+### 自己跑一遍：可运行的对照脚本
+
+上面的三种位置是我手工摆的。下面这个脚本把三件事写死成变量：「干扰文本多长」、「关键信息放哪」、「看模型有没有答对」。改 `FILLER_CHARS` 就能把规模从现在这个量级推到 13 万 token（第 7 章做过，仍未复现）。
+
+```python
+# lost_in_the_middle.py
+"""把一条关键事实埋进长干扰文本的不同位置，看模型能否用它作答。"""
+
+import os
+import urllib.request
+import json
+
+BASE_URL = os.environ["ANTHROPIC_BASE_URL"].rstrip("/")
+API_KEY = os.environ["ANTHROPIC_AUTH_TOKEN"]
+MODEL = os.environ["VERIFY_MODEL"]
+
+# 关键事实：只在某一条里出现，且必须读了才能答对
+NEEDLE = "本公司唯一的海外仓编号是 WH-7742，位于鹿特丹。"
+QUESTION = "本公司的海外仓编号是多少？只回答编号。"
+FILLER_CHARS = 12_000        # 想推到 13 万 token 量级就调大这个数
+POSITIONS = {"开头": 0.0, "中间": 0.5, "结尾": 1.0}
+
+FILLER = ("本季度运营会议纪要：各部门汇报了既定的常规事项，"
+          "讨论了办公用品采购、员工培训计划与季度复盘安排。") * 200
+
+
+def build_document(ratio: float) -> str:
+    """把关键事实插进填充文本的 ratio 处。"""
+    filler = FILLER[:FILLER_CHARS]
+    cut = int(len(filler) * ratio)
+    return filler[:cut] + "\n" + NEEDLE + "\n" + filler[cut:]
+
+
+def ask(document: str) -> tuple[str, dict]:
+    body = {
+        "model": MODEL,
+        "max_tokens": 2000,        # 长上下文下模型思考更久，别卡紧（见 AGENTS.md 的踩坑记录）
+        "messages": [{"role": "user",
+                      "content": f"读下面的资料，然后回答问题。\n\n{document}\n\n{QUESTION}"}],
+    }
+    req = urllib.request.Request(
+        BASE_URL + "/v1/messages",
+        data=json.dumps(body).encode(),
+        headers={"x-api-key": API_KEY, "anthropic-version": "2023-06-01",
+                 "content-type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        data = json.loads(resp.read())
+    text = "".join(b.get("text", "") for b in data["content"] if b["type"] == "text")
+    return text, data["usage"]
+
+
+if __name__ == "__main__":
+    for label, ratio in POSITIONS.items():
+        text, usage = ask(build_document(ratio))
+        # 判据：编号出现 + stop_reason 不是 max_tokens（否则是空输出，不是「没读到」）
+        hit = "WH-7742" in text
+        print(f"{label:>4} 命中={hit}  input={usage['input_tokens']}  "
+              f"停止原因见响应（必须确认不是 max_tokens 才能下结论）")
+```
+
+> **实跑状态：未实跑。** 这个脚本是本次新写的，用来补上本节「只有结果表、没有脚本」的缺口 —— 它没在这台机器上跑过，所以**不要把它给出的任何数字当实测**。想验证就自己跑一次：判据是「关键事实放中间时命中率是否下降」，而不是「模型有没有输出某个标记」。
+
 
 ### 为什么会这样
 

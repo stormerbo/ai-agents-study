@@ -206,7 +206,7 @@ if __name__ == "__main__":
 """
 import json, subprocess, sys
 
-SERVER = [sys.executable, "verify-output/mcp_server.py"]
+SERVER = [sys.executable, "mcp_server.py"]  # 把上面那份 server 存成同目录的 mcp_server.py
 
 
 class Client:
@@ -312,6 +312,56 @@ if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "security":
     security_probe()
 ```
 
+
+### 怎么把 server 注册进 host
+
+server 写好了，host 要能发现并拉起它。多数 host 用一份配置文件描述「有哪些 server、用什么命令启动」，形态大致是这样（示例：构造数据，未实跑；字段名随 host 不同）：
+
+```json
+{
+  "mcpServers": {
+    "demo": {
+      "command": "python3",
+      "args": ["/absolute/path/to/mcp_server.py"],
+      "env": {"LOG_LEVEL": "info"}
+    }
+  }
+}
+```
+
+三个字段的含义：`command` 是可执行文件（这里用 `python3`）；`args` 是启动参数，server 文件要写**绝对路径** —— 相对路径会随 host 的工作目录变化而失效；`env` 是额外环境变量。**日志不能靠 stdout**：前面讲过 stdout 是协议通道，要写到 stderr。
+
+### host 侧那一跳：tool_use → tools/call → tool_result
+
+这是本章和第 4 章之间的接缝，也是本节的最后一个缺口 —— 上面那个 client 是**测试驱动**，不是 host 的适配代码。真实 host 里它长这样：
+
+```python
+def handle_tool_use(tool_use, client):
+    """模型返回的 tool_use → JSON-RPC tools/call → 回填 tool_result。
+
+    模型看到的东西完全不变：仍是「工具定义 + 调用结果」（第 1 节）。
+    变的只是执行这一步跨了一次进程边界。
+    """
+    resp = client.send("tools/call", {
+        "name": tool_use["name"],          # 模型的请求里就带着工具名与参数
+        "arguments": tool_use["input"],
+    })
+    if "error" in resp:
+        # 协议层错误翻成 is_error 的 tool_result，而不是抛异常 ——
+        # 模型需要看到失败才能换一条路径
+        return {"type": "tool_result", "tool_use_id": tool_use["id"],
+                "is_error": True,
+                "content": json.dumps(resp["error"], ensure_ascii=False)}
+    out = resp["result"]
+    if out.get("resultType") == "input_required":
+        # MRTR：不是错误。把「需要补什么输入」交回上层去问用户（第 3 节）
+        return {"type": "tool_result", "tool_use_id": tool_use["id"],
+                "content": "需要用户补充输入：" + json.dumps(out["inputRequests"], ensure_ascii=False)}
+    return {"type": "tool_result", "tool_use_id": tool_use["id"],
+            "content": out["content"][0]["text"]}
+```
+
+两个判据值得记住：`tool_use_id` 必须回填成模型那次调用的 id（否则模型对不上是哪一问）；``input_required` 要走「补输入」而不是「报错」这条路（第 3 节讲的理由）。
 
 ## 为什么要手写一遍
 

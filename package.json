@@ -12,7 +12,9 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build-search": "node scripts/build-search.mjs"
+    "build-search": "node scripts/build-search.mjs",
+    "depth-check": "node scripts/depth-check.mjs",
+    "verify:depth": "node scripts/verify-depth-fixes.mjs"
   },
   "dependencies": {
     "@mdx-js/loader": "^3.1.1",

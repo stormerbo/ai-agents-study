@@ -70,6 +70,126 @@ flowchart TB
 `}
 />
 
+## 一条记忆记录长什么样
+
+「每条记忆必须带来源字段」这句话落到工程上，需要一整条记录，而不是一个字段。下面这份 schema 和示例可以直接抄（**示例：构造数据，未实跑**）：
+
+```json
+{
+  "id": "m_7f3a91",
+  "text": "团队使用 PostgreSQL，不要 MySQL 方案。",
+  "source": "user_stated",
+  "status": "active",
+  "created_at": "2026-09-28T10:12:03+08:00",
+  "updated_at": "2026-09-28T10:12:03+08:00",
+  "superseded_by": null,
+  "ttl_days": 90,
+  "dedup_key": "tech_stack.postgresql"
+}
+```
+
+| 字段 | 类型 | 一句话用途 | 支撑哪一节的功能 |
+|---|---|---|---|
+| `id` | TEXT 主键 | 召回日志里引用它 | 第 3 节的注入轨迹 |
+| `text` | TEXT | 注入进上下文的那句话 | 全部 |
+| `source` | ENUM | 这条是谁说的：`user_stated` / `system_observed` / `model_inferred` | 第 3 节**来源闸门** |
+| `status` | ENUM | `active` / `superseded` / `deleted` | 第 4 节失效标记与删除 |
+| `created_at` | ISO 8601 带时区 | 首次写入时间 | 审计 |
+| `updated_at` | ISO 8601 带时区 | 最近一次确认的时间 | 第 3 节**时效闸门** |
+| `superseded_by` | TEXT 可空 | 被哪条取代 | 第 4 节冲突裁决 |
+| `ttl_days` | INTEGER | 多少天后该复核 | 第 4 节 TTL |
+| `dedup_key` | TEXT | 同主题归一化键，查重用 | 本节去重 |
+
+**时间戳用 ISO 8601 带时区（`+08:00`），不用「秒」或「天」这种相对值。** 理由很实际：第 3 节的时效闸门要算天数、第 4 节的裁决要比较先后，而相对值一旦跨了进程就没有参照点。
+
+**这里有一个和下一节的口径冲突，必须显式处理。** 第 3 节的代码里 `source` 写的是中文字符串（`"用户明说"`），而上面这个 schema 用的是英文枚举（`user_stated`）。两种口径不能混用：
+
+- **如果在同一套系统里混用**，来源闸门的 `source in ALLOWED` 就会因为字符串不等而永远拦下或者永远放行 —— 一个静默的、不可能靠抽查发现的 bug。
+- **选法**：写进库的用英文枚举（稳定、不受语言与大小写影响），只在 prompt 与日志展示时映射回中文。下面 `to_record()` 就是那个唯一的映射点。
+
+## 把三条标准写成代码：`should_write()`
+
+三条标准（跨会话 / 稳定 / 可归因）在正文里是问句，落到代码里是布尔判断。**可归因是唯一一条不需要模型介入的 —— 它只是查一个枚举。**
+
+```python
+# should_write.py
+"""三条标准 → 布尔判断；通过后写一条带来源的记录。
+
+自包含：纯本地逻辑，不需要网络。
+实跑状态：本机 Python 3.10 实跑（2026-10-12）。"""
+
+import json
+import re
+from datetime import datetime, timezone, timedelta
+
+CN = timezone(timedelta(hours=8))
+WRITEABLE_SOURCES = ("user_stated", "system_observed")   # model_inferred 不允许作为事实写库
+
+# 稳定性门槛：命中「一次性」词表 → 判断只在本轮成立
+ONE_OFF = re.compile(r"今天|刚才|这一页|这次|临时|顺便")
+
+
+def should_write(text, source):
+    """返回 (是否能写, 原因)。三条标准缺一不可。"""
+    if not text.strip():
+        return False, "空内容"
+    if source == "model_inferred":
+        return False, "不可归因：推断类不作为事实写入"
+    if source not in WRITEABLE_SOURCES:
+        return False, "来源取值非法：%s" % source
+    if ONE_OFF.search(text):
+        return False, "不稳定：只在本轮成立"
+    if len(text) < 4:
+        return False, "信息量不足，跨会话没有价值"
+    return True, "可写"
+
+
+def to_record(text, source, dedup_key, ttl_days=90):
+    now = datetime.now(CN).isoformat(timespec="seconds")
+    return {
+        "id": "m_" + re.sub(r"\W", "", dedup_key)[:8],
+        "text": text,
+        "source": source,            # 英文枚举入库
+        "status": "active",
+        "created_at": now,
+        "updated_at": now,
+        "superseded_by": None,
+        "ttl_days": ttl_days,
+        "dedup_key": dedup_key,
+    }
+
+
+if __name__ == "__main__":
+    samples = [
+        ("团队使用 PostgreSQL，别给我 MySQL 的方案。", "user_stated", "tech_stack.postgresql"),
+        ("今天有点热。", "system_observed", "weather.today"),
+        ("用户可能对价格比较敏感吧。", "model_inferred", "user.price_sensitivity"),
+    ]
+    for text, source, key in samples:
+        ok, why = should_write(text, source)
+        print("%-8s %s  <- %s" % ("写入" if ok else "丢弃", why, text))
+        if ok:
+            print("         ", json.dumps(to_record(text, source, key), ensure_ascii=False))
+```
+
+```text
+写入     可写  <- 团队使用 PostgreSQL，别给我 MySQL 的方案。
+          {"id": "m_tech_sta", "text": "团队使用 PostgreSQL，别给我 MySQL 的方案。", "source": "user_stated", "status": "active", "created_at": "2026-10-12T15:54:30+08:00", "updated_at": "2026-10-12T15:54:30+08:00", "superseded_by": null, "ttl_days": 90, "dedup_key": "tech_stack.postgresql"}
+丢弃     不稳定：只在本轮成立  <- 今天有点热。
+丢弃     不可归因：推断类不作为事实写入  <- 用户可能对价格比较敏感吧。
+```
+
+注意 `should_write()` 里**第一条就拦推断**，而且没有给模型留任何裁量空间 —— 这正是它可靠的原因。模型在写入环节只负责一件事：**从原文里抽出候选文本并打上来源标签**；「要不要写」由这个函数决定。
+
+## 去重阈值怎么定
+
+「相似度过阈值就合并」是一句空话，除非你把两件事定下来：**用什么相似度**，以及**阈值多少**。
+
+- **用什么**：词法（Jaccard / 字符重合）能抓「同一句话的改写」，抓不住「同义表述」；嵌入能抓语义，但引入模型依赖。务实做法：**先用词法做第一层，`dedup_key` 做第二层** —— 后者是人定的归一化主题（`tech_stack.postgresql`），它对「说法变了但主题没变」免疫。
+- **阈值多少**：这是**你的语料决定的**，不能从别处抄。定法是取 20 组「同一件事的两种说法」和 20 组「相邻主题」，看这两批的分数分布有没有重叠区，阈值取在中间。本站第 6 章实测过词法在改写查询上的词面重合只有 0.012 到 0.041 —— **它意味着纯词法的合并阈值在中文改写上几乎无处可放**，这也正是要补 `dedup_key` 的原因。
+
+**合并不等于覆盖**：命中去重时更新 `updated_at` 并累加「确认次数」，而不是重写 `text` —— 第 4 节的时效闸门依赖 `updated_at`，你把它改掉，等于让一条老记忆看起来像新的。
+
 ## 写入的时机：每轮写，还是结束时写
 
 三条标准决定「记什么」，但还有一个同样重要的问题：**什么时候执行写入**。三种做法各有代价。
@@ -81,6 +201,15 @@ flowchart TB
 **显式触发。** 由用户或某个明确条件触发（「记住这个」、或检测到一段陈述句）。它最省，可靠性取决于触发条件的质量。
 
 实践上的折中是**两者组合**：会话结束时做一次完整提取作为兜底，同时对明确的用户陈述（「我们用 PostgreSQL」「以后都用表格」）即时写入。判断依据很简单：**如果这条信息丢了会让你后悔，就即时写；否则等结束。**
+
+**这笔差可以用第 1 节的成本模型直接算。** 「每轮写」意味着第 t 轮要把当前上下文再发一遍给提取调用；而第 1 节实测过：**历史每轮重发，12 轮累计是「只发一次」的 6.5 倍**，50 轮是 24 倍。把它套到写入上：
+
+| 写入时机 | 12 轮对话的提取调用 | 相对成本 | 失败时丢什么 |
+|---|---|---:|---|
+| 结束时写一次 | 1 次，带全部历史 | 1x（基准） | 会话中断 → 整段丢 |
+| 每轮写 | 12 次，每次带当轮为止的全部历史 | 约 6.5x（沿用第 1 节的 12 轮倍数，未单独实测） | 最多丢最后几轮 |
+
+所以「每轮写」贵的不是调用次数（12 次），而是**每次都要重发历史**。这也是为什么本节开头说「大多数轮次其实没有值得记的东西」——你为 12 次里可能只有 2 次有产出的提取，付了 6.5 倍的钱。
 
 ## 还要做去重
 
@@ -99,6 +228,8 @@ flowchart TB
 
 减法比事后清理容易得多。已经存进去的推断，你没法在不重新审视全部历史的前提下把它挑出来；而写入时多问一句「这是用户说的，还是我猜的」，成本几乎为零。
 ## 完整可运行代码
+
+写入脚本里用到的两个字段（第 5 章讲过，这里再用一次）：`max_tokens` 是请求里设的本次生成长度上限，`stop_reason` 是响应里说明为什么停下来的字段 —— 遇到 `max_tokens` 就说明输出被截断了，那一轮的结果不能计入统计。
 
 ```python
 """两种写入策略的对照：无差别记录 vs 按规则筛选。
@@ -152,6 +283,23 @@ def ask(system, user, max_tokens=6000):
     return text, data["stop_reason"]
 
 
+def insert(out):
+    """按上面那条记录的形状接收写入。真实系统里这行是 INSERT。"""
+    for line in out.splitlines():
+        text = line.strip().lstrip("- ").split(" [")[0]
+        if not text:
+            continue
+        for keyword, key, source in (
+            ("表格", "output.format_table", "user_stated"),
+            ("PostgreSQL", "tech_stack.postgresql", "user_stated"),
+            ("k8s", "deploy.k8s", "user_stated"),
+        ):
+            if keyword in text:
+                ok, why = should_write(text, source)
+                if ok:
+                    print("  写入:", json.dumps(to_record(text, source, key), ensure_ascii=False)[:120], "...")
+
+
 def audit(label, text):
     hit = lambda kws: [k for k in kws if k in text]
     stable = hit(STABLE)
@@ -159,6 +307,7 @@ def audit(label, text):
     print("  该记的（3 条）:", stable, "→ 命中 %d/3" % len(stable))
     print("  一次性信息（不该记）:", hit(ONE_OFF) or "无")
     print("  模型推断（不该记）:", hit(INFERRED) or "无")
+    insert(text)      # 只有通过 should_write 的才会真的落库
     print()
 
 

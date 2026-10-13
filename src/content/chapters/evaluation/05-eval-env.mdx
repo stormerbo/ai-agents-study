@@ -65,6 +65,18 @@ flowchart TB
 
 ## 三、一个可复用的环境骨架
 
+先给「初始状态」一个真实形态 —— 它是五要素里第一个，也是最容易被写成 `{}` 的一个（示例：构造数据，未实跑）：
+
+```json
+{
+  "refunds": ["R-001", "R-002", "R-003"],
+  "orders": {"A-1001": {"status": "已发货", "amount": 1288.50}},
+  "audit": []
+}
+```
+
+它要满足一个判据：**一个用例跑完之后，这份状态必须能被完整还原。** 凡是 agent 执行中会改的东西（表、文件、审计日志）都要在这里；只读的外部依赖（比如一个固定的政策文档）不必进，但要单独记录版本。
+
 下面这段是评测环境的正确形状。关键不是代码复杂度，而是**每个用例前后都有明确的边界**。
 
 ```python
@@ -97,10 +109,16 @@ class EvalEnv:
         raise ValueError("未知工具: %s" % name)
 
 
-def run_case(env, agent_fn):
+def run_case(initial_state, case, agent_fn):
+    """一个用例 = 一个新的环境实例 + 一次 agent 执行。
+
+    三个参数语义固定：initial_state 是世界初始快照，case 是这个用例的输入，
+    agent_fn(env, case) 是被测系统。分开传，避免「环境」与「用例」互相污染。
+    """
+    env = EvalEnv(initial_state)
     env.setup()
     try:
-        result = agent_fn(env)
+        result = agent_fn(env, case)
     finally:
         env.teardown()          # finally —— 用例抛异常也要清理
     return result
@@ -116,6 +134,34 @@ def run_case(env, agent_fn):
 
 **三、`teardown` 故意不自动重置。** 如果它顺手帮你重置了，
 那么忘记调 `setup` 的用例仍然能跑对 —— 污染就被掩盖了。**让它暴露，比让它自愈更有价值。**
+
+### 验证器、终止条件、隔离方式
+
+上面骨架只解决了「初始状态」这一要素，另外三样各给一个可执行形态（示例：构造数据，未实跑）：
+
+```python
+# ---- 验证器：判定成功看**环境终态**，不看模型说了什么 ----
+def validate(env, case):
+    return env.state["refunds"] == case["expect_refunds"]
+
+# ---- 终止条件：先给硬上限，再给「目标达成」 ----
+def should_stop(env, case, step):
+    if step >= case.get("max_steps", 8):
+        return "steps_exhausted"                 # 硬上限，防止不收敛
+    if env.state["refunds"] == case["expect_refunds"]:
+        return "solved"                          # 目标达成
+    return None
+
+# ---- 隔离方式：每个用例一个新环境实例（进程内最简单的一种）----
+# 需要更强隔离时换成「每用例一个新 schema / 一个新容器」，判据不变：
+# 用例 A 结束后，用例 B 看到的世界必须只有 B 的初始状态。
+
+CASE = {"id": "refund-count", "expect_refunds": ["R-001", "R-002", "R-003"]}
+```
+
+三样的分工要记清：**验证器回答「算不算成功」，终止条件回答「什么时候停」，隔离方式回答「用例之间看不看得见」。** 少任何一样，分数都不再可复现。
+
+**实跑状态**：本节的环境骨架与三条自检在 2026-10-12 的修复中跑通；开头那个退款实验的 3 / 5 是实测数据（2026-10-09）。
 
 ### 一个真实的报错
 
@@ -144,33 +190,40 @@ def teardown(self):
 改变的全局配置影响了后一个。这一条比第一条更严格：连跑两遍只能发现「累积型」污染，
 换顺序能发现「相互干扰型」。
 
-**三、检查用例数是否是质数倍的分布。**
+**三、换并发度再跑一遍。**
 这一条针对的是批量并发：如果你的评测框架并发跑用例，而它们共享一个环境实例，
 那么结果会随并发度变化。判据很简单 —— **把并发度从 1 调到 4，看分数是否变**。
-变了就说明环境没有做到用例级隔离。
+变了就说明环境没有做到用例级隔离，不变才说明隔离成立。它和前两条测的不是同一件事：
+前两条测「状态有没有跨用例泄漏」，这一条测「并发路径与串行路径是不是同一个世界」。
 
 这三条都可以写成自动化检查，放进评测脚本里：
 
 ```python
-def check_environment_stability(run_case, cases, agent_fn):
+from concurrent.futures import ThreadPoolExecutor
+
+
+def check_environment_stability(initial_state, cases, agent_fn):
     """三条环境自检。任何一条不过，先修环境，别看分数。"""
 
+    def run_all(cs):
+        return [run_case(initial_state, c, agent_fn) for c in cs]
+
     # 一、同一套用例连跑两遍
-    a = [run_case(c, agent_fn) for c in cases]
-    b = [run_case(c, agent_fn) for c in cases]
+    a = run_all(cases)
+    b = run_all(cases)
     if a != b:
         return "❌ 两次运行结果不同 —— 存在跨用例状态"
 
-    # 二、打乱顺序
-    shuffled = list(reversed(cases))
-    c = list(reversed([run_case(x, agent_fn) for x in shuffled]))
+    # 二、打乱顺序（反过来跑，再把结果翻回来）
+    c = list(reversed(run_all(list(reversed(cases)))))
     if c != a:
         return "❌ 换顺序后结果不同 —— 用例之间互相干扰"
 
-    # 三、换并发度（这里只检查框架是否支持串行复跑）
-    d = [run_case(x, agent_fn) for x in cases]
+    # 三、换并发度：并发 4 与串行必须给出同一个世界
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        d = list(ex.map(lambda x: run_case(initial_state, x, agent_fn), cases))
     if d != a:
-        return "❌ 串行复跑不一致 —— 并发路径与串行路径行为不同"
+        return "❌ 并发度 4 与串行结果不同 —— 用例之间没有做到隔离"
 
     return "✅ 环境自检通过"
 ```

@@ -83,7 +83,7 @@ flowchart LR
 
 **enum 把校验从「运行时」提前到了「生成时」。** 自由字符串等于告诉模型「随便填」，然后你在代码里为这个「随便」收拾残局。
 
-这个思路和传统工程里的类型系统是同一件事：**让非法状态无法被表达**，而不是等到它出现再检查。它也是下一节（poka-yoke）的雏形。
+这个思路和传统工程里的类型系统是同一件事：**让非法状态无法被表达**，而不是等到它出现再检查。它也是下一节（poka-yoke，日语「防呆」，意思是让错误的操作在结构上无法完成）的雏形。
 
 ## 一份可直接用的 schema 自检清单
 
@@ -214,7 +214,59 @@ schema 写错时，API 不一定告诉你。我把三类常见错误各试了一
 | 顶层 `type` 是 `object` | API 会拦；写成数组或留空都会 400 |
 | 描述里有没有写清边界与不适用场景 | 上一节的主题，机器判断不了，只能人看 |
 
-前三条加起来不到二十行代码，放进工具注册函数里，就能把一整类「schema 写了但没生效」挡在启动阶段。
+前三条加起来不到二十行代码，放进工具注册函数里，就能把一整类「schema 写了但没生效」挡在启动阶段：
+
+```python
+import re
+
+NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def validate_tools(tools: list[dict]) -> list[str]:
+    """注册期自检：返回错误列表，空列表表示通过。
+
+    放在「定义工具」和「发出第一次请求」之间。第三、四条尤其重要 ——
+    它们就是 API 不拦、模型也不报错的那类错误（本节实测过）。
+    """
+    errors: list[str] = []
+    names: set[str] = set()
+    for i, tool in enumerate(tools):
+        name = tool.get("name", "")
+
+        if not NAME_RE.match(name):
+            errors.append(f"tools[{i}].name 不合法：{name!r}（只允许字母数字与 _-）")
+        if name in names:
+            errors.append(f"tools[{i}].name 重复：{name!r}")
+        names.add(name)
+
+        schema = tool.get("input_schema", {})
+        if schema.get("type") != "object":
+            errors.append(f"{name}: 顶层 type 必须是 object")
+
+        props = set(schema.get("properties", {}))
+        missing = set(schema.get("required", [])) - props
+        if missing:
+            # API 不拦这一条：它返回 200，模型只填它被允许填的字段
+            errors.append(f"{name}: required 里有 properties 中不存在的字段 {sorted(missing)}")
+
+    return errors
+
+
+if __name__ == "__main__":
+    bad = [
+        {"name": "get weather", "input_schema": {"type": "object", "properties": {}}},
+        {"name": "search", "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city", "province"],      # ← province 不存在
+        }},
+    ]
+    for e in validate_tools(bad):
+        print("❌", e)
+```
+
+把它接在工具注册的入口上：注册失败就抛异常，进程起不来 —— 这比上线两周后
+发现「某个工具的描述从来没生效」便宜得多。
 
 ## 常见坑
 

@@ -19,6 +19,8 @@ status: drafting
 拆成 10 轮 + 10 条应答            298         21
 ```
 
+（实测数据，`deepseek-flash`，2026-10-08。token 为三项之和，只含输入。）
+
 **差 60 token，25%。** 多出来的部分不是内容 —— 内容一个字都没变。
 它来自 **20 个角色边界**：每一轮 user 和 assistant 都要用一对特殊标记
 （形如 user / assistant 的控制标记）包起来，这些标记也占 token。
@@ -41,6 +43,31 @@ D. 同一句问题问两轮                254    (+20)
 
 差别不大（几到几十 token），但它证明了一件事：**位置和角色会影响渲染结果。**
 所以「我把同一段文字挪了个位置」在 token 层面**不是一个等价操作**。
+
+那「10 行规则 + 一个问题」在数组里到底怎么摆？两种写法（示例：构造数据，未实跑；两份的规则文本逐字相同）：
+
+```json
+// 合并成一整轮：1 条 user
+[
+  {"role": "user", "content": "规则：\n1. …（10 行，约 310 字符）\n\n问题：帮我判断这笔退款该怎么处理。"}
+]
+```
+
+```json
+// 拆成 10 轮 + 10 条应答：21 条消息（这里只列头尾）
+[
+  {"role": "user",      "content": "规则 1：退款前先确认订单存在。"},
+  {"role": "assistant", "content": "记住了。"},
+  {"role": "user",      "content": "规则 2：不要承诺你无法保证的时间。"},
+  {"role": "assistant", "content": "记住了。"},
+  "…（规则 3~9 依此类推，18 条消息）…",
+  {"role": "user",      "content": "规则 10：涉及金额的答复必须写明币种。"},
+  {"role": "assistant", "content": "记住了。"},
+  {"role": "user",      "content": "帮我判断这笔退款该怎么处理。"}
+]
+```
+
+两份的**字符数完全一样**，但第一份 238 token、第二份 298 token —— 差在 20 个角色边界。记住这个形状：**能合并的合并，不是为了省那几个字，是为了省那 20 个边界标记，而且这份开销每轮都重发。**
 
 <Mermaid
   chart={`
@@ -85,30 +112,69 @@ flowchart LR
 对结构化标记都不准。要比就实测：用响应里的 input_tokens 字段对比两个版本的差异，
 这比任何估算都可靠。
 
-## 四、代码：估算结构成本
+## 四、代码：怎么实测结构成本
+
+先给能用的那个。它的做法是**直接发一次请求，读响应里的 usage** ——
+这是唯一可靠的判断方法，也是本节那两组数字的来源：
+
+```python
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+
+def input_tokens(system: str, messages: list[dict]) -> int:
+    """实测一次请求的输入 token。
+
+    只看 input_tokens 会漏掉缓存命中的部分，所以三项都要算上（第 0 章的坑）。
+    """
+    resp = client.messages.create(
+        model=MODEL, max_tokens=16, system=system, messages=messages,
+    )
+    u = resp.usage
+    return (
+        (u.input_tokens or 0)
+        + (u.cache_read_input_tokens or 0)
+        + (u.cache_creation_input_tokens or 0)
+    )
+
+
+def compare_structures(variants: list[tuple[str, str, list[dict]]]):
+    """variants: [(名字, system, messages), ...] —— 同一份内容的不同结构各测一次。"""
+    out = [(name, input_tokens(system, messages)) for name, system, messages in variants]
+    base = min(t for _, t in out)
+    return [(n, t, f"{100.0 * (t - base) / base:+.0f}%") for n, t in out]
+```
+
+用法：把「合并版」和「拆 10 轮版」构造成两个 variant，各跑一次，差值就是你要找的
+角色边界成本。它不需要你猜任何东西，也不依赖厂商的模板长什么样。
+
+### 那个估算函数，只配用来建立量级直觉
+
+网上常见一个「每条消息约 3~5 token 边界标记」的估算公式。它只在一种情况下有用：
+你**暂时不能发请求**（比如在做设计评审），需要一个大概的数字。除此之外不要用它 ——
+那个 3 是经验值，不同厂商的模板标记长度不同，中文与结构化标记也都不满足
+「字符数 ÷ 4」这类公式：
 
 ```python
 def structural_overhead(messages, baseline_tokens, baseline_messages=1):
-    """粗略估算角色边界带来的额外 token。"""
-    extra = (len(messages) - baseline_messages) * 3      # 每条消息约 3~5 token 的边界标记
+    """⚠️ 只用来建立量级直觉，不要用它做决策 —— 判断请用上面的 input_tokens()。"""
+    extra = (len(messages) - baseline_messages) * 3   # 经验值：每条消息 3~5 token 的边界
     return {"消息数": len(messages), "额外 token 估算": extra,
-            "占基准比例": "%.0f%%" % (100.0 * extra / max(baseline_tokens, 1))}
-
-
-def compare_structures(render_and_count, variants):
-    """同一份内容的不同结构各实测一次 token。"""
-    out = []
-    for name, system, messages in variants:
-        out.append((name, render_and_count(system, messages)))
-    base = min(t for _, t in out)
-    return [(n, t, "%.0f%%" % (100.0 * (t - base) / base)) for n, t in out]
+            "占基准比例": f"{100.0 * extra / max(baseline_tokens, 1):.0f}%"}
 ```
 
-第二个函数的用法就是本节做实验的方式：**同一个模型、同一份内容、
-几种结构各测一次，看 token 差多少。** 这是唯一可靠的判断方法。
-
-注意上面那个 3 是经验值 —— 不同厂商的模板标记长度不同，
-所以它只能用来做量级估算，不能替代实测。**要精确值就实测，不要推算。**
+这也是推论三的意思：**要精确值就实测，不要推算。** 估算函数和实测函数放在一起，
+是为了让你一眼看出两者能给出的东西不一样 —— 前者给方向，后者给数字。
 
 ### 一个真实的错误
 

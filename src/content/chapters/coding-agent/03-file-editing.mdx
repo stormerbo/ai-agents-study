@@ -10,7 +10,7 @@ status: drafting
 **模型编辑文件普遍用的是「给出一段原文、给出替换后的内容」这种精确匹配方式，
 而精确匹配要求它对文件内容有逐字符准确的记忆。**
 
-我做了三组实测，结果差异非常大。
+我做了三组实测，结果差异非常大（实跑数据，模型 deepseek-flash；脚本与逐条输出见 `verify-output/coding-edit.py` 与 `coding-edit2.py`）。
 
 ## 一、第一组：小文件、无重复 —— 8/8 全对
 
@@ -65,6 +65,57 @@ B. 只给了开头片段         0/5 =  0%      0/5 =  0%
 A 组的 80% 也有信息量：**即使给了全文，五次里还是有一次失败**。
 失败原因是 JSON 解析不出（模型在 JSON 外面加了说明或代码块围栏）。
 这意味着**编辑工具不能假设模型输出一定可解析** —— 必须有重试或降级路径。
+
+### 那 20% 失败长什么样（本次复现，2026-10-12）
+
+上面说 A 组五次里失败一次、原因是 JSON 解析失败。**不看原始输出是设计不出解析器的**，所以我用同样的任务重新跑了一轮（模型 deepseek-flash；任务：给 `handle_type_N` 加一个字段或空值判断）。两次的原文分别是：
+
+```text
+第一次：整个对象被包在围栏里（为不破坏本文的代码块，这里把三个反引号记作 [FENCE]）
+[FENCE]json
+{
+  "old_string": "def handle_type_3(data):\n    d = data.get(\"payload\")\n    return {\"type\": 3, \"ok\": d is not None}",
+  "new_string": "def handle_type_3(data):\n    d = data.get(\"payload\")\n    return {\"type\": 3, \"ok\": d is not None, \"status\": \"ok\"}"
+}
+[FENCE]
+
+第二次：连围栏都不是 JSON —— 它换成了「字段名 + 缩进块」，末尾还附了一段解释
+old_string:
+def handle_type_2(data):
+    d = data.get("payload")
+    return {"type": 2, "ok": d is not None}
+
+new_string:
+def handle_type_2(data):
+    if not data:
+        return {"type": 2, "ok": False}
+    ...
+
+在 `data` 参与取值前先做空值判断：若 `data` 为空，直接返回 ok 为 False 的结果……
+```
+
+两次用 `json.loads(raw)` 都直接抛 `json.JSONDecodeError`。**本节那个 20% 就是这么来的**：不是模型「不会改」，是**它不按你要求的格式输出** —— 而执行器如果只会 `json.loads`，就会把这两种都记成「模型改错了」。
+
+### 正确的解析方式：先剥壳，再兜底
+
+```python
+import json, re
+
+
+FENCE = chr(96) * 3          # 三个反引号，写成字符拼装是为了不在正则里出现字面围栏
+
+
+def parse_edit(raw):
+    """从模型输出里取 old_string/new_string —— 容忍围栏与前后解释。"""
+    m = re.search(FENCE + r"(?:json)?\s*(\{.*?\})\s*" + FENCE, raw, re.S)  # 1 先剥围栏
+    text = m.group(1) if m else raw
+    start, end = text.find("{"), text.rfind("}")                  # 2 再取最外层对象
+    if start == -1 or end <= start:
+        raise ValueError("输出里没有 JSON 对象：%r" % raw[:80])
+    return json.loads(text[start:end + 1])
+```
+
+注意这里仍然有解析不了的情形：**上面第二次那种「块格式」剥壳也救不了** —— 它压根不是 JSON。所以解析要接一个三段式降级：**先按上面的方式解析 → 失败就原样回问一次（明确要求「只输出 JSON，不要围栏」）→ 再失败就改用整文件重写**。降级不是失败，它是「编辑不是原子的」这句话的直接后果，也是下一节恢复循环的入口。
 
 <Mermaid
   chart={`

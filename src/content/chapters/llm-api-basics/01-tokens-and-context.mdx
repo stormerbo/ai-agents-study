@@ -4,7 +4,78 @@ title: token 与上下文窗口
 status: drafting
 ---
 
-先看一组实测数据。这是我用同一个端点、同一个模型，对不同文本做 token 计数得到的结果：
+## 先把第一次调用跑通
+
+这一节后面全是数字，但数字只有跑起来才有意义。所以先花五分钟把环境搭好 —— 后面每一节的脚本都复用这四个东西。
+
+```bash
+pip install anthropic
+```
+
+**四个环境变量，脚本只读它们：**
+
+| 环境变量 | 填什么 | 说明 |
+|---|---|---|
+| `ANTHROPIC_AUTH_TOKEN` | 你的 API Key | 在厂商控制台建一把**专用的、限额的** Key（拿 Key 的四步见第 0 章第 4 节） |
+| `ANTHROPIC_API_KEY` | 同上，二选一 | 脚本的写法是「先看 `ANTHROPIC_API_KEY`，没有再用 `ANTHROPIC_AUTH_TOKEN`」—— 官方端点习惯用前者，兼容端点习惯用后者，填一个就行 |
+| `ANTHROPIC_BASE_URL` | 端点地址 | **留空则用 Anthropic 官方端点**；用兼容端点则填它给的地址，如 `https://api.deepseek.com/anthropic` |
+| `VERIFY_MODEL` | 模型名 | 必须是该端点真的支持的名字。写错时 DeepSeek 的错误信息会把可用模型名列出来 |
+
+设好之后先跑这个最小示例（6 行逻辑，不用建文件）：
+
+```python
+# hello.py —— 第一次调用：只关心 usage 与 stop_reason
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY")
+    or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),   # 留空用官方端点
+)
+
+resp = client.messages.create(
+    model=os.environ["VERIFY_MODEL"],
+    max_tokens=600,
+    max_tokens=600,   # 输出长度硬上限：达到就停，不会给你一个完整结构
+    messages=[{"role": "user", "content": "只回复两个字：收到"}],
+)
+
+print("stop_reason:", resp.stop_reason)
+print("input/output:", resp.usage.input_tokens, resp.usage.output_tokens)
+print("blocks:", [b.type for b in resp.content])
+```
+
+它在 DeepSeek 的兼容端点上输出（**本次实跑，2026-10-12**）：
+
+```text
+stop_reason: end_turn
+input/output: 35 16
+blocks: ['thinking', 'text']
+```
+
+**三个数字先把后面的内容锚住：**
+
+1. `input_tokens = 35`，而这句提示只有 7 个字符 —— 这就是本节开头那张表的形态，下面会解释多出来的部分从哪来。
+
+> 顺带把第一个字段定义掉：`max_tokens` 是**单次响应的输出长度硬上限**（不是总长度、也不是提示）。请求里那一行 `max_tokens=600` 就是它；它下面承担着「截断」这个失败形态。
+2. `blocks = ['thinking', 'text']`：**模型先思考再回答**，思考是单独一个块。这是「为什么 CoT 提示不再提准确率」的原因（第 3 章会实测）。
+3. `stop_reason` 是这次调用是否完整的唯一判据。把它设成 64 再跑一次，会撞上一个很典型的失败：
+
+```json
+{
+  "content": [{"type": "thinking", "thinking": "The user wants me to reply with only two characters..."}],
+  "stop_reason": "max_tokens",
+  "usage": {"input_tokens": 35, "output_tokens": 64}
+}
+```
+
+（**本次实跑，2026-10-12**，`deepseek-flash`，把 `max_tokens` 设成 64。）注意 `content` 里**只有一个 thinking 块、没有 text 块** —— 额度被思考吃光了，你一行回答都没拿到，而 HTTP 状态码是 200。这就是本节后面「静默截断」那个坑的最小形态：**不看 `stop_reason` 就发现不了它。**
+
+---
+
+现在看一组实测数据。这是我用同一个端点、同一个模型，对不同文本做 token 计数得到的结果：
 
 | 文本 | 字符数 | token 数 | 每字符消耗 |
 |---|---:|---:|---:|
@@ -27,6 +98,22 @@ status: drafting
 这三个现象指向同一个解释：**存在一个约 30 token 的固定开销，它与你的文本长度无关。**
 
 算一下：短句 35 token 减去 7 个字符的「真实内容」（约 5 token），剩下约 30。英文短句同理：37 减去约 5，还是约 30。
+
+**这个「约 5」不是估的，是同一张表里量出来的。** 做法是把同一个模型对「内容相同、长度不同」的输入各数一遍，用两个方程解出固定项：
+
+```text
+7   字符 → 35 token        （短句）
+350 字符 → 280 token        （同一个短句 × 50）
+
+设 每字符 ≈ a、固定项 ≈ b：
+   7a + b = 35
+ 350a + b = 280
+相减： 343a = 245  →  a ≈ 0.714
+代入： b = 35 - 7×0.714 ≈ 30.0        ← 固定开销约 30
+所以 7 个字符的「真实内容」= 7 × 0.714 ≈ 5.0 token
+```
+
+（推导用的两行数字来自本节表格的实测，`deepseek-flash`，2026-09-24；`a ≈ 0.714` 与 `b ≈ 30` 是本次给出的**拟合结果**，不是官方字段。长中文那一列是 ×50 的重复文本，所以 `a` 在这里接近中文的稳态密度，与下文「每字符 0.80」的差别来自短样本的量化误差。）
 
 这个固定开销来自请求的结构本身 —— `role`、`content` 这些包装字段，以及服务端在消息前后自动附加的内容。它不随你的文本变化，但**每一次调用都要付**。
 
@@ -122,7 +209,7 @@ Claude 4.7 及之后的模型引入了**新的分词器**。据官方文档（[T
 
 不是「输入预算」—— 这一点很关键。如果你给一次生成分配了 20 万 token 的输入，而模型的最大输出是 12.8 万 token，那么在 20 万窗口的模型上你根本放不下两者之和。真实约束是：
 
-```
+```text
 输入 token + 输出 token ≤ 上下文窗口
 ```
 
@@ -178,7 +265,7 @@ flowchart LR
 
 把两件事合起来看：
 
-```
+```text
 上下文窗口的标称容量  ≠  模型实际能用好的容量
 ```
 
@@ -256,12 +343,16 @@ if __name__ == "__main__":
     main()
 ```
 
-运行它（把凭据放进环境变量）：
+运行它（三个环境变量都要在，见本节开头的表）：
 
 ```bash
-export ANTHROPIC_API_KEY="..."
+export ANTHROPIC_AUTH_TOKEN="sk-..."                      # 或 ANTHROPIC_API_KEY
+export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"   # 用官方端点则留空不设
+export VERIFY_MODEL="deepseek-flash"
 python3 token_estimator.py
 ```
+
+（`ANTHROPIC_BASE_URL` 不设时，`os.environ.get()` 返回 `None`，SDK 就会走官方端点 —— 这就是「留空」的实现方式。）
 
 输出就是本节开头那张表。你可以直接改 `samples` 里的文本，换成你自己的真实输入 —— 这是最有价值的一步，因为**你的业务文本的 token 特性，只有测了才知道。**
 

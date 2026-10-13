@@ -11,7 +11,7 @@ status: drafting
 ## 一、实测：5 个 bug，最多 5 轮
 
 我准备了 5 个有 bug 的函数，每个配一段能真实运行的测试。让模型跑
-「看报错 → 改 → 再跑」的循环，最多 5 轮：
+「看报错 → 改 → 再跑」的循环，最多 5 轮（实跑数据，模型 deepseek-flash；脚本与逐轮记录见 `verify-output/coding-recover.py`）：
 
 ```text
 fixture     结果      用了几轮
@@ -161,6 +161,46 @@ def fix_loop(run_tests, ask_model, initial_code):
 
 **三、检测「模型没改」并提前终止。** 有时模型会把同样的代码再输出一遍，
 这时候继续循环纯属浪费。**这个判断也顺便抓到了一个信号：模型可能已经不会了。**
+
+### 那段提示词长什么样
+
+上面三个设计点里，「`tried` 要真的传进提示」是最抽象的一条 —— 它到底拼成了什么？下面是把 `hint` 和 `tried` 变成一次真实调用的函数（与上面 `fix_loop` 同构）：
+
+```python
+def ask_model(code, err, hint, tried):
+    """把「原始报错 + 已试方向 + 本轮要求」拼成一次调用。
+
+    三段顺序不能换：
+      【原始报错】逐字贴 —— 含 AssertionError 里的期望值与实际值
+      【已试方向】编号列表，每条一句 —— 这是打破打转的关键
+      【本轮要求】正常轮：修好它；降级轮：放弃当前实现换一个写法
+    """
+    system = "你是 Python 工程师。只输出修改后的完整函数，不要解释。"
+    tried_lines = "\n".join("%d. %s" % (i, t) for i, t in enumerate(tried, 1)) or "（还没有）"
+    prompt = (
+        "【原始报错】\n" + err.strip() + "\n\n"
+        "【已试方向】\n" + tried_lines + "\n\n"
+        "【本轮要求】\n" + hint + "\n\n"
+        "【当前代码】\n" + code
+    )
+    # 判据：提示里必须出现报错的最后一行原文。转述过的报错会丢掉「期望值 vs 实际值」，
+    # 而那一对值正是模型反推约束的唯一线索。
+    assert err.strip().splitlines()[-1] in prompt, "报错被转述了，模型会缺信息"
+    return call_model(system, prompt)
+```
+
+同一个 `truncate` 案例，第 2 轮和第 4 轮喂进去的 `hint` 是两种完全不同的东西（示例：构造数据，未实跑）：
+
+```text
+第 2 轮（same_count = 1，走正常分支）
+  报错：AssertionError: assert truncate("hello world", 8) == "hello..."
+
+第 4 轮（同一个断言已连续失败 2 次，走降级分支）
+  你已经在同一个错误上卡了 2 次。请放弃当前实现，给出一个结构上完全不同的写法。
+  之前试过的方向：AssertionError: assert truncate("hello world", 8) == "hello..."；AssertionError: assert t
+```
+
+**差别不在礼貌，在信息**：正常轮只告诉它「结果不对」，降级轮额外告诉它两件它自己看不到的事 —— 「你已经试了几次」以及「这几条路都失败了」。前者它自己也能从对话历史里推出来，但**第 4 轮的上下文里早就没有第 2 轮的尝试了**（每轮只喂「当前代码 + 报错」）。所以 `tried` 不是装饰，它是把已经被历史丢掉的信息重新放回提示里。
 
 ### 一个真实的报错
 

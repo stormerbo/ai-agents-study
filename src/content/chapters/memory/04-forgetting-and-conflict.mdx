@@ -152,6 +152,62 @@ if __name__ == "__main__":
 带时间戳：3 次结果是 英文、英文、英文
 ```
 
+### 删除能力：接口形态与行为约定
+
+「用户要求删除时能真的删干净」是一句要求，落到代码上是一个函数和三条约定：
+
+```python
+# delete_memory.py
+"""删除：标记失效 → 物理删除 → 确保索引里也不留。"""
+
+
+def delete_memory(store, memory_id, hard=False):
+    """硬删除（合规请求）与软删除（正常遗忘）走同一个入口，但结果不同。
+
+    约定：
+      1. 先删索引，再删表 —— 顺序反了会出现「库里没有、检索还能召回」
+      2. 软删除只把 status 置为 deleted，text 清空（下游不该再注入它的内容）
+      3. 硬删除必须先检查 superseded_by 链，把指向它的记录一起处理
+    """
+    rec = store.get(memory_id)
+    if rec is None:
+        return {"ok": False, "reason": "not_found"}
+
+    # 第 1 步：索引先删。这一步失败就不要继续动表——留下孤儿索引比报错更糟
+    store.index.remove(memory_id)
+
+    if not hard:
+        rec["status"] = "deleted"
+        rec["text"] = ""              # 软删除也要让内容不可见
+        rec["deleted_at"] = now_iso()
+        return {"ok": True, "mode": "soft", "affected": 1}
+
+    # 第 2 步：硬删除前先处理引用链
+    affected = 1
+    for other in store.all():
+        if other.get("superseded_by") == memory_id:
+            other["superseded_by"] = rec.get("superseded_by")  # 链尾接链头
+            affected += 1
+    store.table.delete(memory_id)
+    return {"ok": True, "mode": "hard", "affected": affected}
+
+
+def now_iso():
+    from datetime import datetime, timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+```
+
+（**上述删除实现是示例：构造数据，未实跑。**）三条约定里最反直觉的是第一条：**先删索引再删表** —— 反过来做的话，任何一次中途报错都会留下一份「数据库里查不到、但检索还能召回」的索引，而它造成的后果正是用户最不能接受的那一种。
+
+删除与失效的区别，一张表说清：
+
+| | 触发者 | 记录怎么处理 | 还能不能审计 | 用户能查到它存在过吗 |
+|---|---|---|---|---|
+| **失效**（superseded） | 系统检测到冲突 | 保留，`status=superseded`，`text` 保留 | 能 | 能（这是正确的） |
+| **删除**（deleted） | 用户请求 / 合规 | 软删：`status=deleted` 且 `text` 清空；硬删：物理移除 | 只剩删除日志 | 不能 |
+
+The distinction matters because conflating them means either losing audit trails unnecessarily or keeping data that users have explicitly requested to be removed.
+
 ## 怎么检测出矛盾
 
 「检测到矛盾就覆盖」说起来简单，但**发现两条记忆矛盾**本身是个独立问题，而且是这里最容易被低估的一步。
@@ -160,11 +216,104 @@ if __name__ == "__main__":
 
 **一，同主题关键词命中。** 「回复语言」「输出格式」这类偏好可以归类，同类里出现多条就送去人工检查。成本低，但只能覆盖你事先想到过的类别。
 
-**二，语义相似但结论互斥。** 两条记忆说的是同一件事，取值却相反。这需要语义判断 —— 纯词法在这里没用（第 6 章的实测结论），得靠嵌入或模型。
+**二，语义相似但结论互斥。** 两条记忆说的是同一件事，取值却相反。这需要语义判断 —— 纯词法在这里没用（第 6 章的实测结论），得靠嵌入或模型。**嵌入**在这里指的是把每条记忆过一个嵌入模型、得到定长向量（第 6 章第 3 节给了最小实现），然后比两条向量的余弦相似度：**相似度高但取值不同**，就是这一层要抓的信号；而**语义相似**（semantic similarity）就是「两条文本的向量方向接近、余弦值高」，它和「字面用词相同」是两回事 —— 中文里「回复用中文」和「别跟我说英文」字面几乎不重合，语义却很近。
 
 **三，跨记忆的逻辑冲突。** 例如「不要给我发邮件」与「每天发一封汇总邮件」。两条各自看都没问题，放在一起才冲突。这一层基本只能靠模型通读一遍，成本最高。
 
 务实的做法是**先做第一层**：把记忆按主题分类（语言偏好、输出格式、技术栈、部署环境……），同类内出现多条就标记为待裁决。它能覆盖多数真实冲突，而且完全可预测、可测试。
+
+## 第一层检测：主题枚举表
+
+「把记忆按主题分类」这句话要能用，就得有一份**枚举表**。下面是起步版本（**示例：构造数据，未实跑**）：
+
+| 主题（枚举值） | 判定关键词 | 已有条目上限 | 同主题多条怎么处理 |
+|---|---|---:|---|
+| `reply_language` | 中文/英文/语言/用……回复 | 1 | 取 `updated_at` 最新的，旧的标 `superseded` |
+| `output_format` | 表格/列表/JSON/Markdown/不要寒暄 | 3 | 通常是可叠加的，超过上限才裁决 |
+| `tech_stack` | PostgreSQL/MySQL/k8s/Docker/框架名 | 5 | 同一技术类目内互斥（数据库、运行时各一条） |
+| `deploy_env` | 部署/服务器/集群/环境 | 1 | 互斥，取最新 |
+| `user_role` | 我是……/职位/团队规模 | 2 | 通常稳定，超过 2 条视为描述漂移 |
+| `project_state` | 当前项目/进行中/这个季度 | 3 | 强时效，配合 `ttl_days` 一起用 |
+
+**上限那一列怎么定，是这张表的全部价值。** 它的判据只有一句话：**这个主题里，两条不同的值能不能同时成立？** 回复语言不能（互斥，上限 1）；输出格式能（可叠加，上限放宽）；技术栈是半互斥的（数据库与运行时各一条，所以上限 5 而不是 1）。选错上限的后果是可预测的：定成 1，你会丢掉合法的叠加偏好；定成 5，你会让两条互斥的语言偏好长期并存。
+
+```python
+# topic_gate.py
+"""第一层冲突检测：同主题第二条第几条 → 标记待裁决。
+
+自包含：纯本地逻辑。实跑状态：本机 Python 3.10 实跑（2026-10-12）。"""
+
+from datetime import datetime, timezone, timedelta
+
+CN = timezone(timedelta(hours=8))
+
+# 主题 → (判定关键词, 上限)
+TOPICS = {
+    "reply_language": (("中文", "英文", "语言"), 1),
+    "output_format": (("表格", "列表", "JSON", "寒暄"), 3),
+    "tech_stack": (("PostgreSQL", "MySQL", "k8s", "Docker"), 5),
+    "deploy_env": (("部署", "服务器", "集群"), 1),
+}
+
+
+def topic_of(text):
+    for topic, (keywords, _) in TOPICS.items():
+        if any(k.lower() in text.lower() for k in keywords):
+            return topic
+    return None
+
+
+def classify(records):
+    """把 active 记录按主题分组，标出超限的组。"""
+    groups = {}
+    for r in records:
+        if r["status"] != "active":
+            continue
+        topic = topic_of(r["text"])
+        if topic is None:
+            continue
+        groups.setdefault(topic, []).append(r)
+
+    pending = []
+    for topic, items in groups.items():
+        limit = TOPICS[topic][1]
+        if len(items) > limit:
+            # 超过上限 → 全部标为待裁决，交规则或人处理
+            pending.append((topic, [r["id"] for r in items], len(items) - limit))
+    return groups, pending
+
+
+def mark_pending(records, pending, now=None):
+    """标记待裁决：不改 status，只加一个显式字段。"""
+    now = now or datetime.now(CN).isoformat(timespec="seconds")
+    ids = {mid for _, mids, _ in pending for mid in mids}
+    for r in records:
+        if r["id"] in ids:
+            r["pending_review"] = now
+            r["pending_reason"] = "同主题多条，超过上限"
+    return records
+
+
+if __name__ == "__main__":
+    records = [
+        {"id": "m1", "text": "用户要求回复使用中文。", "status": "active"},
+        {"id": "m2", "text": "用户要求 replies must be in English.", "status": "active"},
+        {"id": "m3", "text": "用户偏好表格输出。", "status": "active"},
+    ]
+    groups, pending = classify(records)
+    print("分组:", {k: [r["id"] for r in v] for k, v in groups.items()})
+    print("待裁决:", pending)
+    mark_pending(records, pending)
+    print("标记后:", [(r["id"], r.get("pending_reason", "-")) for r in records])
+```
+
+```text
+分组: {'reply_language': ['m1', 'm2'], 'output_format': ['m3']}
+待裁决: [('reply_language', ['m1', 'm2'], 1)]
+标记后: [('m1', '同主题多条，超过上限'), ('m2', '同主题多条，超过上限'), ('m3', '-')]
+```
+
+注意它**只标记、不自动裁决**。语言偏好这种互斥主题，两条都带时间戳时「取最新」是对的（本节实测 3/3 稳定）；但如果你把这条规则套到「用户同时喜欢表格和 JSON」上，就会无缘无故删掉一条合法偏好 —— 所以自动裁决只对上限为 1 的主题开，其余全部走人工。
 
 ## TTL 该设多长
 
@@ -185,6 +334,18 @@ TTL 的设置标准是**这条信息的自然变化周期**，而不是「希望
 3. **根治在写入侧**：检测到矛盾就覆盖或标记失效，不要让两条长期共存。
 4. **遗忘是显式功能**，要有 TTL、失效标记与删除能力 —— 缺任何一个，事故发生时你都没有干预手段。
 5. **每一个机制都要能回答「它改善了哪个指标」** —— 这是下一节的主题。没有这个答案，你无法判断该不该给它加预算。
+## 冲突与遗忘的三种失败形态
+
+上面每一步都会以特定方式坏掉，而且这三种坏法都不会报错：
+
+**一，未裁决的冲突堆成队列（静默降级成「两条并存」）。** 最像成功的一种失败：`pending_review` 的记录一直在库里、一直在被召回，而两条互斥的值同时进入上下文 —— 模型又回到了本节开头条件 A 的状态（3 次跑出 2 种答案）。**怎么发现**：把 `pending_review` 的条数做成一个看板数字，它单调上升就说明裁决没人在做。**所以怎么做**：给待裁决队列设一个服务级目标（比如 24 小时内清空），清不掉就必须降级 —— 把该主题整体排除出注入队列，而不是让它继续参与召回。
+
+**二，`superseded_by` 链写歪，审计断掉。** 如果只在新记录上写指针、旧记录不写，或链尾不接链头，回查时你会看到一条没有取代者的孤儿记录。**怎么发现**：加一个不变式检查 —— 每条 `status=superseded` 的记录必须同时满足「`superseded_by` 非空」且「目标记录存在且为 active」。**所以怎么做**：把这个不变式写成断言，在写入后跑一遍；它很便宜，却能挡住绝大多数手写排序留下的错误。
+
+**三，删了表但没删索引（用户仍然被召回删除的内容）。** 这是三种里最严重的，因为它直接违反用户的合规请求，而且从表面完全看不出来。**怎么发现**：删除后立刻用被删除的原文当查询跑一次检索，断言结果里不含这个 id。**所以怎么做**：把这条断言放进删除流程本身（上面 `delete_memory` 的第一步就是在做这件事），并让硬删除失败时整体回滚。
+
+三种失败形态有一个共同点：**它们都不产生报错**，只产生一个看起来正常的系统。所以对付它们的办法也不是更仔细，而是**不变式 + 断言** —— 把「应该成立的事」写成可以随时执行的检查。
+
 ## 常见坑
 
 - **让矛盾的记忆长期共存。** 实测里这会直接导致行为不稳定：同一份输入 3 次跑出 2 种答案。

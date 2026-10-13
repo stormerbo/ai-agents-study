@@ -104,6 +104,85 @@ flowchart TB
 - 如果每个工人的输出都对、但主管的答案错 → 问题在汇总提示或上下文规模
 
 三种情况里，**第二种最常见**，也最容易被归因错 —— 因为你会去看主管的提示，而真正的问题在工人交回来的那一份摘要里。
+## 把检查点一写成能在 CI 里跑的断言
+
+检查点一说的「写一个断言检查它是否出现在最终输出里」，具体是这样：
+
+```python
+"""把语义约束变成 CI 里能跑的断言。
+
+WORKERS 是三个工人回传的结构化结果（示例：构造数据，未实跑模型）。
+实跑状态：2026-10-12。
+"""
+import statistics
+
+WORKERS = {
+    "w1": {"doc_id": "d1", "key_points": ["订单表在 5 号库", "不要动生产库"]},
+    "w2": {"doc_id": "d2", "key_points": ["退款接口不支持幂等", "不要动生产库"]},
+    "w3": {"doc_id": "d3", "key_points": ["日志保留 7 天"]},
+}
+REQUIRED = "不要动生产库"
+
+
+def check_constraint(workers, required):
+    """把「这条约束有没有被传下去」变成字符串包含判断。"""
+    hit = [wid for wid, r in workers.items() if any(required in p for p in r["key_points"])]
+    final = "；".join(p for r in workers.values() for p in r["key_points"])
+    assert required in final, (
+        "硬约束 %r 没有出现在最终产物里；工人回传里命中它的有：%s，其余 %s 需要检查"
+        % (required, hit, sorted(set(workers) - set(hit))))
+    return hit
+
+
+def length_outliers(workers, k=2.0):
+    """中位数 + 绝对偏差：找出异常短的工人 —— 它多半是没查到就糊过去了。"""
+    lens = {wid: len(r["key_points"]) for wid, r in workers.items()}
+    med = statistics.median(lens.values())
+    mad = statistics.median([abs(v - med) for v in lens.values()]) or 1
+    return {wid: v for wid, v in lens.items() if (med - v) / mad > k}
+
+
+if __name__ == "__main__":
+    hit = check_constraint(WORKERS, REQUIRED)
+    print("硬约束命中的工人：%s → 断言通过" % hit)
+    print("长度分布：%s" % {wid: len(r["key_points"]) for wid, r in WORKERS.items()})
+    print("异常短的工人：%s" % (length_outliers(WORKERS) or "无"))
+    print()
+    print("== 故意漏掉约束时 ==")
+    try:
+        check_constraint({"w1": {"key_points": ["订单表在 5 号库"]}}, REQUIRED)
+    except AssertionError as e:
+        print("AssertionError: %s" % e)
+```
+
+实跑输出（2026-10-12）：
+
+```text
+硬约束命中的工人：['w1', 'w2'] → 断言通过
+长度分布：{'w1': 2, 'w2': 2, 'w3': 1}
+异常短的工人：无
+
+== 故意漏掉约束时 ==
+AssertionError: 硬约束 '不要动生产库' 没有出现在最终产物里；工人回传里命中它的有：[]，其余 ['w1'] 需要检查
+```
+
+这段代码把检查点一和检查点二放在一起：`check_constraint` 是前者（字符串包含），`length_outliers` 是后者（长度分布，判据是「中位数 + 绝对偏差」，偏短超过 k 倍就圈出来，不需要语义理解）。
+
+注意断言失败时的措辞：它不止说「丢了」，还说「命中的是哪些工人、其余还需要检查谁」。**没有这后半句，CI 红了你还是不知道该看哪里。**
+
+### 第二个失败的切分维度对照
+
+「按地区切会让趋势互相矛盾，按时间切就不会」—— 用一组构造数据看这个差别（示例：构造数据，未实跑）：
+
+| 切分维度 | 工人看到的 | 各自的结论 | 汇总时 |
+|---|---|---|---|
+| 按地区 | 华东：退款率 12% → 8% | 在下降 | 与兄弟结论矛盾 |
+| 按地区 | 华南：退款率 6% → 11% | 在上升 | 与兄弟结论矛盾 |
+| 按时间 | Q1：华东 12% + 华南 6% | Q1 整体约 9% | 趋势可拼起来 |
+| 按时间 | Q2：华东 8% + 华南 11% | Q2 整体约 9.5% | 趋势可拼起来 |
+
+按地区切时，两个工人的结论都「对」，却方向相反 —— 因为每人只看到一半的人口，而整体趋势需要两部分一起算。按时间切时，每个工人都看到全地区、只是时间段不同，两段一拼就是完整趋势。**判据一句话：如果答案依赖两份材料之间的关系，就不能按材料切分。**
+
 ## 完整可运行代码
 
 下面这段代码实现了单 agent 与主管 + 工人两条路线，并在材料里埋了一条硬约束，用来检验它能不能穿过工人的摘要活到最后。
@@ -117,6 +196,7 @@ flowchart TB
 
 实跑状态：2026-10-09，deepseek-flash。
 """
+import os
 import json, os, urllib.request
 
 BG_SMALL = ("团队规范：所有对外输出用简体中文；数值保留两位小数；"

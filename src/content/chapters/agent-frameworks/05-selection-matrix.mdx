@@ -13,7 +13,7 @@ status: drafting
 | 维度 | 要问的问题 | 怎么验 |
 |---|---|---|
 | **表达力** | 我最复杂的分支它能表达吗 | 拿流程图在纸上对它一遍 |
-| **可绕性** | 需要绕开时，我绕得出去吗 | 找它的 escape hatch，或读源码看有没有 |
+| **可绕性** | 需要绕开时，我绕得出去吗 | 找它的 escape hatch（逃生舱：框架留的「用你自己的实现覆盖某一层」的正规入口，比如自定义回调、替换掉某个内置组件），或读源码看有没有 |
 | **可观测性** | 出故障时我能看到中间状态吗 | 跑一个失败的任务，看它能给出什么 |
 | **状态模型** | 状态是什么形状、能不能序列化 | 尝试把状态存成 JSON 再读回来 |
 | **迁移成本** | 换掉它要动多少代码 | 数一数你的代码里有多少处直接依赖它的类型 |
@@ -209,6 +209,112 @@ grep -rl "from langchain" --include=*.py . | wc -l
 - 如果它出现在业务函数签名里（工具函数接收框架的 context、业务逻辑返回框架的 Message 对象）→ 它已经渗透进去了
 
 这个动作的价值在于：**它把「我对框架的依赖有多深」从一个感觉变成了一个数字。** 而这个数字，比任何框架对比文章都更能告诉你该怎么做。
+
+## 把「渗透进签名」变成一条能跑的检查
+
+上面那个 `grep` 数的是**文件数**，它分不出「这个文件只是装配」和「框架类型已经进了业务签名」。要区分得看每个函数的签名，那就得解析 Python —— 标准库 `ast` 就够了：
+
+```python
+"""检查「框架类型有没有渗透进业务函数签名」。
+
+自包含：示例源码写在字符串里，不需要额外文件。
+实跑状态：2026-10-12。
+"""
+import ast
+
+SAMPLE = '''
+from langchain_core.messages import HumanMessage
+from langchain.agents import AgentExecutor
+from myapp.models import Order
+
+
+def make_agent(model, tools):                     # 装配层：出现框架类型是正常的
+    return AgentExecutor(model=model, tools=tools)
+
+
+def handle_payment(order: Order, message: HumanMessage) -> dict:   # 业务签名：渗进来了
+    return {"id": order.id}
+
+
+def total(orders: list[Order]) -> int:            # 干净的
+    return sum(o.amount for o in orders)
+'''
+
+FRAMEWORKS = ("langchain", "langgraph", "llama_index", "haystack", "autogen", "crewai")
+
+
+def is_framework_module(module):
+    return any(module == fw or module.startswith(fw + ".") or module.startswith(fw + "_")
+               for fw in FRAMEWORKS)
+
+
+def framework_symbols(tree):
+    """收集从框架包 import 进来的那些名字。"""
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and is_framework_module(node.module):
+            for a in node.names:
+                names.add(a.asname or a.name)
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if is_framework_module(a.name):
+                    names.add((a.asname or a.name).split(".")[0])
+    return names
+
+
+def _annotations(fn):
+    args = fn.args
+    out = []
+    for a in list(args.args) + list(args.posonlyargs) + list(args.kwonlyargs):
+        if a.annotation is not None:
+            out.append(ast.unparse(a.annotation))
+    if args.vararg and args.vararg.annotation is not None:
+        out.append(ast.unparse(args.vararg.annotation))
+    if args.kwarg and args.kwarg.annotation is not None:
+        out.append(ast.unparse(args.kwarg.annotation))
+    if fn.returns is not None:
+        out.append(ast.unparse(fn.returns))
+    return out
+
+
+def leaks(source, filename="<sample>"):
+    tree = ast.parse(source, filename)
+    fw = framework_symbols(tree)
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for ann in _annotations(node):
+            for name in fw:
+                if name in ann:
+                    found.append((filename, node.name, node.lineno, ann, name))
+    return found
+
+
+if __name__ == "__main__":
+    print("框架符号（从框架包 import 进来的）：%s" % sorted(framework_symbols(ast.parse(SAMPLE))))
+    rows = leaks(SAMPLE)
+    print("签名里出现框架类型的函数：")
+    for f, fn, line, ann, name in rows:
+        print("  %s:%d  def %s(...)  注解 %r 引用了 %s" % (f, line, fn, ann, name))
+    print("合计：%d 处，涉及 %d 个函数" % (len(rows), len({r[1] for r in rows})))
+```
+
+实跑输出（2026-10-12；示例：构造数据，未实跑 —— 解析的源码字符串是构造的，脚本本身本次已跑通）：
+
+```text
+框架符号（从框架包 import 进来的）：['AgentExecutor', 'HumanMessage']
+签名里出现框架类型的函数：
+  <sample>:11  def handle_payment(...)  注解 'HumanMessage' 引用了 HumanMessage
+合计：1 处，涉及 1 个函数
+```
+
+把它套到你自己的包上（对每个 `.py` 跑 `ast.parse(open(path).read())` 即可），输出的就是迁移成本四层里**业务逻辑**那一层（第三层）的数字：
+
+- **0 处** → 框架只在装配层与工具定义层，迁移成本就是前两层，可控
+- **有若干处** → 每一处都是换框架时要改的业务代码。数量乘以改一处的成本，就是这一层的账
+
+注意它只统计**函数签名**（参数与返回注解）里的框架类型，不统计函数体 —— 函数体里用框架类型（比如构造对象）属于装配，签名里出现才叫渗透。这个区分就是那句话的可执行版本：**「如果一个框架类型出现在你的业务逻辑签名里，那它就不是一个可替换的依赖。」**
 
 ## 最后：这一章没有推荐任何框架
 

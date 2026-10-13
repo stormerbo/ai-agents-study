@@ -20,6 +20,38 @@ status: drafting
 
 （实跑数据，2026-10-08，`deepseek-flash`。三路线用同一份内容、同一个问题。）
 
+先把三种「路线」的确切形态摆出来 —— 它们不是三个 API，只是同一次请求里 `content` 数组装的东西不同：
+
+路线 A，`document` 块（把 PDF 本身交给模型）：
+
+```json
+{ "type": "document",
+  "source": { "type": "base64", "media_type": "application/pdf", "data": "<PDF 的 base64>" } }
+```
+
+它也可以直接给 URL（是否支持取决于厂商与端点）：
+
+```json
+{ "type": "document", "source": { "type": "url", "url": "https://example.com/invoice.pdf" } }
+```
+
+路线 B，`image` 块（你先把 PDF 渲染成 PNG，再按第 1 节的方式发）：
+
+```json
+{ "type": "image",
+  "source": { "type": "base64", "media_type": "image/png", "data": "<PNG 的 base64>" } }
+```
+
+路线 C，`text` 块（你自己抽出来的字符串）：
+
+```json
+{ "type": "text", "text": "Invoice INV-2026-1008\nItem  Qty  Amount\n..." }
+```
+
+`media_type` 是这份内容的 MIME 类型（Multipurpose Internet Mail Extensions，就是 HTTP 请求头里 `Content-Type` 用的那套类型名），它告诉服务端怎么解码 `data`：PDF 填 `application/pdf`，PNG 填 `image/png`。**填错不会自动纠正** —— 好的情况是一次解析失败，坏的情况就是下面这种静默丢弃。
+
+> **边界声明（重要）**：本节所有结论都来自**当前这个 Anthropic 兼容端点**。A 路线在这里 200 静默，**不等于「PDF 协议不支持」** —— 官方文档明确写了原生 API 支持 `document` 块。换供应商必须自己重跑本节脚本，不要照搬结论，更不要把「本端点不行」写成「不能用」。
+
 ## 路线 A 的问题不是「不支持」，是「静默」
 
 先看最关键的地方：**路线 A 返回的是 HTTP 200，不是错误。**
@@ -77,6 +109,21 @@ flowchart TB
 
 图片路线贵 2.7 倍，但它换来的是**版面**。
 
+「渲染成 PNG」具体用什么？最小路径是 `pypdfium2`（BSD 许可、pip 可装、不依赖外部 poppler）：
+
+```python
+import io
+import pypdfium2 as pdfium
+
+def render_pdf(pdf_bytes, page_index=0, scale=2):
+    pdf = pdfium.PdfDocument(pdf_bytes)
+    page = pdf[page_index]
+    # scale=2 表示 2 倍分辨率（约 144 dpi）；scale 不是越大越好，见下
+    return page.render(scale=scale).to_pil()
+```
+
+多页文档对 `range(len(pdf))` 循环即可。**注意 `scale` 不是越大越好**：第 1 节实测 1,280 以上服务端会自己缩小，多出来的像素只是白传。本次实跑（2026-10-12）用上面这份 874 字节的发票 PDF，`scale=2` 渲染出 1224×1584 的 PNG、42,547 字节 —— 比原 PDF 大了 48 倍，而这些字节并不换来更多 token。
+
 表格的对齐、跨行单元格、印章、手写批注、复选框的勾选状态 —— 这些在文本层里要么丢失，要么变形。第 4 节会看到视觉提取的准确率实测，这里先记住结论的一半：**它相当准，但错误是偶发且静默的。**
 
 另一个实际差别是**可验证性**。路线 C 的结果可以和源文件逐字符 diff；路线 B 的结果只能和「你以为图里写了什么」比 —— 而那个「以为」本身可能来自同一张图。所以走视觉路线时，交叉校验不是可选项（第 5 节展开）。
@@ -95,6 +142,54 @@ flowchart TB
 
 三个判据都是确定性的、可单元测试的。这一点很重要：**「该走哪条路」这个判断本身不该交给模型**，否则你只是把一次静默失效换成了另一次。
 
+把它写出来就是下面这个函数（三个判据的阈值都放在参数里，方便按业务调）：
+
+```python
+import io
+import pdfplumber
+
+
+def layout(words, tol=8.0):
+    """x0 聚成列中心；再看每个多词行能否整行对齐到这些列。"""
+    centers = []
+    for w in sorted(words, key=lambda w: w["x0"]):
+        if not any(abs(w["x0"] - c) <= tol for c in centers):
+            centers.append(w["x0"])
+    rows = {}
+    for w in words:
+        rows.setdefault(round(w["top"]), []).append(w)
+    multi = [ws for ws in rows.values() if len(ws) >= 2]
+    if not multi:
+        return len(centers), 1.0
+    aligned = sum(1 for ws in multi
+                  if all(any(abs(w["x0"] - c) <= tol for c in centers) for w in ws))
+    return len(centers), aligned / len(multi)
+
+
+def classify(pdf_bytes, min_chars_per_page=100, min_printable=0.9):
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as d:
+        pages = d.pages
+        texts = [(p.extract_text() or "") for p in pages]
+        per_page = sum(len(t) for t in texts) / max(len(pages), 1)
+        text = "".join(texts)
+        printable = sum(c.isprintable() for c in text) / max(len(text), 1)
+        ncol, align = layout(pages[0].extract_words())
+    if per_page < min_chars_per_page or printable < min_printable:
+        return "B"                      # 扫描件 / 乱码 → 渲染成图
+    if ncol >= 2 and align < 0.8:
+        return "B"                      # 列对不齐 = 版面已丢 → 渲染成图
+    return "C"                          # 文本层可用 → 直接抽文本
+```
+
+拿本节那份 874 字节的发票 PDF 与一份抽不出文字的 PDF 各跑一次：
+
+```text
+文本层发票（874 字节）          -> C   （每页 159 字符，可打印率 0.962）
+抽不出文字的 PDF（扫描件模拟）  -> B   （每页 0 字符，触发下限）
+```
+
+（本次真跑，2026-10-12。第二行用一份不含文本的 PDF 模拟扫描件。）
+
 ## 多页文档的成本怎么算
 
 单页的差距看起来不大（337 对 123），但多页会把它放大：
@@ -112,7 +207,132 @@ flowchart TB
 所以对多页文档，**「只渲染相关页」比「选哪条路线」更重要**。分页策略的正确性依赖第 6 章的检索能力（先定位到页，再决定渲染哪几页），这也是为什么这一章放在检索与记忆之后。
 ## 完整可运行代码
 
-`CODE`
+```python
+"""PDF 的三条路线：直接发 PDF / 渲染成图发 / 自己抽文本发。
+
+含一个手写的最小合法 PDF 生成器（环境里没有 reportlab）。
+
+实跑状态：2026-10-08，deepseek-flash。
+"""
+
+import base64
+import json
+import os
+import urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw
+
+ROWS = [
+    "Invoice INV-2026-1008",
+    "",
+    "Item        Qty    Unit     Amount",
+    "Widget A     12    3.50      42.00",
+    "Widget B      5    8.00      40.00",
+    "Widget C      3   12.50      37.50",
+    "-----------------------------------",
+    "Total                       119.50",
+]
+
+
+def make_pdf(lines):
+    """手写最小单页 PDF：Helvetica 12pt，纯 ASCII，文本可被抽取。"""
+    parts = ["BT", "/F1 12 Tf", "60 720 Td", "16 TL"]
+    for ln in lines:
+        esc = ln.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+        parts.append("(%s) Tj T*" % esc)
+    parts.append("ET")
+    stream = "\n".join(parts).encode("latin-1")
+
+    objs = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += str(i).encode() + b" 0 obj\n" + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 " + str(len(objs) + 1).encode() + b"\n"
+    out += b"0000000000 65535 f \n"
+    for off in offsets:
+        out += ("%010d 00000 n \n" % off).encode()
+    out += (b"trailer\n<< /Size " + str(len(objs) + 1).encode() + b" /Root 1 0 R >>\n"
+            b"startxref\n" + str(xref).encode() + b"\n%%EOF\n")
+    return bytes(out)
+
+
+def make_png(lines, w=1100, h=420, scale=2):
+    """把同一张表渲染成图（模拟截屏）。"""
+    img = Image.new("RGB", (w, h), "white")
+    d = ImageDraw.Draw(img)
+    for i, ln in enumerate(lines):
+        d.text((30, 24 + i * 44), ln, fill="black")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue(), img.size
+
+
+def ask(content, max_tokens=800):
+    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
+                       "messages": [{"role": "user", "content": content}]}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return None, "HTTP %d: %s" % (e.code, e.read().decode()[:200]), 0
+    u = data.get("usage", {})
+    total = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+             + u.get("cache_creation_input_tokens", 0))
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    return text.strip(), None, total
+
+
+Q = "表格里 Widget C 的 Amount 和最后的 Total 分别是多少？只报数字，用逗号分隔。"
+
+if __name__ == "__main__":
+    pdf = make_pdf(ROWS)
+    png, size = make_png(ROWS)
+    print("素材：PDF %d 字节，PNG %d 字节（%dx%d）" % (len(pdf), len(png), size[0], size[1]))
+    print()
+    routes = [
+        ("A 直接发 PDF（document block）", [
+            {"type": "document", "source": {"type": "base64",
+             "media_type": "application/pdf", "data": base64.b64encode(pdf).decode()}},
+            {"type": "text", "text": Q}]),
+        ("B 渲染成 PNG 发（image block）", [
+            {"type": "image", "source": {"type": "base64",
+             "media_type": "image/png", "data": base64.b64encode(png).decode()}},
+            {"type": "text", "text": Q}]),
+        ("C 自己抽文本发（text block）", [
+            {"type": "text", "text": "以下是发票内容：\n" + "\n".join(ROWS) + "\n\n" + Q}]),
+    ]
+    for label, content in routes:
+        text, err, tok = ask(content)
+        if err:
+            print("[%s] 失败 %s" % (label, err))
+        else:
+            ok = "37.50" in text and "119.50" in text
+            print("[%s] 输入 %d token | 正确 %s | 回答：%s" % (label, tok, "✅" if ok else "❌", text[:90]))
+    print()
+    # 抽取路线用 pdfplumber 验证「PDF 里的文本到底能不能被抽出来」
+    try:
+        import pdfplumber
+        with pdfplumber.open(BytesIO(pdf)) as doc:
+            got = doc.pages[0].extract_text() or ""
+        print("pdfplumber 从同一份 PDF 抽出 %d 字符，含 37.50: %s" % (len(got), "37.50" in got))
+    except Exception as e:
+        print("pdfplumber 抽取失败：", e)
+```
 
 实跑输出（2026-10-08）：
 

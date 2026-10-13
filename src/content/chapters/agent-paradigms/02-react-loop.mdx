@@ -27,6 +27,7 @@ ReAct 是「Reasoning + Acting」的缩写，但名字容易让人以为重点�
 
 实跑状态：2026-10-09，deepseek-flash。
 """
+import os
 import json, os, urllib.request
 
 TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34,
@@ -185,6 +186,28 @@ if __name__ == "__main__":
 
 **一、绕圈子。** 模型反复调用同一个工具、反复拿到同样的结果。你没有代码里的硬停止条件，这个循环就不会结束。这和第 9 章界面 agent 的卡死是同一类问题 —— 解法也一样：步数上限 + 重复检测。
 
+这条不是推断 —— 我构造了一个**永远查不出结果**的任务来把它逼出来（本次真跑，2026-10-12）：任务是「提交记录 R-1，然后确认它的状态变成 done，只有看到 done 才算完成」，而两个 mock 工具 submit_record 与 get_status **永远返回 status=pending**。轨迹是：
+
+```text
+轮 1  submit_record(R-1)   stop=tool_use   in=377  out=69
+轮 2  get_status(R-1)      stop=tool_use   in=482  out=53
+轮 3  get_status(R-1) ★    stop=tool_use   in=561  out=52
+轮 4  get_status(R-1) ★    stop=tool_use   in=639  out=51
+轮 5  get_status(R-1) ★    stop=tool_use   in=716  out=51
+轮 6  get_status(R-1) ★    stop=tool_use   in=793  out=56
+轮 7  get_status(R-1) ★    stop=tool_use   in=875  out=98
+轮 8  get_status(R-1) ★    stop=tool_use   in=999  out=54
+-> 撞上 8 步上限：总 5,926 token，其中「工具名+参数」完全相同的调用重复了 7 次
+```
+
+三个细节值得对着看：
+
+**第一，重复从第 3 轮就开始了，而且指纹完全一致。** `(get_status, {"id": "R-1"})` 这一对从第 3 轮到第 8 轮一次不差。所以「连续两步工具+参数相同」这个判据在这里**第 4 轮就能触发**，比步数上限早 4 步、省掉一半的钱。
+
+**第二，输入 token 每轮都在涨。** 377 → 482 → 561 → … → 999 —— 就是失效模式三（历史重发）在同一个轨迹里的表现。这两件事是叠加的：绕圈子不仅不结束，还每一步都在变贵。
+
+**第三，成本是正常轨迹的 4.6 倍。** 同一个模型跑线性任务（本节实测的 2 步轨迹）这次花了 1,296 token（2026-10-12），而绕圈子花了 5,926。**而这还是在第 8 步被上限拦下的结果** —— 没有上限的话它不会自己停。
+
 **二、工具结果没有被理解成「事实」。** 工具返回的错误被当成正常数据继续往下推理 —— 而循环里这个动作会被放大，因为后面每一步都建在它上面。第 4 章讲过这个（不标 `is_error` 会让模型把错误写进结果），在循环里它会放大 —— 因为后面每一步都基于这个错误继续走。
 
 **三、上下文膨胀。** 每一步都要重发之前所有内容。这是第 9 章第 2 节实测里那条「每步 +300 token」的同一个机制，只是文本任务的基数更小 —— 界面 agent 每步多一张截图，文本 agent 每步多几段工具结果，但累积的形状完全一样。
@@ -211,9 +234,11 @@ flowchart TB
 整个 ReAct 循环里只有一行是真正关键的：
 
 ```python
-d, tok = call(messages, system, TOOLS)
-if d["stop_reason"] != "tool_use":      # ← 这一行决定循环继续还是结束
-    return final_text(d)
+def should_continue(d):
+    # 整个循环里只有这一行是真正关键的
+    if d["stop_reason"] != "tool_use":      # ← 这一行决定循环继续还是结束
+        return False                        # 模型给了最终答案，循环结束
+    return True                             # 还有工具要调，继续
 ```
 
 为什么不能改成「看文本里有没有出现工具名」或者「看内容里有没有 tool_use 块」？
@@ -269,6 +294,65 @@ for step in range(max_steps):
 注意这里和第 9 章熔断的差别：界面 agent 比的是**截图**（因为观测就是画面），ReAct 比的是**动作**（因为观测是结构化的，可以直接比较）。判据要跟着观测的形态走，而不是照搬。
 
 还有一条容易被忽略的：**上限该按失败路径定，不是按成功路径定。** 第 9 章实测失败路径是成功路径的 2.4 到 5.3 倍；ReAct 同理 —— 线性任务 2 步，一旦卡住就是 10 步。
+
+### 只属于 ReAct 的那 40 行
+
+上面的完整文件是三种范式合在一起的；如果你只想把 ReAct 拎出来，需要的就是下面这些 —— 工具定义、循环、`stop_reason` 判据、`tool_result` 回填、指纹去重，正好是「第 4 章的调用 + 一个循环」：
+
+```python
+"""最小 ReAct：工具定义 + 循环 + 停止判据 + 指纹去重。自包含，可单独复制运行。
+
+环境变量：ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / VERIFY_MODEL（写在 .env.local）。
+实跑状态：与本节其余代码同源，2026-10-12 跑通。
+"""
+import json, os, urllib.request
+
+TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27}
+TOOLS = [{"name": "get_weather", "description": "查某城市某天最高温。",
+          "input_schema": {"type": "object",
+                           "properties": {"city": {"type": "string"}, "day": {"type": "string"}},
+                           "required": ["city", "day"]}}]
+
+def get_weather(city, day):
+    if (city, day) not in TEMP:
+        return {"error": "没有 %s%s 的数据" % (city, day)}
+    return {"temp_c": TEMP[(city, day)]}
+
+def call(msgs, max_tokens=1200):
+    body = {"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
+            "system": "需要数据就调用工具，够了就给出最终答案。",
+            "tools": TOOLS, "messages": msgs}
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
+        data=json.dumps(body).encode(),
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=180) as r:
+        return json.loads(r.read())
+
+def react(task, max_steps=6):
+    msgs = [{"role": "user", "content": task}]
+    seen = []
+    for step in range(1, max_steps + 1):
+        d = call(msgs)
+        if d.get("stop_reason") != "tool_use":        # <- 唯一的停止判据
+            return "".join(b.get("text", "") for b in d["content"] if b["type"] == "text")
+        msgs.append({"role": "assistant", "content": d["content"]})
+        results = []
+        for b in d["content"]:
+            if b["type"] != "tool_use":
+                continue
+            fp = (b["name"], json.dumps(b["input"], sort_keys=True))
+            if seen and seen[-1] == fp:                 # <- 指纹去重
+                raise RuntimeError("连续两次相同的工具+参数，判定为绕圈子：%s" % (fp,))
+            seen.append(fp)
+            out = get_weather(**b["input"])
+            results.append({"type": "tool_result", "tool_use_id": b["id"],
+                            "content": json.dumps(out, ensure_ascii=False)})
+        msgs.append({"role": "user", "content": results})
+    raise RuntimeError("达到步数上限 %d" % max_steps)
+```
 
 ## 它其实只是第 4 章的那个调用，套了个循环
 

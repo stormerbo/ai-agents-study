@@ -99,7 +99,7 @@ flowchart LR
 
 同一个提示，分别在两个温度下各跑三次：
 
-```
+```text
 提示：给一家只卖三种咖啡的小店起个名字，只回名字，不要解释。
 
 temperature = 0:
@@ -184,6 +184,32 @@ response = client.messages.create(
 
 > 再澄清一个易混点：`adaptive` 是 **thinking 的模式**，不是 effort 的取值。别把它写进 `output_config.effort`。
 
+> **adaptive thinking 是什么**：**由模型自己决定这次要不要思考、思考多久**的模式 —— 任务简单就直接答，任务复杂就先生成一段推理。`thinking: {"type": "enabled"}` 是手动模式（要你给 `budget_tokens` 上界）；`{"type": "disabled"}` 是明确关掉。
+> **它的输出计入 `output_tokens`。** 思考不是免费的附属品，它和正文一样按输出 token 计费 —— 这正是下面这组实测要说明的事。
+
+配套的 beta header（形如 `mid-conversation-output-config-2026-07-01`）是**提前启用尚未默认开启的能力**的开关：请求时额外带一个 HTTP 头，服务端才按新语义解析。它是临时机制，能力稳定后会并进默认行为。
+
+### 实测：thinking 开与关，output_tokens 差多少
+
+「钱花在哪」可以量化。同一道需要两步的算术题（进出水管注水），同一天在同一个端点上各跑三次：
+
+```text
+（本次实跑，deepseek-flash，2026-10-12。提示 52 个字符，max_tokens=2000。）
+
+配置                 | run1 | run2 | run3 | 回答
+不给 thinking 字段    |  63  |  83  |  75  | 都是 24小时
+thinking=disabled    |   3  |   3  |   2  | 都是 24小时
+```
+
+配套的输入侧：不给 `thinking` 字段时 `input_tokens = 70`；`thinking=disabled` 时是 `44` —— 差 26 token，来自思考模式相关的请求结构。
+
+**两个结论，都直接回答「钱花在哪」：**
+
+1. **输出侧差一个数量级。** 开思考时输出 63~83 token，关掉后只有 2~3 token，**准确率没有任何变化（三次都是 24小时）**。多出来的几十个 token 全是思考文本。所以「output_tokens 为什么这么大」，很多时候答案就是「它在思考」。
+2. **思考是高方差的那部分。** 63 / 83 / 75 三次波动约 ±15%，而关掉后 3 / 3 / 2 几乎不动。做成本估算时，方差来自输出，输出的方差又主要来自思考长度 —— 这也解释了为什么 agent 的成本只能估上界。
+
+> 边界要说清：这里 `thinking=disabled` 被端点接受了，所以能测出上面的差。但在 Opus 5.5 上它**无法关闭**（传 `disabled` 直接 400），那时唯一的杠杆是 effort。另外，这一组只跑了 3 次 —— 足以说明「差一个数量级」，不足以估计精确的比例分布。
+
 ## 一个容易踩的坑：effort 会让缓存失效
 
 这是本节最实用的一条。
@@ -224,7 +250,7 @@ response = client.messages.create(
 
 直连 API 的话，你会看到：
 
-```
+```text
 HTTP 400
 {"error":{"message":"temperature: Extra inputs are not permitted", ...}}
 ```

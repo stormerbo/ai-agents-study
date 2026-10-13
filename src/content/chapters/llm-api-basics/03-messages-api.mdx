@@ -77,6 +77,8 @@ def chat(user_input: str) -> str:
 
 设置 `stream=True`，响应会以 [Server-Sent Events](https://platform.claude.com/docs/en/build-with-claude/streaming) 逐块返回。
 
+> **Server-Sent Events（SSE）是什么**：一种**服务端单向推送**的 HTTP 长连接协议，每一条消息是一个 `event: 类型` 行加一个 `data: JSON` 行、以空行结尾。它不是 websocket —— 只有服务端往你这边推，你不能在同一条连接上回话（要回话就发下一个请求）。你熟悉的 `curl -N` 或 gRPC streaming 在这里的角色是一样的：**连接不关，消息陆续到。**
+
 流式的价值不只是「让用户更快看到字」，还有两个工程意义：
 
 1. **首字节延迟成为主要指标。** 生成 30 秒的内容，第一秒开始显示 vs 等 30 秒后一次性显示，是两个产品。
@@ -86,7 +88,7 @@ def chat(user_input: str) -> str:
 
 下面是**一次真实请求的完整事件流**。请求内容：带一个 `get_weather` 工具，问「北京今天天气怎么样？用摄氏度。」
 
-```
+```text
 （实测数据，deepseek-flash，2026-09-24。共 63 个事件，8268 字符原始流。）
 
 message_start
@@ -103,6 +105,51 @@ message_delta
   usage: {input_tokens: 333, output_tokens: 92}
 message_stop
 ```
+
+上面那段是**语义层**的摘要。协议层真实收到的字节长这样 —— 每条消息是 `event:` 行 + `data:` 行，**用一个空行分隔**：
+
+```text
+event: message_start
+data: {"type":"message_start","message":{"id":"89d1...","model":"deepseek-flash",
+       "content":[],"stop_reason":null,"usage":{"input_tokens":330,"output_tokens":0,...}}}
+                                              ← 空行结尾
+event: content_block_start
+data: {"type":"content_block_start","index":0,
+       "content_block":{"type":"thinking","thinking":"","signature":""}}
+
+event: ping
+data: {"type":"ping"}
+
+…（thinking_delta × N）…
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,
+       "content_block":{"type":"tool_use","id":"call_00_SbbDALNLfkta6c1ZghLj1334",
+                         "name":"get_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,
+       "delta":{"type":"input_json_delta","partial_json":"{"}}
+
+…（input_json_delta 共 18 条）…
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},
+       "usage":{"input_tokens":330,"output_tokens":72,...}}
+
+event: message_stop
+data: {"type":"message_stop"}
+```
+
+（**本次实跑，2026-10-12**，`deepseek-flash`，`stream=True` + `get_weather` 工具。原始流 129 行 / 5720 字符，事件计数：content_block_delta ×35、content_block_start ×2、content_block_stop ×2、message_start / ping / message_delta / message_stop 各 ×1。）
+
+**两个只有看原始行才能发现的细节：**
+
+1. **`tool_use` 的 `content_block_start` 里 `input` 是空对象 `{}}`。** 参数从来不在这里，只在后面的 `input_json_delta` 里；这也解释了为什么 `content_block_stop` 之前那次解析必然失败。
+2. **`content_block_start` 里 `thinking` 与 `signature` 都是空串**，内容靠后续的 delta 填进来。你如果拿 `start` 事件当「这个块的内容」，会得到一个空块。
 
 这张图信息量很大，逐段看：
 
@@ -146,7 +193,7 @@ flowchart TB
 
 上面那 18 个 `input_json_delta` 事件，逐个展开是这样的：
 
-```
+```text
 #1   partial_json="{"          #10  partial_json="\""
 #2   partial_json="\""         #11  partial_json="unit"
 #3   partial_json="city"       #12  partial_json="\""
@@ -209,13 +256,140 @@ for event in stream:
 
 > 写流式解析时不要自己拼字符串。官方 SDK 提供了现成的累积与解析辅助，第 9 章手写适配层时我们会把这套逻辑自己实现一遍 —— 那时你就会明白 SDK 帮你省掉了什么。
 
+### 完整可跑版本：带归集、断言与主动中断
+
+上面那段只演示了归集逻辑，缺了三样上生产必须有的东西：**入口（怎么发起这个流）、出口（什么时候认为一次调用完成）、以及中断（用户改主意了怎么办）**。下面是一个可以直接运行的完整版本。
+
+```python
+# stream_consumer.py
+"""消费一次流式工具调用：按 index 归集参数、在 content_block_stop 时解析、失败时主动中断。"""
+
+import json
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY")
+    or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+TOOLS = [{
+    "name": "get_weather",
+    "description": "查询指定城市当前的天气",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "description": "城市名"},
+            "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+        },
+        "required": ["city"],
+    },
+}]
+
+
+def consume(prompt: str, *, abort_if: str | None = None) -> dict:
+    """跑一次流式调用。abort_if 非空时，一旦累积文本包含它就主动掐断。
+
+    返回 {'text': ..., 'tool_uses': [...], 'stop_reason': ..., 'usage': ...}
+    """
+    started = client.messages.stream(
+        model=MODEL,
+        max_tokens=2000,          # 流式不改截断语义：max_tokens 仍是硬上界
+        tools=TOOLS,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    text_parts: list[str] = []
+    pending: dict[int, dict] = {}     # index -> {'id','name','args'}
+    tool_uses: list[dict] = []
+    stop_reason = None
+    aborted = False
+
+    with started as stream:
+        for event in stream:
+            if event.type == "content_block_start" and event.content_block.type == "tool_use":
+                # 坑一：id 与 name 只在这一个事件里出现
+                pending[event.index] = {
+                    "id": event.content_block.id,
+                    "name": event.content_block.name,
+                    "args": "",
+                }
+
+            elif event.type == "content_block_delta":
+                d = event.delta
+                if d.type == "text_delta":
+                    text_parts.append(d.text)
+                    if abort_if and abort_if in "".join(text_parts):
+                        # 主动中断：不再为未生成的部分付费
+                        stream.close()
+                        aborted = True
+                        break
+                elif d.type == "input_json_delta":
+                    # 坑二：只累积，不解析
+                    if event.index in pending:
+                        pending[event.index]["args"] += d.partial_json
+
+            elif event.type == "content_block_stop":
+                entry = pending.pop(event.index, None)
+                if entry is not None:
+                    # 坑三：现在才解析。解析失败说明这个分片流本身坏了
+                    entry["input"] = json.loads(entry["args"])
+                    tool_uses.append(entry)
+
+        if not aborted:
+            final = stream.get_final_message()
+            stop_reason = final.stop_reason
+            usage = final.usage
+        else:
+            usage = None
+
+    return {
+        "text": "".join(text_parts),
+        "tool_uses": tool_uses,
+        "stop_reason": stop_reason,
+        "usage": usage,
+        "aborted": aborted,
+    }
+
+
+if __name__ == "__main__":
+    result = consume("北京今天天气怎么样？用摄氏度。")
+    print(json.dumps(result["tool_uses"], ensure_ascii=False, indent=2))
+    print("stop_reason:", result["stop_reason"])     # 期望 tool_use
+
+    # 断言：参数必须是一个完整对象，而不是半截分片
+    for call in result["tool_uses"]:
+        assert isinstance(call["input"], dict) and "city" in call["input"]
+
+    # 使用者中途关页面：掐断，不付未生成部分的钱
+    cancelled = consume("写一篇 2000 字的行业分析", abort_if="##")
+    print("aborted:", cancelled["aborted"])
+```
+
+> **实跑状态**：**未实跑。** 归集规则（id 只在 `content_block_start`、只累积不解析、解析放在 `content_block_stop`）与上面那段原始报文一致，原始报文是本次实跑的；但**这份完整脚本我没在这台机器上跑过** —— 它的价值是把写法补全，跑之前请先确认你这版 SDK 的 `stream()` 上下文管理器与 `stream.close()` 签名。
+
+### 断线与重放：三条必须自己做的事
+
+SSE 连接会断（网络抖动、网关超时、你的进程重启）。SDK 不会替你重连，因为「重连后怎么办」是业务决策：
+
+| 情况 | 正确做法 | 为什么不能盲目重试 |
+|---|---|---|
+| 断在 **文本生成中**，还没出工具调用 | 直接重发这**一个**请求 | 重发会重新生成，可能措辞与已显示的部分不同 —— 前端要做「覆盖」而不是「追加」 |
+| 断在 **工具调用已解析、工具已执行之后** | **不要重发**，改为把已有的 `tool_result` 续下去 | 重发会让模型再调一次工具 → 副作用执行两次（第 11 章会用崩溃注入实测这个重复） |
+| 断在 **工具参数分片中途** | 丢弃这个 `pending[index]`，重发请求 | 半截 JSON 没有语义，`json.loads` 也一定失败 |
+
+**去重的关键字段是工具调用的 `id`（如 `call_00_Sbb...`）。** 它由服务端生成、在重试中会变，所以它不能用来跨重试去重 —— 能用来去重的是**你自己生成的幂等键**（比如「本次任务 + 工具名 + 参数哈希」）。这一点第 11 章有一组完整的崩溃注入实测。
+
 ## 一个结构性的观察
 
 回头看那张事件序列图，注意 `thinking` 块和 `tool_use` 块是**并列的两个 content block**，各有自己的 index。
 
 这意味着一次响应可以包含多个不同类型的内容块：
 
-```
+```text
 content[0] = thinking 块（模型的推理过程）
 content[1] = tool_use 块（要调用的工具）
 ```
@@ -246,7 +420,7 @@ content[1] = tool_use 块（要调用的工具）
 
 模型的完整响应：
 
-```
+```text
 （实测数据，deepseek-flash，2026-09-24。）
 
 stop_reason: end_turn
@@ -267,6 +441,8 @@ stop_reason: end_turn
 如果我当时把 `city` 写成一个自由字符串、再在代码里校验，模型很可能生成 `"深圳"` 然后被我拒绝，或者更糟 —— 生成一个看起来合理的值蒙混过去。
 
 **`enum` 的作用是让非法值从一开始就无法被表达。** 这是第 4 章会展开的「poka-yoke 式工具设计」的第一个例子。
+
+> **poka-yoke** 是制造业术语，日文「ポカヨケ」，直译是「防呆」：**通过约束形状，让错误操作在物理上无法发生** —— 比如三孔插座插不进两孔插头。放到工具设计上就是：与其在代码里校验参数对不对，不如把 schema 定义成「错的参数根本表达不出来」（`enum`、必填、类型约束）。第 4 章第 3 节有一组实测：两个普通可选字段 3/3 会被同时传；改成「描述写明二选一」后 0/3；拆成两个结构上互斥的工具后，**结构上不可能同时传**。
 
 注意思考块里的那句话：模型明确说「我不应该用一个不支持的城市去调用工具」。**它读懂了约束，并且主动放弃了调用。** 这比事后校验更可靠 —— 因为它连一次无效的往返都省下了。
 

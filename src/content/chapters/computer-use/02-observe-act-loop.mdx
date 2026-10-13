@@ -77,7 +77,58 @@ click:name → type → click:email → type → click:submit
 
 **三，界面连续 N 步没有变化。** 这一条防的是「模型在原地打转」。它比步数上限更早触发，也更省：如果连续三步截图一模一样，那这个循环已经不可能靠继续走变好了。
 
-实现上，第三条需要给截图算一个指纹（哪怕是简单的内容哈希）。注意**不要用文件字节相等**去比：动画、光标闪烁、时间戳都会让两张视觉上相同的图产生不同字节。要么比较缩小后的感知哈希，要么明确地把「允许变化的区域」排除掉。
+实现上，第三条需要一个**感知哈希**（perceptual hash），它指的是这样一类内容指纹：**只要画面内容是同一张图，得到的值就相同，哪怕字节完全不同**。它和「文件哈希」是两回事 —— 文件哈希对每个字节敏感，感知哈希对整体画面敏感。最常见的实现是 dHash，十行就够：
+
+```python
+from PIL import Image
+
+def dhash(img, size=8):
+    """感知哈希：先缩到 (size+1)×size 灰度图，再逐行比较相邻像素的亮度，
+    得到 size*size 位（这里是 64 位）的十六进制串。"""
+    g = img.convert("L").resize((size + 1, size), Image.LANCZOS)
+    px = list(g.getdata())
+    bits = 0
+    for r in range(size):
+        for c in range(size):
+            bits = (bits << 1) | (1 if px[r * (size + 1) + c] > px[r * (size + 1) + c + 1] else 0)
+    return "%016x" % bits
+```
+
+它到底顶不顶用，用一个「会闪烁」的界面测最直接：同一张表单，加一个闪烁的光标和一行每秒变化的计时数字，连续渲染 6 帧：
+
+```text
+帧  光标  时钟   PNG sha256(前10)   dHash
+ 1   亮   t=00  6e72aaa7f0       9040909000909004
+ 2   灭   t=01  466065af86       9040909000909004
+ 3   亮   t=02  25a1e9b019       9040909000909004
+ 4   灭   t=03  edcaa1e2a5       9040909000909004
+ 5   亮   t=04  c17b4cf662       9040909000909004
+ 6   灭   t=05  fb78f78528       9040909000909004
+
+字节哈希：6 帧 6 个不同值 -> 永不相等（熔断永不触发）
+dHash   ：6 帧 1 个不同值 -> 完全稳定（第 3 步触发熔断）
+```
+
+（本次真跑，2026-10-12。同一个 dHash 实现，对 6 帧分别算字节哈希与 dHash。）
+
+这张输出把原文那句警告变成了可数的对照：**字节哈希 6 帧 6 个值，熔断条件永远不成立；dHash 6 帧 1 个值，第 3 步就触发。** 接进循环就是把上面的判定插在截图之后、发图之前：
+
+```python
+last_hash, same_count, MAX_SAME = None, 0, 3
+while steps < max_steps and not state["done"]:
+    img = screenshot_as_pil()
+    h = dhash(img)
+    if h == last_hash:
+        same_count += 1
+        if same_count >= MAX_SAME:      # 界面连续 3 步没变
+            break                       # 提前中止，比撞步数上限省
+    else:
+        same_count = 0
+    last_hash = h
+    # ... 下面照旧：发图 -> 取动作 -> 执行
+```
+
+反过来也要知道它的边界：dHash 是**全图**指纹，如果界面里有一块大区域在合法地动（进度条、滚动列表），dHash 每步都会变，**熔断就永远不触发**。那种情况下的正解是原文那条替代路径 —— 把「允许变化的区域」裁掉再算哈希。
 
 <Mermaid
   chart={`
@@ -108,6 +159,7 @@ flowchart TB
 
 实跑状态：2026-10-09，deepseek-flash。
 """
+import os
 
 import base64, json, os, re, urllib.request
 from io import BytesIO
@@ -352,6 +404,28 @@ if __name__ == "__main__":
 第一行到第二行几乎白捡：**缩到 512 之后，模型仍然认得出按钮和输入框** —— 本节实测的点击误差本来就只有 1 到 3 px，远小于缩放的量级。但要注意第 3 节那条边界：**目标本身很小的时候，再缩就可能出问题**。缩分辨率不是无代价的，它是拿「小目标的余量」换钱。
 
 第二行到第三行有一个真实的取舍：**只保留最近两张截图，模型就看不到更早的状态**。对「填表提交」这种线性任务无所谓；对需要回看「上一步那个弹窗写了什么」的任务就会出问题。可行的折中是把**较早的截图换成文字摘要**（「第 1 步：Name 已填入，Email 待填」），保住语义、丢掉像素。
+
+具体到代码（示例：构造数据，未实跑）：
+
+```python
+# recent_shots: [(说明, png_b64), ...]，最多留 2 张
+# summaries:    ["第 1 步：点了 Name 输入框", "第 2 步：Name 已填入", ...]（示例：构造数据，未实跑）
+def build_history(recent_shots, summaries, task):
+    content = [{"type": "text", "text": task + "\n更早的步骤（文字记录）：\n" + "\n".join(summaries)}]
+    for label, b64 in recent_shots:
+        content.append({"type": "text", "text": label})
+        content.append({"type": "image", "source": {"type": "base64",
+                        "media_type": "image/png", "data": b64}})
+    return [{"role": "user", "content": content}]
+
+# 每一步结束时：旧的移出窗口、压成一行文字；新的进窗口。
+recent_shots.append(("第 %d 步后：" % step, new_b64))
+while len(recent_shots) > 2:
+    old_label, _ = recent_shots.pop(0)
+    summaries.append(old_label + describe_step(step))
+```
+
+两个细节：**摘要里必须带步骤号和动作结果**（「第 2 步：Name 已填入」），否则模型无法把它和当前画面接上；**摘要要跟着动作走、不能等结束时再补**，因为中间步骤的上下文每一轮都要用。
 
 这里有一个看起来更彻底的思路，但它会把你带回原点：**如果界面的文字能被抽出来、界面状态能被结构化，那你其实不需要视觉** —— 那就回到工具调用了。视觉路线的存在意义正是「拿不到结构化数据」，所以它的成本下限也就是「每步一张图」。
 ## 常见坑

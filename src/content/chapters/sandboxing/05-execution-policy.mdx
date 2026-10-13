@@ -277,6 +277,117 @@ if __name__ == "__main__":
 **那不是策略，那是请求。** 区别在于：请求可以被说服，策略不能。第 2 章实测过提示注入的效果：内容操纵类的注入在加了标签之后仍然 6/6 成功。所以写在提示词里的约束，在注入面前基本不构成障碍。
 
 正确分工是两者都要有，但**只有后者是安全边界**：提示词让模型知道边界、减少无意越界；执行策略在模型之外，决定越界发生之后会怎样。这也决定了安全评审时的判断 —— **如果一个系统的「安全措施」全部写在提示词里，那它没有安全措施。**
+## 把策略接进 agent 循环：唯一的执行入口
+
+上面的 `check()` 在演示里被手工调用。真实循环里它必须接在**唯一一个**地方：工具真正执行之前。做法是让所有工具都经过一个 `dispatch()`，而不是让每个工具自己记得检查。
+
+新的策略引擎（保存为 `policy.py`）：把 L103 那条判据修好 —— R1 从 `path_prefix` 换成 `path_under`（内部先 `realpath` 再比），并把条件类型做成注册表，加新条件不用改引擎：
+
+```python
+import os, time
+
+POLICY = {
+    "default": "deny",
+    "rules": [
+        {"id": "R1", "tool": "read_file", "allow": True,
+         "when": {"path_under": "/workspace"}, "why": "只读工作区"},
+        {"id": "R2", "tool": "read_file", "allow": False,
+         "when": {"path_prefix": "/etc/"}, "why": "系统目录一律拒绝"},
+        {"id": "R3", "tool": "http_get", "allow": True,
+         "when": {"host_in": ["api.example.com", "docs.example.com"]}, "why": "白名单域名"},
+        {"id": "R4", "tool": "exec_shell", "allow": False, "when": {}, "why": "未开放"},
+    ],
+}
+
+def _path_under(base, raw):
+    b = os.path.realpath(base)
+    full = os.path.realpath(os.path.join(b, raw))   # 先解析 .. 与符号链接
+    return full == b or full.startswith(b + os.sep)
+
+# 条件类型的注册表：加一种新条件 = 在这里加一行，不改引擎
+CONDITIONS = {
+    "path_prefix": lambda v, args: str(args.get("path", "")).startswith(v),
+    "path_under": lambda v, args: _path_under(v, str(args.get("path", ""))),
+    "host_in": lambda v, args: args.get("host") in v,
+}
+
+AUDIT = []
+
+def check(tool, args, policy=POLICY):
+    for r in policy["rules"]:
+        if r["tool"] != tool:
+            continue
+        if all(CONDITIONS[k](v, args) for k, v in r["when"].items()):
+            return ("allow" if r["allow"] else "deny"), r["id"], r["why"]
+    return "deny", "default", "没有匹配的规则，按默认拒绝"
+
+HANDLERS = {"read_file": lambda path: {"ok": True}, "http_get": lambda host: {"ok": True}}
+
+def dispatch(tool, args):
+    """所有工具调用的唯一入口：先过策略，再执行，无论结果都写审计。"""
+    decision, rule, why = check(tool, args)
+    AUDIT.append({"ts": round(time.time() % 1000, 3), "tool": tool, "args": args,
+                  "decision": decision, "rule": rule})
+    if decision == "deny":
+        return {"blocked": True, "rule": rule, "reason": why}
+    handler = HANDLERS.get(tool)
+    if handler is None:
+        return {"blocked": True, "rule": "default", "reason": "没有注册该工具"}
+    return handler(**args)
+```
+
+**工具名从哪来。** 就是模型返回的 `tool_use` 块里的 `name`（第 11 章那个循环，在查 `tools` 注册表之前先过 `dispatch`）。**在哪一步调用。** 解析出 `name / input` 之后、真正执行 handler 之前 —— 不是执行完再记，那样拦不住任何东西。
+
+## 一条固定的攻击测试用例
+
+L104 说那行输入「就该是一条固定的测试用例」，写法就是这样。测试文件（保存为 `test_policy.py`，与 `policy.py` 同目录）：
+
+```python
+import policy
+
+def test_path_prefix_attack_is_denied():
+    # 这条路径的字符串前缀是 /workspace/，但真实路径是 /etc/passwd
+    decision, rule, why = policy.check("read_file", {"path": "/workspace/../../../etc/passwd"})
+    assert decision == "deny", "前缀合法不等于路径合法：%s %s" % (decision, rule)
+
+def test_normal_workspace_read_is_allowed():
+    decision, rule, why = policy.check("read_file", {"path": "/workspace/notes.md"})
+    assert decision == "allow" and rule == "R1"
+
+def test_unknown_tool_defaults_to_deny():
+    decision, rule, why = policy.check("delete_everything", {})
+    assert decision == "deny" and rule == "default"
+
+def test_metadata_endpoint_is_denied():
+    decision, rule, why = policy.check("http_get", {"host": "169.254.169.254"})
+    assert decision == "deny"
+```
+
+跑 `python3 -m pytest -q`（实跑数据 2026-10-12）：
+
+```text
+....                                                                     [100%]
+4 passed in 0.01s
+```
+
+**这四条覆盖了三种失效模式**：前缀绕过（第一条）、误拦正常操作（第二条）、默认值方向错误（第三条）。它们都是**数据**（一段路径、一个 host），所以可以穷举、可以回归 —— 这正是把策略数据化的额外收益。
+
+## 怎么加第三种条件
+
+需求变了，比如要加「只允许访问这些 IP 段」，不需要动 `check()`，只加两处：
+
+```python
+import ipaddress
+CONDITIONS["ip_in_cidrs"] = lambda v, args: any(
+    ipaddress.ip_address(args.get("ip", "0.0.0.0")) in ipaddress.ip_network(c) for c in v)
+
+# 然后规则里直接用：
+{"id": "R5", "tool": "connect", "allow": True,
+ "when": {"ip_in_cidrs": ["203.0.113.0/24"]}, "why": "只允许指定网段"}
+```
+
+**为什么这样安全**：`check()` 对所有条件一视同仁（`all(...)`），新条件只影响匹配结果，不影响默认拒绝与审计。**失败形态**：如果把新条件写成「匹配不上就放行」的否定逻辑，默认拒绝就被绕过了 —— 条件的语义必须是「满足才命中规则」，而不是「满足就跳过检查」。
+
 ## 常见坑
 
 - **把检查写成散落的 if。** 分散、不可 review、不可测试，而且新加工具时容易漏。

@@ -115,9 +115,66 @@ click:name → type → click:email → type → click:submit
 读后面几节时如果觉得某条结论有点突然，回到这张对照上通常能对上。
 
 还有一点值得先记下：**这三条不是三个独立的问题，而是同一个根源的三种表现。** 工具调用之所以好做，是因为**你为任务设计了一个受限的接口**；计算机使用之所以难做，是因为它面对的是**一个没有为你做任何让步的真实界面**。后面每一节的具体结论，最后都能回到这一句。
+
+## 真实屏幕上还差三件事
+
+上面所有实测都跑在 PIL 画的合成界面上 —— 这样每一步都可复现、可精确打分，但它**不代表真实环境同精度**。真要做计算机使用，还有三件事缺一不可：
+
+**一，把屏幕截下来。** `mss` 是最轻的选择，几行就够：
+
+```python
+import mss
+from PIL import Image
+
+def grab(region=None):
+    """抓主屏（region=None）或指定矩形，返回 PIL Image。"""
+    with mss.mss() as sct:
+        shot = sct.grab(region or sct.monitors[1])   # monitors[1] = 主屏
+        return Image.frombytes("RGB", shot.size, shot.rgb)
+```
+
+**二，把动作注进去。** `pyautogui` 负责点击与敲键：
+
+```python
+import pyautogui
+
+def click_screen(x, y):
+    pyautogui.moveTo(x, y, duration=0.05)   # 这里的坐标是逻辑点，不是物理像素
+    pyautogui.click()
+
+def type_text(text):
+    pyautogui.typewrite(text, interval=0.02)   # 仅 ASCII；中文要配 pyperclip 粘贴
+```
+
+注意 `pyautogui` 用的坐标是**逻辑点**，而 `mss` 抓到的 PNG 是**物理像素**。Retina 屏（DPR=2）上这两者差一倍 —— 这是下一件事要处理的。
+
+**三，做坐标换算。** 这是最容易漏、后果最重的一步：
+
+```python
+def to_screen(x_shot, y_shot, shot_size, origin_xy, win_logical_size):
+    """截图坐标 -> pyautogui 屏幕坐标。
+    origin_xy: 抓取区域左上角在逻辑屏幕上的位置（窗口原点）
+    win_logical_size: 该区域在逻辑屏幕上的宽高"""
+    sx = win_logical_size[0] / shot_size[0]   # Retina 下这个比值就是 1/DPR
+    sy = win_logical_size[1] / shot_size[1]
+    return origin_xy[0] + x_shot * sx, origin_xy[1] + y_shot * sy
+```
+
+把一次真实场景算出来看（本次真跑，2026-10-12，纯算术）：DPR=2，窗口在逻辑屏幕 `(200,150)`，窗口逻辑尺寸 `1000×700`，所以截图是 `2000×1400` 物理像素。模型在截图上给点 `(1600,800)`：
+
+```text
+正确换算（乘 1/DPR + 加窗口原点）-> (1000, 550)  偏差   0 px
+忘了除 DPR（把截图坐标当逻辑点） -> (1600, 800)  偏差 650 px
+加了原点但忘了除 DPR           -> (1800, 950)  偏差 894 px
+除了 DPR 但忘了加窗口原点       -> ( 800, 400)  偏差 250 px
+```
+
+模型本身的点击误差是 2 px 量级（第 2 节实测 1.3 到 2.6 px）—— **而坐标系错一次就是 250 px 量级**。换句话说：在真实屏幕上，先别担心模型点得准不准，先确认你自己有没有把「截图像素」当成「屏幕坐标」。
+
+> 实跑状态：上面三个代码块是**伪代码** —— 本项目所在环境没有 `mss`/`pyautogui`，也没有可授权的 GUI 会话，无法实跑。其中 `to_screen` 的换算是纯算术，已按上面的场景真跑并给出输出；截屏与注入的 API 形态来自各自文档，第一次接入时请先用一个小目标（比如把一个按钮移到屏幕四角）验证落点，再让它去点任何有副作用的控件。
 ## 完整可运行代码
 
-这段代码渲染一张界面，然后让模型回一个动作 —— 它把上面三点都摆在一屏里。
+这段代码渲染一张界面，然后让模型回一个动作 —— 它把上面三点都摆在一屏里。代码里的 `max_tokens` 指的是单次响应允许模型输出的最大 token 数；这里设成 400 是为了逼它只回一个短 JSON，而不是长篇解释。
 
 ```python
 """最小的一步：看一眼像素，回一个动作。
@@ -127,6 +184,7 @@ click:name → type → click:email → type → click:submit
 
 实跑状态：2026-10-09，deepseek-flash。
 """
+import os
 import base64, json, os, urllib.request
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont

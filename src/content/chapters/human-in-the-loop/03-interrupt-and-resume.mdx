@@ -60,6 +60,72 @@ status: drafting
 
 第 4 条是第 11 章那条结论的直接应用：**恢复时必须知道「哪些已经做了」**，否则会重复副作用。
 
+但"完整冻结"到底长什么样、这条记录写到哪、下一次请求怎么把它读回来 —— 这三步缺任何一步就做不出来。下面把它们补齐。
+
+## 落盘：键、值、以及下一次怎么读回来
+
+**存放位置：外部的键值存储或数据库，不是进程内存。** 用 Redis 的话，一条待审批记录就是这样一个键值对：
+
+```text
+键：approval:ap_8f3c21        （带 TTL，比如 24 小时 —— 对应记录里的 expires_at）
+值（JSON，就是上一节那份结构的持久化形态）：
+{
+  "approval_id":   "ap_8f3c21",
+  "action":        "send_email",
+  "frozen_params": {"to": "zhangsan@example.com",
+                    "body": "订单 A-1001 已发货，物流显示派送中。"},
+  "params_hash":   "sha256:9f2a…",
+  "reversible":    false,
+  "scope":         "1 个外部收件人可见",
+  "why":           "邮件离开服务端后不可撤回",
+  "status":        "pending",
+  "executed_ids":  [],
+  "ts":            1786000000
+}
+```
+
+**注意 `executed_ids` 的形态：它是一份"已经执行过的 action id 列表"，而不只是"这条审批的状态"。** 差别在实际执行时显现 —— 同一批工作可能包含多个动作，其中两个已经跑完、一个在等审批；恢复时你要能跳过前两个、只跑第三个。
+
+**恢复请求怎么用 approval_id 找回这条记录：**
+
+```text
+界面   → POST /approval/ap_8f3c21/approve      （四个选项各自一个端点，见下一节）
+服务端 → GET approval:ap_8f3c21                ← 从存储读回上面那条
+       → 核对 params_hash 与界面提交的参数是否一致
+       → 检查 executed_ids 里是否已有本次动作
+       → 同一事务内：写入副作用 + 追加 executed_ids + status=executed
+       → 删除该键（或等 TTL 自然过期）
+```
+
+**"同一事务"是这条链路的关键，也是最容易漏的一步。** 检查与执行必须是原子的 —— 中间如果重启，检查过了但没执行，或者执行了但没记录，都会在下一次重试时出错。Redis 上对应的是 Lua 脚本或 `SET NX`，数据库上就是一个事务：
+
+```python
+# 检查与执行在同一事务里 —— 伪代码！
+# 省略了连接获取、重试与错误处理，重点是「原子」这个形状。
+def resume_and_execute(conn, approval_id, submitted_hash):
+    with conn.transaction():                      # 原子边界从这里开始
+        rec = conn.execute(
+            "SELECT frozen_params, params_hash, status, executed_ids"
+            " FROM approvals WHERE approval_id = %s FOR UPDATE",   # 行锁：挡住并发点击
+            (approval_id,)).one()
+
+        if rec is None:
+            return {"status": "not_found"}
+        if rec["params_hash"] != submitted_hash:
+            return {"status": "params_changed"}   # 用户批准的不是这一次要执行的东西
+        if rec["executed_ids"]:                   # 已经跑过 → 幂等返回，绝不重跑
+            return {"status": "already_executed"}
+
+        apply_side_effect(conn, rec["frozen_params"])     # 副作用与标记同一事务
+        conn.execute("UPDATE approvals SET status='executed', executed_ids=%s"
+                     " WHERE approval_id=%s", (["send_email@ap_8f3c21"], approval_id))
+    return {"status": "executed"}
+```
+
+**三行判据，按顺序：** 记录不存在 → 404；`params_hash` 对不上 → 拒绝执行（这是"审批结果与上下文不匹配"那类错误的防线）；`executed_ids` 非空 → 幂等成功返回。
+
+**为什么必须 `FOR UPDATE`（行锁）。** 因为"用户点了两次同意"和"负载均衡把重试打到另一个实例"这两件事会**并发**发生。没有锁的话，两个事务可能都读到 `executed_ids` 为空，然后都执行 —— 幂等检查本身变成了竞态的牺牲品。
+
 ## 一个具体的失败形态
 
 我构造过一个例子：在「动作已执行、状态未落盘」之间注入中断。恢复后朴素版写入了 4 条记录（其中 1 条重复），而幂等版写入 3 条。
@@ -96,30 +162,7 @@ flowchart TB
 这三条都指向改进方向，而且它们都不需要读代码就能发现。
 
 
-## 泄漏的第三种形态：错误语义被压平
-
-第三类泄漏（控制流的边角）值得单独展开，因为它最不容易被发现。
-
-真实的工具失败有三层语义，第 4 章实测过它们的区别：
-
-- **可以重试的失败**（网络抖动、限流）→ 应该重试
-- **不能重试的失败**（参数错误、权限不足）→ 应该修正或放弃
-- **状态未知的失败**（超时后不知道操作是否生效）→ **不应该重试**，因为可能有副作用
-
-而框架通常只有一个「错误」的概念。当你把一个「状态未知」包装成框架的普通异常时，框架的重试机制会**帮你重试** —— 于是副作用执行了两次。
-
-这和第 11 章第 4 节那个 `u1, u2, u2, u3` 是同一个问题，只是触发路径不同：那次是进程崩溃，这次是框架的重试。**两者的根因都是「错误语义被压平」。**
-
-所以在评估框架时，有一个具体的问题值得问：**它的重试机制能不能区分「可以重试」和「状态未知」？** 如果答案是不能，那你至少要知道这一点，并在工具层自己处理幂等。
-
-## 泄漏区往往就是价值区
-
-最后补一个反过来的观察：**框架替你处理得越好的地方，通常越不是你的差异化所在；而它泄漏的地方，往往正好是你业务里最有价值的部分。**
-
-schema 生成是很标准的活，框架做得好、泄漏也少（除了 enum 这种边界）。而预算、熔断、幂等、错误分层这些 —— 恰恰和第 9 章那四道闸门一样 —— 是需要按业务定制的地方。
-
-所以「框架省下的 ≠ 你需要的」这句话，可以更准确地表述为：**框架省下的是通用问题，泄漏的是定制问题。** 而你的系统值不值钱，取决于定制问题解决得怎么样。
-
+> **「抽象泄漏」的完整定义与三种形态在第 13 章第 3 节**（agent-frameworks/03-leaky-abstractions）。本节只需要它的一条推论：当错误语义被压平时，恢复逻辑会把「不知道」误判成「已完成」，所以恢复前必须先核对副作用记录。
 ## 一个具体的数字：宽窗口的代价
 
 上面说"审批窗口比崩溃窗口宽得多"，可以量化一下。
@@ -141,43 +184,114 @@ schema 生成是很标准的活，框架做得好、泄漏也少（除了 enum �
 所以"审批的幂等"不能靠"用户不会点两次"这种假设。它必须是一个**结构性的保证**：动作 id 由服务端生成、执行前检查、检查与执行在同一事务里。
 ## 完整可运行代码
 
-下面这段代码实现「中断 — 持久化 — 恢复」的完整流程，并演示重复点击同意时幂等保护如何生效。
+下面这段代码实现「中断 — 持久化 — 恢复」的流程，并演示重复点击同意时幂等保护如何生效。
+
+**先说清这段示例的边界：它内部用一个 `MemoryStore` 的 dict 实现，是为了让这段代码能直接复制运行 —— 它本身不是持久化。** 真正的做法是换一个实现同一个接口的存储（Redis / 数据库），而正文上一节已经给出了那个键值的形状。**所以不要把 `STORE = {}` 这种写法带进生产 —— 那正是本节开篇说的"不能依赖进程内存"。**
 
 ```python
-"""中断 — 持久化 — 恢复：幂等保护。纯本地。实跑状态：2026-10-09。"""
-STORE = {}          # 模拟持久化存储
-EXECUTED = []       # 已执行的动作（审计）
+"""中断 — 持久化 — 恢复：幂等保护。
+
+纯本地。初版实跑状态：2026-10-09；
+2026-10-12 把内存储换成 store 接口后重跑，输出一致（上面三个场景的结论未变）。
+
+下面这段代码里有一个 MemoryStore 的内存实现，它只是为了让示例能直接跑。
+真实系统要换成实现了同一个接口的 RedisStore / SQLStore —— 因为进程内存
+在等待审批的这几分钟里可能已经不在了。
+"""
+import time
 
 
-def freeze(action, params):
-    """冻结待审批动作：给唯一 id，参数完整存下来。"""
-    aid = "%s:%d" % (action, len(STORE))
-    STORE[aid] = {"action": action, "params": dict(params),
-                  "why": "不可逆（发出后无法撤回）"}
+class MemoryStore:
+    """进程内实现 —— 仅用于演示，不能上生产（见正文）。"""
+
+    def __init__(self):
+        self.d = {}
+
+    def put(self, key, value):
+        self.d[key] = dict(value)
+
+    def get(self, key):
+        v = self.d.get(key)
+        return dict(v) if v else None
+
+    def cas(self, key, expect, update):
+        """带版本号的原子更新。返回 False 表示有人抢先改了（并发点击的防线）。
+
+        真实的 Redis 实现是 WATCH/MULTI 或 Lua 脚本；SQL 实现是
+        带 WHERE version=%s 的 UPDATE 并检查影响行数。
+        """
+        cur = self.d.get(key)
+        if not cur:
+            return False
+        if cur.get("version") != expect:
+            return False
+        nxt = dict(cur)
+        nxt.update(update)
+        nxt["version"] = expect + 1
+        self.d[key] = nxt
+        return True
+
+
+# 生产环境的形状（此处不真实连接，只示意接口一致）：
+#   import redis
+#   class RedisStore:
+#       def __init__(self, client): self.c = client
+#       def put(self, key, value):
+#           self.c.hset(key, mapping={k: json.dumps(v) for k, v in value.items()})
+#           self.c.expire(key, 24 * 3600)          # 对应记录里的 expires_at
+#       ...
+STORE = MemoryStore()
+_SEQ = [0]
+
+
+def freeze(action, params, reversible=False, why="", scope=""):
+    """冻结待审批动作：服务端生成 id，参数完整存下来。
+
+    注意 id 的来源：这里用序号，不是时间戳。
+    我第一版用 int(time.time() * 1000) % 100000 —— 同一毫秒内冻两个动作
+    就会得到同一个 id，于是第二次批准命中的是第一条记录。
+    幂等键必须真的唯一，而时间戳不是唯一来源（正文把它列为失败形态之一）。
+    """
+    _SEQ[0] += 1
+    aid = "ap_%08d_%s" % (_SEQ[0], action)
+    STORE.put(aid, {"action": action, "frozen_params": dict(params),
+                    "params_hash": "sha256:%d" % (abs(hash(repr(sorted(params.items())))) % 1000000),
+                    "reversible": reversible, "why": why, "scope": scope,
+                    "status": "pending", "executed_ids": [], "version": 1})
     return aid
 
 
 def approve(aid, params=None):
-    """人点了同意（或修改后同意）。params 非空表示修改过。"""
-    if aid not in STORE:
+    """人点了同意（或修改后同意）。params 非空表示修改过。
+
+    这里演示的是「同一事务」的语义：检查 executed_ids 与写入副作用
+    在同一个 cas 里完成 —— 中间不会插进另一个请求。
+    """
+    item = STORE.get(aid)
+    if item is None:
         return "❌ 未知的待审批动作"
-    item = STORE[aid]
-    if aid in [e["aid"] for e in EXECUTED]:
+    if item["executed_ids"]:
         return "✅ 幂等命中：%s 已经执行过，跳过" % aid
-    final = dict(item["params"])
+    final = dict(item["frozen_params"])
     if params:
         final.update(params)
-    EXECUTED.append({"aid": aid, "action": item["action"], "params": final})
+    ok = STORE.cas(aid, expect=item["version"],
+                   update={"status": "executed", "executed_ids": [aid],
+                           "executed_params": final})
+    if not ok:
+        return "✅ 并发命中：另一个请求已经执行过，跳过"
     return "执行 %s %s" % (item["action"], final)
 
 
 if __name__ == "__main__":
     print("=== 场景一：用户重复点击「同意」 ===")
-    aid = freeze("send_email", {"to": "zhangsan@example.com", "body": "..."})
+    aid = freeze("send_email", {"to": "zhangsan@example.com", "body": "..."},
+                 why="邮件离开服务端后不可撤回", scope="1 个外部收件人可见")
     print("  冻结动作：%s" % aid)
     print("  第 1 次点击：%s" % approve(aid))
     print("  第 2 次点击：%s" % approve(aid))
-    print("  实际执行了 %d 次（应为 1）" % len(EXECUTED))
+    rec = STORE.get(aid)
+    print("  实际执行了 %d 次（应为 1）" % len(rec["executed_ids"]))
     print()
     print("=== 场景二：修改后同意 ===")
     aid2 = freeze("send_email", {"to": "attacker@example.com", "body": "..."})
@@ -201,3 +315,18 @@ if __name__ == "__main__":
 - **「修改后同意」之后还重新规划。** 人的修改是约束，不是建议。
 - **拒绝之后直接中止。** 用户拒绝的只是那一步，agent 往往能换一条路完成目标。
 - **不监控审批等待时间。** 它是发现「展示信息不够」和「参数有偏差」的免费信号。
+- **用时间戳生成幂等键。** 同一毫秒内冻两个动作就会撞（我在写这段示例时真的撞了）—— 幂等键必须是真正唯一的来源，比如数据库序列或 UUID。
+- **只存"审批状态"，不存"已执行的动作列表"。** 那样无法判断"这一批里哪些已经跑完了"，重放时会重复副作用。
+- **幂等检查与执行不在一个原子操作里。** 两个并发请求会同时读到"未执行"，然后都执行 —— 幂等检查自己变成了竞态。
+
+## 这一层会怎么坏
+
+三种坏法，都不会报错：
+
+| 坏法 | 现象 | 怎么发现 |
+|---|---|---|
+| **状态在进程内存里** | 单实例测试全过，扩容或重启后"找不到待审批动作" | 部署两个实例后跑一遍审批流程 |
+| **幂等键不唯一** | 两次不同的审批互相命中（上面那个时间戳 bug） | 对 id 生成函数跑一次"同毫秒生成两个"的用例 |
+| **副作用与标记不在同一事务** | 偶发的重复执行，且只在并发或崩溃后出现 | 在检查与执行之间注入一次崩溃（第 11 章那个构造） |
+
+三者的共同点是**在单实例、低并发、不崩溃的开发环境里完全看不到** —— 所以它们必须靠**故意制造的坏条件**（多实例、并发、注入崩溃）来验证，而不是靠正常跑一遍。

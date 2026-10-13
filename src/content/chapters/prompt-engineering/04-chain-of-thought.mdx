@@ -34,7 +34,7 @@ status: drafting
 
 看一个前面章节出现过的细节。这是第 1 章采集的真实响应结构：
 
-```
+```text
 content_block_start   index=0  type=thinking      ← 模型自己的思考
   thinking_delta     × 36
 content_block_stop    index=0
@@ -86,13 +86,125 @@ flowchart TB
 
 **① 强制输出格式。** 你预先写入一个左花括号，模型就只能顺着把 JSON 补完 —— 省掉了「好的，以下是 JSON：」这类开场白，也降低了格式跑偏的概率。
 
+完整的 SDK 调用长这样（这一段是`messages` 数组，不是伪代码）：
+
 ```python
-# 伪代码示意（不同厂商的 prefill 支持方式不同）
 messages = [
-    {"role": "user", "content": "抽取下面这句话里的人名和公司：张三上周加入了字节跳动"},
-    {"role": "assistant", "content": "{"},        # ← prefill：强制从 JSON 开始
+    {"role": "user", "content": "用 JSON 给出北京的气温，形如 {\"city\":...,\"temp_c\":...}。只输出 JSON。"},
+    {"role": "assistant", "content": "{\"city\": \"北京\", \"temp_c\":"},   # ← prefill
 ]
 ```
+
+**本次实跑，2026-10-12（`deepseek-flash`）的结果是：**
+
+```text
+HTTP 200，stop_reason=end_turn，usage: input=68 output=211
+
+返回的续写内容（content[1] 的 text 字段）：
+  '{"city":"北京","temp_c":20}'      ← 一个完整的对象
+```
+
+**这就是 prefill 最大的陷阱：模型把整个对象又写了一遍，而不是从 `"temp_c":` 后面接着写。** 如果你按「预填 + 续写」拼字符串，会得到：
+
+```text
+预填： {"city": "北京", "temp_c":
+续写： {"city":"北京","temp_c":20}
+拼起来： {"city": "北京", "temp_c":{"city":"北京","temp_c":20}    ← JSON 解析必失败
+```
+
+所以要落地，**必须把「续写」当成模型的一次完整回答来处理，而不是当成「半截的后半段」**。三条处理策略，按可靠性排序：
+
+| 策略 | 做法 | 本次实测是否可靠 |
+|---|---|---|
+| **① 直接解析续写**（推荐） | 忽略你写的那段预填，把续写文本整体当答案解析 | ✅ 本次一次通过，不需要任何字符串拼接 |
+| **② 去掉开头的重复** | 若续写以预填开头，先剥掉再拼接 | ✅ 作为 ① 的兜底；适用于模型真的只续写半截的情况 |
+| **③ 用 stop 序列限制** | 让模型在特定标记处停下 | ❌ 本次没测；而且 stop 只控制「在哪停」，不解决「重复输出」 |
+
+**推荐 ① + ② 组合**：先按 ① 解析（最省事，覆盖本次实测的形态）；解析失败再按 ② 剥重试一次；两次都失败才报错。下面这段可以直接跑：
+
+```python
+# prefill_safe.py
+"""prefill 的安全用法：不拼字符串，直接解析续写；解析失败才剥重。"""
+
+import json
+import os
+
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY")
+    or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
+    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
+)
+MODEL = os.environ["VERIFY_MODEL"]
+
+PREFILL = '{"city": "北京", "temp_c":'
+
+
+def parse_continuation(continuation: str, prefill: str) -> dict:
+    """策略 ① 直接解析续写；失败则 ② 剥掉开头的重复再解析。"""
+    text = continuation.strip()
+
+    # ① 大多数情况下，模型给的就是一个完整对象
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # ② 兜底：模型确实只续写了后半截 —— 把它接到预填后面
+    for prefix in (prefill, prefill.rstrip()):
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+            break
+    merged = prefill + text
+    try:
+        return json.loads(merged)
+    except json.JSONDecodeError as exc:
+        # 断言失败要带上下文，否则你只能看到一个行号
+        raise AssertionError(
+            f"预填与续写拼接后仍不是合法 JSON：{exc}\n"
+            f"  预填 = {prefill!r}\n  续写 = {continuation!r}"
+        ) from exc
+
+
+def ask_with_prefill(question: str, prefill: str) -> dict:
+    resp = client.messages.create(
+        model=MODEL,
+        max_tokens=500,
+        messages=[
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": prefill},   # ← 预填必须在最后一条
+        ],
+    )
+    # 只取 text 块 —— 思考块不是答案
+    continuation = "".join(b.text for b in resp.content if b.type == "text")
+    result = parse_continuation(continuation, prefill)
+
+    # 断言：结果必须是合法 JSON 且是对象（不是数组、不是字符串）
+    assert isinstance(result, dict), f"期望对象，得到 {type(result).__name__}"
+    return result
+
+
+if __name__ == "__main__":
+    data = ask_with_prefill(
+        "用 JSON 给出北京的气温，形如 {\"city\":...,\"temp_c\":...}。只输出 JSON。",
+        PREFILL,
+    )
+    print(data)                       # {"city": "北京", "temp_c": 20}
+    assert "city" in data
+```
+
+> **实跑状态**：上面那段「HTTP 200 + 续写是一个完整对象」的结果是**本次实跑**（2026-10-12，`deepseek-flash`）；这份 `prefill_safe.py` **我没有整份跑过** —— 它就是把那段结果沉淀成的规则。策略 ③（stop 序列）本次未测，所以它在表里标的是「不可靠」而不是「更差」。
+
+**厂商支持差异**：
+
+| 厂商 | 是否支持 messages 末尾放 assistant | 说明 |
+|---|---|---|
+| Anthropic Messages API | ✅ | 文档明确支持，本例用的就是这个形状 |
+| DeepSeek 兼容端点 | ✅ | 本次实跑被接受（200），行为与上面的陷阱描述一致 |
+| OpenAI Chat Completions | ❌ 无等价机制 | 它没有「预填 assistant 开头」的参数；近似做法是在 prompt 里给一个**格式示例**，靠模型模仿 —— 可靠性低于真正的预填 |
+
+> 第三行是**文档层面的判断，本次未实测**（本机只有 DeepSeek 端点）。跨厂商前请各自验一次 —— 这正是第 8 章要收拢的差异之一。
 
 **② 绕过模型不愿直接作答的倾向。** 有些请求模型会先加一段免责声明再回答。替它起个头，它往往就顺着进入正题了。
 

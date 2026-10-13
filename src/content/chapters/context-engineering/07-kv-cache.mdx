@@ -26,8 +26,10 @@ status: drafting
 **一、缓存确实发生了，而且是自动的。** 第 2 次没有带任何缓存标记，
 `cache_read` 已经是 1024。所以「不写 `cache_control` 就没有缓存」是错的。
 
-**二、`cache_control` 在这个端点上被忽略。** 第 2、3、4 次的数字完全一样 ——
-带与不带标记没有区别。（第 1 章第 5 节记过这条，这里是独立复现。）
+**二、`cache_control` 在这个端点上被忽略。** `cache_control` 是 Anthropic API 里
+**显式指定缓存断点**的字段（标在某个 content 块上，告诉服务端「这一块之前可以缓存」）。
+第 2、3、4 次的数字完全一样 —— 带与不带标记没有区别。（第 1 章第 5 节记过这条，
+这里是独立复现。）换句话说：这个端点**自动做前缀缓存**，不需要你标断点。
 
 **三、改一个词，缓存全部归零。** input 从 181 涨回 1205，**6.7 倍**。
 
@@ -37,17 +39,20 @@ status: drafting
 
 ## 二、为什么是「前缀」而不是「内容」
 
-要理解第 3 条，得看模型内部那一层。
+要理解第 3 条，得看模型内部那一层。下面三段是机制，可以当背景读；**如果只记一句，记最后那句加粗的结论就够了。**
 
-语言模型生成时，每一层注意力都会为每个 token 算一对 Key/Value 向量并缓存起来 ——
-这就是 **KV Cache**。它让第 n 个 token 不必重算前 n-1 个。
+**自回归生成**：模型一次只生成一个 token，生成第 n 个时把前面 n-1 个都当作输入。所以同一段文本，只要它在序列里的位置变了，就要重新算一遍 —— 这正是「需要缓存」的根源。
+
+**注意力与 Key/Value**：生成每一个 token 时，模型会为上下文里每个已有 token 算三个向量 —— Query（我在找什么）、Key（我是什么）、Value（我携带什么信息）。匹配用的是 Query 与 Key，取回来的是 Value，最后按权重加权求和。每一层都会做这件事。
+
+**KV Cache 就是把这些 Key/Value 留下来。** 它们只和「前面有哪些 token」有关，和后面生成什么无关，所以算过一次就能复用 —— 第 n 个 token 不必重算前 n-1 个。
 
 关键性质：**KV Cache 是「按位置累积」的。** 第 i 个 token 的 Key/Value
 依赖于它前面所有 token。所以你在**开头**插入一个词，
 从这个位置往后的**每一个** token 的 Key/Value 都变了，缓存整体作废。
 而你在**末尾**追加内容，前面的部分完全不受影响。
 
-这就解释了三层关系：
+这就解释了三层关系（表中的「自回归生成」指上面那个「一次一个 token」的过程）：
 
 | 层 | 在哪 | 由谁控制 | 作用范围 |
 | --- | --- | --- | --- |
@@ -91,9 +96,11 @@ flowchart TB
 那缓存会从被改写的位置断开。**这也解释了一件事：压缩是有缓存代价的** ——
 第 4 节讲压缩时提过它更贵，这里是一个更底层的原因。
 
-**约束四：`effort` 这类参数会参与提示渲染。** 第 1 章第 2 节记过：
-同一个会话里改变顶层的 `effort`，之前的缓存会失效。
-**为了省钱降低 effort，可能因为缓存失效而花更多钱。**
+**约束四：`effort` 这类参数会参与提示渲染。** `effort`（第 1 章第 2 节）是控制
+「模型愿意投入多少推理工作」的顶层参数。它看起来和文本无关，但它**会被渲染进前缀**，
+所以同一个会话里改变它，之前的缓存会失效。
+**为了省钱降低 effort，可能因为缓存失效而花更多钱。** 结论是：依赖缓存的会话，
+在开头定好 effort 并保持不变。
 
 ## 四、把这件事换算成钱
 
@@ -110,7 +117,7 @@ flowchart TB
 
 按第 1 章那条记账口径（`input + cache_read + cache_creation`），
 两者**总 token 数是一样的**（都是 20 × 1024 的输入量级），
-但**计费口径完全不同** —— 缓存读取的单价通常只有基础输入价的一成左右。
+但**计费口径完全不同** —— 命中缓存的那部分走的是更低的单价。具体低多少**因厂商与模型而异，而且会变**，本站不写死这个数字。要知道你自己的比例，去账单里把 `cache_read` 的用量与 `input` 的用量分别拉出来，乘各自的单价算占比（第 1 章第 5 节给过读 usage 的代码）。
 所以「20 轮会话」在两种结构下的实际费用可能差好几倍，而**任务成功率完全一样**。
 
 这就是这一节想说的核心：**同一个逻辑上正确的 agent，因为上下文结构不同，
@@ -125,30 +132,53 @@ flowchart TB
 ## 五、一个可操作的检查
 
 ```python
-def diagnose_prefix(prev_request, cur_request):
-    """诊断两次请求的前缀稳定性。返回第一个不同的位置。"""
-    a = render_prefix(prev_request)      # tools + system，按实际拼装顺序
-    b = render_prefix(cur_request)
-    for i, (x, y) in enumerate(zip(a, b)):
-        if x != y:
-            return {
-                "稳定前缀长度": i,
-                "总长度": min(len(a), len(b)),
-                "稳定比例": i / max(len(a), len(b)),
-                "第一个差异": repr(a[max(0, i - 20):i + 20]),
-            }
-    return {"稳定前缀长度": min(len(a), len(b)), "稳定比例": 1.0}
+import json
 
 
-def render_prefix(req):
-    """按厂商实际拼装顺序渲染 —— tools 在最前，然后 system。"""
+def hit_rate(usage) -> float:
+    """本次请求的缓存命中率。开发期把它打点，比事后翻账单便宜得多。
+
+    分母是全部输入侧 token（未命中 + 命中 + 新写入）。
+    """
+    hit = usage.cache_read_input_tokens or 0
+    total = (
+        (usage.input_tokens or 0)
+        + hit
+        + (usage.cache_creation_input_tokens or 0)
+    )
+    return hit / total if total else 0.0
+
+
+def cache_state(usage) -> dict:
+    """用服务端返回的 usage 判断缓存发生了什么 —— 它是唯一权威。"""
+    read = usage.cache_read_input_tokens or 0
+    created = usage.cache_creation_input_tokens or 0
+    if read and not created:
+        return {"状态": "完全命中", "复用": read}
+    if read and created:
+        return {"状态": "部分命中（前缀在某个位置断开）", "复用": read, "新写入": created}
+    return {"状态": "未命中（首次，或前缀被改动）", "新写入": created}
+
+
+def request_fingerprint(req: dict) -> str:
+    """把一次请求序列化成确定的字符串，用于两次请求的「同不同」比较。
+
+    它的边界要说清楚：这是「请求文本」的指纹，不是「渲染后 token 串」的指纹。
+    它能证明「文本不同 → 一定断缓存」；不能证明「文本相同 → 一定命中」，
+    因为位置、角色、effort 这类参数也参与渲染。最终判断永远以 usage 为准。
+    """
     parts = [json.dumps(t, sort_keys=True) for t in req.get("tools", [])]
     parts.append(req.get("system", ""))
-    return chr(10).join(parts)
+    for m in req.get("messages", []):
+        parts.append(json.dumps(m, sort_keys=True, ensure_ascii=False))
+    return "\n".join(parts)
 ```
 
-这个函数值得在开发期跑起来：**它能把「缓存为什么没命中」变成一个具体的位置和比例**，
-而不是靠猜。稳定比例低于 90% 基本就意味着缓存收益很小。
+怎么在开发期用它们：
+
+1. **每次请求打一条 `hit_rate` 指标。** 长会话里这个数应当稳定在高位；一旦掉下来，说明有人在改前缀。这个比读账单早得多。
+2. **发现未命中，先比 `request_fingerprint`。** 两次指纹不同，就去 diff 那两段文本 —— 时间戳、请求 id、字典序都在这里现形。
+3. **指纹相同但 `cache_state` 仍是未命中**，说明差异在文本之外（消息顺序、effort、厂商模板变化）。这时才去看厂商文档，而不是反过来。
 
 ### 一个真实的错误
 

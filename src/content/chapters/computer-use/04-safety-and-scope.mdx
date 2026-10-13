@@ -130,7 +130,7 @@ flowchart TB
 下面把这四道闸门落成可运行、可测试的代码。它是纯本地逻辑，不需要任何凭据。
 
 ```python
-"""权限与活动范围：三道闸门的最小实现。
+"""权限与活动范围：四道闸门的最小实现。
 
 纯本地逻辑，不需要网络。它把第 4 节讲的边界落成可测试的代码：
   一、活动范围（只能碰白名单区域）
@@ -257,6 +257,47 @@ if __name__ == "__main__":
 关键点：确认是在 Guard 之外取得的，模型自己无法调用 declare()。
 模型能决定「想做什么」，但只有代码能决定「允许做什么」。
 ```
+
+## 把 Guard 接进循环：两个调用点
+
+`Guard` 本身是纯逻辑，「在哪里调用它」才是落地时最容易漏的。整个循环里只有**两个**调用点，位置不能挪：
+
+```python
+g = Guard(safe_zones=[(60, 150, 500, 296), (60, 380, 240, 432)],
+          step_budget=12, token_budget=20000, irreversible={"delete-all"})
+
+history = [{"role": "user", "content": [task_text, screenshot_block(current_screen())]}]
+while True:
+    text, tin, tout = call_model(history)
+    ok, why = g.record_step(tin + tout, dhash(current_screen()))   # 闸门二/三
+    if not ok:
+        break                    # 超预算或熔断：结束循环，原因在 why 里
+    history.append({"role": "assistant", "content": text})
+
+    action = parse_action(text)
+    allowed, reason = g.allow(action)                              # 闸门一/四
+    if not allowed:
+        history.append({"role": "user", "content": [screenshot_block(current_screen()),
+                        blocked_result(action, reason)]})
+        continue                 # 关键：回填给模型，而不是静默丢弃或直接终止
+
+    apply_action(state, action)
+    history.append({"role": "user", "content": [screenshot_block(current_screen())]})
+```
+
+**第一个调用点** `record_step` 放在拿到模型响应之后、解析动作之前 —— 它只管账，不管动作对不对。**第二个调用点** `allow` 放在动作真正执行之前，这是唯一能拦住它的位置。
+
+**被拦截之后怎么回填，决定了这道闸门是「护栏」还是「死路」。** 如果只是 `continue` 或者直接退出，模型什么都不知道，下一轮还会重复同一个动作 → 直到撞上限。正确的做法是把拦截当成一次**失败的动作结果**告诉它。用 `tool_use/tool_result` 协议时就是这样（示例：构造数据，未实跑）：
+
+```python
+def blocked_result(action, reason):
+    return {"type": "tool_result",
+            "tool_use_id": action["id"],       # 对应模型那次 tool_use
+            "is_error": True,
+            "content": "动作被安全策略拦截：%s。请换一个不会越界的动作。" % reason}
+```
+
+`is_error` 这一项不是装饰：第 4 章实测过，**不标它，模型会把错误当成数据继续往下用**；标上并说明原因，它才会调整策略。如果你的循环用的是纯文本 JSON 协议（本章的合成环境就是），等价做法是把这句话塞进下一条 user 消息，效果一样。
 
 ## 本节小结
 

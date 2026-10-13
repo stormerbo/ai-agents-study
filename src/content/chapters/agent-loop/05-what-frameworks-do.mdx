@@ -89,6 +89,85 @@ flowchart TB
 `}
 />
 
+## 真框架长什么样：LangGraph 的最小状态图
+
+上面那张 `NODES` 表是我手写的替身。真框架的状态图长这样（LangGraph 1.2.14，本次实跑，2026-10-12）：
+
+```python
+"""LangGraph 的最小状态图：与上面手写的 NODES 表做同一件事。
+
+需要 pip install langgraph。
+实跑状态：2026-10-12，langgraph 1.2.14。
+"""
+from typing import TypedDict
+
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+
+
+class State(TypedDict):
+    pending: list
+    trace: list
+
+
+def search(state):
+    return {"pending": [1, 2], "trace": state["trace"] + ["search"]}
+
+
+def fetch(state):
+    return {"pending": state["pending"][1:], "trace": state["trace"] + ["fetch"]}
+
+
+def summarize(state):
+    return {"trace": state["trace"] + ["summarize"]}
+
+
+def after_fetch(state):
+    return "fetch" if state["pending"] else "summarize"
+
+
+builder = StateGraph(State)
+builder.add_node("search", search)
+builder.add_node("fetch", fetch)
+builder.add_node("summarize", summarize)
+builder.add_edge(START, "search")
+builder.add_edge("search", "fetch")
+builder.add_conditional_edges("fetch", after_fetch, {"fetch": "fetch", "summarize": "summarize"})
+builder.add_edge("summarize", END)
+
+saver = InMemorySaver()                      # checkpointer：把每一步的状态存下来
+graph = builder.compile(checkpointer=saver)
+config = {"configurable": {"thread_id": "t-1"}}
+out = graph.invoke({"pending": [], "trace": []}, config)
+```
+
+跑出来的轨迹和手写循环、和上面那张 `NODES` 表完全一致：`['search', 'fetch', 'fetch', 'summarize']`。手写版多出来的那个 `node` 变量（现在在哪一步），在框架里由 checkpoint 承担：`get_state(config).next` 给出下一个要跑的节点，`metadata.step` 给出步数 —— 本次跑完是 `step: 4`、`next: ()`（没有下一步了）。
+
+框架持久化出来的 checkpoint 内容是（本次实跑；为可读性只删掉了 `versions_seen` 等重复字段，其余逐字保留）：
+
+```json
+{
+  "v": 4,
+  "ts": "2026-10-12T07:49:14.898716+00:00",
+  "id": "1f1c6116-bb55-6b40-8004-9d7c79f61268",
+  "channel_versions": {
+    "pending": "00000000000000000000000000000005.0.5222923297448746",
+    "trace": "00000000000000000000000000000006.0.14968576797672228"
+  },
+  "updated_channels": ["trace"],
+  "channel_values": {
+    "pending": [],
+    "trace": ["search", "fetch", "fetch", "summarize"]
+  }
+}
+```
+
+这张表把「框架藏起了什么」从断言变成了可打印的对象：
+
+- **它替你存了状态。** `channel_values` 就是恢复时要读的东西 —— 你手写时要自己设计 `save_state` / `load_state`（第 4 节），框架替你做了。
+- **它替你记了「哪一步改了什么」。** `channel_versions` 和 `updated_channels` 是增量信息，框架知道每个字段是被哪个节点改的；手写版没有这一层。
+- **它也藏起了东西。** `channel_versions` 里那一长串版本号是并发控制用的（多个节点同时改同一字段时决定谁赢），不读源码不知道它的存在；第 2 节那个问题 —— 工具参数校验失败时是抛异常还是回填 —— 同样不在这个文件里。
+
 ## 那要不要用框架
 
 这一节不给结论 —— 第 13 章会专门讲选型。这里只留一条判据，它是这一章手写一遍的实际收益：

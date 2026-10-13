@@ -10,6 +10,16 @@ status: drafting
 
 这句话听起来很有道理。我做了一组实验想验证它，结果**没能复现**。
 
+动手之前先把这一章会反复出现的四个词定下来 —— 后面所有取舍都建立在它们之上：
+
+- **token**：模型不是按字符也不是按单词处理文本，而是按**词表切分后的片段**。它是计费单位、容量单位，也是延迟来源（第 1 章）。「中文技术文档约两个字符一个 token」是本站实测的经验值。
+- **采样**：模型逐 token 生成输出的过程。它每一步都从概率分布里挑一个 token —— 所以「提示式 JSON」的语法保证只能靠概率，而「约束解码」是把非法 token 的概率直接压成 0（下一节讲）。
+- **`max_tokens`**：你在**请求**里设的一个字段，指的是这一次响应**最多生成多少个 token**，**不含输入**。它不是「模型的知识上限」，只是「这次允许它写多长」。
+- **`stop_reason`**：响应里的一个**字段**，指的是**这次生成为什么停下来**。它是你排查一切「解析失败」的第一入口。主要取值：`end_turn` 正常说完、`max_tokens` 撞上了你设的上限（输出被切断）、`tool_use` 模型要求调用工具、`stop_sequence` 撞上了你设的停止串。
+- **`thinking`**：请求里的一个开关（`thinking={"type": "disabled"}`），用来关闭模型的「先想再写」。本端点不允许它和强制工具调用同时开（见下文 400 报文）。
+
+> 这就是本节最省事的一条纪律：**任何一次「解析失败」，先看 `stop_reason`，再解释。** 看过之后你才知道这是格式问题，还是你自己把预算设小了。
+
 ## 实测一：提示式 JSON 稳得出乎意料
 
 同一个任务，三种拿到结构化输出的方式，各跑 8 次：
@@ -21,6 +31,44 @@ status: drafting
 | **C** | 强制工具调用：把 schema 作为工具的 `input_schema`，并指定模型必须调用它 |
 
 两个任务：一个简单（从客服对话里抽 6 个字段），一个麻烦（从采购邮件里抽嵌套明细数组、算出总价、原样保留一段含反引号和引号的备注）。
+
+方案 C 那个工具定义长这样（**构造示例，未实跑** —— 它的形状决定了下面那 325 token 花在哪，但里面的取值是我编的）：
+
+```json
+{
+  "name": "save_ticket",
+  "description": "保存从客服对话中抽取的工单字段。信息缺失时留空，不要编造。",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "customer_name": {"type": "string", "description": "客户姓名"},
+      "phone":         {"type": "string", "description": "联系电话，纯数字"},
+      "issue_type":    {"type": "string", "enum": ["refund", "repair", "question", "other"]},
+      "order_id":      {"type": "string", "description": "订单号，形如 A-1001"},
+      "amount":        {"type": "integer", "description": "涉及金额，单位元"},
+      "note":          {"type": "string", "description": "客户原话，原样保留"}
+    },
+    "required": ["customer_name", "issue_type"]
+  }
+}
+```
+
+三段的分工：`name` 是你要在代码里认领的名字；`description` 是**写给模型看的说明书**（下一节会看到它比 schema 关键字更有用）；`input_schema` 是**形状声明**。上面这 6 个字段、两个 required 的花销大约就是后面那 325 token —— 字段名与类型是小头，`description` 与 `enum` 是大头。
+
+它放进请求之后，完整的最小报文是这样（`messages` 之外的东西都是你每次请求都要固定付的）：
+
+```json
+{
+  "model": "deepseek-flash",
+  "max_tokens": 2000,
+  "thinking": {"type": "disabled"},
+  "tools": [{ "name": "save_ticket", "description": "...", "input_schema": { "type": "object", "properties": {} } }],
+  "tool_choice": {"type": "tool", "name": "save_ticket"},
+  "messages": [{"role": "user", "content": "把下面这段对话整理成工单：..."}]
+}
+```
+
+三个参数不能分开看：`tool_choice` 指定「必须调用这个工具」；`thinking` 在这个端点上**必须同时关掉**，否则直接 400（见下文）；`max_tokens` 管这一次输出的预算。**工具定义是每个请求都付的固定成本**，跟你这一轮有多少条记录无关 —— 所以「要不要为省 token 砍掉 description」这个问题，只有对高频调用才值得算。
 
 | 任务 | 方案 | 格式成功 | 内容完全正确 |
 |---|---|---:|---:|
@@ -206,7 +254,38 @@ fenced -> {'a': 1}
 
 本节 18 次「麻烦任务」的运行里，有 1 次是**被 `max_tokens` 截断**的。它表现为「输出不是合法 JSON」—— 如果你不检查 `stop_reason`，就会把它记成一次格式失败，然后得出「提示式不可靠」的错误结论。
 
-这个坑在本项目里已经撞过三次。判据很简单：**看到解析失败，先看 `stop_reason` 和 `finish_reason`，再解释。**
+```python
+# read_stop_reason.py
+def classify(resp):
+    """解析之前先分流。resp 是 SDK 返回的整个响应对象。"""
+    reason = resp.stop_reason            # 字符串字段，平铺在响应顶层
+    if reason == "max_tokens":
+        return "预算不足"               # 输出被切断，不是格式问题
+    if reason in ("end_turn", "tool_use", "stop_sequence"):
+        return "正常结束"               # 才轮到解析器
+    return "未知取值，单独看"           # 不要默默归进任何一类
+
+
+if __name__ == "__main__":
+    from types import SimpleNamespace as NS
+    samples = [
+        NS(stop_reason="end_turn"),
+        NS(stop_reason="max_tokens"),
+        NS(stop_reason="tool_use"),
+    ]
+    for r in samples:
+        print("stop_reason=%-12s -> %s" % (r.stop_reason, classify(r)))
+```
+
+```text
+stop_reason=end_turn     -> 正常结束
+stop_reason=max_tokens   -> 预算不足
+stop_reason=tool_use     -> 正常结束
+```
+
+（本节代码块均在本地 Python 3.10 上跑过，输出为上示真实结果。SDK 里字段名是 `resp.stop_reason`；如果你直接用 HTTP 报文，它在响应的顶层同名位置。）
+
+这个坑在本项目里已经撞过三次。判据很简单：**看到解析失败，先看 `stop_reason` 和 `finish_reason`，再解释。** 越简单越有效 —— 它会立刻把「模型又崩了」这句话拆成两种完全不同的东西：一种要改任务设计，一种只要调大数字。
 
 ## 常见坑
 
@@ -214,7 +293,7 @@ fenced -> {'a': 1}
 
 **解析器只认对象不认数组。** 这是本节真实踩到的坑。模型完全可能返回顶层数组，你的截取逻辑必须同时认 `{` 和 `[`。
 
-**不检查 `stop_reason` 就统计失败率。** `max_tokens` 截断会被算进「格式失败」，把测量结果整个污染掉。
+**不检查 `stop_reason` 就统计失败率。** `max_tokens` 截断会被算进「格式失败」，把测量结果整个污染掉。所以失败率的分母必须先把截断样本剔出去 —— 只统计 `end_turn` / `tool_use` 结尾的那部分。
 
 **以为强制工具调用一定更快。** 实测 60 条记录时它更慢（394 ms vs 213 ms），因为协议开销与工具定义吃掉了省下的思考。
 

@@ -34,7 +34,14 @@ poka-yoke（防呆）是制造业的词 —— 意思是让错误的操作在物
 
 但 A 和 B 的差别仍然真实存在，只是位置不同：**B 能自己把问题查清楚，A 只能把问题原样退回给人。**
 
-而这就是 poka-yoke 的机制 —— 它不是在「阻止模型犯错」，而是在**消除模型必须猜的场合**。`delete_file(file_id)` 之所以安全，是因为 `file_id` 只能从 `list_files` 拿到：**你想删一个没看过的文件，连表达都表达不出来。**
+而这就是 poka-yoke 的机制 —— 它不是在「阻止模型犯错」，而是在**消除模型必须猜的场合**。`delete_file(file_id)` 的设想是：`file_id` 只能从 `list_files` 拿到，**你想删一个没看过的文件，连表达都表达不出来。**
+
+但这句话要成立，有两个前提，缺一条这个防护就是假的：
+
+1. **编号不可枚举。** 如果编号是 `f_001` / `f_002` 这种可猜的序列，模型完全可以跳过 `list_files` 直接传 `f_002`；而服务端若只检查「这个编号存在」，它就得手了 —— 那是**存在性校验**，不是「必须看过了」的校验。
+2. **编号与本次会话绑定。** 编号必须由这一次会话发放，服务端只认本会话发出去的那些。否则模型可以复用上一轮、甚至别处上下文里出现过的编号。
+
+换句话说，**校验的对象不是「这个编号像不像」，而是「它是不是我这次发出的」。** 下面给的就是满足这两个前提的最小实现。
 
 ## 实测二：互斥参数的三种修法
 
@@ -85,14 +92,14 @@ flowchart TB
 
 ```python
 # poka_yoke_refactor.py
-"""对比同一个操作的两种接口设计，看模型会不会走到危险路径上。
+"""同一个操作、两种接口设计：编号可枚举 vs 编号不可枚举且与本次会话绑定。
 
-跑法：改 TOOLS 与 IMPL 切换变体，观察轨迹。
 关键不是「模型这次有没有出错」，而是**错误能不能被表达出来**。
 """
 
 import json
 import os
+import secrets
 
 import anthropic
 
@@ -105,17 +112,16 @@ client = anthropic.Anthropic(
 )
 MODEL = os.environ["VERIFY_MODEL"]
 
-# ── 假文件系统 ────────────────────────────────────────────────
-FILES = {
-    "f_001": {"name": "monthly-report-2026-03.csv", "kind": "报表"},
-    "f_002": {"name": "tmp-export-2026-10-07.csv", "kind": "临时导出"},
-    "f_003": {"name": "user-backup-2026-09-30.zip", "kind": "备份"},
+# ── 真实的文件（服务端才知道「名字 → 该不该删」）────────────────
+_REAL_FILES = {
+    "monthly-report-2026-03.csv": "报表",
+    "tmp-export-2026-10-07.csv": "临时导出",
+    "user-backup-2026-09-30.zip": "备份",
 }
-TARGET = "f_002"
 
+# 本次会话发放出去的编号 → 真实信息。真实系统里放 Redis，键是会话 id。
+SESSION_FILES: dict[str, dict] = {}
 
-# ── 变体 B：poka-yoke 版 ──────────────────────────────────────
-# file_id 只能从 list_files 拿到 —— 模型无法删除一个它没看过的文件
 TOOLS = [
     {
         "name": "list_files",
@@ -124,11 +130,14 @@ TOOLS = [
     },
     {
         "name": "delete_file",
-        "description": "按编号删除文件。编号只能原样取自 list_files 的返回结果。",
+        "description": (
+            "按编号删除文件。编号必须原样取自本次 list_files 的返回结果；"
+            "其它任何形式的编号都会被拒绝。"
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "file_id": {"type": "string", "description": "文件编号，例如 f_002"},
+                "file_id": {"type": "string", "description": "本次 list_files 发放的编号"},
             },
             "required": ["file_id"],
         },
@@ -137,16 +146,33 @@ TOOLS = [
 
 
 def list_files() -> str:
-    return json.dumps(
-        [{"file_id": k, **v} for k, v in FILES.items()], ensure_ascii=False
-    )
+    """列出目录，并把编号发放进本次会话。
+
+    编号用 secrets 生成 —— 模型猜不出，也无法从别处枚举。
+    """
+    out = []
+    for name, kind in _REAL_FILES.items():
+        fid = secrets.token_urlsafe(6)
+        SESSION_FILES[fid] = {"name": name, "kind": kind}
+        out.append({"file_id": fid, "name": name, "kind": kind})
+    return json.dumps(out, ensure_ascii=False)
 
 
 def delete_file(file_id: str) -> str:
-    # 这一层校验是「结构」的最后一道：编号必须真实存在
-    if file_id not in FILES:
-        return f"错误：不存在编号 {file_id}。编号只能取自 list_files 的结果。"
-    return f"已删除 {FILES[file_id]['name']}"
+    """只接受本会话发放过的编号。
+
+    校验的不是「这个编号像不像」，而是「它是不是我这次发出的」。
+    可枚举的 f_001 / f_002 在这里一定命中不了 —— 除非模型真的调过 list_files。
+    """
+    if file_id not in SESSION_FILES:
+        return json.dumps({
+            "error": "unknown_file_id",
+            "message": "这不是本次会话发放的编号。请先调用 list_files 取回候选。",
+            "retryable": False,
+        }, ensure_ascii=False)
+
+    info = SESSION_FILES.pop(file_id)          # 用完即作废，防重放
+    return f"已删除 {info['name']}"
 
 
 IMPL = {"list_files": list_files, "delete_file": delete_file}
@@ -179,16 +205,39 @@ def run(task: str, max_rounds: int = 6) -> None:
 
 
 if __name__ == "__main__":
-    print("任务：把那个 tmp-export.csv 删掉。（注意：文件名并不精确）")
-    run("把那个 tmp-export.csv 删掉。")
-    print("""
-观察点：
-  1. 模型有没有先 list_files 再删？  —— 这是接口强制的，不是它自觉
-  2. 如果它直接 delete_file("tmp-export.csv")，服务端会拒绝 ——
-     因为它拿不到合法编号，「删一个没看过的文件」在结构上无法表达
-""")
+    # ① 先证明防护是真的：跳过 list_files 直接猜编号，一定被拒
+    print("直接传一个枚举出来的编号：")
+    print(" ", delete_file("f_002"))
+    print("直接传路径：")
+    print(" ", delete_file("tmp-export-2026-10-07.csv"))
+
+    # ② 再证明正常路径仍然走得通
+    print("\n先 list_files，再拿其中真实发放的编号去删：")
+    issued = json.loads(list_files())
+    print(" ", delete_file(issued[1]["file_id"]))
+
+    print("\n再把同一个编号删一次（用完即作废）：")
+    print(" ", delete_file(issued[1]["file_id"]))
 ```
 
+运行 `__main__` 会得到输出 —— 前半是防护生效，后半是正常路径（示例：构造数据，未实跑）：
+
+```text
+直接传一个枚举出来的编号：
+  {"error": "unknown_file_id", "message": "这不是本次会话发放的编号。请先调用 list_files 取回候选。", "retryable": false}
+直接传路径：
+  {"error": "unknown_file_id", "message": "这不是本次会话发放的编号。请先调用 list_files 取回候选。", "retryable": false}
+
+先 list_files，再拿其中真实发放的编号去删：
+  已删除 tmp-export-2026-10-07.csv
+
+再把同一个编号删一次（用完即作废）：
+  {"error": "unknown_file_id", "message": "这不是本次会话发放的编号。请先调用 list_files 取回候选。", "retryable": false}
+```
+
+这就是「表达不出来」的准确含义：模型输出 `f_002` 也好、输出路径也好，都进不了 `SESSION_FILES`，服务端只能拒绝。而「用完即作废」是顺手补的第二层 —— 同一个编号删两次，第二次被拒，重复执行也就无从发生。
+
+**跨服务时这个防护会失效，必须换实现。** 上面的 `SESSION_FILES` 是单进程内存。一旦 `delete_file` 落在另一个服务、或者你有多副本，它查的是自己的内存，编号对不上。两种换法：把会话存储换成共享的（Redis，键是会话 id）；或者干脆不发裸编号，改发一个 **签名 token** —— 内容含文件名与会话 id，用 HMAC 签过、带过期时间，服务端验签即可，不需要共享存储。无状态服务里后者更常见。
 > **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
 
 ## 一个不会报错的 schema 错误
@@ -205,6 +254,8 @@ poka-yoke 的前提是**错误会被拦住**。但上一节实测过一件事：
 换句话说，本节讲的「让错误在结构上不可能」，前提是你先把**结构本身写对** —— 而结构写错时，没人会提醒你。
 
 ## 常见坑
+
+**只做存在性校验就以为防住了。** 如果编号可枚举（`f_001`、`f_002`），`file_id not in FILES` 拦不住任何东西 —— 模型直接传 `f_002` 就能过。要让「删一个没看过的文件」真的表达不出来，必须满足两个前提：编号由**本次会话**发放，且**不可枚举**。
 
 **把 poka-yoke 理解成「写更严厉的提示词」。** 「请勿删除重要文件」是约定；`delete_file(file_id)` 只能接系统发放的编号才是结构。二者在模型听话时看不出差别 —— 差别在它不听话的时候。
 

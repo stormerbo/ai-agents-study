@@ -12,9 +12,11 @@ status: drafting
 
 ## 实测：模型到底返回了什么
 
+响应里的 `stop_reason` 是「这次为什么停下来」的字段，`max_tokens` 是请求里「最多生成多少 token」的上限 —— 前者是判断循环走向的唯一依据。
+
 给模型一个工具定义，问一个需要它的的问题（「100 美元现在能换多少人民币？」）：
 
-```
+```text
 HTTP 200   stop_reason=tool_use
 usage: {"input_tokens":338, "output_tokens":78}
 
@@ -25,7 +27,7 @@ content 数组：
                  input={"from":"USD","to":"CNY"}
 ```
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（实测数据，`deepseek-flash`，2026-10-08。`thinking` 是模型的思考块，第 2 章讲过 —— 它是 content 数组里的一种块类型，下一轮**必须原样带回**，只挑 `text` 或 `tool_use` 都会 400。）
 
 三件值得注意的事：
 
@@ -59,7 +61,7 @@ sequenceDiagram
 
 第 3 步补上之后，实测的结果是：
 
-```
+```text
 HTTP 200   stop_reason=end_turn
 最终回答：根据当前汇率，1 美元 = 7.23 人民币，所以 100 美元 ≈ 723 人民币。
           ⚠️ 该汇率为模拟值（由本地函数返回），实际交易时请以银行或外汇平台的实时牌价为准。

@@ -513,6 +513,87 @@ describe('粗体标记的位置（CommonMark flanking）', () => {
 });
 
 /**
+ * Markdown 表格的列数一致性。
+ *
+ * 表格不是 CommonMark 的一部分，它来自 remark-gfm（见 next.config.ts）。GFM 要求
+ * **分隔行的单元格数与表头行完全相等** —— 多一格、少一格都不报错，整张表会退化成
+ * 一段普通文字，页面上显示成一串竖线，而构建、typecheck、lint 全绿
+ * （AGENTS.md §4.1 的静默失效家族：构建通过、页面正常、只是内容错了）。
+ *
+ * 实测踩到过一处：表头 4 列、分隔行 5 列，页面渲染出
+ * `| 路线 | 做法 | 全部命中 | 总 token | |---|---|---:|:--:|---:|`。
+ * 这类错误肉眼极难发现 —— 源码里两种写法看起来都像表格。
+ */
+describe('Markdown 表格的列数一致性', () => {
+  const cells = (line: string) =>
+    line
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split(/(?<!\\)\|/)
+      .map((s) => s.trim());
+
+  const isDelimiterRow = (line: string) => /^\|[\s:|-]*$/.test(line.trim()) && /-/.test(line);
+
+  /** 返回坏表格的描述（文件内行号从 1 开始）。围栏代码块里的竖线不算表格。 */
+  function brokenTables(md: string): string[] {
+    const lines = md.split('\n');
+    const problems: string[] = [];
+    let inFence = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? '';
+      if (/^\s*(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        continue;
+      }
+      if (inFence) continue;
+      if (!line.trim().startsWith('|')) continue;
+      const next = lines[i + 1] ?? '';
+      if (!isDelimiterRow(next)) continue;
+      const header = cells(line).length;
+      const delimiter = cells(next).length;
+      if (header !== delimiter) {
+        problems.push(
+          `第 ${i + 1} 行：表头 ${header} 列、分隔行 ${delimiter} 列 → ${line.trim().slice(0, 60)}`,
+        );
+      }
+    }
+    return problems;
+  }
+
+  it('检查器本身认得出坏表格（防止这条断言退化成空转）', () => {
+    const good = '| 路线 | 做法 |\n|---|---:|\n| A | 1 |\n';
+    const bad = '| 路线 | 做法 |\n|---|---:|---:|\n| A | 1 |\n';
+    expect(brokenTables(good)).toEqual([]);
+    expect(brokenTables(bad)).toHaveLength(1);
+  });
+
+  it('正文与译文的表格列数一致', () => {
+    const roots = [
+      join(process.cwd(), 'src/content/chapters'),
+      join(process.cwd(), 'src/content/reading'),
+    ];
+    const files = roots.flatMap((root) =>
+      readdirSync(root, { recursive: true })
+        .map(String)
+        .filter((f) => f.endsWith('.mdx') || f.endsWith('.md'))
+        .map((f) => ({ root, file: f })),
+    );
+    expect(files.length).toBeGreaterThan(100);
+
+    const failures: string[] = [];
+    for (const { root, file } of files) {
+      for (const p of brokenTables(readFileSync(join(root, file), 'utf8'))) {
+        failures.push(`${file}: ${p}`);
+      }
+    }
+    expect(failures, `表格分隔行列数与表头不一致（表格不会渲染）：\n${failures.join('\n')}`).toEqual(
+      [],
+    );
+  });
+});
+
+/**
  * 正文登记的四方一致性。
  *
  * 一节正文要真正出现在页面上，需要**四处**同时写对：

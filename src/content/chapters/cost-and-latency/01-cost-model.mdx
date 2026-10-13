@@ -85,6 +85,8 @@ flowchart TB
 输入 = input_tokens + cache_read_input_tokens + cache_creation_input_tokens
 ```
 
+这三个字段的含义：`input_tokens` 是本次**未命中缓存**、真正要重算的输入；`cache_read_input_tokens` 是从前缀缓存**读回**的部分；`cache_creation_input_tokens` 是本次**写入缓存**的部分。**总输入是三者之和** —— 只看第一个字段，会把缓存命中的轮次当成「成本骤降」（第 3 节实测过这个误判）。
+
 **第二步，量轮数分布。** 不是平均轮数，是分布 —— 因为成本是平方的，**长尾的那几次才是账单的主体**。看 P50、P90、P99。
 
 **第三步，算工具定义的固定开销。** 工具数 × 60 token × 平均轮数。如果这个数占总成本的比例超过 20%，缓存是第一个该做的事。
@@ -188,7 +190,7 @@ if __name__ == "__main__":
     for label, t, tl, o, sc in cases:
         e = estimate(t, tl, o, share_context=sc)
         total = e["input"] + e["tools"] + e["output"] * 4
-        print("  %-34s %9d %9d %9d %11d" % (label, e["input"], e["output"], e["tools"] & 0xFFFFFFFF, total))
+        print("  %-34s %9d %9d %9d %11d" % (label, e["input"], e["output"], e["tools"], total))
     print()
     e1 = estimate(1, 0, 300); e2 = estimate(30, 8, 300)
     print("=== 关键对比 ===")
@@ -199,6 +201,94 @@ if __name__ == "__main__":
     print("  4 个 agent 共享背景时，输入侧再乘 %.0f 倍（输出不乘）。" %
           (estimate(30, 8, 300, share_context=4)["input"] / estimate(30, 8, 300)["input"]))
 ```
+
+## 一条真实的调用记录长什么样
+
+先明确两个落库字段：`stop_reason` 是响应里说明模型为什么停下的字段（第 2 节已展开），`max_tokens` 是请求里限制输出长度的字段。
+
+「每次调用打三个标签」落到文件里，就是一行一条 JSON（本次实跑 2026-10-12，`deepseek-flash`，一个 4 轮的最小 agent 循环）：
+
+```json
+{"trace_id":"tr_a1","turn_index":1,"step_kind":"planning","model":"deepseek-flash","input_tokens":341,"cache_read":0,"cache_create":0,"output_tokens":129,"stop_reason":"tool_use","latency_ms":1460}
+{"trace_id":"tr_a1","turn_index":2,"step_kind":"execution","model":"deepseek-flash","input_tokens":227,"cache_read":256,"cache_create":0,"output_tokens":57,"stop_reason":"tool_use","latency_ms":900}
+{"trace_id":"tr_a1","turn_index":3,"step_kind":"execution","model":"deepseek-flash","input_tokens":169,"cache_read":384,"cache_create":0,"output_tokens":56,"stop_reason":"tool_use","latency_ms":760}
+{"trace_id":"tr_a1","turn_index":4,"step_kind":"summarization","model":"deepseek-flash","input_tokens":238,"cache_read":384,"cache_create":0,"output_tokens":22,"stop_reason":"end_turn","latency_ms":930}
+```
+
+字段从哪里取、类型与取值：
+
+| 字段 | 从哪来 | 类型 / 取值 |
+|---|---|---|
+| trace_id | 你自己生成，串起同一任务的所有调用 | string |
+| turn_index | 循环里的轮次计数 | int，从 1 开始 |
+| step_kind | 调用前由你的代码标注（这一步在干什么） | `planning / execution / summarization / retrieval` |
+| model | 请求里实际用的模型名 | string |
+| input_tokens / cache_read / cache_create | 响应体 `usage` 的三个字段，改名后落库 | int |
+| output_tokens | 响应体 `usage.output_tokens` | int |
+| stop_reason | 响应体字段；`max_tokens` 必须单独告警（第 5 节） | string |
+| latency_ms | 你的计时（发出请求到读完响应） | int |
+
+**判据：** 这 9 个字段之外不加也行，但少一个都会让某类问题问不出来 —— 没有 `step_kind` 就回答不了「钱花在哪种工作上」，没有 `turn_index` 就看不到平方项，没有把三项拆开就无法识别缓存。
+
+## 从这批记录算 P90 轮数与工具定义占比
+
+有了记录，前面那些「看 P50/P90/P99、算工具定义占比」才有了落点（下面代码跑的正是上面那 4 条真实记录）：
+
+```python
+# 从 records.jsonl 读；这里内联同一批记录以便直接运行
+RECORDS = [
+    {"turn_index": 1, "step_kind": "planning", "input_tokens": 341, "cache_read": 0, "cache_create": 0, "output_tokens": 129},
+    {"turn_index": 2, "step_kind": "execution", "input_tokens": 227, "cache_read": 256, "cache_create": 0, "output_tokens": 57},
+    {"turn_index": 3, "step_kind": "execution", "input_tokens": 169, "cache_read": 384, "cache_create": 0, "output_tokens": 56},
+    {"turn_index": 4, "step_kind": "summarization", "input_tokens": 238, "cache_read": 384, "cache_create": 0, "output_tokens": 22},
+]
+TOOL_TOKEN_PER_TOOL = 60          # 第 4 章实测：约 60 token/工具
+
+def total_input(r):               # 关键：三项之和，不是只读 input_tokens
+    return r["input_tokens"] + r["cache_read"] + r["cache_create"]
+
+def percentile(xs, p):            # 最近秩法，够用；生产里可用 statistics/numpy
+    xs = sorted(xs)
+    k = max(0, min(len(xs) - 1, int(round((p / 100) * (len(xs) - 1)))))
+    return xs[k]
+
+if __name__ == "__main__":
+    ins = [total_input(r) for r in RECORDS]
+    for r in RECORDS:
+        print("  第 %d 轮 %-14s 总输入 %5d（input %d + cache_read %d + create %d）"
+              % (r["turn_index"], r["step_kind"], total_input(r),
+                 r["input_tokens"], r["cache_read"], r["cache_create"]))
+    print()
+    print("P50=%d  P90=%d  P99=%d  （样例 4 条，P90 接近最大值）"
+          % (percentile(ins, 50), percentile(ins, 90), percentile(ins, 99)))
+    by = {}
+    for r in RECORDS:
+        by[r["step_kind"]] = by.get(r["step_kind"], 0) + total_input(r)
+    grand = sum(by.values())
+    for k, v in sorted(by.items(), key=lambda kv: -kv[1]):
+        print("  %-14s %5d token  %4.1f%%" % (k, v, 100 * v / grand))
+    tool = TOOL_TOKEN_PER_TOOL * 1 * len(RECORDS)
+    print("工具定义 ≈ %d token，占输入侧 %d 的 %.1f%%" % (tool, grand, 100.0 * tool / grand))
+```
+
+实跑输出（2026-10-12）：
+
+```text
+  第 1 轮 planning       总输入   341（input 341 + cache_read 0 + create 0）
+  第 2 轮 execution      总输入   483（input 227 + cache_read 256 + create 0）
+  第 3 轮 execution      总输入   553（input 169 + cache_read 384 + create 0）
+  第 4 轮 summarization  总输入   622（input 238 + cache_read 384 + create 0）
+
+P50=553  P90=622  P99=622  （样例 4 条，P90 接近最大值）
+  execution       1036 token  51.8%
+  summarization    622 token  31.1%
+  planning         341 token  17.1%
+工具定义 ≈ 240 token，占输入侧 1999 的 12.0%
+```
+
+**读法：** 三条结论一次出来 —— 「钱花在哪种工作上」（execution 占 51.8%）、「后期比前期贵」（341 → 622，平方项的苗头）、「工具定义的固定开销」（12.0%，工具多、轮数多时会快速上升）。样本只有 4 条，P90 没有统计意义 —— 它演示的是**算法口径**；真实系统里要按任务维度收集几百条再算。
+
+**失败形态：** 用 `input_tokens` 单字段算「每轮输入」—— 上面第 2 轮会算出 227 而不是 483，缓存生效的轮次看起来比真实便宜一半，于是「缓存省钱」被系统性低估。这类误判在本项目里真实发生过一次（第 3 节）。
 
 ## 常见坑
 

@@ -12,7 +12,7 @@ status: drafting
 
 先看结果。下面是对同一个模型做的五组调用，用的是一段约 4350 字符的固定前缀：
 
-```
+```text
 （实测数据，deepseek-flash，2026-09-24。前缀是一段重复的技术规范文本，约 3000 token。）
 
 场景                     | input | cacheRead | 耗时
@@ -37,7 +37,7 @@ status: drafting
 
 把前缀里的「技术规范」改成「技术标准」—— **只动了一个词**：
 
-```
+```text
 input 从 256 回到 2688，cacheRead 归零
 ```
 
@@ -65,7 +65,7 @@ input 从 256 回到 2688，cacheRead 归零
 
 缓存的构建有固定的层级顺序：
 
-```
+```text
 tools  →  system  →  messages
 ```
 
@@ -103,7 +103,7 @@ flowchart LR
 
 同一段 system 内容，连发两次，看第二次是否命中：
 
-```
+```text
 （实测数据，deepseek-flash，2026-09-24。三组都显式标了 cache_control。）
 
 system 规模            | 第一次 input | 第二次 input | 第二次 cacheRead
@@ -142,6 +142,77 @@ if response.usage.cache_creation_input_tokens == 0 and \
     # 两个都是 0 → 这次没有发生任何缓存
     print("警告：缓存未生效（可能是前缀太短，或内容有变化）")
 ```
+
+### 第 3 项怎么查：前缀哈希比对
+
+清单第 3 项「前缀是否 100% 一致」不能靠眼睛 diff —— 两个看起来一样的 system 字符串可能差一个 Unicode 空格。用哈希比：**哈希不同，缓存一定不命中**。下面这段 5 行就能跑，它做的事就是「把两次请求真正发出去的前缀序列化成同一份字节、再各自算一次哈希」：
+
+```python
+# prefix_diff.py
+"""对比两次请求的前缀是否逐字节一致 —— 缓存不命中时先跑这个。"""
+
+import hashlib
+import json
+
+# 前缀的构成顺序就是缓存层级顺序：tools → system → messages
+def prefix_bytes(tools: list, system, messages: list) -> bytes:
+    payload = {"tools": tools, "system": system, "messages": messages}
+    # sort_keys + ensure_ascii=False：把「同一份内容」的序列化结果固定下来，
+    # 否则键顺序/转义方式的差别会被误判成内容差别
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def digest(prefix: bytes) -> str:
+    return hashlib.sha256(prefix).hexdigest()[:16]
+
+
+if __name__ == "__main__":
+    system_a = "你是订单助手。\n输出要求：只输出 JSON。"
+    system_b = "你是订单助手。\n输出要求：只输出 JSON。"   # 视觉上与前一个相同
+
+    args = (["get_order"], system_a, [{"role": "user", "content": "查 A-1001"}])
+    h1 = digest(prefix_bytes(*args))
+    h2 = digest(prefix_bytes(["get_order"], system_b, [{"role": "user", "content": "查 A-1001"}]))
+    print(h1, h2, "一致" if h1 == h2 else "不一致 → 缓存不会命中")
+```
+
+> （**示例：构造数据，未实跑。** 它不调用任何 API，只做本地序列化与哈希 —— 所以你可以直接跑，但上面那两个哈希值不是我实测得到的。）
+
+> **一个必须说清的边界**：这里是「把前缀规范化后本地比哈希」，用来抓**你自己代码**里的意外差异。它**不能**验证服务端是否真的按这个哈希缓存 —— 后者只能看响应里的 `cache_read_input_tokens`（清单第 1 项）。两者是互补的：本地哈希告诉你「两边内容不一样」，usage 字段告诉你「服务端没复用」。
+
+### 工具定义怎么缓存：可复制的写法
+
+正文里那句话（「把 `cache_control` 放在 `tools` 数组的最后一个工具上」）落到代码是这样：
+
+```python
+TOOLS = [
+    {"name": "get_order",  "description": "按订单号查询订单状态", "input_schema": {...}},
+    {"name": "get_refund", "description": "发起退款",             "input_schema": {...}},
+    {
+        "name": "search_docs",
+        "description": "按关键词检索内部文档",
+        "input_schema": {...},
+        # 断点标在**最后一个工具**上：
+        # 它包含自己与前面所有工具，合起来构成一个可缓存前缀
+        "cache_control": {"type": "ephemeral"},
+    },
+]
+
+resp = client.messages.create(
+    model=MODEL,
+    max_tokens=2048,
+    tools=TOOLS,                      # tools 在最前面 —— 它变了，system 与 messages 全部失效
+    system=LONG_SYSTEM_PROMPT,        # 想连 system 一起缓存，就在 system 的最后一个 text 块上也标一个断点
+    messages=[{"role": "user", "content": user_question}],
+)
+```
+
+（示例：构造数据，未实跑 —— 工具名与 `input_schema` 用 `...` 省略，字段结构取自第 4 章的工具定义。**注意**：正文实测过 DeepSeek 的兼容端点会**忽略** `cache_control`，所以这段标记法在官方端点上才有意义，兼容端点上要靠它自己的自动缓存。）
+
+两个容易踩的细节：
+
+- **断点标在末尾，不是开头。** 它表达的是「从请求开头到这个位置」的可复用前缀，不是「这个工具本身」。所以 `cache_control` 放在中间那个工具上，后面那些工具就落不到缓存里。
+- **每个请求最多 4 个断点。** 工具数组一个 + `system` 一个 + 历史若干，超过 4 个不会报错，但只有前 4 个有效 —— 按「哪些内容最稳定、最大」来分配。
 
 ## 怎么用
 
@@ -198,7 +269,7 @@ system = [
 
 缓存相关的 usage 字段有三个：
 
-```
+```text
 cache_creation_input_tokens   本次写入缓存的 token 数
 cache_read_input_tokens       本次从缓存读取的 token 数
 input_tokens                  最后一个断点之后的 token 数（即未缓存部分）
@@ -206,13 +277,13 @@ input_tokens                  最后一个断点之后的 token 数（即未缓�
 
 三者的关系是：
 
-```
+```text
 总输入 token = input_tokens + cache_read_input_tokens + cache_creation_input_tokens
 ```
 
 **只看 `input_tokens` 会严重误判。** 回到上面的实测：
 
-```
+```text
 场景      | input_tokens | cache_read
 ① 首次    |    2688      |     0        ← 看起来"贵"
 ② 第二次  |     256      |   2432       ← 看起来"便宜了 90%"

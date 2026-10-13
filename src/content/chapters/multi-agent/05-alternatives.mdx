@@ -36,6 +36,18 @@ status: drafting
 
 第 10 章的第 5 节量过这个差别：同一件事，走 API 工具调用 384 token，走 agent 循环 5,528 token —— **14.4 倍**。虽然那是界面自动化的对比，但结论的机制是一样的：**能确定的事情不要交给会决策的东西。**
 
+一个「用工具代替 agent」的具体形状（示例：伪代码，说明形状，不可直接运行；真实项目里用第 13 章那套工具装饰器）：
+
+```python
+@tool
+def extract_points(doc_id: str) -> dict:
+    """读取指定文档，按固定规则抽取要点。doc_id 形如 D1/D2/D3。"""
+    text = DOCS[doc_id]
+    return {"doc_id": doc_id, "sentences": split_sentences(text)}
+```
+
+注意它没有「自己决定读哪份」的能力 —— 读哪份由调用方给定。**把决策从这一步里拿掉，就是它比 agent 便宜的全部原因。**
+
 ## 替代三：用 workflow 编排代替 agent 编排
 
 如果子任务之间的关系是固定的（先 A 再 B 再 C），那就写成 workflow。你不需要 agent 来决定顺序 —— 顺序你本来就知道。
@@ -43,6 +55,36 @@ status: drafting
 第 1 章讲过 workflow 和 agent 的分界：**控制流在谁手里。** 多智能体把控制流交给了主管模型；而如果流程是固定的，交给它就是白花一笔决策的钱，还多了一个出错的地方。
 
 一个实用的判断：**如果你能画出流程图，就写成 workflow。** 只有当图上的分支条件需要模型来判断时，才把那一处交给模型。
+
+下面是一个固定顺序的 workflow，自包含、可运行 —— 注意四步的顺序全在 `STEPS` 这个列表里，没有任何一步由模型决定：
+
+```python
+def extract(text):
+    return text.split("。")
+
+
+def validate(items):
+    return [x for x in items if len(x) > 4]
+
+
+def rewrite(items):
+    return ["（改写）" + x for x in items]
+
+
+STEPS = [extract, validate, rewrite]
+
+
+def run_workflow(text, steps=STEPS):
+    for step in steps:
+        text = step(text)
+    return text
+
+
+if __name__ == "__main__":
+    print(run_workflow("订单服务延迟上升。缓存未设上限。ok。"))
+```
+
+实跑输出（2026-10-12）：`['（改写）订单服务延迟上升', '（改写）缓存未设上限']`。如果这段流程交给 agent 编排，你付的是「让模型判断该不该改写」的钱，而答案你早就知道。
 
 <Mermaid
   chart={`
@@ -107,6 +149,85 @@ flowchart TB
 **信号三，主管的提示里出现了大量「如果……就」的规则。** 那说明真正的编排逻辑是你写的，不是主管判断的 —— 那就该把它写成 workflow，而不是让一个模型去执行你写好的规则。
 
 三个信号里，第一个最好量（就是跑两次比较），第三个最好认（看一眼主管的提示就知道）。
+## 第一步要的采集代码：一个可复用的基线脚手架
+
+「先量单 agent 的基线」需要一个能量倍数的壳。下面这个自包含（示例：构造数据，未实跑 —— FakeAgent 的输入是构造的，脚本本次已跑通）：
+
+```python
+"""可复用实验脚手架：量出「多智能体 / 单 agent」的倍数与延迟。
+
+默认用 FakeAgent（不需要凭据）；把 fake_single / fake_multi 换成你自己的 agent 函数即可。
+  用法：python scaffold.py             # 跑对照
+        python scaffold.py --baseline  # 只跑单 agent，建立基线
+实跑状态：2026-10-12。
+"""
+import argparse
+import time
+
+FILES = {"D1": 900, "D2": 900, "D3": 900}     # 每份材料按字符数量级计
+BG = 200                                       # 共享背景按字符数量级计
+COPIES = len(FILES) + 1                        # 每个工人一遍 + 主管一遍
+
+
+def fake_single(task):
+    return {"output": "复盘", "tokens": BG + sum(FILES.values()) + 400}
+
+
+def fake_multi(task):
+    time.sleep(0.05)                           # 模拟主管汇总的额外延迟
+    return {"output": "复盘",
+            "tokens": BG * COPIES + sum(FILES.values()) + 80 * len(FILES) + 400}
+
+
+def measure(fn, task):
+    t0 = time.time()
+    r = fn(task)
+    return {"tokens": r["tokens"], "seconds": round(time.time() - t0, 3)}
+
+
+def retreat_signals(base, multi, worker_inputs):
+    """「该退回去」那三个信号，各给一个可算的探针。"""
+    mean = sum(worker_inputs) / len(worker_inputs)
+    spread = max(worker_inputs) - min(worker_inputs)
+    return {
+        "1_token 是基线 3 倍以上、延迟却没降": multi["tokens"] / base["tokens"] > 3
+        and (base["seconds"] - multi["seconds"]) < 0.1,
+        "2_工人输入长度彼此接近": spread < 0.1 * mean,
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--baseline", action="store_true", help="只跑单 agent，建立基线")
+    args = ap.parse_args()
+
+    task = "根据三份材料写技术复盘"
+    base = measure(fake_single, task)
+    print("基线（单 agent）：%s" % base)
+    if args.baseline:
+        return
+    multi = measure(fake_multi, task)
+    print("对照（主管 + 3 工人）：%s" % multi)
+    print("倍数：%.2fx，延迟差：%.3f 秒" % (multi["tokens"] / base["tokens"],
+                                          multi["seconds"] - base["seconds"]))
+    print("退回信号：%s" % retreat_signals(base, multi, [1080, 1050, 1120]))
+
+
+if __name__ == "__main__":
+    main()
+```
+
+实跑输出（2026-10-12，延迟差随机器波动）：
+
+```text
+基线（单 agent）：{'tokens': 3300, 'seconds': 0.0}
+对照（主管 + 3 工人）：{'tokens': 4140, 'seconds': 0.051}
+倍数：1.25x，延迟差：0.051 秒
+退回信号：{'1_token 是基线 3 倍以上、延迟却没降': False, '2_工人输入长度彼此接近': True}
+```
+
+用的时候把 `fake_single` / `fake_multi` 换成你自己的 agent 函数（返回 `{"output", "tokens"}` 即可），另外两个探针就会在你的真实数据上给出判断：信号一（token 三倍以上、延迟却没降）和信号二（工人输入长度彼此接近）。**没有这个壳，第 5 节那三个信号永远只是三个句子。**
+
 ## 完整可运行代码
 
 下面这段代码把单 agent 与主管 + 工人两条路线并排跑，并打印倍数的拆解 —— 它就是本节「先算一次」那条建议的实现。
@@ -120,6 +241,7 @@ flowchart TB
 
 实跑状态：2026-10-09，deepseek-flash。
 """
+import os
 import json, os, urllib.request
 
 BG_SMALL = ("团队规范：所有对外输出用简体中文；数值保留两位小数；"

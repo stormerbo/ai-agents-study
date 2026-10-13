@@ -23,7 +23,109 @@ status: drafting
 
 四条各自的下一步完全不同，所以它们**不需要先被选中再一起提交**。理解这一点之后，界面就退化成了一组按钮 —— 而它可以是纯 server component，**零客户端 JS**。
 
-好处很具体：没有水合、没有 hydration mismatch 的风险（§4.7 记录过这个坑）、也没有内存状态与存储不同步的问题。
+**"四条请求"具体长什么样：**
+
+```text
+POST /api/approval/ap_8f3c21/approve        {}                                   → 执行冻结的参数
+POST /api/approval/ap_8f3c21/reject         {}                                   → 重新规划（第 19 章：中止是最后手段）
+POST /api/approval/ap_8f3c21/approve        {"params": {"to": "lisi@example.com"}} → 执行修改后的参数，不重新规划
+POST /api/approval/ap_8f3c21/retry          {"constraint": "改用 reply 工具"}        → 带着人的约束重新规划
+```
+
+（示例：构造数据，未实跑 —— 接口形状的示例，字段判据见下。）
+
+**四个端点里有两个共用 `approve`，靠 body 里有没有 `params` 区分** —— 这是刻意的："同意"和"修改后同意"在服务端是同一件事（执行一个动作），只在"用哪组参数"上分叉。而 `reject` 与 `retry` 是真正不同的动作（一个可能终止、一个必须继续规划）。
+
+**参数为什么是 `{"params": {...}}` 而不是散在 body 顶层。** 因为服务端要用它算一次哈希，和冻结记录里的 `params_hash` 比对（第 19 章第 3 节那条防线）—— **包一层让"这次提交的是哪组参数"成为一个单独的对象**，比对逻辑才不会去猜哪些字段算参数。
+
+**服务端的路由骨架（每个端点一份，形状一致）：**
+
+```python
+# app/api/approval/[id]/approve/route.py 的概念形态（伪代码）
+def approve_route(approval_id, body):
+    rec = store.get("approval:%s" % approval_id)          # 从存储读回，不是从内存
+    if rec is None:
+        return {"status": "not_found"}, 404
+    if rec["status"] == "executed":                        # 幂等：点两次是合法行为
+        return {"status": "already_executed"}, 200
+
+    params = body.get("params") or rec["frozen_params"]   # 修改后同意就走这一支
+    if body.get("params") and hash_params(params) != rec["params_hash"]:
+        return {"status": "params_changed"}, 409           # 有人改过冻结的那份
+    result = execute_atomically(rec, params)               # 副作用与标记同一事务
+    return {"status": "executed", "result": result}, 200
+```
+
+**这个骨架里有三处对应第 19 章的结论：** `store.get` 而不是内存字典（状态必须落盘）、`already_executed` 的幂等分支（点两次不能执行两次）、以及 `execute_atomically`（检查与执行不能分开）。**三处少任何一处，界面上看起来都完全正常** —— 只有用户真的点了两次、或者服务重启了，问题才会出现。
+
+**四个选项各自的界面状态怎么同步：**
+
+| 选项 | 服务端返回 | 界面接下来显示 |
+|---|---|---|
+| 同意 | `executed` + 结果 | 把那条审批收起来，直接接上执行结果 |
+| 拒绝 | `replanning` | 保留已生成内容，标一句"已按你的意见重新规划" |
+| 修改后同意 | `executed` + 结果 | 同"同意"，但要显示实际用的是修改后的参数 |
+| 换个方式 | `replanning` | 同上，且把人的约束原样显示出来（让用户确认它被采纳了） |
+
+**这一列是本节最容易漏的东西。** 如果四个选项在界面上都只是"按钮变灰"，用户无法知道自己的操作产生了什么后果 —— 而第 19 章那条"控制感"要求的正是这个反馈。
+
+**还没接后端时怎么验证？** 用一个本地的小状态机跑一遍，把四个请求各自的返回与界面文案对照出来（不需要任何凭据）：
+
+```python
+"""四个审批选项 → 状态迁移 → 界面该显示什么。纯本地。
+
+实跑状态：2026-10-12。
+"""
+
+PENDING = {"ap_8f3c21": {"status": "pending", "params": {"to": "zhangsan@example.com"}}}
+
+
+def handle(option, body=None, rec=None):
+    """模拟服务端路由：返回 (HTTP 状态, 响应体, 界面句子)。"""
+    rec = rec if rec is not None else PENDING["ap_8f3c21"]
+    if rec["status"] == "executed":
+        return 200, "already_executed", "这个动作已经执行过，未重复执行"
+    if option == "approve":
+        params = (body or {}).get("params") or rec["params"]
+        rec["status"] = "executed"
+        rec["params"] = params
+        return 200, "executed", "已执行：发送给 %s" % params["to"]
+    if option == "reject":
+        rec["status"] = "replanning"
+        return 200, "replanning", "已按你的意见重新规划（其后的步骤可能全变）"
+    if option == "retry":
+        rec["status"] = "replanning"
+        return 200, "replanning", "已带约束重新规划：%s" % (body or {}).get("constraint")
+    return 400, "bad_option", "未知选项"
+
+
+if __name__ == "__main__":
+    print("选项            状态码  响应体             界面显示")
+    # 每个选项都从"初始待审批状态"开始，否则前一个选项的状态会污染后一个
+    CASES = (("approve", None),
+             ("approve", {"params": {"to": "lisi@example.com"}}),
+             ("reject", None),
+             ("retry", {"constraint": "改用 reply 工具"}))
+    for opt, body in CASES:
+        fresh = {"status": "pending", "params": {"to": "zhangsan@example.com"}}
+        code, status, ui = handle(opt, body, rec=fresh)
+        print("  %-14s %-6d %-18s %s" % (opt, code, status, ui))
+
+    # 同一条记录被点两次：第二次必须命中幂等分支，而不是再执行一次
+    rec = {"status": "pending", "params": {"to": "zhangsan@example.com"}}
+    print()
+    print("  同一条审批被点了两次：")
+    print("    第 1 次：%s" % handle("approve", None, rec=rec)[2])
+    print("    第 2 次：%s" % handle("approve", None, rec=rec)[2])
+```
+
+**注意上面第二次 `approve` 会返回 `already_executed`** —— 因为第一次已经把记录推到了 `executed`。这恰好演示了那条幂等防线在界面上的样子：**用户点了两次，第二次看到的是"已经执行过"，而不是第二次发送。**
+
+**先说清"水合"是什么，因为它是这一节唯一一个纯前端概念。** 水合（hydration）指的是：服务端已经渲染出一份 HTML，浏览器拿到之后，前端框架再**在上面"挂"一遍事件与状态**，让静态的标记变成可交互的组件。
+
+面向后端的类比是：**服务端渲染出来的 HTML 相当于一份"快照"，水合是"用代码把这份快照重新实例化成一个活对象"。** 而风险在于 —— 实例化时用的是浏览器里的状态，如果它和服务端渲染时的状态不一致（比如服务端没有 localStorage），两边算出的界面不同，框架就会报 hydration mismatch，并把客户端那一版重新渲染一遍。**所以凡是依赖浏览器独有状态的界面，都要特别处理首屏**（项目里记录过这个坑，修法是用 useSyncExternalStore 的 getServerSnapshot）。
+
+**而本节这个界面从原理上不需要水合**：它的选项是表单与链接，没有"先选中再提交"的内存状态 —— 服务端渲染出的 HTML 本身就是完整的，没有可以"对不上"的东西。
 
 ## 一个可以直接用的实现
 

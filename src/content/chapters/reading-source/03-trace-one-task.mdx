@@ -21,7 +21,9 @@ $ grep -n "^def tool" langchain_core/tools/convert.py
 71:def tool(
 ```
 
-**五个定义，都不是重复实现。** 那是 `@typing.overload` 的写法 —— 为了给不同的调用方式提供类型提示。真正跑的是最后一个（第 71 行）。
+**五个定义，都不是重复实现。** 那是 `@typing.overload` 的写法。
+
+`@typing.overload` 是 Python 的类型标注机制：同一个函数支持多种调用方式（只传函数、传字符串名、传名字加参数……），每种调用方式在类型检查器眼里是一个单独的签名。每个 overload 桩只有 `def ...: ...`（箭头后面是省略号，没有函数体），**它不会被运行**；真正执行的是最后一个没有 `@overload` 的完整定义 —— 这里就是第 71 行。**注释里那五个行号（16/29/44/58/71）就是这条命令的实际输出，它确实匹配到五行。**
 
 这条本身就是源码阅读的一个小教训：**看到多个同名定义时，先确认是不是 overload。** 直接读第一个会读到只用于类型检查的桩。
 
@@ -62,8 +64,10 @@ $ grep -n "StructuredTool\|infer_schema" langchain_core/tools/convert.py
 # langchain_core/tools/base.py:95 附近
 def _get_filtered_args(inferred_model, func, *, filter_args, include_injected=True):
     """Get the arguments from a function's signature."""
-    schema = inferred_model.model_json_schema()["properties"]   # ← 就是这一行
+    schema = inferred_model.model_json_schema()["properties"]   # ← 就是这一行（第 103 行）
 ```
+
+**把两个行号分清楚，因为本节后面会同时用到它们**：`_get_filtered_args` 这个函数的定义在第 95 行；真正调 `model_json_schema()` 的那句在第 103 行。前者是「在哪找到这段逻辑」，后者是「约束在哪一行定下来」—— 第 5 节那套产出模板里的「位置」应该写后者。`["properties"]` 取出来的是 JSON Schema 里「参数名 → 参数 schema」的那张映射表，本节对照的全部内容都在它里面。
 
 **`model_json_schema()` 是 pydantic 的方法。** 到这里链路清楚了：
 
@@ -73,7 +77,7 @@ def _get_filtered_args(inferred_model, func, *, filter_args, include_injected=Tr
       → StructuredTool.from_function（structured.py）
           → create_schema_from_function（base.py:214）
               → _get_filtered_args（base.py:95）
-                  → pydantic 的 model_json_schema()   ← 约束在这里定下来
+                  → pydantic 的 model_json_schema()（base.py:103）   ← 约束在这里定下来
 ```
 
 **关键结论：LangChain 只是一个"搬运工"。** 它把函数的类型标注交给 pydantic，再把 pydantic 生成的 schema 原样拿走。所以约束（enum、range、pattern）**只能来自类型标注** —— 那一层不产生它们，下一层就不会有。
@@ -263,6 +267,11 @@ if __name__ == "__main__":
     ]
     for label, t in rows:
         print("  %-32s %s" % (label, json.dumps(summary(t), ensure_ascii=False)))
+
+    # 行号会随版本变，断言不会 —— 所以把「结论」写成断言，而不是写进注释
+    assert summary(a_default) == {"title": "Day", "type": "string"}, "parse_docstring 的默认值可能变了"
+    assert "enum" not in summary(b_parsed), "散文又开始生成 enum 了（说明约束来源变了）"
+    assert summary(c_literal)["enum"] == ["明天", "后天"], "Literal 生成 enum 的行为变了"
     print()
 
     print("=== 三、工具级 description（前 30 字）===")

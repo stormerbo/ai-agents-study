@@ -53,6 +53,53 @@ status: drafting
 
 **二，加可计算的内部一致性。** 表格里的合计、行数、字段和、编号连续性 —— 这些都是代码能算的，而错一个数就会破坏它们。注意上一节那条实测：**合计本身也可能被读错**，所以它降低了风险但没有消除风险。
 
+写成函数是这样（合计一栏必须来自**独立信源**，理由见下）：
+
+```python
+def check_consistency(rows, id_start=101, expect_rows=120,
+                     total_qty=None, total_amount=None):
+    """rows: [(item, qty, amount), ...]，来自视觉提取。
+    合计来自独立信源（数据库/ERP），不是从同一张图读的。"""
+    errs = []
+    if len(rows) != expect_rows:
+        errs.append("行数 %d != %d" % (len(rows), expect_rows))
+    for i, r in enumerate(rows):                    # 编号连续性
+        want = "ITM-%03d" % (id_start + i)
+        if r[0] != want:
+            errs.append("第 %d 行编号是 %s，应为 %s" % (i + 1, r[0], want))
+    if total_qty is not None:                       # 列合计
+        got = sum(int(r[1]) for r in rows)
+        if got != total_qty:
+            errs.append("qty 合计 %d != %d（差 %d）" % (got, total_qty, got - total_qty))
+    if total_amount is not None:
+        got = sum(round(float(r[2]), 2) for r in rows)
+        if abs(got - total_amount) > 0.005:
+            errs.append("amount 合计 %.2f != %.2f" % (got, total_amount))
+    return errs
+```
+
+拿第 4 节那份 120 行答案键，注入它实测到的 8 处错值，三种校验各自能报出什么：
+
+```text
+独立信源（答案键）的合计：qty=60069, amount=5870.57
+
+[只有行数 + 编号]           报错 0 条
+[加上来自独立信源的合计]     报错 2 条
+    qty 合计 59694 != 60069（差 -375）
+    amount 合计 5880.57 != 5870.57
+[对照：未注入错误的输出]     报错 0 条
+```
+
+（本次真跑，2026-10-12。120 行答案键按第 4 节代码里同一个随机种子 `random.seed(4242)` 重建，并逐条核对了 8 处错值的真值与实测输出一致。）
+
+这张输出里有两个容易被忽略的结论：
+
+**第一，合计校验能抓住「稳定错」。** 第 4 节实测里最危险的一类，是「每次都错成同一个值」—— 跑三次比对差异抓不到它。但错值会**改变列合计**，所以只要合计来自独立信源，它照样能被发现。**这正是「独立信源」四个字的份量**：一致性校验（本节第三种）比的是自己跟自己，合计校验比的是自己跟外部。
+
+**第二，编号连续性和行数在这批错误上是 0 条。** 不是它们没用，而是这 8 处错**全落在数值列** —— 两个校验保护的列恰好没出错。它们防的是另一类故障：漏行、重复行、编号串位。
+
+**合起来看**：校验要按「你怕哪种错」来选，而不是挑一个最强的。合计校验能报警但**只到列级**（它说不清是 836 那一格错了还是别的格），定位到具体单元格还得靠多次比对或人工。所以这套东西的用法是：**合计先当警报，多次比对定位，人工复核兜底。**
+
 **三，跑多次比对差异。** 实测召回 67%、精确 100%，成本是 N 倍。它适合**高风险字段**（金额、编号），不适合全表 —— 全表跑三遍的收益不值那个成本。
 
 **四，随机抽样人工复核。** 一致性抓不到稳定的错，人工能。抽 5% 通常就足以发现「这一类图有问题」，因为稳定的错往往成片出现。
@@ -119,6 +166,7 @@ flowchart TB
 
 实跑状态：2026-10-08，deepseek-flash。
 """
+import os
 
 import base64, json, os, random, re, urllib.request
 from io import BytesIO

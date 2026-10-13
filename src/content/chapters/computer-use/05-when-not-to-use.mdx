@@ -54,6 +54,60 @@ status: drafting
 
 反过来的形态也要小心：**用界面做决策、用 API 做执行**。这通常是个坏组合 —— 你付出了视觉的全部成本，却只为了触发一个本来可以直接调用的接口。
 
+把它写出来分两段。**第一段是纯代码**（解析、去重、校验），拿一批 103 行、里面混了 3 条重复和 2 条坏邮箱的记录跑：
+
+```python
+import csv
+from io import StringIO
+
+def prepare(csv_text, seen=None):
+    """把一批原始记录处理成可提交清单：去重 + 邮箱校验。
+    这一步完全不调模型，也不碰界面。"""
+    seen = seen if seen is not None else set()
+    ok, dropped = [], []
+    for row in csv.DictReader(StringIO(csv_text)):
+        name, email = row["name"].strip(), row["email"].strip().lower()
+        key = (name, email)
+        if key in seen:
+            dropped.append(("重复", name, email))
+            continue
+        seen.add(key)
+        if "@" not in email or "." not in email.split("@")[-1]:
+            dropped.append(("邮箱非法", name, email))
+            continue
+        ok.append({"name": name, "email": email})
+    return ok, dropped
+```
+
+输出（构造数据，本次真跑，2026-10-12）：
+
+```text
+原始行数：103
+可提交：98 条
+被挡下：5 条
+   重复       User 010 / user010@example.com
+   重复       User 020 / user020@example.com
+   重复       User 030 / user030@example.com
+   邮箱非法     No Email / not-an-email
+   邮箱非法     Bad Domain / x@nodot
+```
+
+**第二段才是界面**，而且只在一条记录上走一次视觉（示例：构造数据，未实跑；`fill_form_directly` / `confirm_success` 需要按你的界面实现）：
+
+```python
+# 混合路线：代码决定「填什么」，视觉只用在「确认那一步」。
+# 每条记录 1 次模型调用，而不是第 2 节那种 5 次往返的循环。
+for rec in ok:
+    fill_form_directly(rec["name"], rec["email"])   # 坐标固定，直接注入，不问模型
+    click_submit_directly()
+    if not confirm_success(screenshot()):            # 唯一一次视觉：看提交后的界面
+        queue_for_human(rec)                        # 读不出成功就去人工队列
+```
+
+这样每条记录的模型调用从「5 次往返」降到「1 次截图」。按第 2 节实测的「每步约 +300 token」，这是量级上的差别 —— 而**决策与校验部分连一次模型都不用调**，因为它们是确定性的。
+
+边界要说清楚：这套做法成立的前提是**表单的坐标与流程稳定**（填两个框、点一个按钮）。如果界面每天变、弹窗随机出现，那「直接注入」会脆，仍然得走完整的观测-动作循环。
+
 ## 那这一章的价值在哪
 
 如果结论是「尽量别用」，那用一整章讲它值得吗？值得，理由有两个。
@@ -102,13 +156,106 @@ flowchart TB
 ```python
 """同一件事：走 API（工具调用） vs 走界面（观测-动作循环）。
 
-实跑状态：2026-10-09，deepseek-flash。
-"""
-import importlib.util, json, os, urllib.request
+自包含：合成界面与循环已内联，不依赖任何外部脚本。
 
-spec = importlib.util.spec_from_file_location("cu", "verify-output/cu-loop.py")
-cu = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(cu)
+实跑状态：2026-10-09，deepseek-flash（输出为当时原脚本的结果，内联版与之逻辑等价）。
+"""
+import os
+import base64, json, urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
+
+FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+W, H = 820, 520
+EL = {"name": (60, 150, 500, 196), "email": (60, 250, 500, 296), "submit": (60, 380, 240, 432)}
+
+
+def render(state):
+    img = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(img)
+    f = lambda s: ImageFont.truetype(FONT, s)
+    d.rectangle([0, 0, W, 64], fill=(240, 244, 250))
+    d.text((60, 24), "NEW USER FORM", fill=(20, 30, 50), font=f(20))
+    for key, label in (("name", "Name"), ("email", "Email")):
+        x0, y0, x1, y1 = EL[key]
+        d.text((x0, y0 - 40), label, fill=(90, 100, 115), font=f(14))
+        d.rectangle([x0, y0, x1, y1], outline=(60, 120, 220) if state["focus"] == key else (170, 180, 195),
+                    width=3 if state["focus"] == key else 1)
+        d.text((x0 + 12, y0 + 14), state["v"][key], fill=(20, 20, 20), font=f(18))
+    x0, y0, x1, y1 = EL["submit"]
+    d.rectangle([x0, y0, x1, y1], fill=(30, 110, 220))
+    d.text((x0 + 12, y0 + 6), "Create", fill="white", font=f(18))
+    if state["done"]:
+        d.rectangle([0, 0, W, H], fill=(240, 252, 245))
+        d.text((60, 200), "SUCCESS", fill=(20, 140, 70), font=f(34))
+    b = BytesIO()
+    img.save(b, format="PNG")
+    return b.getvalue()
+
+
+def post(body):
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=json.dumps(body).encode(),
+        headers={"content-type": "application/json", "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        return json.loads(resp.read())
+
+
+def usage(d):
+    u = d.get("usage", {})
+    return (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+            + u.get("cache_creation_input_tokens", 0)
+            + u.get("output_tokens", 0))
+
+
+UI_SYS = "\n".join([
+    "你是一个通过截屏操作界面的 agent。只输出一个 JSON 对象，不要解释。",
+    '{"action":"click","x":<整数>,"y":<整数>} 或 {"action":"type","text":"..."} 或 {"action":"done"}',
+    "坐标以截图左上角为原点；要输入文字必须先点击对应的输入框。",
+])
+TASK = "在表单里填入 Name = Zhang San、Email = zhang@example.com，然后点 Create。"
+
+
+def ui_arm(max_steps=12):
+    """界面路线：每一步发一张当前截图，模型回一个动作。"""
+    st = {"focus": None, "v": {"name": "", "email": ""}, "done": False}
+    hist = [{"role": "user", "content": [{"type": "text", "text": TASK + "\n当前屏幕："},
+             {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+              "data": base64.b64encode(render(st)).decode()}}]}]
+    total, steps = 0, 0
+    while steps < max_steps and not st["done"]:
+        steps += 1
+        data = post({"model": os.environ["VERIFY_MODEL"], "max_tokens": 600,
+                     "system": UI_SYS, "messages": hist})
+        total += usage(data)
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        i = text.find("{")
+        if i < 0:
+            break
+        try:
+            act, _ = json.JSONDecoder().raw_decode(text[i:])
+        except Exception:
+            break
+        kind = act.get("action")
+        if kind == "done":
+            break
+        if kind == "click":
+            x, y = float(act["x"]), float(act["y"])
+            hit = next((k for k, (x0, y0, x1, y1) in EL.items() if x0 <= x <= x1 and y0 <= y <= y1), None)
+            if hit in ("name", "email"):
+                st["focus"] = hit
+            elif hit == "submit" and st["v"]["name"] and st["v"]["email"]:
+                st["done"] = True
+        elif kind == "type" and st["focus"]:
+            st["v"][st["focus"]] += str(act.get("text", ""))
+        hist.append({"role": "assistant", "content": text})
+        if st["done"]:
+            break
+        hist.append({"role": "user", "content": [{"type": "text", "text": "新的屏幕："},
+                     {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                      "data": base64.b64encode(render(st)).decode()}}]})
+    return st, total, steps
 
 TOOL = {
     "name": "create_user",
@@ -153,10 +300,9 @@ if __name__ == "__main__":
             print("        工具入参：%s" % json.dumps(args, ensure_ascii=False))
     print()
     print("--- 路线 B：走界面（观测-动作循环）---")
-    cu.VARIANT = "baseline"
     totals = []
     for i in range(3):
-        state, log, tokens, steps, _ = cu.run_trial()
+        state, tokens, steps = ui_arm()
         totals.append((tokens, steps))
         print("  第%d次：%d token，%d 次往返（%s）" % (i + 1, tokens, steps,
                                                      "成功" if state["done"] else "失败"))

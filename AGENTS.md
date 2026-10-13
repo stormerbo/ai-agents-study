@@ -46,6 +46,8 @@ pnpm test         # vitest，内容完整性 + SSE 编解码
 pnpm lint         # eslint
 node scripts/content-stats.mjs  # 每节中文/说明文字/图/代码块，对照 §3.2 验收标准
 node scripts/check-links.mjs   # 巡检所有外链可用性
+pnpm depth-check  # 深度门禁：五要素（定义/产物/判据/步骤/失败形态），见 docs/CONTENT-DEPTH.md
+pnpm verify:depth # 对比 HEAD 基线：确认没有删改既有内容、没有字数下降
 ```
 
 **实跑 API 需要的凭据**：写在 `.env.local`（已被 `.gitignore` 覆盖）。`scripts/verify-api.mjs` 会从那里读，且**不会打印 Key**。
@@ -95,6 +97,10 @@ node scripts/check-links.mjs   # 巡检所有外链可用性
 ### 3.2 篇幅与内容结构
 
 **验收标准（2026-10-08 用户明确确认）：四块齐全 + 中文 ≥1500 字 + 说明文字 ≥3000 字。**
+
+> **2026-10-12 追加：五要素深度标准**（原因：134/134 节四块全达标，但一个「有后端经验、零 AI Agent 经验」的读者会在大量小节卡住 —— 四块测的是证据密度，不是可教学性）。
+> 每节还必须满足 **定义 / 产物 / 判据 / 步骤 / 失败形态** 五要素，规则与样板见 [docs/CONTENT-DEPTH.md](docs/CONTENT-DEPTH.md)，全站进度见 [docs/DEPTH-FIX-TRACKER.md](docs/DEPTH-FIX-TRACKER.md)。
+> 机器可判的部分由 `pnpm depth-check`（占位符 / 代码块语言 / 自包含 / 术语首现 / 产物示例）与 `tests/depth.test.ts` 把关；`pnpm verify:depth` 用 HEAD 基线防止「修深度」时删掉已有实测。
 
 > 这里此前写的是「每节 4000–6000 字」。那个数字不是门槛 —— 现有 24 节里只有标杆 1-1 到过 3922，而它恰好是标杆；用 4000 当门槛会把已经验收过的 23 节全判为不合格。真正决定质量的是下面四块，字数只是它们的结果。下限定在 1500 / 3000，是为了拦住「看起来写了一节、其实没讲透」。
 
@@ -206,7 +212,9 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 - [x] **全文搜索**（2026-10-09）—— Pagefind，索引 158 页；`pnpm build-search`（须在 `pnpm build` 之后跑）；⌘K 打开
 - [x] **按 `VERIFY.md` 验证**（2026-10-09）—— ch1 的 SDK 脚本已实跑，修掉 3 个真实缺陷（详见 `VERIFY.md` 顶部）；prompt caching 等 4 项受限于兼容端点，待官方 Key
 
-**工具链现状**：`pnpm test`（63 断言 / 4 个文件）、`pnpm typecheck`、`pnpm lint`、`pnpm build`（225 页）；内容体量 **134/134 达标**；资源精读 **48/48**，其中 33 篇有中译全文。**全部干净**。
+**工具链现状（2026-10-12 更新）**：`pnpm test`（**67 断言 / 5 个文件**，含 `tests/depth.test.ts` 深度门禁）、`pnpm depth-check`、`pnpm verify:depth`、`pnpm typecheck`、`pnpm lint`、`pnpm build`（225 页）；内容体量 **26 章 / 134 节，字数 134/134 达标，五要素深度审计全部通过**；资源精读 **48/48**，其中 33 篇有中译全文。**全部干净**。
+
+> 2026-10-12 完成一轮全站深度修复：按 [docs/CONTENT-DEPTH.md](docs/CONTENT-DEPTH.md) 的五要素（定义／产物／判据／步骤／失败形态）逐节补齐，净增约 33.7 万字符；进度与例外见 [docs/DEPTH-FIX-TRACKER.md](docs/DEPTH-FIX-TRACKER.md)。
 
 **端口**：`pnpm dev` / `pnpm start` 默认 **3001**（脚本里写死 `-p 3001`）。要换端口用 `npx next start -p 3100` ——
 **不要用 `PORT=3100 pnpm start`**，CLI 参数会压过环境变量。

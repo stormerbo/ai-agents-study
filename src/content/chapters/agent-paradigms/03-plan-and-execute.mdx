@@ -103,6 +103,89 @@ flowchart TB
 
 第 2 步不是可选的。它既是安全边界（拦住越界的工具调用），也是质量边界（拦住「北京或上海中温度更高的那个」这种不是值的值）。少了它，静态计划就只剩「多花一轮钱」这一个特征了 —— 而且这个特征在本章的实测里已经量出来了：贵 57%，正确率 0/3。
 
+### schema 长什么样
+
+不要把「检查一下」写成语义描述，要写成机器可判的结构。下面是本节这个工具集的计划 schema（枚举值来自 `TOOLS` 的定义与你的城市表，**不是从模型嘴里问出来的**）：
+
+```json
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["tool", "city", "day"],
+    "properties": {
+      "tool": { "type": "string", "enum": ["get_weather"] },
+      "city": { "type": "string", "enum": ["北京", "上海", "广州", "深圳"] },
+      "day":  { "type": "string", "enum": ["明天", "后天"] }
+    },
+    "additionalProperties": false
+  }
+}
+```
+
+### 校验函数
+
+```python
+TOOL_NAMES = {"get_weather"}
+CITIES = ["北京", "上海", "广州", "深圳"]
+DAYS = ["明天", "后天"]
+
+def validate_plan(plan):
+    """逐项检查并**收集全部错误**（不要遇到第一个就抛）。
+    返回 [] 表示通过。"""
+    errs = []
+    if not isinstance(plan, list):
+        return ["顶层不是数组"]
+    if not plan:
+        return ["计划为空"]
+    for i, step in enumerate(plan):
+        if not isinstance(step, dict):
+            errs.append("第 %d 步不是对象" % (i + 1))
+            continue
+        if step.get("tool") not in TOOL_NAMES:
+            errs.append("第 %d 步 tool=%r 不在注册表 %s" % (i + 1, step.get("tool"), sorted(TOOL_NAMES)))
+        if step.get("city") not in CITIES:
+            errs.append("第 %d 步 city=%r 不在城市表 %s" % (i + 1, step.get("city"), CITIES))
+        if step.get("day") not in DAYS:
+            errs.append("第 %d 步 day=%r 不合法（只允许 %s）" % (i + 1, step.get("day"), DAYS))
+    return errs
+```
+
+### 一次完整的往返（本次真跑，2026-10-12）
+
+把 T2 那次实测的原始计划拿去校验：
+
+```text
+原始计划：[{"tool":"get_weather","city":"北京","day":"明天"},
+         {"tool":"get_weather","city":"上海","day":"明天"},
+         {"tool":"get_weather","city":"北京或上海中明天最高温更高的城市","day":"后天"}]
+
+validate_plan 返回 1 条错误：
+  第 3 步 city='北京或上海中明天最高温更高的城市' 不在城市表 ['北京', '上海', '广州', '深圳']
+```
+
+把错误和合法取值一起拼回消息重出。这里有一个**必须知道的坑**：第一次重出我把输出预算设成 3000，结果返回的是 `stop_reason=max_tokens` + **空文本** —— 长思考把预算吃光了。调大到 8000 才拿到合法计划：
+
+```text
+首轮生成计划：        stop=end_turn   input=120  output=1628  合计 1748
+第 1 次重出（3000）： stop=max_tokens input=253  output=3000  合计 3253   <- 空输出
+第 2 次重出（8000）： stop=end_turn   input=253  output=5616  合计 5869
+  新计划：[{"tool":"get_weather","city":"北京","day":"明天"},
+          {"tool":"get_weather","city":"上海","day":"明天"}]   <- 合法，但少了第 3 步
+
+一次成功的校验往返代价：1748 + 5869 = 7617 token
+```
+
+这次往返有两个结论：
+
+**一，校验往返不是免费的，而且可能比整个任务还贵。** 7617 token 对比第 2 节实测的 Plan-Execute 在 T2 上的平均 3087 token —— **一次「打回重出」比做完整件事还贵一倍多**。所以校验要尽量在**第一次生成时**就通过（把 schema 和合法取值写进提示词），而不是指望打回。
+
+**二，重出出来的计划是合法但不完整的。** 它把第 3 步（依赖分支的那一步）直接删了。这正是「计划格式表达不了分支」的同一个事实：校验只能保证「不非法」，保证不了「完整」。**依赖分支的那部分必须由你的代码补上**，不能指望模型写进计划。
+
+### 重出几次之后怎么办
+
+打回要有上限，否则会变成一个更贵的循环。规则写死：**同一个计划最多重出 2 次；第 3 次仍不过校验，就降级用 ReAct。** 判据是「连续两次重出都改不对」说明问题不在措辞，而在任务形状本身不适用静态计划 —— 这时候继续重出只是按次付费，而 ReAct 实测在 T2 上是 3/3。
+
 ## 完整可运行代码
 
 下面这段代码把 ReAct 与 Plan-Execute 都实现出来，跑两个任务，并把模型的原始计划打印出来 —— 上面那三个失败签名就是这么抓到的。
@@ -116,6 +199,7 @@ flowchart TB
 
 实跑状态：2026-10-09，deepseek-flash。
 """
+import os
 import json, os, urllib.request
 
 TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34,

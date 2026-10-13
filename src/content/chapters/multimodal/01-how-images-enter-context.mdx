@@ -19,6 +19,8 @@ status: drafting
 
 （实跑数据，2026-10-08，`deepseek-flash`。token 为三项之和，含缓存命中部分。）
 
+> 这里的「输入 token」是把 `input_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens` 三项相加得到的。原因是**提示缓存**（prompt caching）：被命中的前缀不重复计入 `input_tokens`，而是单独记在 `cache_read_input_tokens` 里 —— 只看 `input_tokens` 会低估真实用量。本章所有数字都按三项之和统计，与第 1 章口径一致。
+
 **一张 1×1 的图就加了 190 token。** 这个数字本身就说明问题：那幅图里只有一个像素，信息量是零，但它照样要花将近 200 token。
 
 原因在于图像在消息里的形态 —— 它不是文件引用，而是 `content` 数组里的**一个内容块**，和文本块并列：
@@ -29,6 +31,8 @@ status: drafting
   { "type": "text",  "text": "这张图是什么颜色？" }
 ]
 ```
+
+其中 `source.type` 有两种取值，先记住它们的分工：`base64` 表示这份字节由你自己编码后内联进 JSON，`url` 表示你只给一个地址、由服务端去取（下面实测）。**base64 不是加密，也不是压缩** —— 它是一种把任意二进制字节编码成可打印 ASCII 字符的规则，每 3 个字节编成 4 个字符，所以体积会膨胀约 1/3。JSON 只能装字符串、装不下裸字节，这是要用它的唯一原因。
 
 这个形态带来三个后果，每一个都比「多花点 token」重要：
 
@@ -84,6 +88,8 @@ HTTP 400
 
 **第一，小图有固定下限。** 64×64 与 512×512 花一样多的 token —— 都是 186。也就是说**把图从 512 缩到 64 不会省一分钱**，纯粹在丢信息。
 
+（186 这个下限的成因官方没有给出机制，我也没有考证。从数据形态看，它更像一笔「每张图至少按固定块数计费」的入场费 —— 只要图的存在被识别，就先扣这个数，而不是某种随像素变化的下限。**这一点是推断，不影响用法**：下限以下的缩放不省钱。）
+
 **第二，大图有上限，而且服务端会自己缩。** 1,280、1,568、2,048、3,000 四档的 token **完全相同**。而它们的字节数从 10KB 涨到了 40KB。这说明超过某个尺寸之后，服务端会先把图缩下来再处理 —— 你传的额外像素**没有被使用**。
 
 **第三，中间那段是线性的。** 640 到 1,280 之间，token 大约按像素数线性增长，斜率约 **每 1,600 像素 1 个 token**。
@@ -128,6 +134,30 @@ flowchart TB
 
 这里有个不显眼的麻烦：多数 API 不提供「修改历史里某一项」的操作，你只能自己重建 messages 数组。所以「每轮更新一张图」在实现上意味着每一轮都从头拼一次历史 —— 这反过来又要求你的循环把 messages 的管理权握在自己手里，而不是交给某个框架。
 
+落到代码上就是两件事：**截图进状态、不进历史**；**messages 每轮重建、不追加**。下面这段是核心逻辑（示例：构造数据，未实跑）：
+
+```python
+# 状态里只存「最新截图 + 已完成步骤的文字摘要」，不存历史截图。
+# 每轮从状态重新拼 messages —— 不是 append。（示例：构造数据，未实跑）
+def build_messages(state):
+    return [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "已完成：" + state["summary"]},
+            {"type": "image", "source": {"type": "base64",
+             "media_type": "image/png", "data": state["latest_screenshot_b64"]}},
+            {"type": "text", "text": "这是当前界面。下一步做什么？只回一个动作。"},
+        ],
+    }]
+
+# 每轮：先更新状态，再重建；历史里永远只有一张图。
+state["latest_screenshot_b64"] = screenshot()      # 覆盖上一张，而不是新增一张
+state["summary"] += "；" + describe_last_step()  # 早期截图压成一行文字
+messages = build_messages(state)                   # 重新赋值，不是 append
+```
+
+关键在最后一行：`messages` 是**重新赋值**的，不是 `append` 出来的。这样图片那一项从「随轮累积」降成「每轮一张」。
+
 ## 三种提供方式怎么选
 
 | 方式 | 谁去取 | 适合的场景 |
@@ -139,7 +169,76 @@ flowchart TB
 最后一行值得单独说：**base64 会让字节数膨胀约 33%**。一张 40KB 的图会变成 53KB 的字符串。这**不影响 token**（token 按分辨率算，第 3 节会验证），但影响上传延迟与请求体大小 —— 图片量大时这是个真实的差别。
 ## 完整可运行代码
 
-`CODE`
+下面这段代码里的 `max_tokens` 指的是单次响应允许模型**输出**的最大 token 数（是输出上限，不是输入上限），本节用它把回答截短、避免无关输出干扰计时；它和图像输入的 token 是两笔账。
+
+```python
+"""分辨率 → token 成本阶梯：生成不同尺寸的图，实测输入 token。
+
+实跑状态：2026-10-08，deepseek-flash。
+"""
+
+import base64
+import json
+import os
+import urllib.request
+from io import BytesIO
+from PIL import Image, ImageDraw
+
+
+def make_image(w, h):
+    """画一张有内容的图（纯色块会被压缩到极小，不利于测真实成本）。"""
+    img = Image.new("RGB", (w, h), "white")
+    d = ImageDraw.Draw(img)
+    for i in range(0, max(w, h), 20):
+        d.line([(i, 0), (i, h)], fill=(200, 210, 220), width=1)
+        d.line([(0, i), (w, i)], fill=(200, 210, 220), width=1)
+    d.rectangle([w // 8, h // 8, w // 2, h // 2], outline="black", width=2)
+    d.text((10, 10), "TEST %dx%d" % (w, h), fill="black")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def ask(content, max_tokens=100):
+    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
+                       "messages": [{"role": "user", "content": content}]}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read())
+    u = data.get("usage", {})
+    total = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+             + u.get("cache_creation_input_tokens", 0))
+    return total, u.get("output_tokens", 0)
+
+
+if __name__ == "__main__":
+    print("%10s %12s %10s %10s" % ("尺寸", "PNG 字节", "输入 token", "每像素 token"))
+    base, _ = ask([{"type": "text", "text": "回复「收到」"}])
+    print("%10s %12s %10d" % ("(纯文本)", "-", base))
+    prev = None
+    for w, h in [(64, 64), (256, 256), (512, 512), (640, 640), (768, 768), (896, 896),
+                 (1024, 1024), (1280, 1280), (1568, 1568), (2048, 2048), (3000, 3000)]:
+        raw = make_image(w, h)
+        b64 = base64.b64encode(raw).decode()
+        try:
+            total, _ = ask([
+                {"type": "image", "source": {"type": "base64",
+                 "media_type": "image/png", "data": b64}},
+                {"type": "text", "text": "只回复「收到」"},
+            ])
+            px = total - base
+            print("%10s %12d %10d %10.4f" % ("%dx%d" % (w, h), len(raw), total, px / (w * h)))
+            if prev:
+                print("%10s 上一档的 %.2f 倍" % ("", px / prev))
+            prev = px
+        except urllib.error.HTTPError as e:
+            print("%10s %12d  失败 HTTP %d: %s" % ("%dx%d" % (w, h), len(raw), e.code,
+                                                   e.read().decode()[:160]))
+```
 
 实跑输出（2026-10-08）：
 

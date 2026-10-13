@@ -66,6 +66,8 @@ for step in plan:
 
 注意第 5 条的判据来源：**按可逆性，不按危险程度。** 那是第 19 章的实测结论（按可逆性审批：2 次打断 / 0 漏网；按危险程度：1 次打断但放过了发邮件）。骨架阶段就把它定下来，后面就不会走偏。
 
+**一个名词要在这里分清**：`max_tokens` 指的是**整个任务的累计消耗上限** —— 本节骨架里 `BUDGET["max_tokens"] = 20000` 就是它，每一步 `spend(3000, ...)` 往里加。它不是单次请求的输出预算，和第 24 章那个「单次调用最多生成多少 token」的 `max_tokens` **同名不同义**。分不清会在两个地方出错：把任务预算当成单次上限（于是单次调用被截断），或反过来（于是任务跑飞了才发现）。命名上更好的做法是叫 `task_token_budget`，这里是沿用第 18 章的口径以便和第 24 章对照。
+
 ## 骨架跑通的标准
 
 "跑通"需要一个明确的判据，否则它会退化成"看起来能跑"。我用的标准是**六条可断言的用例**：
@@ -99,6 +101,35 @@ flowchart TB
     F["跑通的判据：六条可断言用例"] -.-> G["它同时就是冒烟集"]
 `}
 />
+
+### 审批停下之后，谁把它续起来
+
+骨架里 `ask()` 把请求塞进 `APPROVALS` 就返回 `input_required`。**「停下来」这一半做完了，「批完继续」那一半在宿主侧** —— 它是调用方的事，所以不写进 agent 循环，但必须写成约定，否则接手的人拿到这个返回值不知道怎么办。
+
+宿主侧的时序（伪代码，三个动作：展示 → 批准 → 带 `approved_ids` 重入）：
+
+```python
+def host_run(plan):
+    approved = set()
+    while True:
+        result = run(plan, approved_ids=approved)          # 重入，不是从断点续执行
+        if result["result"].get("result") != "input_required":
+            return result
+        req = result["result"]
+        show_to_user(req["action"], req["args"], req["why"])   # 展示给用户
+        if not user_approves():
+            return {"denied": req}                        # 拒绝也是一种结果，不是异常
+        key = "%s:%s" % (req["action"], json.dumps(req["args"], sort_keys=True))
+        approved.add(key)                                  # 只把这一条放进白名单
+```
+
+三个必须说清的点：
+
+1. **谁在什么时机把 `approved_ids` 传回来**：宿主（UI / CLI / 服务端）在用户批准后，用**同一个 plan、带着 `approved_ids` 再调一次 `run()`**。不是「让 agent 继续」，而是「重放一次，这次带上钥匙」。
+2. **`seen` 字段给谁用**：它是 `APPROVALS` 里那条请求的展示状态（用户看没看过），给宿主 UI 用；agent 循环本身不读它。
+3. **为什么重入是安全的**：靠幂等键。用例 3 已经断言过 —— 同一组参数第二次带批准重入，返回的是 `{'skipped': True}`，而不是再发一次。**幂等键是「停下来再继续」的前提**：没有它，重入就会重复执行不可逆动作。
+
+**本次真跑（2026-10-12）的实测输出**：第一次 `run(plan)` 走到 `send_reply` 返回 `input_required`；宿主从 `APPROVALS[-1]` 算出 key 为 `send_reply:{"body": "...", "to": "zhangsan@example.com"}`，带它重入得到 `{"sent": true, "to": "zhangsan@example.com"}`；再重入一次得到 `{"skipped": true, "reason": "已执行过"}`。**这条链路里没有任何一处需要「恢复内存状态」—— 状态本来就还在进程里，重入读的是同一份 `EXECUTED`；跨进程时这份状态才需要持久化（那是 X4 明确不做的部分）。**
 
 ## 一个容易忽略的细节：骨架阶段不要优化
 
@@ -214,6 +245,8 @@ def check_policy(name):
 # ═══════════════ 3. 预算与熔断（第 18 章）═══════════════
 
 BUDGET = {"max_turns": 6, "max_tokens": 20000, "breaker_after": 3}
+# 注意：这里的 max_tokens 指的是**整个任务的累计 token 预算**（每一步累加），
+# 不是单次请求的输出上限 —— 它和第 24 章那个 max_tokens 同名不同义。
 STATE = {"tokens": 0, "turn": 0, "fails": 0, "spent": []}
 
 

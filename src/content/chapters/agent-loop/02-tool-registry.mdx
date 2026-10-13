@@ -66,7 +66,7 @@ def execute(name, args):
 
 ## 注册表还有一个隐含职责：它是安全边界
 
-第 9 章讲过计算机使用的动作空间是**开放**的（同一个 click 什么都能点）。工具调用的动作空间是**封闭**的 —— 模型只能调用注册表里有的东西。
+第 9 章讲过计算机使用的动作空间是**开放**的（同一个 click 什么都能点）。工具调用的**动作空间**指的是「模型这一轮所有可能做出的动作的集合」，而它是**封闭**的 —— 模型只能调用注册表里有的东西。
 
 这个差别看起来是工具调用的优势，但它只在一种情况下成立：**注册表里没有危险的工具。**
 
@@ -76,7 +76,7 @@ def execute(name, args):
 Tool("run_sql", "执行任意 SQL", lambda q: db.execute(q))
 ```
 
-它的动作空间实际上等于整个数据库。第 9 章那套闸门在这里同样适用：**工具定义的粒度就是你的权限粒度。** 与其给一个万能工具加一堆正则检查，不如把它拆成几个语义明确的工具（查询订单、退款），让越界在结构上不可能发生 —— 这正是第 4 章讲的 poka-yoke。
+它的动作空间实际上等于整个数据库。第 9 章那套闸门在这里同样适用：**工具定义的粒度就是你的权限粒度。** 与其给一个万能工具加一堆正则检查，不如把它拆成几个语义明确的工具（查询订单、退款），让越界在结构上不可能发生 —— 这正是第 4 章讲的 poka-yoke（可以理解为「防呆设计」：不靠事后检查拦住错误，而是改结构让错误压根无从发生）。
 
 ## 一次工具调用的完整路径
 
@@ -141,7 +141,103 @@ KeyError: 'get_weather_by_city'
 
 选择的关键在这条：**只读工具可以并行，有副作用的工具默认串行。** 因为并行一个副作用操作，等于把「执行顺序」这个信息交给了调度器 —— 而它不知道业务上哪个顺序才对。
 
-还有一个细节：并行执行时，**每个工具的结果仍要按各自的 tool_use_id 回填**，而且顺序最好保持与请求一致（虽然协议不强制）。保持一致的好处是，日志和轨迹读起来可预测。
+还有一个细节：并行执行时，**每个工具的结果仍要按各自的 tool_use_id 回填**（`tool_use_id` 指的是「这一轮里某一次具体调用」的唯一标识，就是响应里 `tool_use.id` 那个值），而且顺序最好保持与请求一致（虽然协议不强制）。保持一致的好处是，日志和轨迹读起来可预测。
+
+### 「可并行」这个标记落在哪
+
+它是注册表条目上的一个字段，和 `schema`、`fn` 并列。要给它显式默认值，因为忘记标注时必须退到安全的一边：
+
+```python
+entry = {
+    "schema": schema,
+    "fn": fn,
+    "parallel_safe": schema.get("parallel_safe", False),   # 默认 False：不声明就串行
+}
+```
+
+判据只有一条：**这个调用会不会改变外部状态？** 会改（写库、发消息、扣款）就是 `False`，纯读（查询、计算、检索）才给 `True`。默认 `False` 意味着「忘记标注」的代价是多等一会儿，而不是写坏数据 —— 这是这里唯一可接受的默认值。
+
+有了这个字段，同一轮里的多个 `tool_use` 就能按它分组调度。下面这段是自包含的：
+
+```python
+"""按 parallel_safe 分组的调度：只读并发、副作用串行。
+
+自包含，不需要凭据。
+实跑状态：2026-10-12。
+"""
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+
+class Registry:
+    def __init__(self):
+        self.entries = {}
+
+    def tool(self, name, fn, parallel_safe=False):
+        # parallel_safe 默认 False：不声明就串行 —— 忘记标注时退到安全的一边
+        self.entries[name] = {"fn": fn, "parallel_safe": parallel_safe}
+
+    def execute(self, name, args):
+        return self.entries[name]["fn"](**args)
+
+
+def dispatch(blocks, registry):
+    """按 parallel_safe 分组：只读的并发发出去，副作用逐个来。"""
+    safe, unsafe = [], []
+    for b in blocks:
+        (safe if registry.entries[b["name"]]["parallel_safe"] else unsafe).append(b)
+    results = {}
+    if safe:
+        with ThreadPoolExecutor(max_workers=len(safe)) as pool:
+            futures = {pool.submit(registry.execute, b["name"], b["input"]): b for b in safe}
+            for fut, b in futures.items():
+                results[b["id"]] = fut.result()
+    for b in unsafe:
+        results[b["id"]] = registry.execute(b["name"], b["input"])
+    return results
+
+
+def backfill(blocks, results):
+    return [{"type": "tool_result", "tool_use_id": b["id"], "content": results[b["id"]]}
+            for b in blocks]
+
+
+def slow_read(city):
+    time.sleep(0.4)
+    return {"city": city, "temp_c": 31}
+
+
+def write_record(id):
+    time.sleep(0.4)
+    return {"created": id}
+
+
+if __name__ == "__main__":
+    reg = Registry()
+    reg.tool("read_a", slow_read, parallel_safe=True)
+    reg.tool("read_b", slow_read, parallel_safe=True)
+    reg.tool("write", write_record)          # 没标 → 默认串行
+
+    blocks = [{"id": "t1", "name": "read_a", "input": {"city": "北京"}},
+              {"id": "t2", "name": "read_b", "input": {"city": "上海"}},
+              {"id": "t3", "name": "write",  "input": {"id": "ORD-1"}}]
+
+    t0 = time.time()
+    results = dispatch(blocks, reg)
+    print("整轮用时：%.2f 秒" % (time.time() - t0))
+    print("回填顺序：%s" % [b["id"] for b in blocks])
+    print("结果：%s" % results)
+```
+
+实跑输出（2026-10-12）：
+
+```text
+整轮用时：0.81 秒
+回填顺序：['t1', 't2', 't3']
+结果：{'t1': {'city': '北京', 'temp_c': 31}, 't2': {'city': '上海', 'temp_c': 31}, 't3': {'created': 'ORD-1'}}
+```
+
+两个只读查询各睡 0.4 秒，却和一个副作用写入一起在 0.81 秒里跑完 —— 因为查询是并发的，写入单独串行。三个都串行的话，这个数会接近 1.2 秒。`dispatch` 返回的是 `{tool_use_id: result}` 而不是列表，回填时才能靠 id 对齐「哪个结果对应哪次调用」，而不是靠顺序。
 
 ## 完整可运行代码
 

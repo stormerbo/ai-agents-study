@@ -96,9 +96,103 @@ flowchart TB
 
 这个测试要**在选框架之前做**，因为它只需要你在纸上画一遍，而代价是选错之后的一次重写。
 
-## 完整可运行代码
+## 三种抽象的可运行对照
 
-下面这段代码用真框架演示「装饰器生成的 schema 里有什么、没有什么」—— 那是判断一个抽象边界最直接的方式：**把它生成的东西原样打印出来看。**
+上面三种各只有三行伪代码。下面把同一个任务（先 search，再循环 fetch 两次，最后 summarize）用三种抽象各写一遍 —— 三者产出同一条轨迹，差别只在**控制流写在哪里**（本次实跑，2026-10-12）：
+
+```python
+"""同一任务的三种抽象：链 / 图 / 自主 agent，控制权逐步转移。
+
+链用 langchain-core 的 RunnableLambda，图用 langgraph，自主 agent 用最朴素的手写循环。
+需要：pip install langgraph（会一并装 langchain-core）。
+实跑状态：2026-10-12，langgraph 1.2.14。
+"""
+from typing import TypedDict
+
+from langchain_core.runnables import RunnableLambda
+from langgraph.graph import StateGraph, START, END
+
+
+class State(TypedDict):
+    pending: list
+    trace: list
+
+
+def search(state):
+    return {"pending": [1, 2], "trace": state["trace"] + ["search"]}
+
+
+def fetch(state):
+    return {"pending": state["pending"][1:], "trace": state["trace"] + ["fetch"]}
+
+
+def summarize(state):
+    return {"trace": state["trace"] + ["summarize"]}
+
+
+# ---- 链：控制流是一条管道，顺序写死，没有循环 ----
+def chain():
+    return (RunnableLambda(search)
+            | RunnableLambda(fetch)
+            | RunnableLambda(fetch)
+            | RunnableLambda(summarize))
+
+
+# ---- 图：控制流是节点表 + 路由函数 ----
+def after_fetch(state):
+    return "fetch" if state["pending"] else "summarize"
+
+
+def graph():
+    b = StateGraph(State)
+    b.add_node("search", search)
+    b.add_node("fetch", fetch)
+    b.add_node("summarize", summarize)
+    b.add_edge(START, "search")
+    b.add_edge("search", "fetch")
+    b.add_conditional_edges("fetch", after_fetch, {"fetch": "fetch", "summarize": "summarize"})
+    b.add_edge("summarize", END)
+    return b.compile()
+
+
+# ---- 自主 agent：控制流在模型，这里用脚本化策略代替 ----
+def autonomous(iters=2):
+    state = {"pending": [], "trace": []}
+    state = search(state)
+    for _ in range(iters):        # 走几步由「模型」决定
+        state = fetch(state)
+    return summarize(state)
+
+
+if __name__ == "__main__":
+    print("链：  ", chain().invoke({"pending": [], "trace": []})["trace"])
+    print("图：  ", graph().invoke({"pending": [], "trace": []})["trace"])
+    print("自主：", autonomous()["trace"])
+```
+
+实跑输出：
+
+```text
+链：   ['search', 'fetch', 'fetch', 'summarize']
+图：   ['search', 'fetch', 'fetch', 'summarize']
+自主： ['search', 'fetch', 'fetch', 'summarize']
+```
+
+三份实现和它们的控制流位置：
+
+| 抽象 | 控制流在哪 | 表达不了什么 |
+|---|---|---|
+| 链 | 管道里的固定顺序 | 事先不知道次数的循环 |
+| 图 | `after_fetch` 路由函数 | 路由条件本身需要模型判断的情况 |
+| 自主 | `autonomous` 里的循环次数 | 你可控的成本上界 |
+
+**哪一段对应第 11 章手写循环的哪几行：** 链的那串管道就是第 11 章 `while` 里「按顺序调下一个」；图的 `after_fetch` 就是那个停止原因的判据（`stop_reason` 是响应里的停止原因字段：这里返回下一个节点名，那里决定继续还是返回）；自主的 `for` 循环就是那个 `while True` —— 区别只在于循环次数从哪来。
+
+注意链那一行：为了实现「取两次」，我不得不写两个 `RunnableLambda(fetch)`。**如果取几次事先不知道，链就写不出来** —— 这就是「表达不了循环」的具体含义。
+
+## 附：schema 生成实验（与第 1 节同一份实跑）
+
+下面这段代码演示「装饰器生成的 schema 里有什么、没有什么」—— 那是判断一个抽象边界最直接的方式：**把它生成的东西原样打印出来看。** 它和上面的三种抽象对照是两件事：这里验的是**工具接入**那一类的边界，和链 / 图 / 自主无关。
 
 ```python
 """真框架对照：同一个任务，手写循环 vs LangChain。

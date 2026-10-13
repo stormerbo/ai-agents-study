@@ -152,6 +152,74 @@ if __name__ == "__main__":
 
 注意返回结构里那个 `status_source` 字段。它看起来是多余的，但它让「这条状态是查出来的还是编出来的」在数据结构里可分辨 —— **这是把「不确定」显式化，而不是把它藏进一个看起来正常的字符串里。**
 
+**最终入库的那条记录长这样**（构造示例，未实跑）。两条分支的唯一区别是 `status` 与 `status_source`，而下游只需要判断 `status` 是不是 `null`：
+
+```json
+// 分支一：订单系统里有这条记录
+{
+  "order_id": "A-1001",
+  "status": "已取消",
+  "status_source": "orders",
+  "amount": 4820,
+  "approval": "auto",
+  "approval_rule": "amount<=5000",
+  "approval_basis": "非不可逆动作，代码按明确规则放行"
+}
+
+// 分支二：订单系统里查不到 —— 不猜，如实标注
+{
+  "order_id": "A-9999",
+  "status": null,
+  "status_source": "orders:not_found",
+  "amount": null,
+  "approval": "hold",
+  "approval_rule": "none",
+  "approval_basis": "事实缺失，不能放行"
+}
+```
+
+`status_source` 只有两个取值（`orders` / `orders:not_found`），但它的作用是**让两类记录在库里长得不一样** —— 一旦这个字段缺省，编造的值与查到的值就再也分不开。`approval` 与 `approval_basis` 是同一个思路的第二次应用：把「谁依据什么规则做的判断」也写进记录，而不是留在代码里。
+
+上面表里「放行、金额、权限这类不可逆判断」那一行，规则本身没有示例，补一条最小的（**构造示例，未实跑**）：
+
+```python
+# approval.py
+"""不可逆动作的放行规则：代码 + 明确规则，逐条可审计。"""
+
+from typing import Optional
+
+
+def approve(amount: Optional[int], limit: int = 5000) -> dict:
+    """amount 为 None 时不放行 —— 缺失不等于 0，也不等于自动通过。"""
+    if amount is None:
+        return {"approval": "hold", "rule": "none",
+                "reason": "金额缺失，不能代替人工判断"}
+    if amount <= limit:
+        return {"approval": "auto", "rule": "amount<=%d" % limit,
+                "reason": "小额且可逆，代码放行"}
+    return {"approval": "human", "rule": "amount>%d" % limit,
+            "reason": "超出额度，交人工"}
+
+
+if __name__ == "__main__":
+    for amount in (4820, 12000, None):
+        print(amount, "->", approve(amount))
+```
+
+```text
+4820 -> {'approval': 'auto', 'rule': 'amount<=5000', 'reason': '小额且可逆，代码放行'}
+12000 -> {'approval': 'human', 'rule': 'amount>5000', 'reason': '超出额度，交人工'}
+None -> {'approval': 'hold', 'rule': 'none', 'reason': '金额缺失，不能代替人工判断'}
+```
+
+这条规则有三个刻意的选择，每一个都对应前面的一张表：
+
+1. **阈值写死在代码里**，不写进 prompt —— `amount <= 5000` 是可审计、可测试、可逐条评审的；写在系统提示里就只是一个建议。
+2. **`amount is None` 单独一条分支**，不落进 `else` —— 缺失的事实不能因为「默认值方便」而变成一次放行。
+3. **返回值里带 `rule` 字段** —— 事后有人问「这单为什么自动过了」，答案是数据本身，不需要去翻代码版本。
+
+`rejected` 这个动作同样要显式：**判断不可逆时默认拒绝，而不是默认放行。** 上面 `None -> hold` 就是这个默认值在代码里的样子。
+
 ## 一个没有报错的「错误案例」
 
 本节最该记住的案例不是一个 400，而是一个**静默通过**的：
@@ -173,7 +241,7 @@ if __name__ == "__main__":
 - 让模型算：答案可能对，但除了重算一遍，**你没有别的办法确认它对不对** —— 而重算的成本比让它算更低。
 - 让代码算：输入是模型抽出来的原始数字，输出是确定的。
 
-所以字段归属应该按「能不能被验证」来分，而不是按「模型做得好不好」来分：
+所以字段归属应该按「能不能被验证」来分，而不是按「模型做得好不好」来分。这里的**可验证**有一个很小但很硬的操作定义：**你能不能用一段独立的代码把答案重算一遍，再和模型给的比。** 能，就是代码的活；不能（分类、摘要、归一化），才轮到模型。
 
 | 字段类型 | 谁来产生 | 理由 |
 |---|---|---|

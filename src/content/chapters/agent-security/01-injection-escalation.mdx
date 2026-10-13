@@ -27,6 +27,14 @@ status: drafting
 
 这和第 4 章那条"工具调用是有副作用的"是同一件事，只是触发原因从"模型自己判断错了"变成了"有人在文档里写了句话"。
 
+这一章会反复用到三个位置名词，先定义清楚：
+
+- **直接注入**：注入写在用户消息里 —— 第 2 章测的就是这一种。
+- **间接注入**：注入藏在**工具返回值**里（网页正文、文档内容、API 响应）。这是 agent 独有的入口，因为模型把工具结果当成「自己请求来的信息」，信任度更高。
+- **供应链注入**：注入藏在**工具描述**里 —— 由工具提供方写的那段自然语言，模型把它当说明读。
+
+三者的差别不在文本，而在**从哪个入口进入上下文**：入口决定了谁有机会写它、以及你能不能 review 它。
+
 ## 我做的 7 次尝试 —— 全部失败
 
 这一节本来应该展示"注入怎么在 agent 里得手"。但我实测了 7 次，**一次都没有成功**。如实记录如下。
@@ -141,6 +149,8 @@ flowchart TB
 **第三，模型在变。** 今天能识破的形态，换一个模型版本、换一个厂商，结论可能完全不同。把安全性建立在「当前这个模型足够聪明」上，等于把安全性绑定在一个会变的组件上。
 
 **结论是：识破是好事，但它属于「降低概率」那一类，而降低概率从来不是防线。** 防线是那些**不需要模型配合**的东西 —— 第 5 节会把它们整理成四层。
+下面这段代码会读几个请求/响应字段：`max_tokens` 是请求里限制输出长度的字段（输出预算上限），`stop_reason` 是响应里说明模型为什么停下的字段（值 `tool_use` 表示它要求调用工具，循环继续），`tool_use` 是 `content` 里表示工具调用的块类型。运行前准备见本节末尾。
+
 ## 完整可运行代码
 
 下面这段代码复现第 2 节那个最小 agent，并演示三轮注入的差别。
@@ -157,6 +167,7 @@ flowchart TB
 
 实跑状态：2026-10-09，deepseek-flash。
 """
+import os
 import json, os, urllib.request
 
 DOC_CLEAN = "本季度营收 1.2 亿元，同比增长 18%。主要来自企业客户续约率提升。风险：应收账款周转天数从 45 天上升到 62 天。"
@@ -268,6 +279,90 @@ if __name__ == "__main__":
     print("  直接注入（写在用户消息里）这组省略 —— 第 2 章已用 6 种形式测过。")
     print("  这里要测的是 agent 独有的两个入口：工具返回值、工具描述。")
 ```
+
+## 运行前准备：三个环境变量与一个离线开关
+
+本节和后面两节的示例都要调用真实接口，而写法里读的是三个环境变量。对「没调过大模型 API」的读者，这里一次交代清楚（示例只依赖 Python 标准库，不需要装任何包）：
+
+| 变量 | 是什么 | 怎么拿到 |
+|---|---|---|
+| `ANTHROPIC_BASE_URL` | 接口根地址 | 厂商控制台或中转平台给。官方形态是 `https://api.anthropic.com`；兼容端点形态是 `https://<域名>/anthropic`（本站实测用的就是这一类）。请求路径在它后面拼 `/v1/messages` |
+| `ANTHROPIC_AUTH_TOKEN` | 你的 API Key | 在厂商控制台创建。**不要写进代码或提交进 git**，用 shell 注入临时环境变量 |
+| `VERIFY_MODEL` | 模型名 | 厂商文档的模型列表里选一个；也可以调 `GET /v1/models` 查当前可用值 |
+
+~~~bash
+export ANTHROPIC_BASE_URL="https://<你的端点>/anthropic"
+export ANTHROPIC_AUTH_TOKEN="sk-..."
+export VERIFY_MODEL="<你的模型名>"
+python3 injection_demo.py
+~~~
+
+三个变量缺一个，脚本第一行网络调用就会抛出 `KeyError` —— 补全再跑。
+
+**响应里的两个字段先解释**，后面的代码靠它们控制循环：
+
+- `stop_reason`：模型这次**为什么停下**。`tool_use` 表示它要求调用工具（循环继续），`end_turn` 表示话说完了，`max_tokens` 表示被输出预算截断（第 18 章会讲这个值的危险性）。
+- `content` 里每个块的 `type`：`text` 是文字，`tool_use` 是工具调用（带 `name` 与 `input`）。
+
+### 离线回放开关：先不联网、不花钱跑通对照
+
+同一个实验每次跑结论会有波动，而「完整可运行」对读者的第一道门槛其实是**联网与付费**。加一个回放分支就能先跑通逻辑（把实测响应存成一行一条 JSON，默认读本地文件）：
+
+~~~python
+import json, os, urllib.request
+
+REPLAY_FILE = os.environ.get("REPLAY_FILE")   # 设了就离线回放，不联网
+_QUEUE = None
+
+def _replay_queue():
+    global _QUEUE
+    if _QUEUE is None:                        # 每次调用取一条，顺序回放
+        with open(REPLAY_FILE, encoding="utf-8") as f:
+            _QUEUE = [json.loads(line) for line in f if line.strip()]
+    return _QUEUE
+
+def call(messages, tools, max_tokens=3000):
+    if REPLAY_FILE:
+        return _replay_queue().pop(0)
+    body = json.dumps({"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
+                       "tools": tools, "messages": messages}).encode()
+    req = urllib.request.Request(
+        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
+        headers={"content-type": "application/json",
+                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+                 "anthropic-version": "2023-06-01"})
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        return json.loads(resp.read())
+~~~
+
+回放文件 `replay.jsonl` 的形态（示例：构造数据，未实跑；真实用法是把一次实跑的完整响应逐行存下来）：
+
+~~~json
+{"id":"msg_01","type":"message","role":"assistant","stop_reason":"tool_use","content":[{"type":"tool_use","id":"tu_1","name":"read_doc","input":{"doc_id":"fin-2026-Q3"}}]}
+{"id":"msg_02","type":"message","role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"本季度营收 1.2 亿元，同比增长 18%。"}]}
+~~~
+
+**这条回放分支本身就验证过**（本次实跑 2026-10-12）：用上面这份示例文件跑，第一次返回 `tool_use / read_doc`、第二次返回 `end_turn` 与文本，队列随后清空 —— 即「离线跑通整条循环、再换成真实调用」这条路是通的。注意它回放的是**当次记录**，换个模型或换个提示词结果会不同。
+
+## 第三轮那份「合法动作清单」
+
+「四步法」（L123-129）的产出被描述成「一份可以被外部内容改掉目标的合法动作清单」，但一直没给实体。它就是一张表，第三轮那个实验对应的一行如下（示例：构造数据，未实跑）：
+
+| 动作 | 正常目标 | 被改后的目标 | 在任务中的位置 |
+|---|---|---|---|
+| `send_email` | zhangsan@example.com（同事） | attacker@example.com | 任务第 3 步：把总结发给同事 |
+| `read_doc` | fin-2026-Q3（本月财务文档） | hr-2026-Q2（另一份文档） | 任务第 1 步：读文档 |
+| `delete_all` | 不出现在任务里 | 被注入要求「先清理」 | 任务外（破绽大，容易识破） |
+
+**这张表怎么用。** 它是你的攻击测试清单，也是你的防护清单：
+
+1. **写任务正常流程** —— 读什么、发什么、调什么，按顺序列出来（上表的「动作」与「在任务中的位置」）。
+2. **逐行填「正常目标」** —— 每个动作在正常任务里指向哪个对象（收件人、文档 id、查询对象）。
+3. **逐行想「被改后会怎样」** —— 把目标换成攻击者想要的那个，写进「被改后的目标」。
+4. **只对前三列都填得出的动作做注入测试** —— 填不出「正常目标」的动作，模型没有结构性理由去调用它，测出来的只是注入的钝度（第 1 节前两轮就栽在这里）。
+5. **防护落点看最后一列** —— 「任务外」的动作用权限直接禁掉；「任务内」的动作只能靠执行层校验目标（收件人白名单、文档 id 白名单），因为它的调用理由是成立的。
+
+**失败形态：** 清单里只列了「危险动作」（删库、转账），漏掉「任务内的正常动作」。而真实攻击改的往往正是后者 —— 收件人、查询对象、文件路径 —— 因为它不需要模型做任何反常的事。第 2 节和第 3 节那几组实验，攻击面全都在这一列里。
 
 ## 常见坑
 

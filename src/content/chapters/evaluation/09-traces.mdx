@@ -138,6 +138,82 @@ flowchart TB
 
 一个折中：**记消息历史的指纹（hash）和长度，不记内容。** 需要时可以根据指纹去别处捞；不需要时它只占几十字节。
 
+**记录真的落到存储里长这样**（示例：构造数据，未实跑；字段就是上面那张表的落点）：
+
+```json
+{"trace_id": "8f21c-04", "task": "refund_status", "step": 2,
+ "tool": "get_shipping", "args": {"order_id": "A-1001"},
+ "result": {"id": "A-1001", "carrier": "顺丰", "eta": 1288.5},
+ "is_error": false, "tokens_in": 812, "tokens_out": 57, "ms": 421,
+ "context_sha8": "d4f1a9c2", "at": "2026-10-12T14:03:21+08:00"}
+```
+
+两个字段值得单独解释：`is_error` 是第 4 章工具结果里的布尔标记 —— tool_result 显式标 `is_error: true` 时，模型知道「这个工具失败了」，而不是「工具成功返回了一段错话」；排查时它比返回内容更早告诉你这一步的性质。`context_sha8` 是上下文的指纹（上面那条折中）；`at` 是时间戳，跨用例排查时它和步骤序号一起用。
+
+## 在哪一层写这几行
+
+四个字段不是「想记就记」，它们有唯一的插入点：**agent 循环里执行工具的那一步**（第 11 章那个循环）。形态是：
+
+```python
+import time
+
+for step, tool_use in enumerate(model_turns, start=1):
+    t0 = time.time()
+    result, is_error, usage = execute(tool_use)          # ← 执行
+    record(step=step, kind="tool_result", tool=tool_use["name"],
+           args=tool_use["input"],                        # 原始参数 JSON
+           result=result, is_error=is_error,
+           tokens_in=usage["in"], tokens_out=usage["out"],
+           ms=int((time.time() - t0) * 1000))             # ← 记录
+```
+
+**采样在哪做。** 「失败全记、成功按 1%-10% 采」的落点也在 `record()` 里，而不是事后从全量日志里筛 —— 存全量再筛，成本已经付过了：
+
+```python
+import random
+
+def record(..., is_error=False, sample_rate=0.05):
+    if not is_error and random.random() > sample_rate:
+        return                      # 成功且没抽中 → 不落盘（进程内仍可留最近 N 条）
+    store.write(...)
+```
+
+`sample_rate=0.05` 就是 5%；失败路径无条件落盘。**注意采样只对「追踪」成立** —— 审计轨迹（第 11 章）不能采样，那条分流要在这里就做掉。
+
+## 失败轨迹 → 评测用例
+
+前面说「每一条线上失败都应该变成一条评测用例」，这一步可以写成一个函数。输入是一条失败轨迹，输出是第 3 节那种用例 JSON：
+
+```python
+from datetime import date
+
+def reverse_expected(trace):
+    """从失败轨迹反推期望行为的**草稿**，必须人工确认后才入库。
+
+    机器只能给出线索：失败那步返回了什么、最终答案错在哪。
+    它给不出「对的应该是什么」—— 那一步只能由人写。
+    """
+    bad = next((e for e in trace if e.get("is_error")), None)
+    if bad:
+        return "这一步的 %s(%s) 不应失败；期望返回正常数据" % (
+            bad["tool"], json.dumps(bad["args"], ensure_ascii=False))
+    return "最终答案不应包含错误字段（人工确认具体断言）"
+
+
+def trace_to_case(trace):
+    """一条失败轨迹 → 一条评测用例。三个字段自动填，期望值留给人。"""
+    ids = [e for e in trace if e.get("trace_id")]
+    return {
+        "id": "trace-%s" % (ids[0]["trace_id"] if ids else "unknown"),
+        "question": ids[0]["task_input"] if ids else "",
+        "expected": reverse_expected(trace),      # 草稿，人工确认后定稿
+        "source": "线上失败 · trace-%s" % (ids[0]["trace_id"] if ids else "unknown"),
+        "added": date.today().isoformat(),
+    }
+```
+
+**为什么 `reverse_expected` 只能给草稿**：机器只知道「它错了」，不知道「对的应该是什么」。其余四个字段可以自动填 —— 这正是把失败入库做成流水线的意义：**人只补一句期望，其余不花时间。**
+
 ## 一个反例：太粗的轨迹
 
 我在这个实验之前先写了一个粗粒度版本，它记的是：

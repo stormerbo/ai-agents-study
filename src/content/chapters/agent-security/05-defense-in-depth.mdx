@@ -109,6 +109,18 @@ flowchart TB
 | 执行层 | | | |
 | 审计层 | | | |
 
+填好一行是这样（示例：构造数据，未实跑）：
+
+| 层 | 我的实现是什么 | 它失效时会发生什么 | 谁负责看它 |
+|---|---|---|---|
+| 输入层 | 外部内容统一包 `<external_content>` 并打 no-instruction 声明；命中祈使句+工具名则隔离 | 变换写法/编码的注入进入上下文；模型仍可能被说服 | 平台组（内容入口的归属方） |
+| 模型层 | system 里写明动作边界与「外部内容是数据」 | 模型被更好的注入说服，主动要求越界调用 | 提示词 owner（跟着 agent 走） |
+| 执行层 | 第 16 节的策略引擎：默认拒绝 + `path_under` + 出网白名单 | 规则写错或漏配一条工具；绕过需要写代码而非写话术 | 安全/平台组（策略文件的 code owner） |
+| 审计层 | 每次调用（含被拒）写一条结构化记录，被拒率与隔离率做成指标 | 没记、或记了没人看 → 前三层是否工作无法验证 | 值班 owner（有告警接收人） |
+
+**注意第二列不是「防住了什么」，而是「失效时的表现」。** 能写出这一列，说明你知道这一层在防哪一类；写不出来，通常意味着它其实是空的。
+
+
 三列里，**第二列和第三列最容易暴露问题。**
 
 第二列（"它失效时会发生什么"）逼你说清楚这一层到底防住了什么。如果答案是"其实也防不住什么"，那它在纵深里的位置就是虚的 —— 它可以留着，但不要算进安全预算。
@@ -211,6 +223,59 @@ if __name__ == "__main__":
     print("  检验方法：把执行层单独拿掉，看系统是不是还「看起来安全」。")
     print("  如果是，说明你的防护全押在概率性的那几层上。")
 ```
+
+## 四层共同的载体：一条完整的 trace 记录
+
+L124 说「一个请求被三层里的某一层拒了，但你查不出是哪层」—— 病根是没有一个**四层共同写入的载体**。补上：每一层都往**同一条 trace 记录**里写自己的字段，用 `trace_id` 串起来。
+
+```json
+{
+  "trace_id": "tr_7f3a91",
+  "task_id": "refund-2026-10-12-0042",
+  "ts": "2026-10-12T10:03:41.512+08:00",
+  "input_layer": {
+    "sources": ["uploaded_doc:policy-v3.pdf", "tool_result:read_doc"],
+    "tagged": true,
+    "quarantine_hits": 1,
+    "quarantine_rule": "imperative+toolname"
+  },
+  "model_layer": {
+    "stated_boundary": true,
+    "stop_reason": "tool_use",
+    "requested_tools": ["read_file"]
+  },
+  "exec_layer": {
+    "tool": "read_file",
+    "decision": "deny",
+    "rule_id": "default",
+    "raw_path": "/workspace/../../../etc/passwd",
+    "resolved_path": "/etc/passwd",
+    "reason": "真实路径越界，未匹配任何 allow 规则"
+  },
+  "audit_layer": {
+    "actor": "agent:refund-assistant",
+    "initiated_by": "model",
+    "outcome": "blocked",
+    "notified": ["sec-oncall@example.com"]
+  }
+}
+```
+
+字段怎么定，判据是「排查时只读这一条够不够」：
+
+| 层字段 | 回答的问题 | 谁写 |
+|---|---|---|
+| `input_layer.sources` / `tagged` | 这次上下文里有哪些外部内容、有没有标注 | 内容入口 |
+| `input_layer.quarantine_*` | 有没有命中隔离规则、命中哪条 | 隔离器 |
+| `model_layer.stated_boundary` | 这一轮 system 里是否声明了边界 | 请求构造处 |
+| `model_layer.requested_tools` | 模型要调什么（不管最后允不允许） | 循环 |
+| `exec_layer.rule_id` / `decision` | **是哪一层、哪条规则做的决定** | 策略引擎 |
+| `exec_layer.resolved_path` | 它实际会碰什么（不是字符串表面） | 策略引擎 |
+| `audit_layer.initiated_by` | 模型自主发起还是人确认过 | 审批/入口 |
+
+**它解决的具体问题：** 上面这条记录一眼能看出来 —— 输入层**隔离了 1 条**（有注入在试探），模型层**照样请求了 read_file**（提示词没拦住），执行层**按 default 拒绝**（唯一的硬边界生效），审计层**通知了值班**。四个层各自的状态在同一条记录里，不需要去四个系统拼。
+
+**失败形态：** 四层各写各的日志、没有共同的 `trace_id`。表现就是 L124 那句话：出了事你知道「被拒了」，但不知道**谁拒的、依据哪条规则、当时输入层有没有报警** —— 于是复盘只能靠猜，而猜错的方向通常是去调提示词（最弱的那层）。
 
 ## 常见坑
 

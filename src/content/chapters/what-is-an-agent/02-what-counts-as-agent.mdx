@@ -41,7 +41,7 @@ flowchart TB
 
 用上一节的实测数据来对照，就非常清楚：
 
-```
+```text
 请求：北京今天天气怎么样？（附 get_weather 工具）
 响应：stop_reason = tool_use
 ```
@@ -49,6 +49,53 @@ flowchart TB
 `stop_reason` 是 `tool_use`，意思是「我停下来，等你给我工具结果」。拿到结果之后模型会继续 —— 它可能直接回答，也可能决定再调用一次工具。**这个决定权不在你的代码里，在模型手里。**
 
 这就是 agent 的最低形态：**一个由模型控制终止条件的循环。**
+
+## 一份轨迹长什么样
+
+agent 与 workflow 的性质对照里，「调试」一栏写的是**要看完整轨迹**。这句话很容易被当成口号。
+
+> **「轨迹」（trace）是什么**：它不是一个日志文件，而是**这次任务完整的事件序列** —— 每一步模型收到的输入、产出的 content block、发起或收到的工具调用（含参数与结果）、每步的 token 用量与 `stop_reason`，按顺序串起来。
+> 它比审计日志多出来的那部分很关键：**审计日志记的是「你的代码做了什么」，轨迹记的是「模型当时看到了什么、据此决定了什么」** —— agent 的 bug 几乎都藏在前者看不出的那一半里（第 15 章第 4 节有实例：同一份错误答案，只有轨迹能定位到是工具返回的 `eta` 字段被当成了可展示值）。
+
+它落到文件上是一串按顺序发生的步骤记录 —— 同一句提问在 agent 循环里走完两步之后长这样：
+
+```json
+{
+  "trace_id": "t-20261012-001",
+  "goal": "北京今天天气怎么样？",
+  "budget": {"max_steps": 8, "max_total_tokens": 200000},
+  "steps": [
+    {
+      "step": 1,
+      "model_input": {"messages": ["<user>北京今天天气怎么样？</user>"], "tools": ["get_weather"]},
+      "model_output": [
+        {"type": "thinking"},
+        {"type": "text", "text": "I'll check the current weather in Beijing for you."},
+        {"type": "tool_use", "id": "call_00_gZoTZGIoOSdb4RuDd7m87359",
+         "name": "get_weather", "input": {"city": "北京"}}
+      ],
+      "usage": {"input_tokens": 300, "output_tokens": 69},
+      "stop_reason": "tool_use",
+      "tool_result": {"tool_use_id": "call_00_gZoTZGIoOSdb4RuDd7m87359",
+                      "is_error": false, "content": {"temp_c": 24, "condition": "晴"}}
+    },
+    {
+      "step": 2,
+      "model_input": {"messages": ["...step 1 的全部内容 + tool_result..."]},
+      "model_output": [{"type": "text", "text": "北京今天晴，24 摄氏度。"}],
+      "stop_reason": "end_turn"
+    }
+  ]
+}
+```
+
+> （示例：构造数据，未实跑。第 1 步的 `id`、`input`、`tool_use` 类型、`stop_reason` 与 `usage` 取自本站第 1 章第 1 节的真实调用；第 2 步的报文与整份 JSON 的形状是我按这个结构手写的，**第 2 步的 token 数我故意没填 —— 那是另一个没跑过的数**。）
+
+三件事值得注意：
+
+1. **每一步都记了完整的 `model_input`。** 这是轨迹与审计日志最大的差别 —— 你重放它时不需要猜「那一轮上下文里到底有什么」。上下文被压缩、被截断导致的 bug，只有靠它才回放得出来。
+2. **`tool_result` 挂在发起它那一步下面，用 `tool_use_id` 配对。** 不是按到达顺序拼接（第 4 章实测：漏了 `tool_result`、或 `tool_use_id` 对不上，都是 HTTP 400）。
+3. **`budget` 是一等字段。** 轨迹不只用来事后排查，也是运行时判断「还剩几步」的依据 —— 后面 `handle_ticket` 里的 `max_steps` 就该从这里读，而不是散落在调用点。
 
 ## 为什么这个区分值钱
 
@@ -112,7 +159,17 @@ flowchart TB
 
 **多数业务需求，流程是已知的。** 合同处理要经历哪几步、客服工单要怎么流转、数据 ETL 要走什么管道 —— 这些都是你在设计阶段就确定的。既然流程已知，把它交给模型去「自主决定」，你换来的是什么？什么也没换到，只是把确定性替换成了不确定性。
 
-用 [Anthropic 的 *Building effective agents*](https://www.anthropic.com/engineering/building-effective-agents) 的说法：**先用最简单的方案，只在确实需要时才增加复杂度。** 那篇文章归纳了几种可组合的 workflow 模式（prompt chaining、routing、parallelization、orchestrator-workers、evaluator-optimizer），它们的共同点是：**用固定的编排结构获得大部分收益，而不承担 agent 的不确定性成本。**
+用 [Anthropic 的 *Building effective agents*](https://www.anthropic.com/engineering/building-effective-agents) 的说法：**先用最简单的方案，只在确实需要时才增加复杂度。** 那篇文章归纳了几种可组合的 workflow 模式，它们的共同点是：**用固定的编排结构获得大部分收益，而不承担 agent 的不确定性成本。**
+
+| 模式 | 一句话定义 | 何时用 |
+|---|---|---|
+| **prompt chaining**（提示链） | 上一个调用的输出是下一个调用的输入，步骤写死 | 任务能明确拆成几段，且每段都该单独检查（如「先抽字段，再校验，再改写」） |
+| **routing**（路由） | 先用一次调用（或规则）判断类型，再分发给不同的固定流程 | 流量天然分几类，各类要的处理方式不同（发票 / 退款 / 咨询各走各的） |
+| **parallelization**（并行化） | 同一输入拆成多个互不依赖的子任务同时跑，再合并；或同一任务跑多次取一致结果 | 子任务之间没有中间依赖，或需要「多票复核」降低随机性 |
+| **orchestrator-workers**（编排者-工人） | 一个「编排者」调用动态拆解任务、分给若干个「工人」，最后汇总 | 子任务数量事先不确定，但**拆分规则本身仍是固定编排**（这是它和 agent 的分界：编排者是写死的角色，不是模型自主接管整条路径） |
+| **evaluator-optimizer**（评估者-优化者） | 一个调用产出、另一个调用按明确标准评估并给改进意见，循环有限次 | 有可写下来的验收标准（如「必须覆盖这几个字段」），且迭代能收敛 |
+
+这五个模式的共性是：**步骤之间的转移关系写在你的代码里，模型只在每个节点内部做事。** 对照本节开头那句话 —— 判断标准是控制权在谁手里，而不是「用了几个 LLM」。
 
 具体到实践，判断顺序应该是：
 

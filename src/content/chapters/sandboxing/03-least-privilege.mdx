@@ -86,7 +86,7 @@ def safe_read(rel):
 - **localhost** → 访问你这台机器上的其他服务（包括管理接口）
 - **任意公网地址** → 数据外泄的出口
 
-第 8 章实测过一个相关现象：给模型一个 URL 图像，**服务端会去下载它** —— 地址来自用户就意味着一个 SSRF 面。
+第 8 章实测过一个相关现象：给模型一个 URL 图像，**服务端会去下载它** —— 地址来自用户就意味着一个 SSRF 面（**SSRF**，服务端请求伪造：攻击者让你**服务端**去访问一个他自己够不着的地址，比如内网服务或云元数据端点，你的服务器成了他的跳板）。
 
 网络最小权限的做法同样是「默认拒绝 + 白名单」：
 
@@ -132,7 +132,7 @@ flowchart TB
 
 **一、符号链接。** 沙箱内的一个合法文件名，指向外部。防范方式是 realpath（解析后再判断），而不是检查名字。
 
-**二、硬链接。** 同一个 inode 的另一个名字。它还多一个副作用：**写入会同时改到原文件**。在「只读挂载」之外还需要注意「不可写」。
+**二、硬链接。** 同一个 inode 的另一个名字。它还多一个副作用：**写入会同时改到原文件**，所以「只读挂载」之外还要保证「不可写」。做法不是逐条禁路径，而是让越界写入在结构上不可能：把可写工作目录挂成**独立的文件系统**（如 tmpfs）—— 硬链接不能跨文件系统，于是沙箱内造不出指向宿主文件的硬链接；宿主侧再确认 `fs.protected_hardlinks=1`（默认值，防未授权硬链接）。
 
 **三、大小写与 Unicode 归一化。** 有些文件系统大小写不敏感（macOS 默认），有些会把不同的 Unicode 表示归一化成同一个名字。如果你的白名单比较是字节级的，就会漏。
 
@@ -238,9 +238,163 @@ if __name__ == "__main__":
 
 具体说，工具不接收「路径」参数，而是接收一个**已经打开的文件对象**或一个不透明的能力 id。模型能操作的范围就物理上限于你已经打开的那些 —— 它没有「传一个别的路径」这个选项。
 
-这个思路在操作系统里叫**能力（capability）模型**，它的好处是**越界在结构上不可能**，而不是「被检查拦住了」。第 4 章讲 poka-yoke 时说过同一件事：让错误在结构上不可能，比让它被检测到更可靠。
+这个思路在操作系统里叫**能力（capability）模型**，它的好处是**越界在结构上不可能**，而不是「被检查拦住了」。第 4 章讲 poka-yoke（防呆设计：把操作设计成「错了也做不成」，而不是「错了被抓住」）时说过同一件事：让错误在结构上不可能，比让它被检测到更可靠。
 
 代价是灵活性下降：你需要在调用工具之前就知道它要访问什么。对「读一个用户指定的文件」这类任务不适用，但对「处理这一批已选定的文件」非常合适。
+## 网络最小权限的实现：从 URL 到 IP 的完整判据
+
+上面那 4 行伪代码缺的是**判据**：host 怎么取、IP 怎么解析、三类二次拒绝怎么判。下面这段补上，纯本地可跑（DNS 结果用 `DEMO_DNS` 固定住以便复现；真实实现删掉那张表，走 `socket.getaddrinfo`）。实跑数据 2026-10-12。
+
+```python
+"""网络最小权限：解析 host -> 判白名单 -> 二次拒绝三类危险地址。
+
+真实实现用 socket.getaddrinfo 解析；本地演示把 DNS 结果固定住（DEMO_DNS），
+这样离线可复现。把 DEMO_DNS 设为 {} 就退化成真实 DNS 解析。
+"""
+import ipaddress, socket
+from urllib.parse import urlparse
+
+ALLOW_HOSTS = {"api.example.com", "docs.example.com", "rebind.example.com"}
+DEMO_DNS = {                       # 离线演示用；真实环境删掉这张表
+    "api.example.com": ["93.184.216.34"],
+    "docs.example.com": ["93.184.216.34"],
+    "rebind.example.com": ["10.0.0.5"],       # 白名单域名解析到内网 -> 必须二次拒绝
+    "api.example.com.evil.com": ["93.184.216.34"],
+}
+
+def _literal_ipv4(host):
+    """把 2130706433 / 0x7f000001 / 017700000001 这类整数写法还原成点分 IPv4。"""
+    try:
+        if host.lower().startswith("0x"):
+            return str(ipaddress.IPv4Address(int(host, 16)))
+        if host.isdigit():
+            base = 8 if (len(host) > 1 and host.startswith("0")) else 10
+            return str(ipaddress.IPv4Address(int(host, base)))
+    except (ValueError, ipaddress.AddressValueError):
+        return None
+    return None
+
+def resolve(host):
+    host = host.strip("[]")
+    if host in DEMO_DNS:
+        return list(DEMO_DNS[host])
+    lit = _literal_ipv4(host) or host
+    try:
+        return [str(ipaddress.ip_address(lit))]
+    except ValueError:
+        pass
+    try:
+        return sorted({i[4][0] for i in socket.getaddrinfo(host, None)})
+    except socket.gaierror:
+        return []
+
+def dangerous(ip):
+    a = ipaddress.ip_address(ip)
+    if a.is_loopback: return "localhost"
+    if a.is_link_local: return "云元数据/链路本地（169.254.0.0/16）"
+    if a.is_private: return "内网网段"
+    if a.is_reserved or a.is_multicast or a.is_unspecified: return "保留/组播地址"
+    return None
+
+def check_url(url):
+    p = urlparse(url)
+    if p.scheme != "https":
+        return "拒绝", "非 https"
+    host = (p.hostname or "").lower()
+    if not host:
+        return "拒绝", "没有 host"
+    ips = resolve(host)
+    if not ips:
+        return "拒绝", "无法解析"
+    for ip in ips:                       # 先做二次拒绝，再判白名单：
+        d = dangerous(ip)                # 危险地址即使来自白名单域名也不放行
+        if d:
+            return "拒绝", "二次拒绝：%s（解析到 %s）" % (d, ip)
+    if host not in ALLOW_HOSTS:
+        return "拒绝", "不在白名单（host=%s）" % host
+    return "允许", "白名单命中（%s -> %s）" % (host, ",".join(ips))
+
+CASES = [
+    "https://api.example.com/orders",
+    "https://API.EXAMPLE.COM/orders",
+    "https://docs.example.com/x",
+    "https://evil.com/x",
+    "https://api.example.com.evil.com/x",
+    "https://rebind.example.com/x",
+    "https://169.254.169.254/latest/meta-data/",
+    "https://api.example.com@169.254.169.254/",
+    "https://10.0.0.1/",
+    "https://192.168.1.1/",
+    "https://172.16.0.1/",
+    "https://2130706433/",
+    "https://0x7f000001/",
+    "https://[::1]/",
+    "http://api.example.com/x",
+]
+
+if __name__ == "__main__":
+    for url in CASES:
+        dec, why = check_url(url)
+        print("  %-46s %-4s %s" % (url, dec, why))
+```
+
+实跑输出：
+
+```text
+  https://api.example.com/orders                 允许   白名单命中（api.example.com -> 93.184.216.34）
+  https://API.EXAMPLE.COM/orders                 允许   白名单命中（api.example.com -> 93.184.216.34）
+  https://docs.example.com/x                     允许   白名单命中（docs.example.com -> 93.184.216.34）
+  https://evil.com/x                             拒绝   不在白名单（host=evil.com）
+  https://api.example.com.evil.com/x             拒绝   不在白名单（host=api.example.com.evil.com）
+  https://rebind.example.com/x                   拒绝   二次拒绝：内网网段（解析到 10.0.0.5）
+  https://169.254.169.254/latest/meta-data/      拒绝   二次拒绝：云元数据/链路本地（169.254.0.0/16）（解析到 169.254.169.254）
+  https://api.example.com@169.254.169.254/       拒绝   二次拒绝：云元数据/链路本地（169.254.0.0/16）（解析到 169.254.169.254）
+  https://10.0.0.1/                              拒绝   二次拒绝：内网网段（解析到 10.0.0.1）
+  https://192.168.1.1/                           拒绝   二次拒绝：内网网段（解析到 192.168.1.1）
+  https://172.16.0.1/                            拒绝   二次拒绝：内网网段（解析到 172.16.0.1）
+  https://2130706433/                            拒绝   二次拒绝：localhost（解析到 127.0.0.1）
+  https://0x7f000001/                            拒绝   二次拒绝：localhost（解析到 127.0.0.1）
+  https://[::1]/                                 拒绝   二次拒绝：localhost（解析到 ::1）
+  http://api.example.com/x                       拒绝   非 https
+```
+
+三个绕过点在这段代码里为什么被挡住：
+
+- `api.example.com@169.254.169.254`：`urlparse` 会把 userinfo 和 host 分开，`p.hostname` 取到的是 `169.254.169.254`，不是 `api.example.com` —— **永远用解析出来的 host，不要用字符串里看起来像域名的那一段。**
+- `2130706433` / `0x7f000001`：点分十进制不是 IP 的唯一写法，`ipaddress` 直接解析会失败，所以先做一次整数还原。**这类绕过是「检查的表示形式和使用的表示形式不一致」的又一次出现**（本节前面那条规则的网络版）。
+- `rebind.example.com`：域名在白名单里，但**解析结果**落在内网 —— 所以判据必须是「解析后的 IP」，而且要在**每次请求时**解析，不能只在配置加载时解析一次。真正的 DNS 重绑定会在两次解析之间换 IP，所以还要把「已解析并校验过的 IP」固化到连接层（例如 pin 住 IP、Host 头另设），而不是「校验完再按域名连一次」—— 中间那一次重新解析就是缺口。
+
+### 网络版与文件版并列
+
+| | 文件系统版 | 网络版 |
+|---|---|---|
+| 检查的原始值 | `path` 字符串 | `url` 字符串 |
+| 必须解析成 | `realpath(path)` | `urlparse(url).hostname` 再解析成 IP |
+| 白名单比较 | 真实路径前缀（带分隔符） | host 精确匹配 |
+| 二次拒绝 | 不是普通文件 / 越界 | 内网 / 云元数据 / localhost |
+| 已知绕过 | `..`、符号链接、前缀相似目录 | userinfo、整数 IP、DNS 重绑定 |
+| 共同根因 | **检查的表示形式 ≠ 使用的表示形式** | 同左 |
+
+## 能力式接口长什么样
+
+L239 说「工具不接收路径，而是接收一个已经打开的文件对象」，具体签名是这种形态：
+
+```python
+# ❌ 拒绝式：模型传路径，校验在工具内部（校验写错就漏）
+def read_file(path: str) -> str: ...
+
+# ✅ 能力式：调用方（你的代码）先打开文件，工具只拿到句柄
+import typing
+def read_file(handle: typing.IO[bytes], max_bytes: int = 1_000_000) -> str:
+    return handle.read(max_bytes).decode("utf-8", "replace")
+
+# 调用侧：路径由你的代码决定，模型改不了
+with open(resolve_task_file("notes.md"), "rb") as fh:
+    read_file(fh)
+```
+
+区别在**谁能改变访问目标**：拒绝式里路径来自模型参数，校验是「后加的」；能力式里路径来自你的代码，模型手上没有「换一个路径」这个选项 —— 越界在结构上不可能。代价是灵活性：需要「读一个用户指定的文件」时用不了，需要「处理这一批已选定的文件」时正合适。
+
 ## 常见坑
 
 - **用 startswith 检查路径。** 实测 6 种手法放过 4 种，而且是静默放过。

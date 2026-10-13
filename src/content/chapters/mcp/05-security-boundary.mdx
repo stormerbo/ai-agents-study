@@ -119,7 +119,7 @@ flowchart TB
 """
 import json, subprocess, sys
 
-SERVER = [sys.executable, "verify-output/mcp_server.py"]
+SERVER = [sys.executable, "mcp_server.py"]  # 第 4 节那份 server，存成同目录的 mcp_server.py
 
 
 class Client:
@@ -225,6 +225,96 @@ if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "security":
     security_probe()
 ```
 
+
+## 把五条落成代码
+
+上面五条读起来都对，但落到你自己的仓库里，落点只有四个。逐个给可执行的形态。
+
+**落点一：看清你发出去的整个请求。** 数据外泄的起点是「请求里带了什么」。下面是 host 发给 server 的一次完整 `tools/call`（示例：构造数据，未实跑）—— 注意 `arguments` 之外，`_meta` 也在里面：
+
+```json
+{"jsonrpc": "2.0", "id": 31, "method": "tools/call",
+ "params": {"_meta": {"protocolVersion": "2026-07-28",
+                      "clientCapabilities": {"elicitation": {}}},
+            "name": "review_code",
+            "arguments": {"diff": "...", "language": "python"}}}
+```
+
+**最小化上下文就是把 `arguments` 压到这几个字段**，不要顺手把整段对话塞进某个 `context` 字段 —— 泄露的前提是数据真的发出去过。
+
+**落点二：工具白/黑名单拦截。** 「哪些工具禁止调用」必须在调用前查表，而不是指望模型不去调：
+
+```python
+# 执行层的第一道闸门：按 (server, tool) 决定放行 / 拒绝 / 需确认
+POLICY = {
+    ("github", "delete_repo"): "deny",
+    ("tickets", "close_ticket"): "confirm",
+}
+DEFAULT = "allow"
+
+def gate(server_name, tool_name, args):
+    verdict = POLICY.get((server_name, tool_name), DEFAULT)
+    if verdict == "deny":
+        raise PermissionError("工具 %s/%s 被策略禁用" % (server_name, tool_name))
+    if verdict == "confirm" and not user_approved(server_name, tool_name, args):
+        return {"status": "need_confirmation", "tool": tool_name}
+    return execute(server_name, tool_name, args)
+```
+
+`user_approved` 是你自己的确认函数（弹窗、审批流、或第 3 节那个 MRTR 决策点）。**默认拒绝还是默认放行，取决于 server 的来源**：自己写的 server 默认放行、危险项进 `deny`；第三方的 server 默认拒绝、需要的逐个进 `allow`（第 2 节那张权限桶就是 `allow` 形态）。
+
+**落点三：数据流过滤。** 「发出之前过滤」落在代码上，就是在组 `arguments` 的那一层把敏感字段摘掉或替换：
+
+```python
+SECRET_KEYS = ("token", "api_key", "password", "secret", "cookie")
+
+def redact(obj):
+    """递归摘掉敏感字段（示例：构造数据，未实跑）—— 发出去之前的一道闸。"""
+    if isinstance(obj, dict):
+        return {k: ("<redacted>" if k.lower() in SECRET_KEYS else redact(v))
+                for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [redact(v) for v in obj]
+    return obj
+
+# 用法：client.send("tools/call", {"name": name, "arguments": redact(args)})
+```
+
+它不能替代「只发该发的字段」，但能兜住「顺手复制了一份带 token 的配置」。
+
+**落点四：用最小权限跑本地 server。** 本地 server 跑在你的权限下（第 4 节那张表的第二行），收窄权限是唯一能限制爆炸半径的动作。一个可用的启动形态：
+
+```bash
+# 只读根文件系统、丢掉所有内核能力、用非 root 用户、限制内存与进程数
+docker run --rm -i \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  --cap-drop=ALL --security-opt no-new-privileges \
+  --user 65534:65534 \
+  --memory=256m --pids-limit=64 \
+  -v "$PWD/mcp_server.py:/app/mcp_server.py:ro" \
+  python:3.12-slim python3 /app/mcp_server.py
+```
+
+关键参数：`--read-only` 让容器写不了宿主机之外的东西；`--cap-drop=ALL` 去掉所有特权能力；`--user 65534` 用 nobody 而不是 root；`--tmpfs` 给临时目录但禁掉执行；`-v ...:ro` 只读挂载 server 文件。**它不是万能的**（server 仍能发网络请求），但把「读文件 + 外发」的组合风险砍掉了一半 —— 需要网络时再加 `--network=none` 或一条受限的出口规则。
+
+**组合风险的对策落到代码上，就是「按 server 整体评估」**：上面那个 `POLICY` 的 key 之所以是 `(server, tool)` 而不是单个工具，正是为了让「这个 server 同时有 read_file 和 send_http」这种组合能被一条规则整体拒绝：
+
+```python
+# 组合高危：同一个 server 同时提供「读任意文件」和「发任意网络请求」
+DANGEROUS_COMBOS = [
+    {"read_file", "send_http"},
+]
+
+def server_verdict(tools):
+    names = {t["name"] for t in tools}
+    for combo in DANGEROUS_COMBOS:
+        if combo <= names:                    # 子集判断：这批工具里出现了完整的高危组合
+            return "deny-server"
+    return "allow"
+```
+
+这四条的共同点是：**它们都是「拒绝」和「限制」，不依赖对 server 意图的判断。** 本节开头说过意图无法验证，所以防线只能建在能验证的地方 —— 能不能验证，决定了它是不是一条防线。
 
 ## 一个更宽的风险：组合出来的能力
 

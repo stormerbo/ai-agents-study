@@ -53,6 +53,8 @@ status: drafting
 
 第三行是价值。而第一行是**筛选器**：如果你写不出这个"问题"那一行，那说明这次阅读没有目标 —— 按第 2 节那条，它可能根本就不该发生。
 
+**归档到哪里、叫什么名字**——这是模板之外读者最容易自己发明一套的地方，所以给一个约定：脚本放进仓库的 `scripts/` 目录，文件名用 `read-source-<主题>.py`（例如本节这条就对应 `read-source-tool.py`）；同一主题的四行笔记用**同名**的 `.md` 放在它旁边。同名的好处是"结论"和"能重跑的证据"永远捆在一起，换版本时不会只更新一半。**位置（第 2 行）必须指向脚本里的函数对象，不是文件路径** —— 写成路径，下一次重命名就失效了。
+
 ## 一个反过来的判断：什么时候不该产出
 
 最后说一个反面。**不是每次读源码都值得留产出。**
@@ -135,6 +137,8 @@ assert summary(a) == {"title": "Day", "type": "string"}, "parse_docstring 默认
 
 下面这段代码生成上面那个四行模板：给定问题、位置、结论，输出一份可存档的产出，并检查"位置"是不是用 inspect 取的（而不是手写的）。
 
+脚本里 `split("site-packages/")[-1]` 的用意第 1 节解释过：把冗长的安装路径截短；**如果函数来自你自己的项目（路径里没有 `site-packages`），`split` 找不到分隔符就原样返回完整路径**，这正是下面第 3 条"手写位置"反例要对照的情形。
+
 ```python
 """读完要产出什么：四行模板 + 位置校验。纯本地。实跑状态：2026-10-09。"""
 import inspect
@@ -171,11 +175,11 @@ if __name__ == "__main__":
         make_note("约束是从哪一层产生的？",
                   base_mod._get_filtered_args,
                   "schema 来自 pydantic 的 model_json_schema()，约束只能由类型标注产生",
-                  "verify-output/read-source-tool.py"),
+                  "read-source-tool.py"),
         make_note("参数说明为什么没进 schema？",
                   convert_mod.tool,
                   "parse_docstring 默认 False；开启后进 description，但仍不会变成 enum",
-                  "verify-output/read-source-tool.py"),
+                  "read-source-tool.py"),
         make_note("手写行号会怎样？",
                   "langchain_core/tools/base.py:95",
                   "反面示例：手写的位置无法自动校验",

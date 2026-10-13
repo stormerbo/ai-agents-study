@@ -175,6 +175,7 @@ flowchart LR
 但"做得不错"和"能上生产"之间，隔着的就是下面这层校验。
 """
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -183,7 +184,8 @@ import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
 client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY"),
+    api_key=os.environ.get("ANTHROPIC_API_KEY")
+    or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
 MODEL = os.environ["VERIFY_MODEL"]
@@ -266,6 +268,94 @@ if __name__ == "__main__":
 > **实跑状态**：本文表格里的**数据是实测的**；上面这份 Python 脚本用的是 SDK 与 Pydantic 的标准写法，**脚本本身未在官方端点验证**。
 
 这份代码里没有一行 self-eval。**校验全部由代码完成** —— 这不是巧合，而是结论本身。
+
+## 主观项怎么挪到代码层
+
+上面那个发票例子是「客观项」—— 合计对不对，程序一算就知道。但真实的验收清单里总有一半是主观项：「摘要写得好不好」「语气合不合适」「有没有跑题」。这些**没法直接程序验证**，于是很多人就此放弃，把它们留在第 ③ 层让模型自评。
+
+**正确的做法不是「能不能验」，而是「找一个能替代它的可计算指标」** —— 也就是**代理指标**（proxy）。思路是把「好」这个形容词拆成几条**可数**的性质，每条都能用字符串/结构算出数来：
+
+| 主观项 | 不可计算的写法 | 可计算的代理指标 |
+|---|---|---|
+| 摘要写得好 | 「是否忠实、完整、简洁」 | ① 数字/专名**全部**在原文中命中（本节第 4 章第 2 节实测过的方案 A）；② 长度落在原文的 10%~30% 区间；③ 每条 claim 能定位到原文的哪一句 |
+| 语气合适 | 「要专业、友好」 | 禁词表命中数 = 0（如「哈哈」「随便」）；疑问句数量 ≤ 1；第一人称「我」出现 0 次以内 |
+| 没跑题 | 「是否围绕主题」 | 主题关键词在原文与摘要里的**相对出现率**的比值 > 阈值；或摘要的向量与原文的余弦相似度 |
+
+> 上表最后一行提到的「向量余弦相似度」需要**嵌入模型**：它把一段文本映射成一个定长数字向量（通常几百到几千维），语义相近的文本在向量空间里距离更近。它是第 6 章检索的基础设施；在这里的用途是「算两段文本有多像」，但要多一次调用、多一份成本，所以我把它排在规则之后。
+
+把这三条落进代码，主观项就有了可判定的出口：
+
+```python
+# proxy_metrics.py
+"""把「摘要写得好不好」换成四条可计算的代理指标。"""
+
+import re
+
+# ① 高风险 token 全覆盖（数字 + 专名）
+NUM_RE = re.compile(r"\d+(?:\.\d+)?%?")
+
+# ② 长度区间
+MIN_RATIO, MAX_RATIO = 0.10, 0.30
+
+# ③ 语气类禁词
+FORBIDDEN = ["哈哈", "随便", "无所谓", "算了"]
+
+# ④ 跑题：主题词在摘要里的覆盖率
+TOPIC_WORDS = ["营收", "增长", "客户"]
+
+
+def proxy_score(summary: str, doc: str) -> dict:
+    # ① 数字是否都在原文里 —— 这一条对转述零误报
+    numbers = NUM_RE.findall(summary)
+    numbers_ok = [n for n in numbers if n in doc]
+
+    # ② 长度比
+    ratio = len(summary) / max(len(doc), 1)
+
+    # ③ 语气
+    hits = [w for w in FORBIDDEN if w in summary]
+
+    # ④ 主题覆盖：至少覆盖一半主题词
+    topic_hit = [w for w in TOPIC_WORDS if w in summary]
+
+    return {
+        "numbers_present": len(numbers_ok) == len(numbers),
+        "length_ratio": round(ratio, 3),
+        "tone_clean": not hits,
+        "topic_covered": len(topic_hit) >= (len(TOPIC_WORDS) + 1) // 2,
+    }
+
+
+def accept(score: dict) -> bool:
+    """四条全过才放行 —— 这就是原来交给模型自评的那个判断。"""
+    return (
+        score["numbers_present"]
+        and MIN_RATIO <= score["length_ratio"] <= MAX_RATIO
+        and score["tone_clean"]
+        and score["topic_covered"]
+    )
+
+
+if __name__ == "__main__":
+    doc = "第三季度营收同比增长 12%，主要来自企业客户。"
+    for s in [
+        "营收增长 12%，来自企业客户。",                    # 正常
+        "营收增长 15%，来自企业客户。",                    # 数字被改 → ① 不过
+        "哈哈，营收还行吧。",                              # 语气 → ③ 不过
+    ]:
+        score = proxy_score(s, doc)
+        print(f"{s!r} -> {score} -> {'采用' if accept(score) else '打回'}")
+```
+
+> （**示例：构造数据，未实跑。** 它不调用模型，纯本地字符串检查 —— 可以直接跑，但上面三条输入是我手写的。）
+
+**代理指标的三条使用规则：**
+
+1. **代理指标不等于原指标。** 「数字全对 + 长度达标 + 无禁词」是「写得好」的**下界**：过了它不一定好，但不过它一定不合格。所以它适合当**打回条件**，不适合当**择优条件**。
+2. **阈值来自你的统计，不是别人的经验。** 上面那个 `0.10~0.30` 是示例值；正确做法是拿一批「人工判定为合格」的样本来反推区间（这和本节前面「阈值取基线减噪声」是同一件事）。
+3. **每加一条代理指标，都要先量它的误杀率。** 用一批已知合格的输出跑一遍，看它误判了几条 —— 误杀率高的指标不如不要，因为它会把好输出也打回，触发无意义的重试成本。
+
+> **和 self-eval 的关系**：代理指标是确定性的、零延迟、零成本；self-eval 是概率性的、要花一次调用。所以优先级是**先用代理指标覆盖能覆盖的部分，剩下的才交给模型** —— 而且交给模型的那部分，最好换一个模型来评（见下文第 ③ 点）。
 
 ## 那 self-eval 还剩什么用途
 

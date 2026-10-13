@@ -58,7 +58,7 @@ status: drafting
 
 所以级联必须**监控升级率**。这个数字超过 50% 就说明分流点选错了。
 
-第三种（并行）看起来最浪费，但它有它的场景：**当错误代价远高于两次调用成本时**。第 2 章测过 self-consistency 在唯一答案题上零分歧 —— 那种情况下并行纯属浪费；但在主观任务上，两个答案让人选往往比一个答案更可靠。
+第三种（并行）看起来最浪费，但它有它的场景：**当错误代价远高于两次调用成本时**。第 2 章测过 self-consistency（自洽性：同一问题让模型采样多次，看几次答案是否一致 —— 一致说明它稳，不一致说明这题对它不确定）在唯一答案题上零分歧 —— 那种情况下并行纯属浪费；但在主观任务上，两个答案让人选往往比一个答案更可靠。
 
 <Mermaid
   chart={`
@@ -208,6 +208,113 @@ if __name__ == "__main__":
         print("    难题占比 %2.0f%% → 相对全用强模型省 %.0f%%" %
               (h * 100, (1 - rule_based(N, h) / static_all_strong(N)) * 100))
 ```
+
+## 「不满意」判据：能由代码判的，就别用小模型
+
+L52 把级联的前提写成「有可靠的『不满意』判据」，但没给判据。判据按可靠性从高到低有三档，**前两档都是代码判**：
+
+1. **`stop_reason == "max_tokens"`** —— 输出被截断，结果一定不完整（确定性）。
+2. **结构化校验失败** —— JSON 解析失败、缺必填字段、类型不对（确定性，第 5 章）。
+3. **工具调用参数缺必填项** —— 模型要调工具但参数不全（确定性）。
+4. 小模型给分 —— 需要评估、要额外成本，放到最后。
+
+下面这段把 1-3 都实现了（实跑 2026-10-12）：
+
+```python
+"""级联的「不满意」判据：能用代码判的就别用小模型。"""
+import json
+
+REQUIRED = {"order_id": str, "amount": (int, float), "currency": str}
+
+def validate(obj):
+    if not isinstance(obj, dict):
+        return ["输出不是 JSON 对象"]
+    errs = []
+    for k, t in REQUIRED.items():
+        if k not in obj:
+            errs.append("缺字段 " + k)
+        elif not isinstance(obj[k], t):
+            errs.append("类型不对 " + k)
+    return errs
+
+def unsatisfied(resp):
+    """返回 (是否不满意, 原因)。resp 是一次模型调用的归一化结果。"""
+    if resp.get("stop_reason") == "max_tokens":
+        return True, "stop_reason=max_tokens（输出被截断）"
+    for call in resp.get("tool_calls", []):
+        missing = [k for k in call.get("required", []) if k not in call.get("args", {})]
+        if missing:
+            return True, "工具 %s 缺必填参数 %s" % (call["name"], missing)
+    if resp.get("expect_json"):
+        try:
+            obj = json.loads(resp.get("text", ""))
+        except Exception:
+            return True, "结构化解析失败"
+        errs = validate(obj)
+        if errs:
+            return True, "；".join(errs)
+    return False, ""
+
+SAMPLES = [
+    ("结构化输出缺字段", {"expect_json": True, "text": '{"order_id": "ORD-1", "amount": 100}', "stop_reason": "end_turn"}),
+    ("结构化输出合法", {"expect_json": True, "text": '{"order_id": "ORD-1", "amount": 100, "currency": "CNY"}', "stop_reason": "end_turn"}),
+    ("输出被截断", {"stop_reason": "max_tokens", "text": "退款金额是"}),
+    ("工具调用缺参数", {"stop_reason": "tool_use", "tool_calls": [{"name": "refund", "required": ["order_id", "amount"], "args": {"order_id": "ORD-1"}}]}),
+    ("一切正常", {"stop_reason": "end_turn", "text": "已完成"}),
+]
+
+if __name__ == "__main__":
+    for label, resp in SAMPLES:
+        bad, why = unsatisfied(resp)
+        print("  %-16s %-6s %s" % (label, "升级" if bad else "通过", why))
+```
+
+实跑输出：
+
+```text
+  结构化输出缺字段         升级     缺字段 currency
+  结构化输出合法          通过
+  输出被截断            升级     stop_reason=max_tokens（输出被截断）
+  工具调用缺参数          升级     工具 refund 缺必填参数 ['amount']
+  一切正常             通过
+```
+
+**判据：** 这三档判据都**不读语义**，只检查结构 —— 所以它们不会因为内容对错而误判，也不会引入一次额外调用。**只有它们都不适用时**（任务本来就是主观的，没有结构可查），才考虑让小模型给分，而那时要把它算进级联的成本（L41 那条）。
+
+**失败形态：** 用「模型自己说这个答案好不好」当判据（self-eval）—— 第 2 章实测过它的边界，它不比自己生成更可靠，而且升级率会失控：因为「不满意」变多，反而更容易触发升级，级联就比直接用强模型更贵。
+
+## 一条带 route 字段的调用记录
+
+L117 说「把路由决策记进追踪」，字段就是 `route` 加 `route_step`，和前面那 9 个字段放在同一条记录里（`turn_index` 管「第几轮」，`route` 管「这一轮走了哪条路」，两者不冲突）：
+
+```json
+{"trace_id":"tr_b7","turn_index":3,"step_kind":"planning","route":"rule_based_strong","route_step":3,"route_reason":"规划步骤用强模型","model":"deepseek-flash","input_tokens":553,"cache_read":384,"cache_create":0,"output_tokens":56,"stop_reason":"tool_use","latency_ms":760}
+```
+
+| 字段 | 取值 | 用途 |
+|---|---|---|
+| `route` | `code_only / rule_based_strong / rule_based_cheap / cascade_escalated / parallel_winner` | 回答「这个请求最后走的哪条路」 |
+| `route_step` | 1-6 | 回答「是第几条规则命中的」—— 规则顺序调了它能看出来 |
+| `route_reason` | 一句话 | 排查「质量差」时先看它是叙述性原因还是真的走错了 |
+
+**它解决的具体问题：** 用户报「这个功能时好时坏」。没有 `route`，你只有回答本身，猜不出是模型波动还是路由抖动；有了它，直接按 `route` 分组看质量差异就行。
+
+**失败形态：** 只记 `model` 不记 `route`。同一个便宜模型可能来自「第 5 条规则命中」也可能来自「第 6 条默认」，两者的修复方向完全不同（前者规则对、后者规则缺）。
+
+## 一个请求走完六步
+
+L92-99 那个决策顺序，过一次具体请求才看得懂。四个请求的判定如下（示例：构造数据，未实跑）：
+
+| 请求 | 第 1 步：需要模型吗 | 第 2 步：能否结构化缩短 | 第 3 步：是规划步骤吗 | 第 4 步：要严格 JSON 吗 | 第 5 步：短且无工具 | 结果 |
+|---|---|---|---|---|---|---|
+| 「查订单 12345 的状态」 | 不需要 → 直接查库 | — | — | — | — | `code_only` |
+| 「判断这封邮件属于哪一类」 | 需要 | 能（一个枚举） | 否 | 否 | 是（短、无工具） | `rule_based_cheap` |
+| agent 第 1 轮：拆解任务 | 需要 | 否 | **是** | 否 | 否 | `rule_based_strong` |
+| 「从合同里抽取 6 个字段」 | 需要 | 是 | 否 | **是** | 否 | `rule_based_strong` |
+
+**读法：** 前三步（不需要模型 / 能缩短 / 是规划）先于「换模型」—— 前三个请求里，第 1 个根本没调模型，第 2 个用了便宜模型，只有第 3 个非用强模型不可。第 4 个是「判据不明确时保守」的例子：它其实不长，但格式失败的重试成本高，所以第 4 步直接把它留给强模型，不进入第 5 步。
+
+**失败形态：** 把顺序反过来 —— 先按「难度」挑模型，再看能不能缩短输出。结果是把钱花在压缩一个本该由代码直接完成的请求上。
 
 ## 常见坑
 
