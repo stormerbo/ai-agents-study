@@ -108,3 +108,41 @@ def test_integration_subprocess_environment_never_inherits_provider_secrets(monk
     assert "ANTHROPIC_API_KEY" not in env
     assert "OPENAI_API_KEY" not in env
     assert "DATABASE_URL" not in env
+
+
+def usage_loop(first_usage, second_usage):
+    from support_agent.runtime import run_agent
+
+    class Session:
+        async def list_tools(self):
+            return {"tools": [{"name": "search_policy", "inputSchema": {
+                "type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"],
+            }}]}
+
+        async def call_tool(self, name, arguments):
+            return {"content": [{"type": "text", "text": "synthetic policy"}], "isError": False}
+
+    responses = iter([
+        {"stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "c1", "name": "search_policy", "input": {"query": "returns"}}], "usage": first_usage},
+        {"stop_reason": "end_turn", "content": [{"type": "text", "text": "done"}], "usage": second_usage},
+    ])
+    return asyncio.run(run_agent("synthetic", Session(), lambda *args: next(responses)))
+
+
+@pytest.mark.parametrize("incomplete", [None, {}, {"input_tokens": 1}, {"input_tokens": True, "output_tokens": 2}, {"input_tokens": -1, "output_tokens": 2}])
+def test_missing_or_malformed_usage_then_valid_remains_unknown(incomplete):
+    result = usage_loop(incomplete, {"input_tokens": 12, "output_tokens": 7})
+    assert result["status"] == "completed"
+    assert result["usage"] is None
+
+
+@pytest.mark.parametrize("incomplete", [None, {}, {"output_tokens": 2}, {"input_tokens": 1, "output_tokens": "2"}, {"input_tokens": 1, "output_tokens": -2}])
+def test_valid_then_missing_or_malformed_usage_remains_unknown(incomplete):
+    result = usage_loop({"input_tokens": 12, "output_tokens": 7}, incomplete)
+    assert result["status"] == "completed"
+    assert result["usage"] is None
+
+
+def test_complete_usage_sums_every_round():
+    result = usage_loop({"input_tokens": 3, "output_tokens": 2}, {"input_tokens": 12, "output_tokens": 7})
+    assert result["usage"] == {"input_tokens": 15, "output_tokens": 9}

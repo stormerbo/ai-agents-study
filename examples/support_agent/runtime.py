@@ -42,7 +42,7 @@ async def run_agent(
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_text}]
     trace: list[dict[str, Any]] = []
     usage_totals = {"input_tokens": 0, "output_tokens": 0}
-    observed_usage = False
+    usage_complete = True
     tool_calls = 0
 
     for round_number in range(1, max_rounds + 1):
@@ -70,32 +70,34 @@ async def run_agent(
         blocks = outcome.content
         trace_row: dict[str, Any] = {"round": round_number, "stop_reason": stop_reason}
         usage = _value(response, "usage")
-        if usage is not None:
-            observed_usage = True
-            for key in usage_totals:
-                value = _value(usage, key)
-                if isinstance(value, int) and not isinstance(value, bool):
-                    usage_totals[key] += value
-                else:
-                    observed_usage = False
+        round_usage = {key: _value(usage, key) for key in usage_totals}
+        round_complete = all(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            for value in round_usage.values()
+        )
+        # Once any round is unknown, later counters cannot repair the total.
+        usage_complete = usage_complete and round_complete
+        if round_complete:
+            for key, value in round_usage.items():
+                usage_totals[key] += value
         if stop_reason == "max_tokens":
             trace.append(trace_row)
-            return {"status": "truncated", "text": "", "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if observed_usage else None}
+            return {"status": "truncated", "text": "", "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if usage_complete else None}
         if stop_reason == "refusal":
             trace.append(trace_row)
-            return {"status": "refused", "text": _content_text(blocks), "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if observed_usage else None}
+            return {"status": "refused", "text": _content_text(blocks), "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if usage_complete else None}
         if stop_reason == "end_turn":
             trace.append(trace_row)
             refusal = any(_value(block, "type") == "refusal" for block in blocks)
-            return {"status": "refused" if refusal else "completed", "text": _content_text(blocks), "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if observed_usage else None}
+            return {"status": "refused" if refusal else "completed", "text": _content_text(blocks), "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if usage_complete else None}
         if stop_reason != "tool_use":
             trace.append(trace_row)
-            return {"status": "protocol_error", "text": "", "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if observed_usage else None}
+            return {"status": "protocol_error", "text": "", "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if usage_complete else None}
 
         calls = [block for block in blocks if _value(block, "type") == "tool_use"]
         if not calls:
             trace.append(trace_row)
-            return {"status": "protocol_error", "text": "", "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if observed_usage else None}
+            return {"status": "protocol_error", "text": "", "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if usage_complete else None}
         messages.append({"role": "assistant", "content": _plain(blocks)})
         results = []
         round_error = False
@@ -142,5 +144,5 @@ async def run_agent(
         messages.append({"role": "user", "content": results})
         if round_error:
             status = "max_tool_calls" if budget_exhausted and all(event.get("tool_status") in {"ok", "tool_budget_exhausted"} for event in trace_row["tools"]) else "tool_error"
-            return {"status": status, "text": "", "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if observed_usage else None}
-    return {"status": "max_rounds", "text": "", "rounds": max_rounds, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if observed_usage else None}
+            return {"status": status, "text": "", "rounds": round_number, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if usage_complete else None}
+    return {"status": "max_rounds", "text": "", "rounds": max_rounds, "tool_calls": tool_calls, "trace": trace, "usage": usage_totals if usage_complete else None}
