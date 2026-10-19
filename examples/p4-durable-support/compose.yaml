@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:18.0-bookworm
+    environment:
+      POSTGRES_DB: support
+      POSTGRES_USER: support
+      POSTGRES_PASSWORD: local-only-demo
+    ports:
+      - "127.0.0.1:${P4_POSTGRES_PORT:-0}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U support -d support"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+volumes:
+  postgres_data:
