@@ -114,10 +114,11 @@ def test_health_distinguishes_live_from_unavailable_postgres(service):
 
 
 def test_migration_rerun_and_foreign_keys(service):
-    from app.db import migrate
+    from app.db import MIGRATIONS, migrate
     migrate(service.dsn)
     with psycopg.connect(service.dsn) as conn:
-        assert conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 1
+        applied = [row[0] for row in conn.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()]
+        assert applied == sorted(path.name for path in MIGRATIONS.glob("*.sql"))
     with pytest.raises(psycopg.errors.ForeignKeyViolation):
         with psycopg.connect(service.dsn) as conn:
             conn.execute("INSERT INTO tasks (id,tenant_id,owner_id,input,input_hash,release_id) VALUES (%s,'tenant-b','alice','{}','x','test')", (uuid.uuid4(),))

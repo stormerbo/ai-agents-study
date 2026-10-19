@@ -14,5 +14,30 @@ services:
       interval: 1s
       timeout: 3s
       retries: 60
+  api:
+    profiles: [runtime]
+    build:
+      context: ../..
+      dockerfile: examples/p4-durable-support/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://support:local-only-demo@postgres:5432/support
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${P4_API_PORT:-8000}:8000"
+    command: [uv, run, --frozen, --no-dev, uvicorn, 'app.runtime:create_app', --factory, --host, 0.0.0.0, --port, '8000', --no-access-log]
+  worker:
+    profiles: [worker]
+    build:
+      context: ../..
+      dockerfile: examples/p4-durable-support/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://support:local-only-demo@postgres:5432/support
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: [uv, run, --frozen, --no-dev, python, -m, app.worker]
+    command: [--once, --owner, compose-worker]
 volumes:
   postgres_data:
