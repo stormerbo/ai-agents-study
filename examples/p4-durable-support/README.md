@@ -131,7 +131,9 @@ docker compose --profile runtime up -d --build api
 docker compose run --rm worker --once --owner compose-worker-1
 ```
 
-可信注册表保持 Stage 3 MCP 签名 `lookup_order(order_id)` 与 `search_policy(query)`，资源分别由服务端映射到订单 id 与 `policy-public`。共享 `provider_tools` / schema validator 限制只读 MCP 边界；新增 `send_notice(resource_id,message)` 仅指未来本地合成 sink，始终要求审批。模型不能自填风险等级、身份或 approved 字段。一次响应的每个调用都有独立 action id（模型 tool_call_id 仅用于结果关联）；任一调用需要审批时，整个 turn 保存 pending ids 后暂停，不填充成功占位结果。冻结保存租户、动作、canonical args hash、资源/ACL/policy 版本、唯一 eligible approver、requested_by 和有效期。审批决定用任务/审批行锁串行化；重复点击、冲突决定和过期决定返回 409。拒绝使任务失败，批准后回到 queued，由新 worker 从冻结动作恢复。读取工具只执行存储参数，已完成结果不重复调用；所有动作解决前不能 completed。
+可信注册表保持 Stage 3 MCP 签名 `lookup_order(order_id)` 与 `search_policy(query)`，资源分别由服务端映射到订单 id 与 `policy-public`。共享 `provider_tools` / schema validator 限制只读 MCP 边界；新增 `send_notice(resource_id,message)` 仅指未来本地合成 sink，始终要求审批。模型不能自填风险等级、身份或 approved 字段。一次响应的每个调用都有独立 action id（模型 tool_call_id 仅用于结果关联）；任一调用需要审批时，整个 turn 保存 pending ids 后暂停，不填充成功占位结果。冻结保存租户、动作、canonical args hash、资源/ACL/policy 版本、唯一 eligible approver、requested_by 和有效期。审批决定用任务/审批行锁串行化；重复点击、冲突决定和过期决定返回 409。拒绝使任务失败，批准后回到 queued，由新 worker 从冻结动作恢复。读取工具只执行存储参数，已持久化的结果不重复调用；所有动作解决前不能 completed。
+
+只读 MCP 调用在结果持久化之前采用 **at-least-once** 恢复语义：远端读取已经返回，但 worker 在保存结果前失去租约时，旧 worker 仍被 fence 拒绝写入动作、事件和检查点；后继 worker 可按同一冻结参数重试该无副作用读取。读取完成不等于结果已可靠保存，也不意味着远端 exactly-once。结果及检查点提交后，后续恢复复用持久结果，不再调用该工具，也不重放整段模型历史。每次实际重试仍需独立预算预留；该规则只适用于无副作用读取，不能用于写入投递的未知结果恢复。
 
 授权重检当前身份、资源 ACL、资源/ACL/policy 版本、参数 hash、审批有效期和当前审批人资格。任何变化都使旧动作失效。`authorized_pending_delivery` 仅为 Task 2 的待交接状态：**没有 outbox、没有 dispatcher、没有网络写入，不能称已发送**。Task 3 必须在同一受 fence 保护的事务里把可调度动作转换并插入 outbox，派送前还要重查授权。Task 2 的取消只覆盖尚无实际投递的边界；Task 3 必须扩展 dispatching/unknown 的取消与对账语义。
 
