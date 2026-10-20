@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-provider-migration-fixture-20261019",
+  "runId": "2026-10-19-offline-suite-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-19",
+  "method": "Ran the registered standard-library unittest suite against fixed synthetic outcomes; no model endpoint was called.",
+  "observations": {
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "providerRequests": 0,
+    "decisionForFixtureOnly": "fixture-pass"
+  },
+  "limitations": [
+    "This validates only the local classifier and report gate",
+    "It is not evidence of any provider capability, model quality, cost, or latency"
+  ]
+}

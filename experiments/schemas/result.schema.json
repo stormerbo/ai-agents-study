@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["experimentId", "runId", "evidenceType", "observedAt", "method", "observations", "limitations"],
+  "properties": {
+    "experimentId": {"type": "string", "minLength": 1},
+    "runId": {"type": "string", "minLength": 1},
+    "evidenceType": {"enum": ["deterministic-local", "postgres-integration", "real-online", "raw-replay", "synthetic-fixture", "official-documentation-review", "raw-observation-review"]},
+    "observedAt": {"type": "string", "format": "date"},
+    "method": {"type": "string", "minLength": 1},
+    "observations": {"type": "object"},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

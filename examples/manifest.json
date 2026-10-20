@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "examples": [
+    {
+      "id": "first-loop-readonly-support",
+      "runtime": "python",
+      "entry": "examples/first-loop/test_readonly_support.py",
+      "sha256": "71bbf879e9f1317a46872353062650af2eb87700f31b5fcc78b6f62a59ab2fe5",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/first-loop",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "reliability-fault-models",
+      "runtime": "python",
+      "entry": "examples/reliability/test_fault_models.py",
+      "sha256": "e8b109976517dd9af7b97413ac1f91f52b62711997bede96dd0384742df562cd",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/reliability",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "retrieval-index-lifecycle",
+      "runtime": "python",
+      "entry": "examples/index-lifecycle/index_catalog.py",
+      "sha256": "dc76f43e8b17b3f4b7ebd52e899358e55c2153095a174d10cbd102744462a48f",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/index-lifecycle",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "retrieval-permission-filtering",
+      "runtime": "python",
+      "entry": "examples/permission-filtering/retrieval_access.py",
+      "sha256": "443bdeffc7f9cc0f903d336d00f1f1140463f98ef3feaabbb38ccabbf7c180ca",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/permission-filtering",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "agent-loop-execution-ownership",
+      "runtime": "python",
+      "entry": "examples/execution-ownership/task_ownership.py",
+      "sha256": "d79bdbc5053da7b69e53fda6ecbce845618e0484d2c8400bc29452655c9fc626",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/execution-ownership",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "mcp-remote-authorization",
+      "runtime": "python",
+      "entry": "examples/mcp-remote-auth/auth_policy.py",
+      "sha256": "5997c9267be607128421420bba8d3e12a34f37c9c72bb6bd3da0fc36db19ede7",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/mcp-remote-auth",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "agent-security-identity-tenancy",
+      "runtime": "python",
+      "entry": "examples/identity-tenancy/access_policy.py",
+      "sha256": "791babe6a09f75df133094a3379ee2733dbe7dfdb9734e2f46ee9b5e8e946527",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/identity-tenancy",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "cost-and-latency-concurrency-backpressure",
+      "runtime": "python",
+      "entry": "examples/concurrency-backpressure/admission.py",
+      "sha256": "f57e064e067770358a401f76aadbc8b868afb9a734fa36d7279c4474f26af215",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/concurrency-backpressure",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "evaluation-provider-migration",
+      "runtime": "python",
+      "entry": "examples/provider-migration/migration_gate.py",
+      "sha256": "2f59b362a0d6b2fc9cf9be813e8bc9be5c0a160e1c4fd1a583209501e9cb47c1",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/provider-migration",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "capstone-acceptance-evidence-gate",
+      "runtime": "python",
+      "entry": "examples/capstone-acceptance/acceptance.py",
+      "sha256": "fc71575a26b2138e4ba62f1ec5dfcf3a954f38a2a0fba8de51774d4fa9b1d3ea",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/capstone-acceptance",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "stage-2-grounded-support",
+      "runtime": "python",
+      "entry": "examples/p2-grounded-support/grounded_support.py",
+      "sha256": "8d3d0e86a22bf3126a0b22f6da8d03cf98bf58a512c4d19ca7c85a7c52709a8d",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/p2-grounded-support",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "stage-3-controlled-agent-loop",
+      "runtime": "python",
+      "entry": "examples/p3-controlled-agent/controlled_agent.py",
+      "sha256": "d6538b9cc96b56bc74f2cac6a670aabceb5ee9bd862477c8e69b55be94b2ee24",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/p3-controlled-agent",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "stage-4-offline-contracts",
+      "runtime": "uv-project",
+      "entry": "examples/p4-durable-support/tests/test_contracts.py",
+      "sha256": "18fcf642db2a2a3311381113e3f976d73ff6f8bc0364a0e7e4ec272967858be5",
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "a60aea3e7c8a7a7ec97b3ed134546b16c80728db1807253f73ee03f758921458",
+      "args": [
+        "pytest",
+        "-m",
+        "not integration",
+        "-q",
+        "tests/test_contracts.py"
+      ],
+      "timeoutMs": 30000
+    }
+  ]
+}

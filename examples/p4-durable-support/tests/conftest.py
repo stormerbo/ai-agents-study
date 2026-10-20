@@ -45,9 +45,9 @@ class ServiceHarness:
     def start_api(self, index):
         port = unused_port()
         env = subprocess_environment()
-        env.update(DATABASE_URL=self.dsn, PYTHONDONTWRITEBYTECODE="1")
+        env.update(DATABASE_URL=self.dsn, PYTHONDONTWRITEBYTECODE="1", PYTHONPATH=str(HERE.parent))
         process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port), "--no-access-log", "--log-level", "critical"],
+            [sys.executable, "-m", "uvicorn", "app.runtime:create_app", "--factory", "--host", "127.0.0.1", "--port", str(port), "--no-access-log", "--log-level", "critical"],
             cwd=HERE, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         self.processes[index] = process

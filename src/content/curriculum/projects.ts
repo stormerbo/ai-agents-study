@@ -1,5 +1,19 @@
 import type { Project } from './schema';
 
+function rubric(prefix: string, rows: [string, string, string, string, string][]) {
+  return rows.map(([criteria, none, weak, adequate, strong], index) => ({
+    id: `${prefix}-${index + 1}`,
+    criteria,
+    weight: 1,
+    levels: [
+      { score: 0 as const, descriptor: none },
+      { score: 1 as const, descriptor: weak },
+      { score: 2 as const, descriptor: adequate },
+      { score: 3 as const, descriptor: strong },
+    ],
+  }));
+}
+
 /**
  * 实战作业注册表。
  *
@@ -112,5 +126,89 @@ export const projects: Record<string, Project> = {
     requires: ['llm-api-basics', 'prompt-engineering', 'context-engineering'],
     estimatedHours: [4, 8],
     difficulty: 'beginner',
+  },
+  'p4-durable-support': {
+    id: 'p4-durable-support',
+    stageId: 'stage-4-production',
+    title: '可恢复的售后支持服务',
+    brief: '把受控的售后订单 Agent 包进带身份授权、持久任务、审批和外部动作对账的服务。',
+    requirements: [
+      '提供任务 API、PostgreSQL 和独立 worker；重复提交幂等键返回同一任务。',
+      '审批冻结参数 hash、资源版本、policy version、审批人和期限；服务重启后能恢复原动作。',
+      '使用 outbox 向本地 HTTP 投递接收服务发消息；网络结果未知时进入 reconciling。',
+      '实现租户隔离、权限过滤、事件续读和可撤销的任务查询。',
+      '提供跨进程重启、并发审批、租约接管、撤权竞争和外部回执丢失的集成测试。',
+      '运行离线控制流与真实 PostgreSQL 多进程集成门禁；把两类证据分开登记，真模型质量和独立交接留给阶段 5。',
+    ],
+    constraints: [
+      '禁止向真实客户发信、退款或修改真实订单；投递仅到项目自带的本地接收服务。',
+      '离线 fixture 只能证明状态机与故障路径，不可标成在线模型能力验证。',
+      '本地 SQLite 模型不替代本阶段 PostgreSQL 集成验收。',
+    ],
+    milestones: [
+      {
+        id: 'm1',
+        title: '建立任务与身份边界',
+        detail: '租户来自认证 principal，不采信请求体中的 tenant_id。',
+      },
+      {
+        id: 'm2',
+        title: '实现 worker 与审批恢复',
+        detail: '任务领取受租约和 epoch 保护，审批恢复不重放整段模型历史。',
+      },
+      {
+        id: 'm3',
+        title: '实现 outbox 与本地接收端',
+        detail: '稳定 external key、接收端持久去重和未知状态对账同时可观察。',
+      },
+      {
+        id: 'm4',
+        title: '运行多进程故障演练',
+        detail: '杀 worker、重启服务并验证数据库轨迹和接收端真实副作用计数。',
+      },
+      {
+        id: 'm5',
+        title: '执行阶段 4 验收门禁',
+        detail: '运行离线检查与 PostgreSQL 多进程集成套件，登记代码/锁文件 hash、fixture 版本、结果和限制；缺少 Docker 或数据库时必须失败。',
+      },
+    ],
+    rubric: rubric('p4', [
+      [
+        '跨租户安全',
+        '信任用户 tenant_id',
+        '只检查部分接口',
+        '查询与工具都按 principal 隔离',
+        '越权检索、事件、审批和投递均有负向集成测试',
+      ],
+      [
+        '任务恢复',
+        '只靠进程内存',
+        '重启后从头规划',
+        '从检查点和冻结动作恢复',
+        '租约过期后接管且旧 epoch 被拒绝',
+      ],
+      [
+        '外部副作用',
+        '网络请求成功就报完成',
+        '有重试但无对账',
+        'outbox、稳定幂等键和 unknown 状态齐全',
+        '故障演练验证接收端副作用与对账证据',
+      ],
+    ]),
+    hardGates: [
+      '跨租户读取或检索必须全部被拒绝，且无越权资料进入模型上下文。',
+      '未审批或参数 hash 已变化的动作不得投递。',
+      '外部结果未知时不得谎报 completed，也不得无条件重复执行。',
+      'PostgreSQL 集成证据必须来自本机真实数据库和独立进程；离线 fixture 与供应商行为分开报告。',
+    ],
+    referenceImpl: {
+      repo: 'examples/p4-durable-support',
+      command: 'uv sync --frozen && uv run pytest -m \'not integration\' -q && uv run pytest -m integration -q',
+      notes:
+        '提供 PostgreSQL 持久任务 API、lease/epoch worker、审批恢复、ACL 前置过滤、共享限制、transactional outbox、本地合成 sink 与 unknown 对账。离线测试只证明 fixture/control-flow；集成命令需要 Docker，启动 PostgreSQL 与独立 API 进程，缺依赖会失败。尚未调用真实模型，因此不证明 provider 能力、答案质量或真实客户系统授权；真模型验收、独立交接、发布/回滚与 holdout 评测属于阶段 5。',
+    },
+    requires: ['agent-security', 'human-in-the-loop', 'agent-deployment', 'mcp', 'retrieval'],
+    estimatedHours: [20, 35],
+    difficulty: 'advanced',
   },
 };

@@ -1,0 +1,9 @@
+{
+  "experimentId": "exp-mcp-20260728-spec-review",
+  "runId": "2026-10-19-spec-and-sdk-interop-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-19",
+  "method": "Reviewed the pinned MCP 2026-07-28 specification and ran bidirectional stdio interoperability with the official Python SDK 2.3.0.",
+  "observations": {"toolsList": "passed both directions", "toolsCall": "passed both directions", "mrtrRequestStateEchoAndTamperChecks": "passed", "retryUsesFreshJsonRpcId": true},
+  "limitations": ["This does not establish behavior for other protocol revisions, SDKs, transports, or remote authorization."]
+}

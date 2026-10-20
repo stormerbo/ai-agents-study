@@ -1,0 +1,31 @@
+{
+  "experimentId": "exp-stage4-postgres-acceptance-20261020",
+  "runId": "stage4-postgres-acceptance-2026-10-20-1",
+  "evidenceType": "postgres-integration",
+  "observedAt": "2026-10-20",
+  "method": "Ran the required pytest integration command. Its session fixture created a uniquely named Compose project and temporary PostgreSQL service, applied migrations and synthetic seeds, started two independent API OS processes, and removed the project and volume after the run. The acceptance test temporarily removed the 0004 migration ledger row, confirmed both processes returned 503, restored the row, and verified cross-process task/event reads.",
+  "observations": {
+    "testCount": 91,
+    "passed": 91,
+    "failed": 0,
+    "apiProcesses": 2,
+    "migrationVersions": [
+      "0001_base.sql",
+      "0002_execution.sql",
+      "0003_delivery.sql",
+      "0004_manual_resolution.sql"
+    ],
+    "readinessFailsWhenLatestMigrationIsMissing": true,
+    "crossProcessTaskRead": true,
+    "crossProcessEventRead": true,
+    "taskStatus": "queued",
+    "providerCalls": 0,
+    "datasetVersion": "stage4-synthetic-support-v1"
+  },
+  "limitations": [
+    "This proves behavior only for the tested local Docker Compose/PostgreSQL 18.0-bookworm image and synthetic fixtures.",
+    "It does not establish production IdP behavior, PostgreSQL RLS, high availability, network partition recovery, production deployment, or provider capability.",
+    "No true-model Stage 4 run was performed; Stage 5 true-model capstone acceptance remains open.",
+    "The result is sanitized and awaits the required first human review; it is not publishable evidence yet."
+  ]
+}

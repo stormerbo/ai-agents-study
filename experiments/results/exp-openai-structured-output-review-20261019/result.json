@@ -1,0 +1,15 @@
+{
+  "experimentId": "exp-openai-structured-output-review-20261019",
+  "runId": "2026-10-19-openai-structured-outputs-doc-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-19",
+  "method": "Reviewed the official OpenAI Structured Outputs guide, including the refusal section and Responses examples for incomplete status and incomplete_details.reason.",
+  "observations": {
+    "refusal": "The guide describes a refusal signal that may not follow the supplied response schema.",
+    "incomplete": "Responses may have status=incomplete and incomplete_details.reason such as max_output_tokens."
+  },
+  "limitations": [
+    "No API request or compatibility endpoint was tested",
+    "Documented behavior is scoped to the official OpenAI API documentation reviewed on this date"
+  ]
+}

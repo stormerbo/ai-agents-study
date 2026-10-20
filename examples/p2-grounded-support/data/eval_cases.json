@@ -1,0 +1,33 @@
+[
+  {
+    "case_id": "return-window",
+    "subject_id": "member-a",
+    "tenant_id": "tenant-a",
+    "query": "return unused items days",
+    "relevant_doc_ids": [
+      "returns-standard"
+    ],
+    "as_of": "2026-03-01",
+    "expected_answer": "Return requests for unused items are accepted within 30 days of delivery."
+  },
+  {
+    "case_id": "shipping-time",
+    "subject_id": "member-a",
+    "tenant_id": "tenant-a",
+    "query": "shipping delivery business days",
+    "relevant_doc_ids": [
+      "shipping-standard"
+    ],
+    "as_of": "2026-03-01",
+    "expected_answer": "Standard shipping usually takes 3 to 5 business days after dispatch."
+  },
+  {
+    "case_id": "no-exchange-policy",
+    "subject_id": "member-a",
+    "tenant_id": "tenant-a",
+    "query": "exchange damaged item",
+    "relevant_doc_ids": [],
+    "as_of": "2026-03-01",
+    "expected_answer": null
+  }
+]

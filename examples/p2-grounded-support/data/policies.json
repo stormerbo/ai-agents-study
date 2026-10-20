@@ -1,0 +1,29 @@
+[
+  {
+    "doc_id": "returns-standard",
+    "version": "2026-01",
+    "tenant_id": "tenant-a",
+    "allowed_principals": ["member-a"],
+    "valid_from": "2026-01-01",
+    "valid_until": "2026-12-31",
+    "text": "Return requests for unused items are accepted within 30 days of delivery."
+  },
+  {
+    "doc_id": "shipping-standard",
+    "version": "2026-01",
+    "tenant_id": "tenant-a",
+    "allowed_principals": ["member-a"],
+    "valid_from": "2026-01-01",
+    "valid_until": "2026-12-31",
+    "text": "Standard shipping usually takes 3 to 5 business days after dispatch."
+  },
+  {
+    "doc_id": "refund-private",
+    "version": "2026-01",
+    "tenant_id": "tenant-b",
+    "allowed_principals": ["member-b"],
+    "valid_from": "2026-01-01",
+    "valid_until": "2026-12-31",
+    "text": "Refunds are processed within 5 business days after approval."
+  }
+]

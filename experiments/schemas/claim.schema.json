@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "lessonId", "sourcePath", "text", "textSha256", "applicability", "sourceIds", "experimentIds", "evidenceType", "errataIds", "reviewStatus"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "lessonId": {"type": "string", "minLength": 1},
+    "sourcePath": {"type": "string", "minLength": 1},
+    "text": {"type": "string", "minLength": 1},
+    "textSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "applicability": {"type": "string", "minLength": 1},
+    "sourceIds": {"type": "array", "items": {"type": "string"}},
+    "experimentIds": {"type": "array", "items": {"type": "string"}},
+    "evidenceType": {"enum": ["deterministic-local", "postgres-integration", "real-online", "raw-replay", "synthetic-fixture", "official-documentation-review", "raw-observation-review"]},
+    "errataIds": {"type": "array", "items": {"type": "string"}},
+    "reviewStatus": {"enum": ["needs-review", "verified", "blocked"]}
+  },
+  "additionalProperties": false
+}

@@ -11,6 +11,11 @@
 
 ## 6. 当前进度
 
+### 2026-10-20 阶段 4 持久服务验收
+
+`examples/p4-durable-support` 已完成阶段 4 本地合成服务的集成门禁：完整 runtime 在临时 PostgreSQL 上由两个独立 API 进程运行，新增验收测试验证跨进程任务/事件读取及 `0001`–`0004` 全迁移 readiness（移除最新 migration 记录时必须 503）。集成入口为 `cd examples/p4-durable-support && uv run pytest -m integration -q`；离线 17 项与 PostgreSQL 91 项测试分开执行，缺少 Docker/PostgreSQL 不会 skip。`pnpm verify:examples` 只加入 17 项离线合同测试；PostgreSQL 集成与真模型调用仍需显式命令。实验登记使用 `postgres-integration`，与 fixture 和真模型观察分开。两个结果脱敏后均标记 `needs-review`，尚待首次人工复核，不能当作可发布证据。没有执行 Stage 4 真模型调用，因此不对模型质量、真实 IdP/客户系统、生产 RLS、高可用、恢复部署或发布回滚作保证；Stage 5 的真模型验收、独立交接、holdout 评测和发布包仍未完成。项目页在深浅主题下视觉检查通过，浏览器仍有一个既有 favicon 404。全站 635 个外链巡检返回 40 个失败/拦截项，与既有链接问题一致；本轮没有新增外链。全书 144 节事实准确性复审也仍未收口（12 corrected / 12 in-review / 120 not-reviewed）。
+
+
 ### 6.1 已完成
 
 **基础设施**：脚手架、Tailwind 4 设计令牌、深色模式、MDX 管线、Mermaid 组件、资源库（48 条）、术语表（30 条）、实验定义（9 个）、作业（1 个）、准确性机制、63 个测试断言
@@ -100,7 +105,7 @@
 
 ### 6.2 进度明细
 
-> 下表由 scripts/content-stats.mjs 同源口径生成（当前 117/117 达标）。
+> 下表由 scripts/content-stats.mjs 同源口径生成（当前 144/144 达标）。
 
 | 节                                             | 中文 | 说明文字 |  图 | 代码块 | 达标 |
 | ---------------------------------------------- | ---: | -------: | --: | -----: | :--: |

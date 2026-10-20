@@ -1,0 +1,27 @@
+{
+  "experimentId": "exp-stage3-mcp-live-20261019",
+  "runId": "2026-10-19-deepseek-stage3-tool-roundtrip-5",
+  "evidenceType": "real-online",
+  "observedAt": "2026-10-19",
+  "method": "Ran the bounded CLI with a real model request against the project's read-only MCP stdio child process and synthetic order/policy fixtures. The host validated both tool argument objects before tools/call, returned both results using their matching tool_use_id values, then accepted end_turn. The user-facing response is omitted; only the sanitized execution trace is retained.",
+  "observations": {
+    "providerHost": "api.deepseek.com",
+    "model": "deepseek-flash",
+    "anthropicSdk": "1.15.0",
+    "mcpSdk": "2.3.0",
+    "status": "completed",
+    "rounds": 2,
+    "toolCalls": 2,
+    "toolNames": ["lookup_order", "search_policy"],
+    "argumentValidation": ["passed", "passed"],
+    "toolResults": ["ok", "ok"],
+    "stopReasons": ["tool_use", "end_turn"],
+    "usage": {"inputTokens": 371, "outputTokens": 490},
+    "fixtureVersion": "after-sales-fixtures-2026-10-18-v1"
+  },
+  "limitations": [
+    "This is one bounded request and demonstrates one successful tool round-trip, not a success rate or general provider capability guarantee",
+    "Only synthetic local fixture data was used; the run does not validate real order systems, authorization services, or production MCP deployments",
+    "The execution transcript is retained in the ignored local verify-output directory; this committed record omits generated tool call IDs and assistant prose"
+  ]
+}

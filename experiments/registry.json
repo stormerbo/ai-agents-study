@@ -1,0 +1,323 @@
+{
+  "version": 1,
+  "experiments": [
+    {
+      "id": "exp-outbox-task-retry-sqlite-model",
+      "lessonIds": [
+        "human-in-the-loop/interrupt-and-resume",
+        "agent-deployment/deployment-shape"
+      ],
+      "question": "What happens when a worker crashes before send, after receiver commit, before receipt persistence, and when clients concurrently retry the same task request?",
+      "type": "deterministic-local",
+      "scriptPath": "examples/reliability/fault_models.py",
+      "scriptSha256": "0cb7a4f625de70d1dd9eccd82dc93fc8f0c2fe037360b2134ee914b473704142",
+      "dependencyLockPath": "experiments/locks/python-stdlib.txt",
+      "dependencyLockSha256": "b39efb4e89d33aaa2a771598a804477cff78e462805b8ea52df89032b98bcefd",
+      "datasetVersion": "synthetic-local-actions-v1",
+      "scorerVersion": "sqlite-invariants-v1",
+      "executionMode": "python3 -m unittest discover -s examples/reliability -v",
+      "expectedInvariants": [
+        "stable receiver key yields one delivery across lost receipt",
+        "pre-send crash can safely recover under receiver idempotency",
+        "same tenant-scoped idempotency key returns one task",
+        "only one worker claims queued task"
+      ],
+      "resultPath": "experiments/results/exp-outbox-task-retry-sqlite-model/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-passk-seeded-20261010",
+      "lessonIds": [
+        "evaluation/pass-k"
+      ],
+      "question": "Does the displayed Pass@k and Pass^k output match the fixed-seed example?",
+      "type": "deterministic-local",
+      "codeLocator": {
+        "path": "src/content/chapters/evaluation/02-pass-k.mdx",
+        "fence": 4,
+        "role": "complete-script"
+      },
+      "codeSha256": "0f66235ca03ec102326d34b9582aaf3f38f353d8519325fc84d02e29f3303440",
+      "dependencyLockPath": "experiments/locks/python-stdlib.txt",
+      "dependencyLockSha256": "b39efb4e89d33aaa2a771598a804477cff78e462805b8ea52df89032b98bcefd",
+      "datasetVersion": "inline-seeded-v1",
+      "scorerVersion": "inline-passk-v1",
+      "executionMode": "offline",
+      "expectedInvariants": [
+        "1 <= k <= n",
+        "Pass@5=100.0%",
+        "Pass^5=60.0%"
+      ],
+      "resultPath": "experiments/results/exp-passk-seeded-20261010/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-confidence-width-20261019",
+      "lessonIds": [
+        "evaluation/confidence"
+      ],
+      "question": "How many independent Bernoulli samples are required for the stated approximate interval widths at p=0.9?",
+      "type": "deterministic-local",
+      "codeLocator": {
+        "path": "src/content/chapters/evaluation/10-confidence.mdx",
+        "fence": 2,
+        "role": "calculation"
+      },
+      "codeSha256": "59a05f640f4e04ab389c74b3fa59c605fb7f8693decc623ba6e8a182ba99fff1",
+      "dependencyLockPath": "experiments/locks/python-stdlib.txt",
+      "dependencyLockSha256": "b39efb4e89d33aaa2a771598a804477cff78e462805b8ea52df89032b98bcefd",
+      "datasetVersion": "p-0.9-v1",
+      "scorerVersion": "normal-approximation-z1.96-v1",
+      "executionMode": "offline",
+      "expectedInvariants": [
+        "n=ceil(4*1.96^2*p*(1-p)/width^2)",
+        "full width is not a comparison power calculation"
+      ],
+      "resultPath": "experiments/results/exp-confidence-width-20261019/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-retrieval-token-ratio-20261019",
+      "lessonIds": [
+        "retrieval/why-retrieval"
+      ],
+      "question": "Is 0.497 token/character lower than 1 token/character, and what is the claim scope?",
+      "type": "raw-observation-review",
+      "codeLocator": {
+        "path": "src/content/chapters/retrieval/01-why-retrieval.mdx",
+        "fence": 0,
+        "role": "observation-table"
+      },
+      "codeSha256": "7e48d5d9b00bfb60a5a0e72fd351f89368cef299d167a776d673cfa51a6bafe6",
+      "dependencyLockPath": null,
+      "dependencyLockSha256": null,
+      "datasetVersion": "original-mixed-corpus-observation",
+      "scorerVersion": "arithmetic-comparison-v1",
+      "executionMode": "editorial-review",
+      "expectedInvariants": [
+        "0.497 < 1",
+        "do not generalize to all Chinese text"
+      ],
+      "resultPath": "experiments/results/exp-retrieval-token-ratio-20261019/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-mcp-20260728-spec-review",
+      "lessonIds": [
+        "mcp/stateless-2026",
+        "mcp/build-a-server"
+      ],
+      "question": "Do the teaching examples and claims match the pinned MCP 2026-07-28 specification and Python SDK 2.3.0 interoperability run?",
+      "type": "official-documentation-review",
+      "codeLocator": {
+        "path": "src/content/chapters/mcp/03-stateless-2026.mdx",
+        "fence": 3,
+        "role": "protocol-example"
+      },
+      "codeSha256": "c65f845eb2aa69920710cb12204ebea745ab30a0f5e8f3d41297dbf5956ceb77",
+      "dependencyLockPath": null,
+      "dependencyLockSha256": null,
+      "datasetVersion": "mcp-spec-2026-07-28",
+      "scorerVersion": "manual-schema-review-plus-sdk-2.3.0",
+      "executionMode": "documentation-and-sdk-interop",
+      "expectedInvariants": [
+        "MRTR inputResponses map",
+        "fresh JSON-RPC id on retry",
+        "official SDK interoperability both directions"
+      ],
+      "resultPath": "experiments/results/exp-mcp-20260728-spec-review/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-retry-after-minimum-20261019",
+      "lessonIds": [
+        "cost-and-latency/concurrency-and-backpressure"
+      ],
+      "question": "Does the Retry-After recommendation preserve server-directed minimum waits while distinguishing provider error classes?",
+      "type": "official-documentation-review",
+      "codeLocator": {
+        "path": "src/content/chapters/cost-and-latency/06-concurrency-and-backpressure.mdx",
+        "fence": 1,
+        "role": "illustrative-output"
+      },
+      "codeSha256": "8d6434d8a4ae2c7edee2211cc02e16dd25ab6cde90add3445daada63e8ecde30",
+      "dependencyLockPath": null,
+      "dependencyLockSha256": null,
+      "datasetVersion": "provider-docs-2026-10-19",
+      "scorerVersion": "manual-contract-review-v1",
+      "executionMode": "official-doc-review",
+      "expectedInvariants": [
+        "do not retry before a valid Retry-After minimum",
+        "do not treat every 429 as transient",
+        "do not hard-code dynamic RPM/TPM limits"
+      ],
+      "resultPath": "experiments/results/exp-retry-after-minimum-20261019/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-pg-verifybackup-scope-20261019",
+      "lessonIds": [
+        "agent-deployment/recovery-drills"
+      ],
+      "question": "Does pg_verifybackup establish that a recovered database starts and contains correct application data?",
+      "type": "official-documentation-review",
+      "codeLocator": {
+        "path": "src/content/chapters/agent-deployment/05-recovery-drills.mdx",
+        "fence": 0,
+        "role": "illustrative-drill-record"
+      },
+      "codeSha256": "1e3981f9c4112ec246d97272d331cafea6483dad98f12fd8cc42fe5a52badc6f",
+      "dependencyLockPath": null,
+      "dependencyLockSha256": null,
+      "datasetVersion": "postgresql-current-docs-2026-10-19",
+      "scorerVersion": "manual-document-scope-review-v1",
+      "executionMode": "official-doc-review",
+      "expectedInvariants": [
+        "integrity verification is not equivalent to a successful test restore",
+        "recovered business data requires application-level validation"
+      ],
+      "resultPath": "experiments/results/exp-pg-verifybackup-scope-20261019/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-provider-migration-fixture-20261019",
+      "lessonIds": [
+        "evaluation/provider-migration"
+      ],
+      "question": "Does the offline migration classifier distinguish refusal, truncation, tool calls, unknown usage, duplicate cases, and incomplete evidence without implying live provider behavior?",
+      "type": "deterministic-local",
+      "scriptPath": "examples/provider-migration/migration_gate.py",
+      "scriptSha256": "2f59b362a0d6b2fc9cf9be813e8bc9be5c0a160e1c4fd1a583209501e9cb47c1",
+      "dependencyLockPath": "experiments/locks/python-stdlib.txt",
+      "dependencyLockSha256": "b39efb4e89d33aaa2a771598a804477cff78e462805b8ea52df89032b98bcefd",
+      "datasetVersion": "migration-outcome-fixtures-v1",
+      "scorerVersion": "state-and-evidence-gate-v1",
+      "executionMode": "python3 -m unittest discover -s examples/provider-migration -v",
+      "expectedInvariants": [
+        "refusal and truncation remain distinct",
+        "missing usage remains unknown, not zero",
+        "fixture pass is not live provider approval"
+      ],
+      "resultPath": "experiments/results/exp-provider-migration-fixture-20261019/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-openai-structured-output-review-20261019",
+      "lessonIds": [
+        "evaluation/provider-migration"
+      ],
+      "question": "Do the official OpenAI Structured Outputs docs distinguish refusal signaling from incomplete Responses output?",
+      "type": "official-documentation-review",
+      "codeLocator": {
+        "path": "src/content/chapters/evaluation/12-provider-migration.mdx",
+        "fence": 0,
+        "role": "migration-evidence-report-example"
+      },
+      "codeSha256": "81f5da560a9d3c5ec281761f9db442b90d91b02189124199e8e24147e98de258",
+      "dependencyLockPath": null,
+      "dependencyLockSha256": null,
+      "datasetVersion": "openai-structured-outputs-docs-2026-10-19",
+      "scorerVersion": "manual-official-doc-review-v1",
+      "executionMode": "official-documentation-review",
+      "expectedInvariants": [
+        "refusal signal is separately exposed",
+        "Responses incomplete status exposes an incomplete reason",
+        "documentation review does not establish compatibility-endpoint behavior"
+      ],
+      "resultPath": "experiments/results/exp-openai-structured-output-review-20261019/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19"
+    },
+    {
+      "id": "exp-stage3-mcp-live-20261019",
+      "lessonIds": [
+        "agent-loop/minimal-loop",
+        "mcp/build-a-server"
+      ],
+      "question": "Can one real model run select the read-only MCP tools, pass local argument validation, receive matching tool results, and terminate within the configured loop budget?",
+      "type": "real-online",
+      "scriptPath": "examples/p3-controlled-agent/cli.py",
+      "scriptSha256": "40cc0be75e33913ca57802f7ba1f43eb9f8f3882aacd78e095df46673d6b28b7",
+      "dependencyLockPath": "examples/p3-controlled-agent/uv.lock",
+      "dependencyLockSha256": "38ade03ac70c67d48d55f8e7c501d679ef70c084a813d9f6ed4918faba058a7c",
+      "datasetVersion": "after-sales-fixtures-2026-10-18-v1",
+      "scorerVersion": "tool-trace-schema-and-success-state-v1",
+      "executionMode": "uv run --project examples/p3-controlled-agent python examples/p3-controlled-agent/cli.py --live",
+      "expectedInvariants": [
+        "model-selected tool arguments pass host validation before execution",
+        "tool_result responses preserve each tool_use_id association",
+        "the run stops on end_turn within the four-round/four-call budget"
+      ],
+      "resultPath": "experiments/results/exp-stage3-mcp-live-20261019/result.json",
+      "status": "verified",
+      "reviewedAt": "2026-10-19",
+      "online": {
+        "providerHost": "api.deepseek.com",
+        "model": "deepseek-flash",
+        "credentialSource": "ignored local .env.local; value not recorded",
+        "runId": "2026-10-19-deepseek-stage3-tool-roundtrip-5"
+      }
+    },
+    {
+      "id": "exp-stage4-offline-contracts-20261020",
+      "lessonIds": [
+        "agent-loop/execution-ownership",
+        "human-in-the-loop/interrupt-and-resume",
+        "agent-deployment/recovery-drills"
+      ],
+      "question": "Do the Stage 4 offline contract tests preserve provider response states, usage uncertainty, and tool validation boundaries without claiming database or live-provider behavior?",
+      "type": "synthetic-fixture",
+      "scriptPath": "examples/p4-durable-support/tests/test_contracts.py",
+      "scriptSha256": "18fcf642db2a2a3311381113e3f976d73ff6f8bc0364a0e7e4ec272967858be5",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "a60aea3e7c8a7a7ec97b3ed134546b16c80728db1807253f73ee03f758921458",
+      "datasetVersion": "stage4-contract-fixtures-v1",
+      "scorerVersion": "pytest-assertion-contract-v1",
+      "executionMode": "cd examples/p4-durable-support && uv run --frozen pytest -m 'not integration' -q; also pnpm verify:examples runs this file with UV_OFFLINE=1 and --no-sync",
+      "expectedInvariants": [
+        "offline contract tests pass without database setup or provider calls",
+        "unknown usage remains unknown and never silently becomes zero",
+        "tool names and arguments fail closed before MCP execution",
+        "fixture evidence does not satisfy any live-provider acceptance gate"
+      ],
+      "resultPath": "experiments/results/exp-stage4-offline-contracts-20261020/result.json",
+      "status": "needs-review",
+      "reviewedAt": "2026-10-20"
+    },
+    {
+      "id": "exp-stage4-postgres-acceptance-20261020",
+      "lessonIds": [
+        "agent-deployment/recovery-drills",
+        "agent-loop/execution-ownership",
+        "agent-security/identity-and-tenancy",
+        "human-in-the-loop/interrupt-and-resume"
+      ],
+      "question": "Does the Stage 4 full runtime preserve its durable task and event visibility across independent API processes and reject readiness when the latest migration is absent?",
+      "type": "postgres-integration",
+      "scriptPath": "examples/p4-durable-support/tests/test_acceptance_integration.py",
+      "scriptSha256": "51d64853f5cb88211d2de3626264be192814218821851abe56aea69abbc6e5b6",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "a60aea3e7c8a7a7ec97b3ed134546b16c80728db1807253f73ee03f758921458",
+      "datasetVersion": "stage4-synthetic-support-v1",
+      "scorerVersion": "postgres-stage4-invariants-v1",
+      "executionMode": "cd examples/p4-durable-support && uv run --frozen pytest -m integration -q (Docker Compose PostgreSQL 18.0-bookworm; two independent API OS processes)",
+      "expectedInvariants": [
+        "all migration versions 0001 through 0004 must be present for readiness",
+        "readiness fails on both API processes if the latest migration ledger row is absent",
+        "a task and its ordered creation event are visible from the second independent API process",
+        "the Stage 4 integration suite does not issue provider calls or use real customer data"
+      ],
+      "resultPath": "experiments/results/exp-stage4-postgres-acceptance-20261020/result.json",
+      "status": "needs-review",
+      "reviewedAt": "2026-10-20"
+    }
+  ]
+}

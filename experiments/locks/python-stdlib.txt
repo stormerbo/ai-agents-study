@@ -1,0 +1,4 @@
+Execution runtime for deterministic examples
+Python 3.14.7
+Dependencies: Python standard library only (sqlite3, tempfile, threading, unittest, uuid).
+This is an interpreter fingerprint, not a portable package lockfile.

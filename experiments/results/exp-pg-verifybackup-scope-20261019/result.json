@@ -1,0 +1,15 @@
+{
+  "experimentId": "exp-pg-verifybackup-scope-20261019",
+  "runId": "2026-10-19-postgresql-doc-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-19",
+  "method": "Reviewed PostgreSQL current pg_verifybackup and continuous archiving/PITR documentation for integrity-check scope and explicit test-restore guidance.",
+  "observations": {
+    "integrity_check": "checks a base backup against its manifest and required WAL readability within documented limits",
+    "test_restore_required": true
+  },
+  "limitations": [
+    "No PostgreSQL server or backup was restored in this review",
+    "Managed PostgreSQL services can expose different backup and recovery workflows"
+  ]
+}

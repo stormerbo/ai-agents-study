@@ -1,0 +1,15 @@
+{
+  "experimentId": "exp-retry-after-minimum-20261019",
+  "runId": "2026-10-19-official-doc-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-19",
+  "method": "Reviewed the current OpenAI rate limits and Anthropic API rate limits/errors pages for Retry-After behavior and retry boundaries; lesson avoids dynamic quota figures.",
+  "observations": {
+    "openai": "retry guidance treats Retry-After as the minimum wait and recommends jitter",
+    "anthropic": "429 retry behavior depends on error; spend-cap responses can omit retry-after"
+  },
+  "limitations": [
+    "Documentation review is not a live SDK or provider request",
+    "Provider behavior and SDK defaults can change; verify the chosen endpoint and SDK version"
+  ]
+}

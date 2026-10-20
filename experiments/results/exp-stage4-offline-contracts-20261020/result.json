@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-stage4-offline-contracts-20261020",
+  "runId": "stage4-offline-contracts-2026-10-20-1",
+  "evidenceType": "synthetic-fixture",
+  "observedAt": "2026-10-20",
+  "method": "Ran the P4 offline contract test module using the locked local uv environment. No database service or provider credentials were used; the same offline-safe module is registered in the sanitized example runner.",
+  "observations": {
+    "testsPassed": 17,
+    "testsFailed": 0,
+    "fixtureOnly": true,
+    "providerCalls": 0,
+    "datasetVersion": "stage4-contract-fixtures-v1"
+  },
+  "limitations": [
+    "This is fixed local contract/control-flow evidence, not a PostgreSQL integration or provider observation.",
+    "No model-quality, latency, cost, production identity, or customer-system behavior is measured.",
+    "This result remains pending the first human review and is not publishable evidence."
+  ]
+}

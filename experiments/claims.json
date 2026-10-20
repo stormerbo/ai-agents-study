@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "claims": [
+    {
+      "id": "claim-passk-seeded-result",
+      "lessonId": "evaluation/pass-k",
+      "sourcePath": "src/content/chapters/evaluation/02-pass-k.mdx",
+      "text": "单次成功率     91.0%\nPass@5        100.0%\nPass^5         60.0%\n95% 置信区间   [85.0%, 96.0%]  宽度 11.0pp\n",
+      "textSha256": "9c1e9e99f9e89f1dea048c86fd63a4b25703a0f2769df287a1b86d0801617e88",
+      "applicability": "仅对应本节固定种子与当前示例代码，不代表模型总体能力。",
+      "sourceIds": [],
+      "experimentIds": [
+        "exp-passk-seeded-20261010"
+      ],
+      "evidenceType": "deterministic-local",
+      "errataIds": [
+        "ERR-004"
+      ],
+      "reviewStatus": "verified"
+    },
+    {
+      "id": "claim-confidence-width-p90",
+      "lessonId": "evaluation/confidence",
+      "sourcePath": "src/content/chapters/evaluation/10-confidence.mdx",
+      "text": "n = 4 * z^2 * p(1-p) / delta^2         （delta 是 95% 区间近似全宽，z=1.96）",
+      "textSha256": "7467b5fddeb310f5022c69161fd04c61ba6b5fa753f666a443e33e6a7ed33bd0",
+      "applicability": "正态近似下估计单个比例的精度；不用于版本差异检验。",
+      "sourceIds": [],
+      "experimentIds": [
+        "exp-confidence-width-20261019"
+      ],
+      "evidenceType": "deterministic-local",
+      "errataIds": [
+        "ERR-005"
+      ],
+      "reviewStatus": "verified"
+    },
+    {
+      "id": "claim-retrieval-ratio-arithmetic",
+      "lessonId": "retrieval/why-retrieval",
+      "sourcePath": "src/content/chapters/retrieval/01-why-retrieval.mdx",
+      "text": "0.497 这个数字只描述这次混合语料的抽样外推：**平均每个字符约 0.497 个 token，也就是约 2 个字符对应 1 个 token**。这比「一个字符一个 token」更省 token；其中英文、代码和标点会改变比例，但这次结果不能推广成所有中文文档的固定换算率。要估自己的输入量，应使用目标端点的 tokenizer 或实际响应 usage。",
+      "textSha256": "216d134d19baff30d7de0f0af63817fb75485bbcbf83f861ba587fd9d31bb665",
+      "applicability": "只描述正文保留的混合语料观察及其算术解释。",
+      "sourceIds": [],
+      "experimentIds": [
+        "exp-retrieval-token-ratio-20261019"
+      ],
+      "evidenceType": "raw-observation-review",
+      "errataIds": [
+        "ERR-010"
+      ],
+      "reviewStatus": "verified"
+    },
+    {
+      "id": "claim-mcp-mrtr-shape",
+      "lessonId": "mcp/stateless-2026",
+      "sourcePath": "src/content/chapters/mcp/03-stateless-2026.mdx",
+      "text": "2026-07-28 把它换成了 **MRTR（多轮往返请求，Multi Round-Trip Requests）**：server 不再主动发请求，而是**把「我还需要输入」作为返回值交回去**。",
+      "textSha256": "e287d8786c15b2dd24544b08268533c17a764adee26268f4e2db9399b43175c7",
+      "applicability": "固定到 MCP 2026-07-28 规范版本；SDK 实测范围见实验记录。",
+      "sourceIds": [
+        "mcp-2026-spec"
+      ],
+      "experimentIds": [
+        "exp-mcp-20260728-spec-review"
+      ],
+      "evidenceType": "official-documentation-review",
+      "errataIds": [
+        "ERR-001"
+      ],
+      "reviewStatus": "verified"
+    },
+    {
+      "id": "claim-retry-after-minimum",
+      "lessonId": "cost-and-latency/concurrency-and-backpressure",
+      "sourcePath": "src/content/chapters/cost-and-latency/06-concurrency-and-backpressure.mdx",
+      "text": "收到有效 `Retry-After` 时，把它当作等待下限；没有有效提示时使用指数退避并加随机抖动，避免所有 worker 同步冲回去。",
+      "textSha256": "c20faea52a1464ee88c8cbf4b69afcc30222f9d69f7d4a55043736c6da7609f6",
+      "applicability": "Provider-specific guidance reviewed 2026-10-19; no fixed rate quota or SDK retry count is claimed.",
+      "sourceIds": [
+        "openai-rate-limits",
+        "anthropic-rate-limits",
+        "anthropic-errors"
+      ],
+      "experimentIds": [
+        "exp-retry-after-minimum-20261019"
+      ],
+      "evidenceType": "official-documentation-review",
+      "errataIds": [],
+      "reviewStatus": "verified"
+    },
+    {
+      "id": "claim-pg-verifybackup-not-restore-proof",
+      "lessonId": "agent-deployment/recovery-drills",
+      "sourcePath": "src/content/chapters/agent-deployment/05-recovery-drills.mdx",
+      "text": "PostgreSQL 的 `pg_verifybackup` 可以按 backup manifest 检查文件和所需 WAL 的一些完整性问题；官方文档同时明确说，这项检查不覆盖运行服务器使用备份时的所有检查，因此仍需实际测试恢复，并检查恢复出的数据库是否包含正确数据。",
+      "textSha256": "f8ccb4e960c3ef90a29dc38500ddd22b02e98c8b57fccc715306c68948508db8",
+      "applicability": "PostgreSQL current documentation reviewed 2026-10-19; no real database restore was performed.",
+      "sourceIds": [
+        "postgres-pg-verifybackup",
+        "postgres-pitr"
+      ],
+      "experimentIds": [
+        "exp-pg-verifybackup-scope-20261019"
+      ],
+      "evidenceType": "official-documentation-review",
+      "errataIds": [],
+      "reviewStatus": "verified"
+    },
+    {
+      "id": "claim-offline-provider-fixture-scope",
+      "lessonId": "evaluation/provider-migration",
+      "sourcePath": "src/content/chapters/evaluation/12-provider-migration.mdx",
+      "text": "离线套件证明分类逻辑对样例按预期工作；在线报告才证明某个具体端点、模型和日期下的表现。",
+      "textSha256": "ebbf95b4086b4489df9ef1bee0d78bdc3e604211c52462fef640161b236f7f0f",
+      "applicability": "The registered deterministic suite ran without provider requests; live endpoint claims require separately recorded online evidence.",
+      "sourceIds": [],
+      "experimentIds": [
+        "exp-provider-migration-fixture-20261019"
+      ],
+      "evidenceType": "deterministic-local",
+      "errataIds": [],
+      "reviewStatus": "verified"
+    },
+    {
+      "id": "claim-openai-structured-refusal-incomplete",
+      "lessonId": "evaluation/provider-migration",
+      "sourcePath": "src/content/chapters/evaluation/12-provider-migration.mdx",
+      "text": "OpenAI Structured Outputs 文档说明，拒绝可能通过 `refusal` 信号返回；Responses 也可能以 `incomplete` 状态结束，并给出 `max_output_tokens` 等原因。调用方应分别识别拒绝与不完整结果，不能把二者当作符合 Schema 的正常完成。",
+      "textSha256": "541d3c474c420183dd60bd663d547cb000dceaa191000c5910794262532cba8e",
+      "applicability": "OpenAI API Structured Outputs and Responses documentation reviewed 2026-10-19; documentation review only, no live endpoint request.",
+      "sourceIds": [
+        "openai-structured-outputs"
+      ],
+      "experimentIds": [
+        "exp-openai-structured-output-review-20261019"
+      ],
+      "evidenceType": "official-documentation-review",
+      "errataIds": [],
+      "reviewStatus": "verified"
+    }
+  ]
+}

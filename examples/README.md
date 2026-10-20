@@ -77,9 +77,9 @@ uv run --project examples/p3-controlled-agent python examples/p3-controlled-agen
 
 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s examples/p3-controlled-agent -v` 的 9 项标准库测试只验证本地控制逻辑；`--mcp-smoke` 验证独立进程上的 `tools/list` 和 `tools/call`；`--live --max-rounds 4 --max-tool-calls 4 --max-output-tokens 512` 展示默认预算参数，只有 `--live` 报告才代表真实模型证据。
 
-## 阶段 4：PostgreSQL 持久任务服务（Task 1）
+## 阶段 4：PostgreSQL 持久任务服务（Task 1–4）
 
-`p4-durable-support/` 提供 FastAPI + PostgreSQL 18 的本地合成任务 API：bearer 映射可信 tenant/caller，当前角色与撤权每请求复查；事务提交任务、首事件与调用方作用域幂等记录，事件按 seq 轮询续读。`support_agent/` 是从阶段 3 提取的共享 provider/tool/runtime 边界，阶段 3 保留薄兼容入口。
+`p4-durable-support/` 是基于 FastAPI + PostgreSQL 18 的本地合成服务。它实现 trusted principal、幂等任务/event API、lease/epoch worker、审批恢复、ACL 前置过滤与索引切换、并发/预算限制、transactional outbox、本地合成 HTTP sink、未知投递对账和 operator 审计关闭。`support_agent/` 是阶段 3/4 共用的 provider/tool/runtime 边界。
 
 ```bash
 cd examples/p4-durable-support
@@ -88,4 +88,4 @@ uv run pytest -m 'not integration' -q
 uv run pytest -m integration -q
 ```
 
-集成入口自动启动独立 Compose PostgreSQL 与两个 API OS 进程，覆盖竞争提交、重启持久化、跨租户/owner 隔离、撤权与数据库故障；依赖不可用会失败并清理，不能跳过后宣称通过。离线 fixture 与 PostgreSQL 集成的证据分开解释，均不构成模型能力观察。详细环境、迁移/seed 命令、demo token、HTTP 状态与游标契约见 [`p4-durable-support/README.md`](p4-durable-support/README.md)。Task 1 任务停在 queued；审批路由仅预留鉴权边界并返回 501，worker、审批决定、outbox、HTTP sink 与阶段验收属于后续任务。本轮不更新全站 manifest 或声称阶段 4 已完成。
+集成门禁 `uv run pytest -m integration -q` 自动启动临时 Compose PostgreSQL 与两个独立 API 进程，涵盖多进程幂等、重启恢复、租约竞争、审批、租户/ACL、预算、取消/撤权竞态、未知投递与人工对账；Docker、镜像、PostgreSQL 或任一门禁缺失都会非零退出。离线测试只证明 fixture/control-flow；PostgreSQL 集成证明本地服务事务与竞争行为；它们都不是 provider 能力证据。`pnpm verify:examples` 只运行 hash-pinned 的离线安全示例，不会启动该数据库集成。尚未调用真实模型，故不证明模型质量或真实系统行为；真实模型验收、独立接手、发布/回滚和冻结 holdout 评测仍属于阶段 5。详见 [`p4-durable-support/README.md`](p4-durable-support/README.md)。

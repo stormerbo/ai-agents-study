@@ -1,0 +1,9 @@
+{
+  "experimentId": "exp-passk-seeded-20261010",
+  "runId": "2026-10-19-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-19",
+  "method": "Re-ran the fixed-seed Python example and checked 1 <= k <= n guards.",
+  "observations": {"singleSuccessRatePercent": 91.0, "passAt5Percent": 100.0, "passPow5Percent": 60.0, "interval": "[85.0%, 96.0%]", "intervalWidthPp": 11.0},
+  "limitations": ["The deterministic teaching sample is not a population estimate of model capability."]
+}

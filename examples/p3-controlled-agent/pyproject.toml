@@ -1,0 +1,11 @@
+[project]
+name = "p3-controlled-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "anthropic>=0.75.0",
+  "mcp==2.3.0",
+]
+
+[tool.uv]
+package = false

@@ -212,7 +212,7 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 - [x] **全文搜索**（2026-10-09）—— Pagefind，索引 158 页；`pnpm build-search`（须在 `pnpm build` 之后跑）；⌘K 打开
 - [x] **按 `VERIFY.md` 验证**（2026-10-09）—— ch1 的 SDK 脚本已实跑，修掉 3 个真实缺陷（详见 `VERIFY.md` 顶部）；prompt caching 等 4 项受限于兼容端点，待官方 Key
 
-**工具链现状（2026-10-12 更新）**：`pnpm test`（**67 断言 / 5 个文件**，含 `tests/depth.test.ts` 深度门禁）、`pnpm depth-check`、`pnpm verify:depth`、`pnpm typecheck`、`pnpm lint`、`pnpm build`（225 页）；内容体量 **26 章 / 134 节，字数 134/134 达标，五要素深度审计全部通过**；资源精读 **48/48**，其中 33 篇有中译全文。**全部干净**。
+**工具链现状（2026-10-20 更新）**：`pnpm test`（84 项 / 10 个文件）、`pnpm verify:evidence`（6 项；8 条 claim / 12 项 experiment 通过 Ajv schema、引用/hash 与观察字段 allowlist/敏感值扫描）、`pnpm verify:examples`（90 项；含阶段 4 离线 contracts，不启动 PostgreSQL、不调用 provider）、`pnpm depth-check`、`pnpm verify:depth`、`pnpm typecheck`、`pnpm lint`、`pnpm build` 与 `pnpm build-search` 均通过；构建和 Pagefind 各索引 250 页，14,961 词。阶段 4 `uv run --frozen pytest -m 'not integration' -q` 为 17 项离线测试；`uv run --frozen pytest -m integration -q` 为 91 项真实 PostgreSQL/独立 API 进程集成测试，缺 Docker/数据库即失败。两个 Stage 4 实验结果已登记但状态为 `needs-review`，首个人工复核待完成；没有执行真模型调用。全站链接扫描执行完成但因 40 个既有失效/拦截链接返回非零；本轮未新增外链。项目页深浅主题视觉检查通过，浏览器只报告既有 favicon 404。课程 **26 章 / 144 节**篇幅门禁全部达标；阶段 2 的离线检索参考实现已登记，真实 embedding 未验证；阶段 3 的 MCP stdio 双进程检查和一次 DeepSeek 真模型工具往返已记录，见 `experiments/results/exp-stage3-mcp-live-20261019/result.json`；阶段 4 本地合成多进程服务已通过 PostgreSQL 集成门禁，生产 IdP/RLS、高可用和 provider 能力均未验证。阶段 5 真模型 capstone、独立交接、holdout 与发布/回滚仍未实现。审计台账为 12 节 `corrected`、12 节 `in-review`、120 节 `not-reviewed`，不能宣称全书准确性审计完成。资源库现 49 条；新增内容和引用核对详见本轮进度记录。
 
 > 2026-10-12 完成一轮全站深度修复：按 [docs/CONTENT-DEPTH.md](docs/CONTENT-DEPTH.md) 的五要素（定义／产物／判据／步骤／失败形态）逐节补齐，净增约 33.7 万字符；进度与例外见 [docs/DEPTH-FIX-TRACKER.md](docs/DEPTH-FIX-TRACKER.md)。
 

@@ -1,0 +1,9 @@
+{
+  "experimentId": "exp-outbox-task-retry-sqlite-model",
+  "runId": "2026-10-19-python314-sqlite-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-19",
+  "method": "Ran stdlib unittest with separate SQLite databases for the application and mock delivery receiver, injecting crashes before send and after receiver commit, plus eight concurrent same-key submissions and competing worker claims.",
+  "observations": {"testsPassed": 3, "sameKeyTaskCount": 1, "claimsForOneTask": 1, "deliveriesAfterLostReceipt": 1, "preSendRecoveryDeliveries": 1},
+  "limitations": ["SQLite and threads model local transactional boundaries; they do not validate PostgreSQL isolation, multi-process deployment, lease expiry, network partitions, or a real receiver's idempotency contract.", "The exactly-once effect observed depends on receiver-side unique-key deduplication."]
+}

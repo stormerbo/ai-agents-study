@@ -1,0 +1,9 @@
+{
+  "experimentId": "exp-confidence-width-20261019",
+  "runId": "2026-10-19-independent-recompute-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-19",
+  "method": "Independent arithmetic recomputation with ceil(4*1.96^2*p*(1-p)/width^2), p=0.9.",
+  "observations": {"widthPpToN": {"1": 13830, "2": 3458, "5": 554, "10": 139}},
+  "limitations": ["Normal approximation for a single proportion; not a power calculation for comparing versions."]
+}

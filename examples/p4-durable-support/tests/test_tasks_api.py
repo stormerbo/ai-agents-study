@@ -27,7 +27,9 @@ def test_create_read_restart_and_cursor(service, task):
 
 
 def test_tenant_owner_boundary_and_forged_body(service, task):
-    assert service.request("GET", f"/v1/tasks/{task['id']}/approvals").status_code == 501
+    approvals = service.request("GET", f"/v1/tasks/{task['id']}/approvals")
+    assert approvals.status_code == 200
+    assert approvals.json() == {"approvals": []}
     for token in ("dev-bob", "dev-mallory"):
         for suffix in ("", "/events", "/approvals"):
             assert service.request("GET", f"/v1/tasks/{task['id']}{suffix}", token=token).status_code == 404

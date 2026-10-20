@@ -1,6 +1,6 @@
-# 阶段 4：持久任务服务（Task 1–3）
+# 阶段 4：持久任务服务（Task 1–4）
 
-这是独立于学习站的本地合成售后服务。Task 1–2 已实现 PostgreSQL 任务 API、租约/epoch worker 所有权、冻结动作与审批恢复、合成 ACL 检索和索引切换、并发限制与共享预算。当前完整 API 入口为 `app.runtime:create_app --factory`；`app.main:app` 保留 Task 1 兼容契约，其提交入口不执行 Task 2 的队列准入检查，不用于完整服务。模型调用仍需可信宿主显式注入，worker CLI 只领取一次任务，没有自动调用模型。Task 3 增加 transactional outbox、本地合成 HTTP sink、持久去重回执与未知结果对账。`authorized_pending_delivery` 仍是不可投递的 Task 2 交接态，须经 `outbox.schedule` 原子建立投递工作。阶段 4 的整体验收与证据登记仍待 Task 4，不能据此宣称阶段 4 或综合项目完成。
+这是独立于学习站的本地合成售后服务。Task 1–3 实现 PostgreSQL 任务 API、租约/epoch worker 所有权、冻结动作与审批恢复、合成 ACL 检索和索引切换、并发限制与共享预算、transactional outbox、本地合成 HTTP sink、持久去重回执与未知结果对账。完整 API 入口为 `app.runtime:create_app --factory`；`app.main:app` 仅保留 Task 1 兼容契约，不用于完整服务。Task 4 增加全迁移 readiness 门禁、阶段验收集成测试与脱敏证据登记。模型调用仍需可信宿主显式注入，worker CLI 只领取一次任务，没有自动调用模型。`authorized_pending_delivery` 仍是不可投递的 Task 2 交接态，须经 `outbox.schedule` 原子建立投递工作。当前证据证明的是本机合成数据上的离线控制流和 PostgreSQL 多进程行为；未调用真模型，也未验证生产身份提供方、真实客户系统、生产部署或发布回滚。综合项目完整验收仍属于阶段 5。
 
 ## 环境与安装
 
@@ -17,7 +17,7 @@ uv run pytest -m integration -q
 
 最后一个命令是必需的 PostgreSQL 集成入口。pytest 自动创建独立 Compose project 与临时数据库卷，选取本轮固定的 loopback 端口，等待数据库健康，运行版本迁移与合成 seed，独立启动两个 uvicorn OS 进程，并在成功或失败后关闭 API、删除该 project 的服务与卷。测试包含 API 重启与 PostgreSQL 停止后的 readiness；不会改动手工启动的数据库。Docker、镜像、PostgreSQL 或 API 不可用会导致命令非零退出，不会 skip 或回退到 SQLite。首次运行需拉取镜像。测试不能与 `pytest-xdist` 并行分片共享此服务。
 
-离线测试只检查合成 provider 响应和控制流，不启动数据库、不调用模型。集成测试证明本机 PostgreSQL/HTTP 进程的事务、权限与竞争不变量，不证明生产 IdP、PostgreSQL RLS、网络分区、高可用或供应商能力。没有模型调用，不能推导模型质量或价格。Task 4 才登记实验结果与更新全站示例 manifest。
+离线测试只检查合成 provider 响应和控制流，不启动数据库、不调用模型。集成测试证明本机 PostgreSQL/HTTP 进程的事务、权限与竞争不变量，不证明生产 IdP、PostgreSQL RLS、网络分区、高可用或供应商能力。没有模型调用，不能推导模型质量或价格。
 
 ## 手工运行与迁移
 
@@ -79,7 +79,7 @@ token 比较使用 `hmac.compare_digest`，逐一比较全部候选。身份由�
 | `GET /v1/actions/{uuid}/delivery` | 200 | 当前同租户 operator 查看投递状态、external_key 与最新 dispatch_token；快照不预留处理权 |
 | `POST /v1/actions/{uuid}/manual-resolution` | 200 | 当前 operator 显式关闭无法自动确认的 unknown；必填当前过期 dispatch_token、outcome、evidence_reference、reason |
 | `GET /health/live` | 200 | 无需认证，不依赖数据库 |
-| `GET /health/ready` | 200 | 无需认证，完整入口检查 PostgreSQL 可连接且 `0002_execution.sql` 已登记 |
+| `GET /health/ready` | 200 | 无需认证，完整入口检查 PostgreSQL 可连接且 `0001`–`0004` 所需迁移全部登记 |
 
 任务视图包含 `id`（UUID）、`tenant_id`、`owner_id`、`status`、`state_version`、`release_id`、`created_at`（UTC 时间戳），不返回 prompt。新建状态为 `queued`；领取、审批等待、恢复、失败与取消均持久化，事件按任务行锁分配序号。
 
@@ -154,11 +154,11 @@ Task 2 聚焦集成入口（同样创建独立 Compose PostgreSQL 并自动清�
 uv run pytest -m integration -q tests/test_worker_ownership.py tests/test_approval_recovery.py tests/test_retrieval_acl.py tests/test_index_lifecycle.py tests/test_limits.py
 ```
 
-完整回归入口保持 `uv run pytest -m integration -q`。测试包括 worker 强制进程死亡/租约接管、API 与审批等待 worker 重启、并发决定、七类冻结失效、ACL/删除前置过滤、索引切换、队列/slot/deadline、并发共享预算及未知用量保留。所有输入与响应均为合成夹具；不包含真实 provider 观测。Task 3 的 outbox/sink/对账另见下文；Stage 4 的整体验收与 Stage 5 真模型验收仍未完成。
+完整回归入口保持 `uv run pytest -m integration -q`。测试包括 worker 强制进程死亡/租约接管、API 与审批等待 worker 重启、并发决定、七类冻结失效、ACL/删除前置过滤、索引切换、队列/slot/deadline、并发共享预算及未知用量保留。所有输入与响应均为合成夹具；不包含真实 provider 观测。Task 3 的 outbox/sink/对账见下文。Stage 4 离线与 PostgreSQL 门禁不包含真模型质量、生产身份/数据库部署或独立交接；Stage 5 真模型与完整 capstone 验收仍未完成。
 
 ## Task 3：合成投递、取消边界与对账
 
-先运行全部迁移（包括 `0003_delivery.sql`）、基础 seed 与上文合成资源初始化，再启动独立接收进程：
+先运行全部迁移（包括 `0004_manual_resolution.sql`）、基础 seed 与上文合成资源初始化，再启动独立接收进程：
 
 ```bash
 uv run uvicorn app.sink:app --host 127.0.0.1 --port 8002 --no-access-log

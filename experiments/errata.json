@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "records": [
+    {"id":"ERR-001","status":"verified","lessonIds":["mcp/stateless-2026","mcp/build-a-server"],"experimentIds":["exp-mcp-20260728-spec-review"]},
+    {"id":"ERR-002","status":"verified","lessonIds":["capstone/skeleton"],"experimentIds":[]},
+    {"id":"ERR-003","status":"verified","lessonIds":["structured-output/json-schema-strict"],"experimentIds":[]},
+    {"id":"ERR-004","status":"verified","lessonIds":["evaluation/pass-k"],"experimentIds":["exp-passk-seeded-20261010"]},
+    {"id":"ERR-005","status":"verified","lessonIds":["evaluation/confidence"],"experimentIds":["exp-confidence-width-20261019"]},
+    {"id":"ERR-006","status":"verified","lessonIds":["human-in-the-loop/interrupt-and-resume"],"experimentIds":["exp-outbox-task-retry-sqlite-model"]},
+    {"id":"ERR-007","status":"verified","lessonIds":["agent-deployment/deployment-shape"],"experimentIds":["exp-outbox-task-retry-sqlite-model"]},
+    {"id":"ERR-008","status":"verified","lessonIds":["human-in-the-loop/automation-levels","human-in-the-loop/approval-design","capstone/skeleton"],"experimentIds":[]},
+    {"id":"ERR-009","status":"verified","lessonIds":["coding-agent/why-coding-agent"],"experimentIds":[]},
+    {"id":"ERR-010","status":"verified","lessonIds":["retrieval/why-retrieval"],"experimentIds":["exp-retrieval-token-ratio-20261019"]}
+  ]
+}

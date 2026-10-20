@@ -85,9 +85,10 @@ def create_app(settings=None):
     @app.get('/health/ready')
     def ready():
         with connect(app.state.settings.database_url) as conn:
-            row=conn.execute("SELECT 1 FROM schema_migrations WHERE version='0002_execution.sql'").fetchone()
-            if not row:
-                raise HTTPException(503,detail={'code':'schema_unavailable','message':'Execution migration missing'})
+            required={'0001_base.sql','0002_execution.sql','0003_delivery.sql','0004_manual_resolution.sql'}
+            applied={row['version'] for row in conn.execute('SELECT version FROM schema_migrations').fetchall()}
+            if not required.issubset(applied):
+                raise HTTPException(503,detail={'code':'schema_unavailable','message':'Required migration missing'})
         return {'status':'ready'}
     return app
 

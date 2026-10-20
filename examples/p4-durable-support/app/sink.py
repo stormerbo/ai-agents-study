@@ -50,8 +50,10 @@ def create_app(settings=None):
     @app.get('/health/ready')
     def ready():
         with connect(settings.database_url) as conn:
-            if not conn.execute("SELECT 1 FROM schema_migrations WHERE version='0003_delivery.sql'").fetchone():
-                raise HTTPException(503,detail='Delivery migration missing')
+            required={'0001_base.sql','0002_execution.sql','0003_delivery.sql','0004_manual_resolution.sql'}
+            applied={row['version'] for row in conn.execute('SELECT version FROM schema_migrations').fetchall()}
+            if not required.issubset(applied):
+                raise HTTPException(503,detail='Required migration missing')
         return {'status':'ready','contract':SINK_CONTRACT}
 
     @app.post('/v1/notices')

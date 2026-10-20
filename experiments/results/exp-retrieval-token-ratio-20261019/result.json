@@ -1,0 +1,9 @@
+{
+  "experimentId": "exp-retrieval-token-ratio-20261019",
+  "runId": "2026-10-19-editorial-recompute-1",
+  "evidenceType": "raw-observation-review",
+  "observedAt": "2026-10-19",
+  "method": "Compared the preserved ratio arithmetically and reviewed its stated corpus scope.",
+  "observations": {"tokensPerCharacter": 0.497, "comparison": "0.497 < 1"},
+  "limitations": ["The original mixed corpus cannot establish a fixed ratio for all Chinese text."]
+}
