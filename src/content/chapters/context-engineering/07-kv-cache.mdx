@@ -1,6 +1,6 @@
 ---
 lesson: context-engineering/kv-cache
-title: KV Cache：为什么前缀一改，成本就翻倍
+title: KV Cache 与 Prompt Cache：机制和适用边界
 status: drafting
 ---
 
@@ -57,10 +57,10 @@ flowchart TB
     A["上下文是一串 token"] --> B["模型为每个 token 算 Key/Value"]
     B --> C["按位置累积 —— 第 i 个依赖前面所有 token"]
     C --> D{"你改了哪里"}
-    D -->|"改开头/中间"| E["该位置之后<b>全部</b> Key/Value 失效"]
-    D -->|"只在末尾追加"| F["前面全部复用"]
-    E --> G["该端点本次未报告缓存读取<br/>input 从 181 涨回 1205"]
-    F --> H["继续命中缓存"]
+    D -->|"改开头/中间"| E["该位置之后的运行时 KV 状态通常需重算"]
+    D -->|"只在末尾追加"| F["前面位置的运行时 KV 可继续复用"]
+    E --> G["跨请求缓存如何命中由 provider 契约决定<br/>该端点本次未报告缓存读取"]
+    F --> H["是否命中跨请求缓存仍需看 usage"]
     style E fill:#fee,stroke:#c33
     style F fill:#efe,stroke:#3a3
 `}

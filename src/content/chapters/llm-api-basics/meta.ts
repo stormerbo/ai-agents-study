@@ -50,7 +50,7 @@ export const chapter = {
           id: 'context-not-memory',
           question: '把关键信息放在很长的上下文中部，会发生什么？这对 prompt 的结构有什么指导？',
           answer:
-            '模型对长上下文各位置的利用率并不均匀：开头和结尾记得最清楚，中间最容易被忽略。所以在拼装 prompt 时，指令应当放在开头或结尾，而不要把最关键的约束埋在大量参考资料中间；如果参考资料很长，宁可用检索挑出少量相关片段放在末尾，也不要整段塞进去。',
+            'Lost in the Middle 论文在其评测任务与模型上观察到长上下文位置利用率不均、部分设置呈 U 形；这不意味着所有模型、任务或窗口长度都呈现同一效果。本节 2026-10-08 DeepSeek 样本及第 0 章复现实验没有观察到位置效应，样本范围不足以推翻论文，也不足以推广到所有长上下文应用。工程上可把关键信息放在易检索的位置、减少无关上下文，但应在自己的模型与任务上测量。',
           basis: 'documented',
           sourceIds: ['lost-in-the-middle'],
           note: '前半段（位置利用率不均）是论文结论；后半段「应该怎么放」是由结论推出的工程建议，属于推论而非论文原文。',
@@ -167,9 +167,9 @@ export const chapter = {
       id: 'llm-api-basics/prompt-caching',
       chapterId: 'llm-api-basics',
       slug: 'prompt-caching',
-      title: 'prompt caching：把重复的前缀变成折扣',
+      title: 'prompt caching：按 provider 契约评估前缀复用',
       summary:
-        '如果你的请求有一个很长且很少变化的前缀（系统提示、工具定义、参考文档），这里有一笔明显的省钱空间。',
+        '如果目标 provider 支持 prompt/context cache，稳定前缀可能降低重复计算或费用；命中条件、断点、TTL、usage 与定价必须按该 API 核实。',
       estimatedMinutes: 15,
       difficulty: 'intermediate',
       hasBody: true,
@@ -179,12 +179,12 @@ export const chapter = {
         {
           id: 'cache-prefix-order',
           question:
-            'prompt caching 能命中的前提是什么？为什么把经常变化的内容放在请求前面会让缓存完全失效？',
+            'Anthropic API 的 prompt caching 如何匹配前缀？这些规则为什么不能直接推广到其他 provider？',
           answer:
-            '前提是前缀**完全一致** —— 官方文档的原文是「Cache hits require 100% identical prompt segments」。缓存按 tools → system → messages 的层级做前缀哈希，一旦某处出现差异，从该处往后的所有内容都无法复用。所以顺序必须遵循「稳定的在前、易变的在后」：工具定义、系统提示、固定参考文档放最前，用户本次的问题放最后。把时间戳这类每次都变的内容放在开头，命中率会直接归零。',
+            '在 Anthropic API 的缓存契约中，缓存按 `tools → system → messages` 形成前缀，并以 `cache_control` 断点控制可写入的前缀；其文档要求断点覆盖的 prompt segment 完全匹配。改变断点及其之前的内容会改变该缓存键，但是否影响更早断点、读取是否命中还取决于此前写入的断点、向前查找规则与 TTL。其他 provider 可能采用自动缓存或不同的缓存键与生命周期；不要把 Anthropic 的断点语义说成所有 API 的统一规则。',
           basis: 'documented',
           sourceIds: ['claude-prompt-caching'],
-          note: '同一页面里还有两个容易被忽略的硬门槛：不同模型有 512~4096 的最小可缓存 token 数（低于门槛会静默不缓存、且不报错），以及每个请求最多 4 个缓存断点。',
+          note: '以上是 Anthropic API 文档描述的模型门槛与最多 4 个断点；DeepSeek Anthropic 兼容端点的实测行为不同，其他 provider 的门槛、开关和静默失败语义须另查其官方文档。',
         },
       ],
     },
@@ -214,7 +214,7 @@ export const chapter = {
     pitfalls: [
       '按字符数估算 token：字符与 token 的换算随文本类型剧烈变化，自己算必然偏差',
       '把上下文窗口当成内存：**放进去不等于读得到**，中间部分最容易被忽略',
-      '忽略 prompt caching：一个长系统提示反复付费，成本会高出数倍',
+      '假设所有 provider 的 prompt caching 都自动命中或采用相同折扣；应按具体 endpoint 的缓存契约和 usage 核算收益',
       '把 max_tokens 理解为“输出长度建议”：它是硬截断，会给你半截 JSON',
     ],
     cost: 'low',

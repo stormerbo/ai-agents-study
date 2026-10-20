@@ -207,7 +207,7 @@ export const chapter = {
         {
           id: 'where-to-add',
           basis: 'inferred',
-          question: '要往长会话里加一条每次都适用的规则，应该加在哪里？',
+          question: '要往长会话里加一条每次都适用的规则，如何评估它对缓存复用的影响？',
           answer:
             '加在**稳定前缀里**（通常就是 system），不要加在每轮的 user 消息前。理由是位置决定了它是「付一次」还是「付每一次」：放 system 里它是稳定前缀的一部分，之后每轮都命中缓存；放 user 消息里则每轮都不同，**前缀从那条消息开始就断了，缓存全废**。而且后者还有第二个问题：**它会随轮次累积** —— 20 轮之后历史里有 20 句几乎相同的话，既占 token，又可能让模型以为那是 20 条独立的约束。所以规则是：**「每次都适用」的放稳定前缀，「只在这一轮适用」的放末尾**。这个差别在长会话里会被放大几十倍。',
         },
@@ -218,8 +218,8 @@ export const chapter = {
       id: 'context-engineering/kv-cache',
       chapterId: 'context-engineering',
       slug: 'kv-cache',
-      title: 'KV Cache：为什么前缀一改，成本就翻倍',
-      summary: '改一个词，input 从 181 涨回 1205 —— 这是位置化存储的必然。',
+      title: 'KV Cache 与 Prompt Cache：机制和适用边界',
+      summary: '区分模型推理时的 KV cache 与各 provider 的跨请求缓存；用一条 DeepSeek Anthropic 兼容端点观测说明命中表现及其适用边界。',
       estimatedMinutes: 24,
       difficulty: 'advanced',
       hasBody: true,
@@ -230,16 +230,16 @@ export const chapter = {
           id: 'why-prefix',
           basis: 'documented',
           sourceIds: ['claude-prompt-caching'],
-          question: '为什么缓存按「前缀」失效，而不是按「内容」？',
+          question: 'KV cache 与跨请求 prompt/context cache 的关系是什么？一次前缀变化的实测能证明什么？',
           answer:
-            '**因为 KV Cache 是按位置累积的，Prompt Cache 只是它跨请求的延伸。** 模型为每个 token 算一对 Key/Value，第 i 个 token 的值依赖它前面所有 token。所以你在**开头**插入一个词，从那个位置往后的每一个 token 的 K/V 都变了，缓存整体作废；而在**末尾**追加，前面完全不受影响。这不是实现偷懒 —— **存储单位就是位置化的 Key/Value，它没法按语义判断这段有没有真的变**。实测：前缀约 1800 token，第 2 次请求自动命中 1024，改一个词后命中归零、input 从 181 涨回 1205（6.7 倍）。由此得出四条架构约束：稳定内容在前变化内容在后；工具定义顺序要固定；压缩有缓存代价；effort 这类参与提示渲染的参数不能中途改。',
+            '常见自回归 Transformer 推理中，序列前部变化通常会使后续位置的运行时 KV 状态无法直接复用；这不意味着所有 provider 的跨请求 prompt/context cache 都采用相同的键、断点或失效策略。Anthropic 文档描述的是其 API 的前缀断点与精确匹配规则。另一条历史实测记录来自 `deepseek-flash` 的 Anthropic 兼容端点（2026-10-08）：改动一个前缀词后该请求的 `cache_read` 从 1024 变为 0，`input_tokens` 从 181 变为 1205；它不能证明所有缓存条目或其他 endpoint 都按同一方式失效，也不能把 provider cache 简化为跨请求 KV cache。',
         },
         {
           id: 'cache-arch-constraint',
           basis: 'inferred',
-          question: '「前缀稳定」为什么是架构约束而不是优化技巧？它带来哪几条具体约束？',
+          question: '在什么条件下前缀稳定有助于缓存复用？为什么不能把它当作所有 API 的正确性约束？',
           answer:
-            '是架构约束，因为它决定了**什么样的上下文结构是可用的**，而不只是能不能更快。四条具体约束：**一、稳定内容必须在前面、变化内容必须在后面** —— 把时间戳或请求 id 写进 system 开头会导致缓存永远不命中，而请求完全正常、没有任何警告。**二、工具定义顺序要固定** —— 如果每次由无序字典生成，缓存就是零。**三、压缩和改写历史有缓存代价** —— 缓存从被改写的位置断开，这是第 4 节「压缩更贵」的一个底层原因。**四、参与提示渲染的参数不能中途改** —— 第 1 章记过：同一会话里改顶层的 effort 会让之前的缓存失效，为了省钱降 effort 反而可能花更多钱。另外两点：命中缓存时 input_tokens 只算未命中部分（实测 181 vs 1205），所以判断真实成本必须把 cache_read 一起看；以及凡是参与前缀拼接的结构，序列化必须是确定的（排序或有序结构），不能依赖语言默认遍历顺序。',
+            '对提供前缀缓存的 API，稳定可复用的内容放在适当断点之前，通常有利于复用；但是否精确匹配、断点是否必须显式声明、缓存读写门槛、TTL、哪些参数参与键以及 usage 字段的含义，都由具体 provider/endpoint 定义。Anthropic 官方文档可作为一个具体例子；本节 DeepSeek 兼容端点只是一组有日期的观测。把序列化固定下来便于比较请求，但本地指纹不同不等于服务端必然缓存失效，本地指纹相同也不保证命中。是否有收益应由目标 API 文档、实际 usage 和计费共同验证。',
         },
       ],
       resourceIds: ['claude-prompt-caching', 'claude-pricing'],
