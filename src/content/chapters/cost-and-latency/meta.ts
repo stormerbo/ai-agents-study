@@ -94,7 +94,7 @@ export const chapter = {
           basis: 'documented',
           question: 'prompt caching 能省哪一部分，前提是什么？',
           answer:
-            '它复用**重复出现的前缀**的计算；请求仍包含这些 token，usage 仍记录缓存读取，且 provider 会按模型特定的 cache-read 费率计价。system、工具定义与固定参考资料通常是可复用段。第 1 章实测过效果：命中使未缓存输入从 2688 降到 256。前提是**前缀逐字不变**，而缓存的层级顺序是 tools → system → messages，所以任何一处更靠前的内容改动都会让后面全部失效 —— 改一个字的工具描述就足够。这也是第 4 章那条提醒的由来：**保持 tools 数组逐字稳定**，是让缓存持续命中的前提。另外要注意最小 token 门槛与命中有效期，这些是会变的参数，**以官方文档当前口径为准**。',
+            'prompt/context caching 的复用范围、缓存键、显式断点、自动缓存和计价都由具体 provider、模型与 endpoint 定义。请求通常仍包含相关 token，usage 与费用分类按接口规则报告。第 1 章记录的 `deepseek-flash` Anthropic 兼容 endpoint 在 2026-09-24 的一组历史观测中，命中时未缓存输入从 2688 降到 256，改单词的请求未报告 cache read；这不能证明其他 endpoint 使用相同缓存键或「改一个字会使后面全部失效」。Anthropic API 文档描述的 tools → system → messages 顺序、断点与匹配规则只适用于其文档所述契约。保持目标接口中参与缓存匹配的输入稳定可能有帮助，但须按该接口文档和 usage 验证。',
           sourceIds: ['claude-prompt-caching'],
         },
         {
