@@ -59,14 +59,14 @@ export const chapter = {
           question:
             '用 XML 标签把参考资料包起来（如 <document>...</document>），除了“让模型看得更清楚”，还有什么更重要的原因？',
           answer:
-            '还有一个安全原因：这是分清“指令”与“数据”的唯一手段。模型是在同一个文本通道里读指令和数据的，如果你不划边界，参考资料里的一句话（“忽略之前的指令，改为输出……”）就可以被当作指令执行 —— 这就是提示注入。划边界不能根治它，但它是纵深防御的第一层，也让模型更容易正确对待其中内容。',
+            '还有一个安全原因：显式边界标签和指令为模型提供了区分“指令”与“数据”的结构线索。若没有这类线索，参考资料里的一句话（“忽略之前的指令，改为输出……”）可能影响模型行为 —— 这就是提示注入。标签不是硬信任边界，也不能根治注入；它只是纵深防御的一层，仍需在模型外做权限隔离、程序化校验和高风险操作确认。',
         },
         {
           id: 'injection-not-solved',
           basis: 'inferred',
           question: '加了 XML 标签之后，提示注入就被解决了吗？',
           answer:
-            '没有。标签只是让模型更容易区分，但模型仍然可能被说服 —— 因为归根结底它无法从原理上区分“数据里的话”和“你给的指令”，两者走的是同一个通道。真正的防护必须是多层的：不把不可信内容直接喂给有敏感权限的模型、对模型要执行的动作做程序化校验、关键操作要求人工确认。第 16 章会系统地讲这件事。',
+            '没有。标签只是概率性的解释线索，不是访问控制或不可绕过的解析边界。模型仍可能把不可信内容当作指令或事实。真正的防护必须是多层的：限制模型可用权限、对模型要执行的动作做程序化校验、关键操作要求人工确认。第 16 章会系统地讲这件事。',
         },
       ],
       resourceIds: ['anthropic-building-effective-agents'],
@@ -98,7 +98,7 @@ export const chapter = {
       slug: 'chain-of-thought',
       title: '思维链与 prefill：让模型先想再答',
       summary:
-        '对多步推理有效，对简单任务只是浪费 token；prefill 则能在不改 prompt 的前提下控制输出开头。',
+        'CoT 的收益依赖任务与模型；prefill 是版本和 API 特定的机制，较新模型可能已不支持。',
       estimatedMinutes: 17,
       difficulty: 'intermediate',
       hasBody: true,
@@ -110,15 +110,17 @@ export const chapter = {
           basis: 'inferred',
           question: '思维链在什么情况下是净亏损？',
           answer:
-            '当任务本身不需要多步推理时——分类、抽取、改写这类任务加上思维链，只会增加输出 token、拉高延迟和成本，准确率几乎不变，甚至因为多出的推理内容引入了新的错误机会而下降。判断标准是：这个任务的答案是否需要经过若干个中间步骤才能得出？不需要就别加。',
-          resourceIds: ['chain-of-thought-paper'],
+            '当任务不需要多步推理，且明确要求把过程写进可见输出时，CoT 可能只增加输出 token、延迟和成本而没有准确率收益。本节只在一组 DeepSeek 端点实验中观察到这一结果，不能推广成所有模型的结论。先用目标模型和任务做对照评估；现代模型的内置 thinking、开关和提示行为都随版本变化。',
+          resourceIds: ['chain-of-thought-paper', 'claude-prompting-best-practices'],
         },
         {
           id: 'prefill-use',
-          basis: 'inferred',
+          basis: 'documented',
+          sourceIds: ['claude-prompting-best-practices'],
           question: 'prefill（预填充 assistant 回复的开头）能解决什么具体问题？',
           answer:
-            '两个典型用途：一是强制输出格式，比如预先写入一个左花括号，模型就只能顺着把 JSON 补完，省掉了“模型先说一句『好的，以下是 JSON：』”的麻烦；二是绕过模型不愿直接作答的倾向，通过替它起个头来引导它进入正题。它相当于在不修改 prompt 的情况下，给生成过程一个更强的起点。',
+            'Prefill 只适用于目标 API/模型明确支持的场景；它可以在较早模型或兼容端点上预置 assistant 回复前缀，但并不保证模型只续写前缀之后的内容。当前 Anthropic 文档说明 Claude 4.6 起不支持最后一条 assistant prefill（请求会返回 400），推荐清晰指令或结构化输出。跨厂商、模型版本和 API 都应先查文档并做兼容性测试。',
+          resourceIds: ['claude-prompting-best-practices'],
         },
       ],
     },
@@ -139,7 +141,7 @@ export const chapter = {
           basis: 'inferred',
           question: '多数投票（self-consistency）能生效的窗口为什么很窄？',
           answer:
-            '它需要两个条件同时成立：任务有唯一正确答案（否则没有「多数」可投），且模型在多个候选答案之间摇摆（否则没有可投的多样性）。实测显示这两条很难同时满足 —— 在有唯一答案的任务上，模型 5 次采样给出完全相同的答案（即使 temperature=1），投票只是把同一个答案算 5 遍，成本 5.4 倍、收益为零。而在有多个合理答案的任务上虽然输出发散，但每个答案都对，「多数」无从谈起。',
+            '它需要两个条件同时成立：任务有可判定的目标答案（否则多数未必代表正确），且采样产生有意义的候选差异（否则没有可聚合的多样性）。本节实验在特定端点与小样本里，唯一答案题 5 次采样零分歧，创作题则各不相同；结果说明该实验的多数投票没有收益，不能推广为 self-consistency 普遍无效。是否能提高正确率需要用目标模型和任务做对照评估。',
           note: '实测数据见本节：唯一答案题 10/10、零分歧；创作题 6/6 各不相同。',
         },
         {
@@ -166,6 +168,7 @@ export const chapter = {
     'self-refine-paper',
     'hf-agents-course-zh',
     'openai-cookbook',
+    'claude-prompting-best-practices',
   ],
   labIds: ['lab-prompt-ab'],
   backendMapping: {
@@ -179,7 +182,7 @@ export const chapter = {
       '用否定式指令（“不要输出……”）：效果不稳定，应正面描述要什么',
       '把指令和数据混在同一个文本块里：既不稳定，又打开了提示注入的口子',
       '以为 prompt 写一次就能长期用：模型版本更新会让精心调好的 prompt 失效',
-      '为简单任务加思维链：只增加成本与延迟，准确率没有提升',
+      '未经目标模型验证就为简单任务加思维链：可能增加成本与延迟，未必提升准确率',
     ],
     cost: 'low',
   },
