@@ -4,18 +4,66 @@ Only the local synthetic receiver's explicit versioned dedup contract permits
 retry. No exceptions or HTTP response bodies are copied into task event logs.
 """
 import argparse
+from typing import Literal
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
 
 from .actions import args_hash
+from .api import authorized_connection
 from .db import connect
 from . import outbox
 from .services import SINK_CONTRACT
 
 
 HEADERS={'Authorization':'Bearer local-only-sink'}
+router=APIRouter()
+
+
+class ManualResolution(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    dispatch_token: UUID
+    outcome: Literal['effect_applied','effect_not_applied','abandon']
+    evidence_reference: str=Field(min_length=1,max_length=1024)
+    reason: str=Field(min_length=1,max_length=2000)
+
+    @field_validator('evidence_reference','reason')
+    @classmethod
+    def nonblank(cls,value):
+        value=value.strip()
+        if not value:
+            raise ValueError('Nonblank audit reference and reason required')
+        return value
+
+
+def operator_action(conn,principal,action_id):
+    if 'operator' not in principal.roles:
+        raise HTTPException(403,detail={'code':'operator_required','message':'Current local operator role required'})
+    row=conn.execute('SELECT action_id,task_id,status,external_key,dispatch_token,claim_until FROM outbox WHERE action_id=%s AND tenant_id=%s',
+                     (action_id,principal.tenant_id)).fetchone()
+    if not row:
+        raise HTTPException(404,detail={'code':'not_found','message':'Delivery action not found'})
+    return row
+
+
+@router.get('/v1/actions/{action_id}/delivery')
+def inspect_delivery(action_id:UUID,context=Depends(authorized_connection,scope='function')):
+    conn,principal=context
+    return operator_action(conn,principal,action_id)
+
+
+@router.post('/v1/actions/{action_id}/manual-resolution')
+def manually_resolve(action_id:UUID,payload:ManualResolution,context=Depends(authorized_connection,scope='function')):
+    conn,principal=context
+    operator_action(conn,principal,action_id)
+    result=outbox.manual_resolve(conn,action_id,principal.tenant_id,principal.caller_id,
+        payload.dispatch_token,payload.outcome,payload.evidence_reference,payload.reason)
+    if not result:
+        raise HTTPException(409,detail={'code':'resolution_conflict','message':'Current expired unknown dispatch token and reconciling task required'})
+    return result
 
 
 def sink_url(url):

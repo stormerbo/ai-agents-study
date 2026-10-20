@@ -30,7 +30,8 @@ ACTION_TRANSITIONS = {
     'authorized_pending_delivery': {'authorized','invalidated','cancelled'},
     'authorized': {'dispatching','invalidated','cancelled'},
     'dispatching': {'unknown','succeeded'},
-    'unknown': {'succeeded'},
+    'unknown': {'succeeded','failed','cancelled'},
+    'failed':set(),
     'succeeded':set(), 'denied':set(), 'invalidated':set(), 'cancelled':set(),
 }
 

@@ -54,6 +54,7 @@ def consume_response(conn, lease, response):
 def create_app(settings=None):
     from .main import create_app as base_app
     from .approvals import router
+    from .delivery import router as delivery_router
     app=base_app(settings)
     # FastAPI 0.146 keeps included routers deferred. Compose from the public
     # compatibility read handlers, keeping only the base health/docs routes.
@@ -62,6 +63,7 @@ def create_app(settings=None):
     app.add_api_route('/v1/tasks/{task_id}',read_task,methods=['GET'],response_model=TaskView)
     app.add_api_route('/v1/tasks/{task_id}/events',read_events,methods=['GET'],response_model=EventPage)
     app.include_router(router)
+    app.include_router(delivery_router)
 
     @app.post('/v1/tasks',response_model=TaskView,status_code=201)
     def submit(payload:TaskCreate,response:Response,

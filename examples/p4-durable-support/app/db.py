@@ -45,7 +45,8 @@ def seed(dsn):
         for tenant in ("tenant-a", "tenant-b"):
             conn.execute("INSERT INTO tenants VALUES (%s,%s) ON CONFLICT DO NOTHING", (tenant, "Synthetic " + tenant))
         for tenant, caller, roles in [("tenant-a", "alice", ["caller"]), ("tenant-a", "bob", ["caller"]),
-                                      ("tenant-a", "approver", ["caller", "approver"]), ("tenant-b", "mallory", ["caller"])]:
+                                      ("tenant-a", "approver", ["caller", "approver"]),
+                                      ("tenant-a", "operator", ["caller", "operator"]), ("tenant-b", "mallory", ["caller"])]:
             conn.execute("INSERT INTO caller_identities (tenant_id,caller_id,roles) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
                          (tenant, caller, roles))
 

@@ -57,6 +57,7 @@ docker compose down --volumes --remove-orphans
 | `dev-alice` | tenant-a / alice | caller |
 | `dev-bob` | tenant-a / bob | caller |
 | `dev-approver` | tenant-a / approver | caller, approver |
+| `dev-operator` | tenant-a / operator | caller, operator（仅本地人工对账关闭） |
 | `dev-mallory` | tenant-b / mallory | caller |
 
 token 比较使用 `hmac.compare_digest`，逐一比较全部候选。身份由该映射建立，当前 active membership 与角色每次从 PostgreSQL 读取；token 不缓存授权。身份行 share lock 保持到请求事务结束，与撤权/角色变更的提交顺序构成授权边界；已开始并持有该锁的请求可先结束，撤权提交后的新请求必须拒绝。任务读取同时限制 tenant 与 owner；其他调用方即使同租户也不能读该任务。请求 JSON 不接受 `tenant_id`、`caller_id`、`owner_id`、`roles` 等额外字段。
@@ -75,6 +76,8 @@ token 比较使用 `hmac.compare_digest`，逐一比较全部候选。身份由�
 | `GET /v1/tasks/{uuid}/approvals` | 200 | owner 可读的审批列表，含动作 id、冻结资格、有效期与状态 |
 | `POST /v1/tasks/{uuid}/cancel` | 200 | owner 停止未投递任务；终态返回 409 |
 | `POST /v1/approvals/{uuid}/decision` | 200 | JSON `decision=approved/denied`；由 bearer 决定审批身份；要求冻结的 eligible approver 与当前 approver 角色 |
+| `GET /v1/actions/{uuid}/delivery` | 200 | 当前同租户 operator 查看投递状态、external_key 与最新 dispatch_token；快照不预留处理权 |
+| `POST /v1/actions/{uuid}/manual-resolution` | 200 | 当前 operator 显式关闭无法自动确认的 unknown；必填当前过期 dispatch_token、outcome、evidence_reference、reason |
 | `GET /health/live` | 200 | 无需认证，不依赖数据库 |
 | `GET /health/ready` | 200 | 无需认证，完整入口检查 PostgreSQL 可连接且 `0002_execution.sql` 已登记 |
 
@@ -94,6 +97,8 @@ token 比较使用 `hmac.compare_digest`，逐一比较全部候选。身份由�
 | 409 | idempotency_conflict | 同幂等 key 的 canonical payload 不同 |
 | 422 | validation_error | 非法字段、额外身份字段、UUID、游标、长度或缺失 key |
 | 403 | approver_required | 当前角色或冻结的 eligible approver 不符合 |
+| 403 | operator_required | 当前身份没有 operator 角色；模型和请求 body 不能指定操作员身份 |
+| 409 | resolution_conflict | 非 unknown、token 过时/仍有效、任务不在 reconciling 或已经人工关闭 |
 | 409 | approval_conflict / task_terminal | 重复、冲突、过期审批、deadline 已过或任务已停止 |
 | 429 | queue_full | 队列已满，带 `Retry-After: 1`；相同幂等提交仍可重放 |
 | 501 | approvals_unavailable | 只存在于 Task 1 兼容入口 |
@@ -180,7 +185,7 @@ uv run python -m app.delivery reconcile --action <action-uuid> --sink http://127
 docker compose run --rm dispatcher dispatch --action <action-uuid> --sink http://sink:8000
 ```
 
-已被宿主领取的任务应直接使用持有的 lease 调 `schedule/dispatch_once`；CLI 不抢占有效 worker。dispatch token 默认有效 30 秒，进程崩溃后等其过期再对账。重试次数持久化；没有后台无限重试循环，单次 reconcile 最多查一次、按契约重试一次。不支持此接收契约的真实业务端点、人工核实工作流、通知撤销、自动补偿与生产部署均未实现；查不到可靠结果时任务保持 unresolved，须由后续明确设计的人工流程处理。
+已被宿主领取的任务应直接使用持有的 lease 调 `schedule/dispatch_once`；CLI 不抢占有效 worker。dispatch token 默认有效 30 秒，进程崩溃后等其过期再对账。重试次数持久化；没有后台无限重试循环，单次 reconcile 最多查一次、按契约重试一次。不支持此接收契约的真实业务端点、通知撤销、自动补偿与生产部署均未实现；查不到可靠结果时任务保持 unresolved，或由下述 operator 显式关闭。
 
 聚焦验证与完整回归：
 
@@ -191,3 +196,25 @@ uv run pytest -m 'not integration' -q
 ```
 
 集成测试使用真实 Compose PostgreSQL、独立 sink/dispatcher OS 进程与 SIGKILL。注入点为 `before_claim`、`after_claim_before_send`、`after_sink_commit_before_receipt`：分别覆盖取消与撤权在三个时点的边界，以及发送前/接收提交后进程死亡。断言事件严格递增、任务状态、接收效果数量、查询先于重试、sink 重启后去重与 stale epoch 无权建立 outbox。只读 MCP 的 at-least-once 结果持久化边界保持上文契约。这些是本机数据库和合成 HTTP 协议证据，不是供应商或真实消息系统的保证。
+
+## 本地 operator 人工关闭 unknown
+
+运行全部迁移和 `app.db seed` 后，`dev-operator` 映射同租户 `operator` 身份；数据库当前 active、caller 与 operator 角色每次核对，撤销角色立即失效。它是公开的 loopback 教学身份，不是生产运维认证。
+
+先由 operator 调 `GET /v1/actions/<action-uuid>/delivery` 查看当前 `dispatch_token` 与 `claim_until`。人工关闭仅接受 **task=reconciling、action/outbox=unknown、当前 token 完全一致且 claim 已过期**。如果还是 dispatching，先按既有自动对账入口把过期领取转为 unknown；查询失败仍保留 unknown。仍有活跃 reconciliation claim 时不能抢先人工关闭。查看状态后 token 被接管会返回 409，需要重新查看；它不是额外审批或重新授权发送。
+
+```bash
+curl -s http://127.0.0.1:8000/v1/actions/<action-uuid>/delivery \
+  -H 'Authorization: Bearer dev-operator'
+curl -s -X POST http://127.0.0.1:8000/v1/actions/<action-uuid>/manual-resolution \
+  -H 'Authorization: Bearer dev-operator' -H 'Content-Type: application/json' \
+  -d '{"dispatch_token":"<current-expired-dispatch-token>","outcome":"effect_not_applied","evidence_reference":"local-investigation:case-42","reason":"已人工核查，选择以非成功状态关闭该合成事件。"}'
+```
+
+`outcome` 只能是 `effect_applied / effect_not_applied / abandon`；`evidence_reference` 与 `reason` 均必填且去空白后不能为空。前两者将动作标为 failed，abandon 将动作标为 cancelled。除非任务此前已有合法取消请求，任务一律 failed；已有取消请求则 cancelled。尚未领取的其他动作同时停止，已有其他副作用仍待对账。三个选项都**不会写入 receipt、result、tool_result 或 succeeded**，检查点保留原样；即使宿主错误地重新入队，未全部 succeeded 的动作也会阻止 completed。
+
+决策与原 token、operator、external_key、outcome、证据指针和原因写入不可 UPDATE/DELETE/TRUNCATE 的 `manual_delivery_resolutions`，并追加 `action.manual_resolved` 与终态事件。人工关闭和 token 接管使用同一任务/动作/outbox 锁顺序；并发点击仅一个决策成功，过时 token、活跃 claim 或非 unknown 状态返回 409。旧 dispatcher token 随关闭失效，晚到的回执不能覆盖该决策。
+
+**证据指针和原因是操作员提供的审计声明，本服务不会独立核实其真实性，也不会据此证明接收方效果已发生或未发生。** 人工关闭不能撤回已经在途的请求，不是补偿，也不能把未知结果转成成功。这一入口只负责有审计轨迹地结束本地处理。
+
+人工关闭聚焦集成测试：`uv run pytest -m integration -q tests/test_manual_delivery_resolution.py`。其 PostgreSQL 断言覆盖权限、空证据/原因、全部 outcome、取消、旧 token、活跃 claim、并发决定及和对账接管的行锁竞争、不可变审计、晚到回执与完成校验。

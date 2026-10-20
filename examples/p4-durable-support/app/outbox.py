@@ -140,6 +140,44 @@ def retry_intent(conn, dispatch):
     return 1
 
 
+def manual_resolve(conn, action_id, tenant_id, operator_id, token, outcome, evidence_reference, reason):
+    """Audited non-success closure, serialized with token takeover/receipt writes.
+
+    Operator evidence pointers are declarations, never verified receiver receipts.
+    The authenticated router supplies current operator identity and tenant.
+    """
+    if outcome not in ('effect_applied','effect_not_applied','abandon') or not evidence_reference.strip() or not reason.strip():
+        raise ValueError('Explicit manual outcome, evidence reference and reason required')
+    task,action,row=locked(conn,action_id)
+    if (not row or row['tenant_id']!=tenant_id or task['status']!='reconciling'
+        or row['status']!='unknown' or action['status']!='unknown'
+        or row['dispatch_token']!=token or not row['expired']):
+        return None
+    resolution_id=uuid4()
+    status='cancelled' if outcome=='abandon' else 'failed'
+    conn.execute('''INSERT INTO manual_delivery_resolutions
+        (id,action_id,task_id,tenant_id,operator_id,dispatch_token,external_key,outcome,evidence_reference,reason)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)''',
+        (resolution_id,action_id,task['id'],tenant_id,operator_id,token,row['external_key'],outcome,evidence_reference,reason))
+    # Invalidate the capability. Late receipts or retry intents may not overwrite
+    # this explicit decision, nor manufacture success from an operator assertion.
+    conn.execute('UPDATE outbox SET status=%s,dispatch_token=NULL,claim_until=NULL WHERE action_id=%s',(status,action_id))
+    move_action(conn,action,status)
+    conn.execute("UPDATE outbox SET status='cancelled' WHERE task_id=%s AND status='queued'",(task['id'],))
+    conn.execute("UPDATE actions SET status='cancelled' WHERE task_id=%s AND status IN ('proposed','waiting_approval','authorized_pending_delivery','authorized')",(task['id'],))
+    conn.execute("UPDATE approvals SET status='cancelled' WHERE task_id=%s AND status='pending'",(task['id'],))
+    append_event(conn,task['id'],'action.manual_resolved',{'action_id':str(action_id),
+        'resolution_id':str(resolution_id),'operator_id':operator_id,'outcome':outcome,
+        'evidence_reference':evidence_reference,'reason':reason})
+    active=conn.execute("SELECT 1 FROM outbox WHERE task_id=%s AND status IN ('dispatching','unknown') LIMIT 1",(task['id'],)).fetchone()
+    task_status='reconciling' if active else 'cancelled' if task['cancel_requested'] else 'failed'
+    conn.execute('UPDATE tasks SET status=%s,state_version=state_version+1,lease_owner=NULL,lease_until=NULL WHERE id=%s',(task_status,task['id']))
+    release_slots(conn,task['id'])
+    append_event(conn,task['id'],'task.manual_resolution_pending' if active else 'task.'+task_status,
+                 {'boundary':'manual_resolution','resolution_id':str(resolution_id),'outcome':outcome})
+    return {'id':resolution_id,'action_id':action_id,'status':task_status,'outcome':outcome}
+
+
 def save_receipt(conn, dispatch, receipt):
     task,action,row=current(conn,dispatch)
     if not row:
@@ -159,7 +197,7 @@ def save_receipt(conn, dispatch, receipt):
     checkpoint['tool_results']=results
     if task['cancel_requested']:
         status,kind='cancelled','task.cancelled'
-    elif conn.execute("SELECT 1 FROM actions WHERE task_id=%s AND status IN ('denied','invalidated','cancelled') LIMIT 1",(task['id'],)).fetchone():
+    elif conn.execute("SELECT 1 FROM actions WHERE task_id=%s AND status IN ('denied','invalidated','failed','cancelled') LIMIT 1",(task['id'],)).fetchone():
         status,kind='failed','task.failed'
     else:
         status,kind='queued','task.delivery_resolved'

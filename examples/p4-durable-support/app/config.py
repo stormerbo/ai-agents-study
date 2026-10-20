@@ -21,5 +21,6 @@ DEMO_TOKENS = {
     "dev-alice": ("tenant-a", "alice"),
     "dev-bob": ("tenant-a", "bob"),
     "dev-approver": ("tenant-a", "approver"),
+    "dev-operator": ("tenant-a", "operator"),
     "dev-mallory": ("tenant-b", "mallory"),
 }
