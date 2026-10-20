@@ -10,6 +10,9 @@
     {"id":"ERR-007","status":"verified","lessonIds":["agent-deployment/deployment-shape"],"experimentIds":["exp-outbox-task-retry-sqlite-model"]},
     {"id":"ERR-008","status":"verified","lessonIds":["human-in-the-loop/automation-levels","human-in-the-loop/approval-design","capstone/skeleton"],"experimentIds":[]},
     {"id":"ERR-009","status":"verified","lessonIds":["coding-agent/why-coding-agent"],"experimentIds":[]},
-    {"id":"ERR-010","status":"verified","lessonIds":["retrieval/why-retrieval"],"experimentIds":["exp-retrieval-token-ratio-20261019"]}
+    {"id":"ERR-010","status":"verified","lessonIds":["retrieval/why-retrieval"],"experimentIds":["exp-retrieval-token-ratio-20261019"]},
+    {"id":"ERR-011","status":"verified","lessonIds":["what-is-an-agent/what-counts-as-agent"],"experimentIds":[]},
+    {"id":"ERR-012","status":"verified","lessonIds":["agent-paradigms/react-loop"],"experimentIds":[]},
+    {"id":"ERR-013","status":"verified","lessonIds":["llm-api-basics/tokens-and-context"],"experimentIds":[]}
   ]
 }

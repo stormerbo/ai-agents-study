@@ -205,13 +205,15 @@ Claude 4.7 及之后的模型引入了**新的分词器**。据官方文档（[T
 
 理解了 token，上下文窗口就很好定义了。
 
-**它是单次请求中模型能「看到」的 token 总量上限，输入与输出共用这个额度。**
+**上下文窗口是模型处理一次请求时的容量约束；具体哪些输入、输出及内部推理 token 计入约束，要按所用模型和 API 文档确认。** 许多模型的规划可以先用「输入占用 + 预留输出」检查是否放得下，但这只是理解容量的简化模型，不能当成跨供应商通用公式。
 
-不是「输入预算」—— 这一点很关键。如果你给一次生成分配了 20 万 token 的输入，而模型的最大输出是 12.8 万 token，那么在 20 万窗口的模型上你根本放不下两者之和。真实约束是：
+以 Anthropic Messages API 的 Claude 为例，[上下文窗口文档](https://platform.claude.com/docs/en/build-with-claude/context-windows)说明请求消息（包括工具结果、图像和工具定义）以及生成输出都计入窗口；在这个语义下可用下面的近似不等式做容量规划。OpenAI 也说明其窗口定义会涵盖输入、输出及部分模型的 reasoning tokens，具体规则仍需按模型文档确认：
 
 ```text
-输入 token + 输出 token ≤ 上下文窗口
+本轮输入占用 + 预留的生成空间 ≤ 该模型的上下文窗口
 ```
+
+它回答的是「请求能否装入上下文」，不是「账单会如何计量」。上下文占用和 billable usage 是两种口径：缓存读写、图像/音频等模态、reasoning tokens、工具调用的独立费用或运行时费用，可能以供应商特定字段或 SKU 计量。例如 Anthropic 的 usage 会分别列出 cache read / write tokens，OpenAI Responses API 会提供 input、output 及 reasoning-token 明细；它们的价格规则也不同（见 [Anthropic 定价文档](https://platform.claude.com/docs/en/about-claude/pricing) 和 [OpenAI Responses API usage 字段](https://developers.openai.com/api/docs/api-reference/responses/object#responses/object-usage)）。核算成本时按端点返回的 usage 字段与当前价格规则逐项计算，不要把 `input_tokens + output_tokens` 当作通用账单公式；设置运行预算时也应明确它约束的是上下文容量、可计费 token、金额还是其他运行资源。
 
 当前 Claude 主力模型的窗口是 100 万 token，Haiku 4.5 是 20 万（[模型总览](https://platform.claude.com/docs/en/about-claude/models/overview)）。用官方给的换算：
 
