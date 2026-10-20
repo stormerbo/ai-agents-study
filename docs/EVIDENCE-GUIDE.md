@@ -22,7 +22,7 @@
 - `experiments/results/<id>/result.json` 保存脱敏结果、方法、日期和限制。真实在线结果还需增加 provider、协议、endpoint（移除凭据）、请求/响应模型 id、参数、usage、结束原因、运行耗时与重复次数。
 - `experiments/claims.json` 为高风险正文论断记录原文片段、文本 hash、适用条件、来源、实验、勘误和复核状态。source id 必须来自 `resources.ts`。
 - `result.schema.json` 的顶层字段是结果记录白名单；`tests/evidence-registry.test.ts` 对 `observations` 递归执行字段 allowlist 和高置信度敏感值扫描。添加新观测字段须先审查并显式更新 allowlist，不得把日志或原始 transcript 整体写入结果。
-- 新结果先以 `needs-review` 登记；首个人工复核完成前不得作为可发布证据或把状态改为 `verified`。`reviewedAt` 记录初审日期，不能代替对方法、脱敏、限制和证据分类的人工判断。
+- 新结果先以 `needs-review` 登记；首个人工复核完成前不得作为可发布证据或把状态改为 `verified`。`reviewedAt` 记录首次人工复核日期，尚未完成复核时必须为 `null`；登记/运行日期放在 result 记录中。该日期不能代替对方法、脱敏、限制和证据分类的人工判断。
 - `experiments/errata.json` 与 `docs/ERRATA.md` 使用相同稳定勘误编号；勘误处于 investigating 时，关联记录不得标记为已关闭。
 - 改动正文或示例后，受影响 claim/experiment 应转为需复核并更新 hash。不可只刷新日期来保留旧验证状态。
 

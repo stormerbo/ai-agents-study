@@ -3,7 +3,7 @@
   "runId": "stage4-postgres-acceptance-2026-10-20-1",
   "evidenceType": "postgres-integration",
   "observedAt": "2026-10-20",
-  "method": "Ran the required pytest integration command. Its session fixture created a uniquely named Compose project and temporary PostgreSQL service, applied migrations and synthetic seeds, started two independent API OS processes, and removed the project and volume after the run. The acceptance test temporarily removed the 0004 migration ledger row, confirmed both processes returned 503, restored the row, and verified cross-process task/event reads.",
+  "method": "Ran the required pytest integration command. Its session fixture created a uniquely named Compose project and temporary PostgreSQL service, applied migrations and synthetic seeds, started two independent API OS processes, and removed the project and volume after the run. The acceptance test temporarily removed the 0004 migration ledger row, confirmed both API processes and the synthetic sink returned 503, restored the row, and verified cross-process task/event reads.",
   "observations": {
     "testCount": 91,
     "passed": 91,
@@ -16,6 +16,7 @@
       "0004_manual_resolution.sql"
     ],
     "readinessFailsWhenLatestMigrationIsMissing": true,
+    "sinkReadinessFailsWhenLatestMigrationIsMissing": true,
     "crossProcessTaskRead": true,
     "crossProcessEventRead": true,
     "taskStatus": "queued",

@@ -290,7 +290,7 @@
       ],
       "resultPath": "experiments/results/exp-stage4-offline-contracts-20261020/result.json",
       "status": "needs-review",
-      "reviewedAt": "2026-10-20"
+      "reviewedAt": null
     },
     {
       "id": "exp-stage4-postgres-acceptance-20261020",
@@ -303,7 +303,7 @@
       "question": "Does the Stage 4 full runtime preserve its durable task and event visibility across independent API processes and reject readiness when the latest migration is absent?",
       "type": "postgres-integration",
       "scriptPath": "examples/p4-durable-support/tests/test_acceptance_integration.py",
-      "scriptSha256": "51d64853f5cb88211d2de3626264be192814218821851abe56aea69abbc6e5b6",
+      "scriptSha256": "7f8e5503073d80e25b6f685ef7edb3afce3840f01372fc34f2d2ce4d706d7cca",
       "dependencyLockPath": "examples/p4-durable-support/uv.lock",
       "dependencyLockSha256": "a60aea3e7c8a7a7ec97b3ed134546b16c80728db1807253f73ee03f758921458",
       "datasetVersion": "stage4-synthetic-support-v1",
@@ -312,12 +312,13 @@
       "expectedInvariants": [
         "all migration versions 0001 through 0004 must be present for readiness",
         "readiness fails on both API processes if the latest migration ledger row is absent",
+        "synthetic sink readiness also fails if the latest migration ledger row is absent",
         "a task and its ordered creation event are visible from the second independent API process",
         "the Stage 4 integration suite does not issue provider calls or use real customer data"
       ],
       "resultPath": "experiments/results/exp-stage4-postgres-acceptance-20261020/result.json",
       "status": "needs-review",
-      "reviewedAt": "2026-10-20"
+      "reviewedAt": null
     }
   ]
 }

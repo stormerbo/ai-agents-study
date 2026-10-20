@@ -15,6 +15,7 @@ type Experiment = {
   scriptSha256?: string;
   resultPath: string;
   status: string;
+  reviewedAt: string | null;
 };
 type Claim = {
   id: string;
@@ -53,7 +54,7 @@ const resultObservationFieldAllowlist = new Set([
   'toolCalls', 'toolNames', 'toolResults', 'usage', 'widthPpToN',
   'apiProcesses', 'datasetVersion', 'failed', 'migrationVersions', 'passed', 'providerCalls',
   'readinessFailsWhenLatestMigrationIsMissing', 'testCount', 'taskStatus', 'crossProcessTaskRead',
-  'crossProcessEventRead', 'fixtureOnly',
+  'crossProcessEventRead', 'fixtureOnly', 'sinkReadinessFailsWhenLatestMigrationIsMissing',
   'toolsCall', 'toolsList',
 ]);
 const sensitiveValuePatterns = [
@@ -92,6 +93,8 @@ describe('evidence registry', () => {
       expect(validateClaim(claim), JSON.stringify(validateClaim.errors)).toBe(true);
     for (const experiment of experiments.experiments) {
       expect(validateExperiment(experiment), JSON.stringify(validateExperiment.errors)).toBe(true);
+      if (experiment.status === 'needs-review') expect(experiment.reviewedAt).toBeNull();
+      else expect(experiment.reviewedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       const result = JSON.parse(readFileSync(experiment.resultPath, 'utf8'));
       expect(validateResult(result), JSON.stringify(validateResult.errors)).toBe(true);
     }

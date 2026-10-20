@@ -3,11 +3,14 @@ import psycopg
 import uuid
 
 import pytest
+from fastapi.testclient import TestClient
+
+from app.config import Settings
 
 pytestmark = pytest.mark.integration
 
 
-def test_stage4_acceptance_uses_latest_schema_and_cross_process_task_reads(service):
+def test_stage4_acceptance_uses_latest_schema_and_cross_process_task_reads(service, monkeypatch):
     expected_migrations = {
         "0001_base.sql",
         "0002_execution.sql",
@@ -24,6 +27,10 @@ def test_stage4_acceptance_uses_latest_schema_and_cross_process_task_reads(servi
     # Both API processes must refuse readiness unless the entire Stage 4 schema exists.
     assert service.request("GET", "/health/ready", index=0).status_code == 200
     assert service.request("GET", "/health/ready", index=1).status_code == 200
+    monkeypatch.setenv("DATABASE_URL", service.dsn)
+    from app.sink import create_app as create_sink_app
+    sink = TestClient(create_sink_app(Settings(database_url=service.dsn)))
+    assert sink.get("/health/ready").status_code == 200
 
     # Readiness is tied to the latest schema, not merely a connected database.
     with psycopg.connect(service.dsn) as conn:
@@ -31,12 +38,14 @@ def test_stage4_acceptance_uses_latest_schema_and_cross_process_task_reads(servi
     try:
         assert service.request("GET", "/health/ready", index=0).status_code == 503
         assert service.request("GET", "/health/ready", index=1).status_code == 503
+        assert sink.get("/health/ready").status_code == 503
     finally:
         with psycopg.connect(service.dsn) as conn:
             conn.execute(
                 "INSERT INTO schema_migrations (version,checksum,applied_at) VALUES (%s,%s,%s)", latest_row
             )
     assert service.request("GET", "/health/ready", index=0).status_code == 200
+    assert sink.get("/health/ready").status_code == 200
 
     key = "acceptance-" + uuid.uuid4().hex
     created = service.request(
