@@ -111,7 +111,7 @@ export const chapter = {
       chapterId: 'human-in-the-loop',
       slug: 'progress-and-trust',
       title: '进度、可见性与信任',
-      summary: '信任不是一次建立的，它是靠「可预测的中间状态」攒出来的。',
+      summary: '可预测的中间状态能帮助用户理解和校准对 agent 的信任。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
       hasBody: true,

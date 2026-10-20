@@ -33,7 +33,7 @@ C  {"city": {"type": "string", "enum": ["北京","上海"]}, ...}
 
 （实跑数据，2026-10-09。langchain_core 0.3.63。）
 
-**C 那一行要单独交代清楚，否则它会被读成"第 14 章抓到的真实响应"。** 它是**按协议允许的形态构造的最小示例（示例：构造数据，未实跑）** —— 第 14 章实测抓到的响应里字段集合确实是 name / description / inputSchema 三样，但**我们自己那个 server 的 inputSchema 里是带 `required` 的**。C 展示的是：协议不强制你写 required，所以一个合法的 server 完全可以不写。要自己验证这一点，需要的不是读文档，而是一台能跑的 MCP server 加一次 `tools/list` 调用：起 server → 发 `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` → 看响应里每个工具是否出现 `required`。你甚至可以故意去掉那两处 `required` 再调一次 —— 它照样返回 200，这就是"协议不要求"最直接的证据。
+**C 那一行要单独交代清楚，否则它会被读成"第 14 章抓到的真实响应"。** 它是**按协议允许的形态构造的最小示例（示例：构造数据，未实跑）** —— 第 14 章实测抓到的响应里字段集合确实是 name / description / inputSchema 三样，但**我们自己那个 server 的 inputSchema 里是带 `required` 的**。C 展示的是：JSON Schema 的 `required` 是否出现取决于 server 提供的 schema；不能把“该字段没出现”解释为 MCP 方法层面省略了参数校验。验证时需要查看 `tools/list` 的 JSON-RPC result 中 `inputSchema`，并检查 server/调用方如何校验参数。JSON-RPC 响应是否成功与 HTTP 传输状态是不同层次：HTTP transport 下可以观察 HTTP status，但不能据此推出 JSON-RPC 规定了固定的 200 状态；stdio transport 根本没有 HTTP 状态码。
 
 ## 三个读数
 
@@ -41,7 +41,7 @@ C  {"city": {"type": "string", "enum": ["北京","上海"]}, ...}
 
 **第二，差别在"约束源"和"签名源"是不是同一个。** A 里类型标注同时是签名和约束源，改一处两边都变；B、C 里它们是两份手写的数据，改了一处不会同步另一处。
 
-**第三，`required` 揭示了一个协议层的差别。** A 和 B 都有明确的 required 列表，**C 里根本没有** —— 而那不是我的笔误。
+**第三，`required` 揭示了一个 schema 表达差异。** A 和 B 都有明确的 required 列表，**C 的示例没有声明** —— 而那不是我的笔误。这里描述的是示例中 server 交付的 JSON Schema，不应误读为 MCP JSON-RPC 本身对参数必填校验的保证或豁免。
 
 第三条值得展开，因为它是"横向对比"这一类读法最典型的产出。
 
@@ -235,9 +235,9 @@ if __name__ == "__main__":
     print("    B：required 要手写，写错不会有任何提示")
     print("    C：这份 MCP 定义里**没有 required** —— 所有参数都是可选的")
     print()
-    print("  最后一条值得注意：C 里漏了 required 不是笔误，是**协议层不强制**。")
-    print("    MCP 的 tools/list 只要求给出 inputSchema，里面写什么由 server 决定。")
-    print("    所以「参数是不是必填」在跨进程的场景里**不可保证**，调用方要自己校验。")
+    print("  最后一条值得注意：C 的示例没有 required；它表示 server 给出的 JSON Schema 长什么样。")
+    print("    MCP tools/list 的 JSON-RPC result 携带 inputSchema；调用方应读取 schema 并按约定校验参数。")
+    print("    JSON-RPC 结果与 HTTP transport status 属于不同层次，stdio 没有 HTTP 状态码。")
 ```
 
 ## 常见坑
@@ -245,6 +245,6 @@ if __name__ == "__main__":
 - **只纵向追不横向比。** 纵向回答"怎么做的"，横向回答"为什么这样做、还有没有别的做法"。
 - **对比前不确认目标是否相同。** 为性能优化的库和为易用性优化的库比"API 简洁"没有意义。
 - **拿版本差很远的两个版本比。** 那比的是两个项目，不是两个设计选择。
-- **忽略协议层的差别。** 实测：MCP 的 tools/list 不要求 required —— 跨进程时"必填"不可保证。
+- **把 schema 内容误读成 JSON-RPC 方法语义。** tools/list 的结果会携带 server 提供的 inputSchema；应检查实际 schema 与调用方校验行为，不能从某个示例缺少 required 推导协议是否保证参数必填。HTTP transport status 也不能替代对 JSON-RPC result/error 的检查。
 - **只比"谁更好"。** 横向对比最有价值的产出是"哪些是本质、哪些是选择"，不是排名。
 - **忘了抽象层次这一轴。** 同一件事在不同层的表达差别最大，产出也最大。
