@@ -20,7 +20,7 @@
       "id": "reliability-fault-models",
       "runtime": "python",
       "entry": "examples/reliability/test_fault_models.py",
-      "sha256": "e8b109976517dd9af7b97413ac1f91f52b62711997bede96dd0384742df562cd",
+      "sha256": "78ef23f6772224a1692c17075f1ddccd5723efd53dc65470c2d6f280570f3103",
       "args": [
         "-m",
         "unittest",

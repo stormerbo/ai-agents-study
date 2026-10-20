@@ -10,7 +10,7 @@
       "question": "What happens when a worker crashes before send, after receiver commit, before receipt persistence, and when clients concurrently retry the same task request?",
       "type": "deterministic-local",
       "scriptPath": "examples/reliability/fault_models.py",
-      "scriptSha256": "0cb7a4f625de70d1dd9eccd82dc93fc8f0c2fe037360b2134ee914b473704142",
+      "scriptSha256": "e8b109976517dd9af7b97413ac1f91f52b62711997bede96dd0384742df562cd",
       "dependencyLockPath": "experiments/locks/python-stdlib.txt",
       "dependencyLockSha256": "b39efb4e89d33aaa2a771598a804477cff78e462805b8ea52df89032b98bcefd",
       "datasetVersion": "synthetic-local-actions-v1",
