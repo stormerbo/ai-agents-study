@@ -64,10 +64,15 @@ def cancel(task_id:UUID,context=Depends(authorized_connection,scope='function'))
     task=conn.execute('SELECT * FROM tasks WHERE id=%s FOR UPDATE',(task_id,)).fetchone()
     if task['status'] in ('completed','failed','cancelled'):
         raise HTTPException(409,detail={'code':'task_terminal','message':'Task already terminal'})
-    # Task 3 extends this for dispatching/unknown actions and reconciling boundaries.
-    conn.execute("UPDATE tasks SET status='cancelled',cancel_requested=true,state_version=state_version+1,lease_owner=NULL,lease_until=NULL WHERE id=%s",(task_id,))
-    conn.execute("UPDATE actions SET status='cancelled' WHERE task_id=%s AND status IN ('proposed','waiting_approval','authorized_pending_delivery')",(task_id,))
+    # Task lock serializes this operation with queued → dispatching. A committed
+    # claim may still send; cancellation cannot turn that promise into retraction.
+    active=conn.execute("SELECT 1 FROM outbox WHERE task_id=%s AND status IN ('dispatching','unknown') LIMIT 1",(task_id,)).fetchone()
+    status='reconciling' if active else 'cancelled'
+    conn.execute('UPDATE tasks SET status=%s,cancel_requested=true,state_version=state_version+1,lease_owner=NULL,lease_until=NULL WHERE id=%s',(status,task_id))
+    conn.execute("UPDATE actions SET status='cancelled' WHERE task_id=%s AND status IN ('proposed','waiting_approval','authorized_pending_delivery','authorized')",(task_id,))
+    conn.execute("UPDATE outbox SET status='cancelled' WHERE task_id=%s AND status='queued'",(task_id,))
     conn.execute("UPDATE approvals SET status='cancelled' WHERE task_id=%s AND status='pending'",(task_id,))
     release_slots(conn,task_id)
-    append_event(conn,task_id,'task.cancelled',{'boundary':'before_delivery_implementation'})
-    return {'id':task_id,'status':'cancelled'}
+    append_event(conn,task_id,'task.cancel_requested' if active else 'task.cancelled',
+                 {'boundary':'claimed_effect_requires_reconciliation' if active else 'before_dispatch_claim'})
+    return {'id':task_id,'status':status}

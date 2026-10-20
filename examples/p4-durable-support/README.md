@@ -1,6 +1,6 @@
-# 阶段 4：持久任务服务（Task 1–2）
+# 阶段 4：持久任务服务（Task 1–3）
 
-这是独立于学习站的本地合成售后服务。Task 1–2 已实现 PostgreSQL 任务 API、租约/epoch worker 所有权、冻结动作与审批恢复、合成 ACL 检索和索引切换、并发限制与共享预算。当前完整 API 入口为 `app.runtime:create_app --factory`；`app.main:app` 保留 Task 1 兼容契约，其提交入口不执行 Task 2 的队列准入检查，不用于完整服务。模型调用仍需可信宿主显式注入，worker CLI 只领取一次任务，没有自动调用模型。outbox、HTTP sink、投递与对账尚未实现，`authorized_pending_delivery` 也不能被投递，不能据此宣称阶段 4 或综合项目完成。
+这是独立于学习站的本地合成售后服务。Task 1–2 已实现 PostgreSQL 任务 API、租约/epoch worker 所有权、冻结动作与审批恢复、合成 ACL 检索和索引切换、并发限制与共享预算。当前完整 API 入口为 `app.runtime:create_app --factory`；`app.main:app` 保留 Task 1 兼容契约，其提交入口不执行 Task 2 的队列准入检查，不用于完整服务。模型调用仍需可信宿主显式注入，worker CLI 只领取一次任务，没有自动调用模型。Task 3 增加 transactional outbox、本地合成 HTTP sink、持久去重回执与未知结果对账。`authorized_pending_delivery` 仍是不可投递的 Task 2 交接态，须经 `outbox.schedule` 原子建立投递工作。阶段 4 的整体验收与证据登记仍待 Task 4，不能据此宣称阶段 4 或综合项目完成。
 
 ## 环境与安装
 
@@ -122,7 +122,7 @@ PY
 uv run python -m app.worker --once --owner local-worker-1
 ```
 
-`--task <uuid>` 可指定已提交任务；多个 worker OS 进程可连接同一个数据库。领取发生在独立事务中，每次接管递增 `execution_epoch`，默认租约 30 秒、任务 deadline 为创建后 5 分钟。`worker.fence(conn, lease)` 先锁任务行，再以 `clock_timestamp()` 核对 owner/epoch/租约/deadline/取消/运行状态，返回 `None` 的写入影响零行。宿主需在自己的短事务内调用 `renew/checkpoint/emit/propose_turn/authorize_action`；helper 不自行提交。claim/续约同时维护 task slot，审批暂停、终态、取消和 deadline 释放 slot。CLI 不循环、无隐式模型调用；宿主可用共享 provider adapter + `consume_response` 驱动规范化响应，再用 `resume_turn/execute_reads` 恢复冻结动作。Task 3 会补充实际投递循环。
+`--task <uuid>` 可指定已提交任务；多个 worker OS 进程可连接同一个数据库。领取发生在独立事务中，每次接管递增 `execution_epoch`，默认租约 30 秒、任务 deadline 为创建后 5 分钟。`worker.fence(conn, lease)` 先锁任务行，再以 `clock_timestamp()` 核对 owner/epoch/租约/deadline/取消/运行状态，返回 `None` 的写入影响零行。宿主需在自己的短事务内调用 `renew/checkpoint/emit/propose_turn/authorize_action`；helper 不自行提交。claim/续约同时维护 task slot，审批暂停、终态、取消和 deadline 释放 slot。CLI 不循环、无隐式模型调用；宿主可用共享 provider adapter + `consume_response` 驱动规范化响应，再用 `resume_turn/execute_reads` 恢复冻结动作。Task 3 提供显式一次性投递与对账入口，见下文。
 
 Compose 默认仍只启动 PostgreSQL。迁移与 seed 后可用已配置的完整 API profile，镜像已包含 `PYTHONPATH`：
 
@@ -131,11 +131,11 @@ docker compose --profile runtime up -d --build api
 docker compose run --rm worker --once --owner compose-worker-1
 ```
 
-可信注册表保持 Stage 3 MCP 签名 `lookup_order(order_id)` 与 `search_policy(query)`，资源分别由服务端映射到订单 id 与 `policy-public`。共享 `provider_tools` / schema validator 限制只读 MCP 边界；新增 `send_notice(resource_id,message)` 仅指未来本地合成 sink，始终要求审批。模型不能自填风险等级、身份或 approved 字段。一次响应的每个调用都有独立 action id（模型 tool_call_id 仅用于结果关联）；任一调用需要审批时，整个 turn 保存 pending ids 后暂停，不填充成功占位结果。冻结保存租户、动作、canonical args hash、资源/ACL/policy 版本、唯一 eligible approver、requested_by 和有效期。审批决定用任务/审批行锁串行化；重复点击、冲突决定和过期决定返回 409。拒绝使任务失败，批准后回到 queued，由新 worker 从冻结动作恢复。读取工具只执行存储参数，已持久化的结果不重复调用；所有动作解决前不能 completed。
+可信注册表保持 Stage 3 MCP 签名 `lookup_order(order_id)` 与 `search_policy(query)`，资源分别由服务端映射到订单 id 与 `policy-public`。共享 `provider_tools` / schema validator 限制只读 MCP 边界；新增 `send_notice(resource_id,message)` 仅指本地合成 sink，始终要求审批。模型不能自填风险等级、身份或 approved 字段。一次响应的每个调用都有独立 action id（模型 tool_call_id 仅用于结果关联）；任一调用需要审批时，整个 turn 保存 pending ids 后暂停，不填充成功占位结果。冻结保存租户、动作、canonical args hash、资源/ACL/policy 版本、唯一 eligible approver、requested_by 和有效期。审批决定用任务/审批行锁串行化；重复点击、冲突决定和过期决定返回 409。拒绝使任务失败，批准后回到 queued，由新 worker 从冻结动作恢复。读取工具只执行存储参数，已持久化的结果不重复调用；所有动作解决前不能 completed。
 
 只读 MCP 调用在结果持久化之前采用 **at-least-once** 恢复语义：远端读取已经返回，但 worker 在保存结果前失去租约时，旧 worker 仍被 fence 拒绝写入动作、事件和检查点；后继 worker 可按同一冻结参数重试该无副作用读取。读取完成不等于结果已可靠保存，也不意味着远端 exactly-once。结果及检查点提交后，后续恢复复用持久结果，不再调用该工具，也不重放整段模型历史。每次实际重试仍需独立预算预留；该规则只适用于无副作用读取，不能用于写入投递的未知结果恢复。
 
-授权重检当前身份、资源 ACL、资源/ACL/policy 版本、参数 hash、审批有效期和当前审批人资格。任何变化都使旧动作失效。`authorized_pending_delivery` 仅为 Task 2 的待交接状态：**没有 outbox、没有 dispatcher、没有网络写入，不能称已发送**。Task 3 必须在同一受 fence 保护的事务里把可调度动作转换并插入 outbox，派送前还要重查授权。Task 2 的取消只覆盖尚无实际投递的边界；Task 3 必须扩展 dispatching/unknown 的取消与对账语义。
+授权重检当前身份、资源 ACL、资源/ACL/policy 版本、参数 hash、审批有效期和当前审批人资格。任何变化都使旧动作失效。`authorized_pending_delivery` 仅为 Task 2 的待交接状态：该转换不会建立 outbox 或发送网络请求。Task 3 的 `schedule` 在同一受 fence 保护的事务里把可调度动作转换并插入 outbox，派送前再重查授权。Task 3 已扩展 dispatching/unknown 的取消与对账语义，见下文。
 
 `retrieval` 是小型合成词法检索，没有 embedding 或质量声明。tenant/caller 来自 principal；SQL 在候选选择及 LIMIT 前联接当前 membership、resource ACL、删除状态和 active index。上下文引用保留 resource_id、doc_version、chunk id。索引采用完整替换快照：`build_index` → `validate_index`（内容 hash）→ `cutover`（同事务激活新索引、退役旧索引），旧版本显式查询也被拒绝。删除/撤权立即在查询层拒绝，清除结果缓存与相关记忆；缓存和记忆只保存 provenance，绝不跳过当前查询授权返回旧正文。生命周期操作与上下文构造使用同租户事务 advisory lock 作为本地授权顺序边界；这不是 PostgreSQL RLS 或跨系统原子性保证。
 
@@ -149,4 +149,45 @@ Task 2 聚焦集成入口（同样创建独立 Compose PostgreSQL 并自动清�
 uv run pytest -m integration -q tests/test_worker_ownership.py tests/test_approval_recovery.py tests/test_retrieval_acl.py tests/test_index_lifecycle.py tests/test_limits.py
 ```
 
-完整回归入口保持 `uv run pytest -m integration -q`。测试包括 worker 强制进程死亡/租约接管、API 与审批等待 worker 重启、并发决定、七类冻结失效、ACL/删除前置过滤、索引切换、队列/slot/deadline、并发共享预算及未知用量保留。所有输入与响应均为合成夹具；不包含真实 provider 观测。Stage 4 的 outbox/sink/对账验收与 Stage 5 真模型验收仍未完成。
+完整回归入口保持 `uv run pytest -m integration -q`。测试包括 worker 强制进程死亡/租约接管、API 与审批等待 worker 重启、并发决定、七类冻结失效、ACL/删除前置过滤、索引切换、队列/slot/deadline、并发共享预算及未知用量保留。所有输入与响应均为合成夹具；不包含真实 provider 观测。Task 3 的 outbox/sink/对账另见下文；Stage 4 的整体验收与 Stage 5 真模型验收仍未完成。
+
+## Task 3：合成投递、取消边界与对账
+
+先运行全部迁移（包括 `0003_delivery.sql`）、基础 seed 与上文合成资源初始化，再启动独立接收进程：
+
+```bash
+uv run uvicorn app.sink:app --host 127.0.0.1 --port 8002 --no-access-log
+```
+
+Docker 路径在迁移后启动 `docker compose --profile delivery up -d --build sink`。接收端只写 PostgreSQL 的 `sink_effects` 合成记录，**不会发送真实通知**。公开的 `local-only-sink` bearer 是本地教学协议，不是生产接收方认证。HTTP 客户端拒绝非 loopback/Compose `sink` 的地址，不跟随重定向，不读取环境代理。两个进程共用教学 PostgreSQL，但接收事务与 outbox 事务完全独立，没有跨 HTTP 原子提交。
+
+可信宿主在一个短事务中调用 `outbox.schedule(conn, lease, action_id)`：`worker.fence` 核对当前 epoch/租约/deadline，复用 `validate_frozen` 核对批准、参数 hash、资源/ACL/policy 版本，再同时提交 `action.authorized` 与唯一 queued outbox。稳定键为 `p4-notice:<action UUID>`；事务回滚不会留下单边动作或投递行。Task 2 的 `resume_turn` 继续只产生 `authorized_pending_delivery`，不会自动发送。模型结果中的通知参数不能直接越过此边界。
+
+`delivery.dispatch_once(dsn, lease, action_id, sink_url)` 用另一个短事务重查当前 worker fence、任务取消、调用方权限、审批资格/有效期、冻结参数及资源版本，将动作/outbox 原子变为 dispatching，并为接收回执建立独立 dispatch token。这个**事务的提交**是授权判定时点：取消/撤权先提交，不能领取；领取先提交，则即使网络尚未发送，之后的取消/撤权也不能承诺撤回。领取后任务进入 reconciling，释放 worker slot；数据库锁不跨 HTTP 持有。
+
+取消 queued outbox 将其标为 cancelled，停止新调用与新投递。已有 dispatching/unknown 时，API 返回 `status=reconciling`，记录 `task.cancel_requested`，保留已领取动作，等待真实结果；回执确认后才记录 `task.cancelled`。已经发生的合成效果不会被这一状态变化撤销。撤权在领取后只影响新的授权，不改变已领取请求。接收成功仅使动作 succeeded：没有取消时任务回到 queued，由新 worker 恢复检查点、补全其他动作并校验最终输出，**不会直接 completed**。
+
+接收端在同一事务持久化 external_key、完整 payload hash、回执和合成效果；并发/重启后的同键同参数请求返回同一回执，参数替换返回 409。`GET /v1/receipts/<external_key>` 返回该持久回执；不存在时返回 404，并显式声明版本化 `p4-synthetic-durable-idempotency-v1` 与 `safe_retry=true`。单独一个 404 不足以证明安全重试。
+
+网络/响应错误按 unknown 处理，不当成效果失败。`delivery.reconcile(dsn, action_id, sink_url)` 接管过期 dispatching/unknown token，**先查询接收方**；已有回执则按键、action、tenant、payload hash 和 outcome 校验后保存，没有回执且接收契约明确保证持久幂等时，才重试同一冻结请求。查询失败、协议未知或回执不匹配均保持 reconciling，不盲重试。dispatch token 过期/被接管后，旧 token 不能写回执；epoch 不能替代这一能力。接收方的持久去重保证这里的一个合成效果，本地 fencing 本身不保证远程 exactly-once。
+
+可在审批通过、任务重新 queued 后，用一次性宿主命令领取、schedule 并发送指定合成动作；该 CLI 不轮询模型或队列：
+
+```bash
+uv run python -m app.delivery dispatch --action <action-uuid> --sink http://127.0.0.1:8002
+uv run python -m app.delivery reconcile --action <action-uuid> --sink http://127.0.0.1:8002
+# Compose 接收地址与容器主机地址不同：
+docker compose run --rm dispatcher dispatch --action <action-uuid> --sink http://sink:8000
+```
+
+已被宿主领取的任务应直接使用持有的 lease 调 `schedule/dispatch_once`；CLI 不抢占有效 worker。dispatch token 默认有效 30 秒，进程崩溃后等其过期再对账。重试次数持久化；没有后台无限重试循环，单次 reconcile 最多查一次、按契约重试一次。不支持此接收契约的真实业务端点、人工核实工作流、通知撤销、自动补偿与生产部署均未实现；查不到可靠结果时任务保持 unresolved，须由后续明确设计的人工流程处理。
+
+聚焦验证与完整回归：
+
+```bash
+uv run pytest -m integration -q tests/test_delivery_reconciliation.py tests/test_cancel_and_revoke_races.py
+uv run pytest -m integration -q
+uv run pytest -m 'not integration' -q
+```
+
+集成测试使用真实 Compose PostgreSQL、独立 sink/dispatcher OS 进程与 SIGKILL。注入点为 `before_claim`、`after_claim_before_send`、`after_sink_commit_before_receipt`：分别覆盖取消与撤权在三个时点的边界，以及发送前/接收提交后进程死亡。断言事件严格递增、任务状态、接收效果数量、查询先于重试、sink 重启后去重与 stale epoch 无权建立 outbox。只读 MCP 的 at-least-once 结果持久化边界保持上文契约。这些是本机数据库和合成 HTTP 协议证据，不是供应商或真实消息系统的保证。

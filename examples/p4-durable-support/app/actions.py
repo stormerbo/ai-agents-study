@@ -26,8 +26,11 @@ REGISTRY = {
 }
 ACTION_TRANSITIONS = {
     'proposed': {'succeeded','invalidated','cancelled'},
-    'waiting_approval': {'authorized_pending_delivery','denied','invalidated','cancelled'},
-    'authorized_pending_delivery': {'invalidated','cancelled'},
+    'waiting_approval': {'authorized_pending_delivery','authorized','denied','invalidated','cancelled'},
+    'authorized_pending_delivery': {'authorized','invalidated','cancelled'},
+    'authorized': {'dispatching','invalidated','cancelled'},
+    'dispatching': {'unknown','succeeded'},
+    'unknown': {'succeeded'},
     'succeeded':set(), 'denied':set(), 'invalidated':set(), 'cancelled':set(),
 }
 

@@ -39,5 +39,32 @@ services:
         condition: service_healthy
     entrypoint: [uv, run, --frozen, --no-dev, python, -m, app.worker]
     command: [--once, --owner, compose-worker]
+  sink:
+    profiles: [delivery]
+    build:
+      context: ../..
+      dockerfile: examples/p4-durable-support/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://support:local-only-demo@postgres:5432/support
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${P4_SINK_PORT:-8002}:8000"
+    command: [uv, run, --frozen, --no-dev, uvicorn, 'app.sink:app', --host, 0.0.0.0, --port, '8000', --no-access-log]
+  dispatcher:
+    profiles: [delivery]
+    build:
+      context: ../..
+      dockerfile: examples/p4-durable-support/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://support:local-only-demo@postgres:5432/support
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sink:
+        condition: service_started
+    entrypoint: [uv, run, --frozen, --no-dev, python, -m, app.delivery]
+    command: [--help]
 volumes:
   postgres_data:

@@ -60,7 +60,7 @@ def test_restart_frozen_turn_and_concurrent_decision(execution_service):
         assert len(actions) == 3
         assert [a['tool_call_id'] for a in actions] == ['read-1','write-1','read-2']
         assert [a['status'] for a in actions] == ['proposed','authorized_pending_delivery','proposed']
-        assert conn.execute("SELECT to_regclass('outbox') AS name").fetchone()['name'] is None
+        assert conn.execute('SELECT count(*) AS n FROM outbox WHERE task_id=%s',(task_id,)).fetchone()['n'] == 0
         assert conn.execute('SELECT count(*) AS n FROM events WHERE task_id=%s AND kind=%s', (task_id,'action.authorized_pending_delivery')).fetchone()['n'] == 1
 
 
