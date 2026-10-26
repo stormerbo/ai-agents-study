@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/p5-runtime-image-admission-v1",
+  "title": "Stage 5 runtime image admission v1",
+  "description": "Signed pre-reservation statement from a trusted runtime supervisor that it resolved the frozen OCI index for a specific run and target platform. Signature, freshness, identity, trust policy, and capability-consumption semantics are semantic checks.",
+  "$comment": "The signature is Ed25519 over RFC 8785 JCS canonical UTF-8 bytes of admission, including signature_profile and signing_key_id. The verifier resolves the supervisor key from an independent machine-workload trust pin and checks current key status. The registry lifecycle authority issues a nonce idempotently by preflight_request_id, durably consumes each nonce/admission id at most once while atomically reserving the run and issuing an opaque token plus separately signed capability grant, and never returns either from reconciliation. The custodian verifies the grant, token hash, scope, current registry-key status, and authenticated runtime identity before redemption. It atomically creates at most one session per capability; only an exact retry with the same redeem_request_id and scope may recover that session after response loss. This is not human identity authentication.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "admission", "signature"],
+  "properties": {
+    "schema": { "const": "p5-runtime-image-admission-envelope-v1" },
+    "admission": { "$ref": "#/$defs/admission" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "ociDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "admission_id",
+        "preflight_request_id",
+        "preflight_nonce",
+        "run_id",
+        "candidate_hash",
+        "frozen_spec_sha256",
+        "build_provenance_sha256",
+        "runtime_id",
+        "target_platform",
+        "oci_index_digest",
+        "platform_manifest_digest",
+        "resolved_at_utc",
+        "valid_until_utc",
+        "signature_profile",
+        "signing_key_id"
+      ],
+      "properties": {
+        "admission_id": { "$ref": "#/$defs/id" },
+        "preflight_request_id": { "$ref": "#/$defs/id" },
+        "preflight_nonce": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "run_id": { "$ref": "#/$defs/id" },
+        "candidate_hash": { "$ref": "#/$defs/sha256" },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "build_provenance_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_id": { "$ref": "#/$defs/id" },
+        "target_platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "architecture"],
+          "properties": {
+            "os": { "$ref": "#/$defs/id" },
+            "architecture": { "$ref": "#/$defs/id" },
+            "variant": { "$ref": "#/$defs/id" }
+          }
+        },
+        "oci_index_digest": { "$ref": "#/$defs/ociDigest" },
+        "platform_manifest_digest": { "$ref": "#/$defs/ociDigest" },
+        "resolved_at_utc": { "$ref": "#/$defs/timestamp" },
+        "valid_until_utc": { "$ref": "#/$defs/timestamp" },
+        "signature_profile": { "const": "ed25519-jcs-p5-runtime-image-admission-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" }
+      }
+    }
+  }
+}

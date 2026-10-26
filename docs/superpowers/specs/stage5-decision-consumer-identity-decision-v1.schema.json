@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-decision-consumer-identity-decision-v1",
+  "title": "Stage 5 decision-consumer identity authorization decision v1",
+  "description": "Positive, scope-bound identity-source response shape for acceptance/release record signing. It does not authenticate the source or validate signature, intent digest, role history, or freshness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_id",
+    "decision_ref",
+    "decision_log_id",
+    "record_type",
+    "record_id",
+    "environment_id",
+    "authorization_intent_sha256",
+    "subject_id",
+    "signing_key_id",
+    "key_fingerprint_sha256",
+    "required_role",
+    "role_grant_id",
+    "role_valid_now",
+    "credential_state_now",
+    "revocation_sequence",
+    "decision",
+    "challenge_nonce",
+    "policy_version",
+    "issued_at_utc",
+    "valid_until_utc",
+    "decision_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-decision-consumer-identity-decision-v1" },
+    "source_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "decision_ref": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "decision_log_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "record_type": { "enum": ["human-acceptance", "release-authorization"] },
+    "record_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "environment_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "authorization_intent_sha256": {
+      "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+    },
+    "subject_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "signing_key_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "key_fingerprint_sha256": {
+      "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+    },
+    "required_role": {
+      "enum": ["stage5_acceptance_authority", "stage5_release_authority"]
+    },
+    "role_grant_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "role_valid_now": { "const": true },
+    "credential_state_now": { "const": "active" },
+    "revocation_sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "decision": { "const": "allow" },
+    "challenge_nonce": {
+      "type": "string",
+      "minLength": 22,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "policy_version": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "issued_at_utc": { "$ref": "stage5-decision-consumption-common-v1#/$defs/utcTimestamp" },
+    "valid_until_utc": { "$ref": "stage5-decision-consumption-common-v1#/$defs/utcTimestamp" },
+    "decision_sha256": { "$ref": "stage5-decision-consumption-common-v1#/$defs/digest" }
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-source-outage-episode-v1",
+  "title": "Stage 5 source outage episode evidence v1",
+  "description": "Signed evidence for a sustained availability failure with per-probe sequence and start/completion times. It does not prove the service was globally unavailable; verifier pinning, current key status, journal completeness, timeout/cadence/threshold arithmetic, probe ordering, and source identity are semantic checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "episode_id",
+    "environment_id",
+    "decision_log_id",
+    "source_id",
+    "monitor_service_id",
+    "policy_id",
+    "rule_id",
+    "first_failure_at_utc",
+    "confirmed_at_utc",
+    "threshold_seconds",
+    "probes",
+    "signature_profile",
+    "signing_key_id",
+    "signature"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-source-outage-episode-v1" },
+    "episode_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "environment_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "decision_log_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "source_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "monitor_service_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "policy_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "rule_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "first_failure_at_utc": { "$ref": "#/$defs/timestamp" },
+    "confirmed_at_utc": { "$ref": "#/$defs/timestamp" },
+    "threshold_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "probes": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/probe" }
+    },
+    "signature_profile": { "const": "ed25519-jcs-stage5-source-outage-episode-v1" },
+    "signing_key_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "probe": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "started_at_utc",
+            "completed_at_utc",
+            "probe_sequence",
+            "previous_probe_record_sha256",
+            "probe_record_sha256",
+            "request_id",
+            "outcome",
+            "failure_class"
+          ],
+          "properties": {
+            "started_at_utc": { "$ref": "#/$defs/timestamp" },
+            "completed_at_utc": { "$ref": "#/$defs/timestamp" },
+            "probe_sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "previous_probe_record_sha256": {
+              "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+            },
+            "probe_record_sha256": {
+              "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+            },
+            "request_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+            "outcome": { "const": "availability-failure" },
+            "failure_class": {
+              "enum": ["timeout", "connection-refused", "dns-failure", "server-unavailable"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "started_at_utc",
+            "completed_at_utc",
+            "probe_sequence",
+            "previous_probe_record_sha256",
+            "probe_record_sha256",
+            "request_id",
+            "outcome",
+            "source_head_sequence",
+            "source_head_sha256"
+          ],
+          "properties": {
+            "started_at_utc": { "$ref": "#/$defs/timestamp" },
+            "completed_at_utc": { "$ref": "#/$defs/timestamp" },
+            "probe_sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+            "previous_probe_record_sha256": {
+              "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+            },
+            "probe_record_sha256": {
+              "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+            },
+            "request_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+            "outcome": { "const": "authenticated-current-read" },
+            "source_head_sequence": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "source_head_sha256": {
+              "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

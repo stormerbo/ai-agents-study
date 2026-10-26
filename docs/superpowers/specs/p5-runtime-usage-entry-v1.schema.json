@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/p5-runtime-usage-entry-v1",
+  "title": "Stage 5 runtime usage entry v1",
+  "description": "Ledger-signed immutable provider-call state transition emitted by the trusted runtime supervisor.",
+  "$comment": "The signature is Ed25519 over RFC 8785 JCS canonical UTF-8 bytes of entry, including signature_profile and signing_key_id. The digest chained into previous_entry_sha256 is SHA-256 of the complete signed entry envelope's JCS bytes. runtime_stop_record_sha256 uses the same digest rule over the complete signed p5-runtime-stop-record-v1 envelope. Schema validity does not prove service identity, freshness, append-only storage, transition validity, provider-operation truth, or egress completeness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "entry", "signature"],
+  "properties": {
+    "schema": { "const": "p5-runtime-usage-entry-envelope-v1" },
+    "entry": { "$ref": "#/$defs/entry" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "decimalInteger": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_id",
+        "idempotency_key",
+        "environment_id",
+        "usage_ledger_id",
+        "run_id",
+        "reservation_event_id",
+        "frozen_spec_sha256",
+        "candidate_sha256",
+        "runtime_admission_sha256",
+        "runtime_image_sha256",
+        "dataset_sha256",
+        "runtime_id",
+        "runtime_subject",
+        "supervisor_subject",
+        "attempt_id",
+        "provider_call_id",
+        "provider_id",
+        "model_id",
+        "state",
+        "transition_basis",
+        "request_sha256",
+        "sequence",
+        "previous_entry_sha256",
+        "committed_at_utc",
+        "signature_profile",
+        "signing_key_id"
+      ],
+      "properties": {
+        "entry_id": { "$ref": "#/$defs/id" },
+        "idempotency_key": { "$ref": "#/$defs/id" },
+        "environment_id": { "$ref": "#/$defs/id" },
+        "usage_ledger_id": { "$ref": "#/$defs/id" },
+        "run_id": { "$ref": "#/$defs/id" },
+        "reservation_event_id": { "$ref": "#/$defs/id" },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "candidate_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_admission_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_image_sha256": { "$ref": "#/$defs/sha256" },
+        "dataset_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_id": { "$ref": "#/$defs/id" },
+        "runtime_subject": { "$ref": "#/$defs/id" },
+        "supervisor_subject": { "$ref": "#/$defs/id" },
+        "attempt_id": { "$ref": "#/$defs/id" },
+        "provider_call_id": { "$ref": "#/$defs/id" },
+        "provider_id": { "$ref": "#/$defs/id" },
+        "model_id": { "$ref": "#/$defs/id" },
+        "state": {
+          "enum": [
+            "prepared",
+            "sent",
+            "responded",
+            "unknown",
+            "cancelled",
+            "confirmed-not-executed"
+          ]
+        },
+        "previous_call_state": {
+          "enum": [
+            "prepared",
+            "sent",
+            "responded",
+            "unknown",
+            "cancelled",
+            "confirmed-not-executed"
+          ]
+        },
+        "transition_basis": {
+          "enum": [
+            "durable-before-dispatch",
+            "dispatch-authorized",
+            "provider-response-captured",
+            "timeout-or-crash",
+            "authoritative-reconciliation",
+            "authoritative-no-execution",
+            "proof-not-sent"
+          ]
+        },
+        "request_sha256": { "$ref": "#/$defs/sha256" },
+        "response_sha256": { "$ref": "#/$defs/sha256" },
+        "usage_status": { "enum": ["known", "unknown", "not-applicable"] },
+        "terminalization_phase": { "enum": ["pre-stop", "post-stop"] },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "input_tokens": { "$ref": "#/$defs/decimalInteger" },
+            "output_tokens": { "$ref": "#/$defs/decimalInteger" },
+            "cached_input_tokens": { "$ref": "#/$defs/decimalInteger" },
+            "reasoning_tokens": { "$ref": "#/$defs/decimalInteger" }
+          }
+        },
+        "duration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["clock_id", "start_monotonic_ns", "end_monotonic_ns"],
+          "properties": {
+            "clock_id": { "$ref": "#/$defs/id" },
+            "start_monotonic_ns": { "$ref": "#/$defs/decimalInteger" },
+            "end_monotonic_ns": { "$ref": "#/$defs/decimalInteger" }
+          }
+        },
+        "reconciles_entry_id": { "$ref": "#/$defs/id" },
+        "runtime_stop_record_sha256": { "$ref": "#/$defs/sha256" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "previous_entry_sha256": { "$ref": "#/$defs/sha256" },
+        "committed_at_utc": { "$ref": "#/$defs/timestamp" },
+        "signature_profile": { "const": "ed25519-jcs-p5-runtime-usage-entry-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "prepared" } } },
+          "then": {
+            "properties": {
+              "transition_basis": { "const": "durable-before-dispatch" }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["previous_call_state"] },
+                { "required": ["response_sha256"] },
+                { "required": ["usage"] },
+                { "required": ["usage_status"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "sent" } } },
+          "then": {
+            "required": ["previous_call_state"],
+            "properties": {
+              "transition_basis": { "const": "dispatch-authorized" },
+              "previous_call_state": { "const": "prepared" }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["response_sha256"] },
+                { "required": ["usage"] },
+                { "required": ["usage_status"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "responded" } } },
+          "then": {
+            "required": ["previous_call_state", "response_sha256", "usage_status", "duration"],
+            "anyOf": [
+              {
+                "properties": {
+                  "previous_call_state": { "const": "sent" },
+                  "transition_basis": { "const": "provider-response-captured" }
+                }
+              },
+              {
+                "properties": {
+                  "previous_call_state": { "const": "unknown" },
+                  "transition_basis": { "const": "authoritative-reconciliation" },
+                  "reconciles_entry_id": { "$ref": "#/$defs/id" },
+                  "terminalization_phase": { "enum": ["pre-stop", "post-stop"] }
+                },
+                "required": ["reconciles_entry_id", "terminalization_phase"]
+              }
+            ],
+            "properties": { "usage_status": { "enum": ["known", "unknown"] } }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "confirmed-not-executed" } } },
+          "then": {
+            "required": [
+              "previous_call_state",
+              "response_sha256",
+              "reconciles_entry_id",
+              "usage_status"
+            ],
+            "properties": {
+              "previous_call_state": { "const": "unknown" },
+              "transition_basis": { "const": "authoritative-no-execution" },
+              "usage_status": { "const": "not-applicable" },
+              "terminalization_phase": { "enum": ["pre-stop", "post-stop"] }
+            },
+            "required": ["terminalization_phase"],
+            "not": { "required": ["usage"] }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "unknown" } } },
+          "then": {
+            "required": ["previous_call_state", "usage_status"],
+            "properties": {
+              "previous_call_state": { "const": "sent" },
+              "transition_basis": { "const": "timeout-or-crash" },
+              "usage_status": { "const": "unknown" }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["response_sha256"] },
+                { "required": ["usage"] },
+                { "required": ["usage_status"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "cancelled" } } },
+          "then": {
+            "required": ["previous_call_state"],
+            "properties": {
+              "previous_call_state": { "const": "prepared" },
+              "transition_basis": { "const": "proof-not-sent" },
+              "terminalization_phase": { "enum": ["pre-stop", "post-stop"] }
+            },
+            "required": ["terminalization_phase"],
+            "not": { "anyOf": [{ "required": ["response_sha256"] }, { "required": ["usage"] }] }
+          }
+        },
+        {
+          "if": {
+            "properties": { "usage_status": { "const": "known" } },
+            "required": ["usage_status"]
+          },
+          "then": { "required": ["usage"] }
+        },
+        {
+          "if": {
+            "properties": { "usage_status": { "const": "unknown" } },
+            "required": ["usage_status"]
+          },
+          "then": { "not": { "required": ["usage"] } }
+        },
+        {
+          "if": {
+            "properties": { "usage_status": { "const": "not-applicable" } },
+            "required": ["usage_status"]
+          },
+          "then": { "properties": { "state": { "const": "confirmed-not-executed" } } }
+        },
+        {
+          "if": {
+            "properties": { "terminalization_phase": { "const": "post-stop" } },
+            "required": ["terminalization_phase"]
+          },
+          "then": { "required": ["runtime_stop_record_sha256"] }
+        },
+        {
+          "if": {
+            "properties": { "terminalization_phase": { "const": "pre-stop" } },
+            "required": ["terminalization_phase"]
+          },
+          "then": { "not": { "required": ["runtime_stop_record_sha256"] } }
+        }
+      ]
+    }
+  }
+}

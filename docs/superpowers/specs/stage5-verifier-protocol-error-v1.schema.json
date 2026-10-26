@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-verifier-protocol-error-v1",
+  "title": "Stage 5 verifier protocol error v1",
+  "description": "Bounded parse/profile errors returned before a trusted acceptance decision exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "request_id", "error_code", "limit_dimension", "retryable"],
+  "properties": {
+    "schema": { "const": "stage5-verifier-protocol-error-v1" },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "error_code": {
+      "enum": [
+        "malformed-input",
+        "unsupported-content-encoding",
+        "input-limit-exceeded",
+        "capacity-exhausted",
+        "verifier-not-ready",
+        "unsupported-profile",
+        "invalid-evidence-shape"
+      ]
+    },
+    "limit_dimension": {
+      "anyOf": [
+        {
+          "enum": [
+            "compressed-input-bytes",
+            "decompressed-input-bytes",
+            "json-depth",
+            "total-tokens",
+            "object-members",
+            "array-items",
+            "decoded-string-bytes",
+            "number-token-bytes",
+            "canonical-output-bytes",
+            "parse-deadline",
+            "parse-cpu",
+            "sandbox-memory"
+          ]
+        },
+        { "type": "null" }
+      ]
+    },
+    "retryable": { "type": "boolean" },
+    "retry_after_seconds": { "type": "integer", "minimum": 1, "maximum": 60 }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "error_code": { "const": "input-limit-exceeded" } },
+        "required": ["error_code"]
+      },
+      "then": { "properties": { "limit_dimension": { "type": "string" } } },
+      "else": { "properties": { "limit_dimension": { "type": "null" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "error_code": { "enum": ["capacity-exhausted", "verifier-not-ready"] }
+        },
+        "required": ["error_code"]
+      },
+      "then": {
+        "required": ["retry_after_seconds"],
+        "properties": { "retryable": { "const": true }, "limit_dimension": { "type": "null" } }
+      },
+      "else": {
+        "properties": { "retryable": { "const": false } },
+        "not": { "required": ["retry_after_seconds"] }
+      }
+    }
+  ]
+}

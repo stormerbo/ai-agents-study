@@ -1,0 +1,38 @@
+{
+  "schema": "stage5-decision-signature-vectors-v1",
+  "test_only": true,
+  "note": "Uses the public RFC 8032 test seed only. Never use this key for deployment, identity, or production verification.",
+  "vector": {
+    "profile": "ed25519-jcs-stage5-decision-v1",
+    "message": {
+      "schema": "stage5-acceptance-decision-v1",
+      "decision_id": "decision-vector-01",
+      "evidence_envelope_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "report_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "run_id": "run-vector-01",
+      "frozen_spec_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "assurance_profile": "local-reference",
+      "evidence_integrity": "unverified",
+      "governance_authorization": "unverified",
+      "holdout_outcome": "unverified",
+      "acceptance_readiness": "unverified",
+      "trust_bundle_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "key_status_sequence": null,
+      "usage_trust_bundle_sha256": null,
+      "usage_key_status_sequence": null,
+      "usage_ledger_closed_sequence": null,
+      "usage_ledger_closed_head_sha256": null,
+      "identity_decisions_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "verifier_policy_id": "policy-vector-01",
+      "verifier_build_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "verified_at_utc": "2026-10-23T10:00:00Z",
+      "valid_until_utc": "2026-10-23T10:04:00Z",
+      "signature_profile": "ed25519-jcs-stage5-decision-v1",
+      "verifier_key_id": "verifier-vector-key-01"
+    },
+    "canonical_utf8": "{\"acceptance_readiness\":\"unverified\",\"assurance_profile\":\"local-reference\",\"decision_id\":\"decision-vector-01\",\"evidence_envelope_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"evidence_integrity\":\"unverified\",\"frozen_spec_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"governance_authorization\":\"unverified\",\"holdout_outcome\":\"unverified\",\"identity_decisions_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"key_status_sequence\":null,\"report_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"run_id\":\"run-vector-01\",\"schema\":\"stage5-acceptance-decision-v1\",\"signature_profile\":\"ed25519-jcs-stage5-decision-v1\",\"trust_bundle_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"usage_key_status_sequence\":null,\"usage_ledger_closed_head_sha256\":null,\"usage_ledger_closed_sequence\":null,\"usage_trust_bundle_sha256\":null,\"valid_until_utc\":\"2026-10-23T10:04:00Z\",\"verified_at_utc\":\"2026-10-23T10:00:00Z\",\"verifier_build_sha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"verifier_key_id\":\"verifier-vector-key-01\",\"verifier_policy_id\":\"policy-vector-01\"}",
+    "sha256": "4ca85e46a499dc692436e7b22484a849d25c3552b6c2d6c8287081311078c466",
+    "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+    "signature_base64url": "vG9qXCSFkCKZAZ9N7Fx1WvF-YQIMqzlLwPpwLz8ySFERuqGqiXlzKFmV1MMxgLZMoqAsKw-FU46V1MY6Whk7Dw"
+  }
+}

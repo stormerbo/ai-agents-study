@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-governance-attestation-v1",
+  "title": "Stage 5 governance attestation v1",
+  "description": "Structure for signed assurance approval and handoff review claims. Validation does not establish signer identity, role, freshness, or authorization.",
+  "$comment": "The signature is Ed25519 over JCS canonical UTF-8 bytes of the whole object except signature. signing_key_id and signature_profile remain inside the signed payload. Verifier policy pins the permitted profile and identity source. Strict UTC calendar validity, digest bindings, historical role, revocation, trusted ordering, conflicts, and the prohibition on local-reference official acceptance are semantic checks outside JSON Schema.",
+  "oneOf": [{ "$ref": "#/$defs/assuranceApproval" }, { "$ref": "#/$defs/handoffReview" }],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "assuranceProfile": {
+      "enum": ["local-reference", "single-authority-v1", "dual-witness-v1"]
+    },
+    "trustDomains": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["append_authority_domain", "key_custodian_domain"],
+      "properties": {
+        "append_authority_domain": { "$ref": "#/$defs/id" },
+        "key_custodian_domain": { "$ref": "#/$defs/id" },
+        "independent_witness_domain": { "$ref": "#/$defs/id" }
+      }
+    },
+    "assuranceApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "attestation_id",
+        "decision",
+        "subject_id",
+        "required_role",
+        "frozen_spec_sha256",
+        "assurance_profile",
+        "approval_policy_id",
+        "signed_at_utc",
+        "expires_at_utc",
+        "trust_domains",
+        "compromise_in_scope",
+        "signature_profile",
+        "signing_key_id",
+        "signature"
+      ],
+      "properties": {
+        "schema": { "const": "stage5-assurance-approval-v1" },
+        "attestation_id": { "$ref": "#/$defs/id" },
+        "decision": { "enum": ["accepted", "rejected"] },
+        "subject_id": { "$ref": "#/$defs/id" },
+        "required_role": { "const": "stage5_risk_owner" },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "assurance_profile": { "$ref": "#/$defs/assuranceProfile" },
+        "approval_policy_id": { "$ref": "#/$defs/id" },
+        "signed_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "expires_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "trust_domains": { "$ref": "#/$defs/trustDomains" },
+        "compromise_in_scope": { "type": "boolean" },
+        "witness_authority_id": { "$ref": "#/$defs/id" },
+        "witness_root_sha256": { "$ref": "#/$defs/sha256" },
+        "signature_profile": { "const": "ed25519-jcs-governance-attestation-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "assurance_profile": { "const": "dual-witness-v1" } },
+            "required": ["assurance_profile"]
+          },
+          "then": {
+            "required": ["witness_authority_id", "witness_root_sha256"],
+            "properties": {
+              "trust_domains": { "type": "object", "required": ["independent_witness_domain"] }
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["witness_authority_id"] },
+                { "required": ["witness_root_sha256"] }
+              ]
+            },
+            "properties": {
+              "trust_domains": {
+                "type": "object",
+                "not": { "required": ["independent_witness_domain"] }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "handoffReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "attestation_id",
+        "decision",
+        "subject_id",
+        "required_role",
+        "frozen_spec_sha256",
+        "handoff_core_sha256",
+        "assurance_profile",
+        "approval_policy_id",
+        "signed_at_utc",
+        "expires_at_utc",
+        "trust_domains",
+        "compromise_in_scope",
+        "signature_profile",
+        "signing_key_id",
+        "signature"
+      ],
+      "properties": {
+        "schema": { "const": "stage5-handoff-review-v1" },
+        "attestation_id": { "$ref": "#/$defs/id" },
+        "decision": { "enum": ["accepted", "rejected"] },
+        "subject_id": { "$ref": "#/$defs/id" },
+        "required_role": { "const": "stage5_independent_reviewer" },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "handoff_core_sha256": { "$ref": "#/$defs/sha256" },
+        "assurance_profile": { "$ref": "#/$defs/assuranceProfile" },
+        "approval_policy_id": { "$ref": "#/$defs/id" },
+        "signed_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "expires_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "trust_domains": { "$ref": "#/$defs/trustDomains" },
+        "compromise_in_scope": { "type": "boolean" },
+        "witness_authority_id": { "$ref": "#/$defs/id" },
+        "witness_root_sha256": { "$ref": "#/$defs/sha256" },
+        "signature_profile": { "const": "ed25519-jcs-governance-attestation-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "assurance_profile": { "const": "dual-witness-v1" } },
+            "required": ["assurance_profile"]
+          },
+          "then": {
+            "required": ["witness_authority_id", "witness_root_sha256"],
+            "properties": {
+              "trust_domains": { "type": "object", "required": ["independent_witness_domain"] }
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["witness_authority_id"] },
+                { "required": ["witness_root_sha256"] }
+              ]
+            },
+            "properties": {
+              "trust_domains": {
+                "type": "object",
+                "not": { "required": ["independent_witness_domain"] }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

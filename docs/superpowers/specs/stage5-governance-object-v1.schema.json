@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-governance-object-v1",
+  "title": "Stage 5 governance evidence object v1",
+  "description": "Strict governance evidence object carried by the v7 holdout envelope.",
+  "$comment": "The schema validates structure only. The verifier must resolve event ids in the single authenticated registry receipt chain; compare event payloads and identity decision references; enforce exact cardinality and ordering by verified registry sequence; verify signatures, digests, roles, conflicts, revocation state, and current identity status. identity_decisions contains opaque decision references and digests only, never credentials or tokens. For a run that has not reached terminal, review_attestation, review_event_id, handoff_core, and handoff_core_sha256 are null and identity_decisions contains only the approval and any prior revocation decisions; this never satisfies acceptance readiness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "approval_attestation",
+    "approval_event_id",
+    "review_attestation",
+    "review_event_id",
+    "revocation_event_ids",
+    "handoff_core",
+    "handoff_core_sha256",
+    "identity_decisions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "stage5-governance-evidence-v1"
+    },
+    "approval_attestation": {
+      "$ref": "https://ai-agents-study.invalid/schemas/stage5-governance-attestation-v1#/$defs/assuranceApproval"
+    },
+    "approval_event_id": {
+      "$ref": "#/$defs/id"
+    },
+    "review_attestation": {
+      "anyOf": [
+        {
+          "$ref": "https://ai-agents-study.invalid/schemas/stage5-governance-attestation-v1#/$defs/handoffReview"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "review_event_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revocation_event_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/id"
+      },
+      "uniqueItems": true
+    },
+    "handoff_core": {
+      "anyOf": [
+        {
+          "$ref": "https://ai-agents-study.invalid/schemas/stage5-handoff-core-v1"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "handoff_core_sha256": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "identity_decisions": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/identityDecision"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "identityDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "phase", "source_id", "decision_ref", "decision_sha256"],
+      "properties": {
+        "event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "phase": {
+          "enum": ["preflight", "record-time"]
+        },
+        "source_id": {
+          "$ref": "#/$defs/id"
+        },
+        "decision_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "decision_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "review_event_id": {
+            "type": "string"
+          }
+        },
+        "required": ["review_event_id"]
+      },
+      "then": {
+        "properties": {
+          "identity_decisions": {
+            "minItems": 4,
+            "type": "array"
+          }
+        }
+      }
+    }
+  ]
+}

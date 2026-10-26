@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-acceptance-decision-v1",
+  "title": "Stage 5 signed verifier decision v1",
+  "description": "Detached verifier output. It binds the inputs and derived outcomes but is not a human acceptance or release authorization.",
+  "$comment": "The signature is Ed25519 over JCS canonical UTF-8 bytes of the whole object except signature. The verifier key id/profile are in the signed payload. The downstream consumer pins the verifier key out of band, recomputes and matches every evidence digest/scope, enforces valid_until_utc >= verified_at_utc and current revocation/freshness policy, and treats all outcome combinations as semantic checks outside this schema. Unverified audit receipts may have null key/status/head fields and may omit witness_head_sha256 when the corresponding live source was unavailable; ready/not-eligible decisions require the observed registry and runtime-usage trust heads. local-reference can never produce official ready/not-eligible readiness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "decision_id",
+    "evidence_envelope_sha256",
+    "report_sha256",
+    "run_id",
+    "frozen_spec_sha256",
+    "assurance_profile",
+    "evidence_integrity",
+    "governance_authorization",
+    "holdout_outcome",
+    "acceptance_readiness",
+    "trust_bundle_sha256",
+    "key_status_sequence",
+    "usage_trust_bundle_sha256",
+    "usage_key_status_sequence",
+    "usage_ledger_closed_sequence",
+    "usage_ledger_closed_head_sha256",
+    "identity_decisions_sha256",
+    "verifier_policy_id",
+    "verifier_build_sha256",
+    "verified_at_utc",
+    "valid_until_utc",
+    "signature_profile",
+    "verifier_key_id",
+    "signature"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-acceptance-decision-v1" },
+    "decision_id": { "$ref": "#/$defs/id" },
+    "evidence_envelope_sha256": { "$ref": "#/$defs/sha256" },
+    "report_sha256": { "$ref": "#/$defs/sha256" },
+    "run_id": { "$ref": "#/$defs/id" },
+    "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+    "assurance_profile": {
+      "enum": ["local-reference", "single-authority-v1", "dual-witness-v1"]
+    },
+    "evidence_integrity": { "enum": ["valid", "invalid", "unverified"] },
+    "governance_authorization": {
+      "enum": ["approved", "rejected", "revoked", "unverified"]
+    },
+    "holdout_outcome": { "enum": ["passed", "failed", "unverified", "invalid"] },
+    "acceptance_readiness": {
+      "enum": ["ready-for-human-acceptance", "not-eligible", "unverified", "invalid-report"]
+    },
+    "trust_bundle_sha256": { "$ref": "#/$defs/sha256" },
+    "key_status_sequence": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        { "type": "null" }
+      ]
+    },
+    "usage_trust_bundle_sha256": {
+      "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+    },
+    "usage_key_status_sequence": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        { "type": "null" }
+      ]
+    },
+    "usage_ledger_closed_sequence": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        { "type": "null" }
+      ]
+    },
+    "usage_ledger_closed_head_sha256": {
+      "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }]
+    },
+    "identity_decisions_sha256": { "$ref": "#/$defs/sha256" },
+    "witness_head_sha256": { "$ref": "#/$defs/sha256" },
+    "verifier_policy_id": { "$ref": "#/$defs/id" },
+    "verifier_build_sha256": { "$ref": "#/$defs/sha256" },
+    "verified_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+    "valid_until_utc": { "$ref": "#/$defs/utcTimestamp" },
+    "signature_profile": { "const": "ed25519-jcs-stage5-decision-v1" },
+    "verifier_key_id": { "$ref": "#/$defs/id" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "acceptance_readiness": {
+            "enum": ["ready-for-human-acceptance", "not-eligible"]
+          }
+        },
+        "required": ["acceptance_readiness"]
+      },
+      "then": {
+        "properties": {
+          "key_status_sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+        },
+        "required": ["key_status_sequence"]
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "acceptance_readiness": {
+                "enum": ["ready-for-human-acceptance", "not-eligible"]
+              }
+            },
+            "required": ["acceptance_readiness"]
+          },
+          {
+            "properties": {
+              "assurance_profile": { "const": "dual-witness-v1" }
+            },
+            "required": ["assurance_profile"]
+          }
+        ]
+      },
+      "then": { "required": ["witness_head_sha256"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "acceptance_readiness": {
+            "enum": ["ready-for-human-acceptance", "not-eligible"]
+          }
+        },
+        "required": ["acceptance_readiness"]
+      },
+      "then": {
+        "properties": {
+          "usage_trust_bundle_sha256": { "$ref": "#/$defs/sha256" },
+          "usage_key_status_sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "usage_ledger_closed_sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "usage_ledger_closed_head_sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "assurance_profile": { "const": "local-reference" } },
+        "required": ["assurance_profile"]
+      },
+      "then": {
+        "properties": {
+          "acceptance_readiness": { "enum": ["unverified", "invalid-report"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "assurance_profile": { "const": "dual-witness-v1" } },
+        "required": ["assurance_profile"]
+      },
+      "then": {},
+      "else": { "not": { "required": ["witness_head_sha256"] } }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    }
+  }
+}

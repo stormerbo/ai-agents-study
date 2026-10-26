@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/p5-build-provenance-v1",
+  "title": "Stage 5 candidate build provenance v1",
+  "description": "Strict signed build-workload statement shape. Signature verification, builder trust, material closure, build policy, and source-to-image equality are semantic checks.",
+  "$comment": "The signature is Ed25519 over RFC 8785 JCS canonical UTF-8 bytes of statement, including signature_profile and signing_key_id. The builder key is resolved from verifier-pinned machine trust configuration with current key status; this is not human identity or role authentication. Semantic validation must require unique normalized ASCII URIs sorted bytewise, recompute source_tree_sha256 from JCS of {repository_id, source_commit, source_materials} where source_materials filters kinds source-file/submodule, recompute materials_sha256 from JCS of the complete ordered materials array, verify complete transitive closure and source/build/image bindings, and check finished_at_utc is not earlier than started_at_utc.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "statement", "signature"],
+  "properties": {
+    "schema": { "const": "p5-build-provenance-envelope-v1" },
+    "statement": { "$ref": "#/$defs/statement" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "ociDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "statement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "build_id",
+        "repository_id",
+        "source_commit",
+        "source_tree_sha256",
+        "materials",
+        "materials_sha256",
+        "build_recipe_sha256",
+        "invocation_sha256",
+        "builder_id",
+        "builder_image_digest",
+        "target_platform",
+        "oci_index_digest",
+        "platform_manifest_digest",
+        "started_at_utc",
+        "finished_at_utc",
+        "hash_profile",
+        "signature_profile",
+        "signing_key_id"
+      ],
+      "properties": {
+        "build_id": { "$ref": "#/$defs/id" },
+        "repository_id": { "$ref": "#/$defs/id" },
+        "source_commit": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+        },
+        "source_tree_sha256": { "$ref": "#/$defs/sha256" },
+        "materials": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["uri", "kind", "sha256"],
+            "properties": {
+              "uri": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[\\x21-\\x7E]+$"
+              },
+              "kind": {
+                "enum": [
+                  "source-file",
+                  "submodule",
+                  "generated-input",
+                  "dependency",
+                  "builder-image",
+                  "base-image"
+                ]
+              },
+              "sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        },
+        "materials_sha256": { "$ref": "#/$defs/sha256" },
+        "build_recipe_sha256": { "$ref": "#/$defs/sha256" },
+        "invocation_sha256": { "$ref": "#/$defs/sha256" },
+        "builder_id": { "$ref": "#/$defs/id" },
+        "builder_image_digest": { "$ref": "#/$defs/ociDigest" },
+        "target_platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "architecture"],
+          "properties": {
+            "os": { "$ref": "#/$defs/id" },
+            "architecture": { "$ref": "#/$defs/id" },
+            "variant": { "$ref": "#/$defs/id" }
+          }
+        },
+        "oci_index_digest": { "$ref": "#/$defs/ociDigest" },
+        "platform_manifest_digest": { "$ref": "#/$defs/ociDigest" },
+        "started_at_utc": { "$ref": "#/$defs/timestamp" },
+        "finished_at_utc": { "$ref": "#/$defs/timestamp" },
+        "hash_profile": { "const": "jcs-rfc8785-v1" },
+        "signature_profile": { "const": "ed25519-jcs-p5-build-provenance-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" }
+      }
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    }
+  }
+}

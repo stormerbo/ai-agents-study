@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/p5-holdout-custodian-event-v1",
+  "title": "Stage 5 holdout custodian event v1",
+  "description": "Signed append-only lifecycle event emitted by the hidden-data custodian. It carries no bearer token, hidden prompt, output, or label.",
+  "$comment": "The signature is Ed25519 over RFC 8785 JCS canonical UTF-8 bytes of event, including signature_profile and signing_key_id. The verifier pins the custodian workload key/status and checks the authenticated latest per-capability sequence. Schema validity alone does not prove signature, freshness, append-only retention, sequence uniqueness, or a valid state transition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "event", "signature"],
+  "properties": {
+    "schema": { "const": "p5-holdout-custodian-event-envelope-v1" },
+    "event": { "$ref": "#/$defs/event" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event_type",
+        "custodian_id",
+        "custodian_log_id",
+        "environment_id",
+        "run_id",
+        "reservation_event_id",
+        "capability_id",
+        "capability_grant_sha256",
+        "scope_sha256",
+        "runtime_id",
+        "runtime_subject",
+        "sequence",
+        "previous_event_sha256",
+        "recorded_at_utc",
+        "signature_profile",
+        "signing_key_id"
+      ],
+      "properties": {
+        "event_id": { "$ref": "#/$defs/id" },
+        "event_type": {
+          "enum": [
+            "capability-redeemed",
+            "capability-revoked",
+            "capability-expired",
+            "session-revoked",
+            "session-closed"
+          ]
+        },
+        "custodian_id": { "$ref": "#/$defs/id" },
+        "custodian_log_id": { "$ref": "#/$defs/id" },
+        "environment_id": { "$ref": "#/$defs/id" },
+        "run_id": { "$ref": "#/$defs/id" },
+        "reservation_event_id": { "$ref": "#/$defs/id" },
+        "capability_id": { "$ref": "#/$defs/id" },
+        "capability_grant_sha256": { "$ref": "#/$defs/sha256" },
+        "scope_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_id": { "$ref": "#/$defs/id" },
+        "runtime_subject": { "$ref": "#/$defs/id" },
+        "session_id": { "$ref": "#/$defs/id" },
+        "redeem_request_id": { "$ref": "#/$defs/id" },
+        "revocation_request_id": { "$ref": "#/$defs/id" },
+        "close_request_id": { "$ref": "#/$defs/id" },
+        "reason_code": {
+          "enum": [
+            "approval-revoked",
+            "runtime-image-mismatch",
+            "recovery-no-start",
+            "operator-stop",
+            "run-deadline",
+            "attempt-limit-reached",
+            "normal-completion"
+          ]
+        },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "previous_event_sha256": { "$ref": "#/$defs/sha256" },
+        "recorded_at_utc": { "$ref": "#/$defs/timestamp" },
+        "signature_profile": { "const": "ed25519-jcs-p5-holdout-custodian-event-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "event_type": { "const": "capability-redeemed" } } },
+          "then": {
+            "required": ["session_id", "redeem_request_id", "capability_grant_sha256"],
+            "not": {
+              "anyOf": [
+                {
+                  "properties": { "revocation_request_id": { "$ref": "#/$defs/id" } },
+                  "required": ["revocation_request_id"]
+                },
+                {
+                  "properties": { "reason_code": { "type": "string" } },
+                  "required": ["reason_code"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "event_type": { "const": "capability-revoked" } } },
+          "then": {
+            "required": ["revocation_request_id", "reason_code", "capability_grant_sha256"],
+            "properties": {
+              "reason_code": {
+                "enum": [
+                  "approval-revoked",
+                  "runtime-image-mismatch",
+                  "recovery-no-start",
+                  "operator-stop",
+                  "run-deadline"
+                ]
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "properties": { "session_id": { "$ref": "#/$defs/id" } },
+                  "required": ["session_id"]
+                },
+                {
+                  "properties": { "redeem_request_id": { "$ref": "#/$defs/id" } },
+                  "required": ["redeem_request_id"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "event_type": { "const": "capability-expired" } } },
+          "then": {
+            "required": ["reason_code", "capability_grant_sha256"],
+            "properties": { "reason_code": { "const": "run-deadline" } },
+            "not": {
+              "anyOf": [
+                {
+                  "properties": { "session_id": { "$ref": "#/$defs/id" } },
+                  "required": ["session_id"]
+                },
+                {
+                  "properties": { "redeem_request_id": { "$ref": "#/$defs/id" } },
+                  "required": ["redeem_request_id"]
+                },
+                {
+                  "properties": { "revocation_request_id": { "$ref": "#/$defs/id" } },
+                  "required": ["revocation_request_id"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "event_type": { "const": "session-revoked" } } },
+          "then": {
+            "required": [
+              "session_id",
+              "revocation_request_id",
+              "reason_code",
+              "capability_grant_sha256"
+            ],
+            "properties": {
+              "reason_code": {
+                "enum": [
+                  "approval-revoked",
+                  "runtime-image-mismatch",
+                  "operator-stop",
+                  "run-deadline"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "event_type": { "const": "session-closed" } } },
+          "then": {
+            "required": [
+              "session_id",
+              "close_request_id",
+              "reason_code",
+              "capability_grant_sha256"
+            ],
+            "properties": {
+              "reason_code": {
+                "enum": ["normal-completion", "attempt-limit-reached", "run-deadline"]
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "properties": { "redeem_request_id": { "$ref": "#/$defs/id" } },
+                  "required": ["redeem_request_id"]
+                },
+                {
+                  "properties": { "revocation_request_id": { "$ref": "#/$defs/id" } },
+                  "required": ["revocation_request_id"]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

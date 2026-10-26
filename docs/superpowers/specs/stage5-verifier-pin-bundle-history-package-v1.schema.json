@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-verifier-pin-bundle-history-package-v1",
+  "title": "Stage 5 verifier pin bundle witnessed history package v1",
+  "description": "Complete witnessed verifier pin history with a fresh query-bound signed head for rollback detection.",
+  "$comment": "query_sha256 is SHA-256(JCS({schema,witness_id,environment_id,challenge_nonce})). Each entry_sha256 is SHA-256(JCS(the entry with only entry_sha256 omitted)); previous_entry_sha256 forms a complete chain from the 64-zero genesis digest with contiguous sequence numbers. The head signature covers JCS({schema,witness_id,environment_id,query_sha256,head_sequence,head_entry_sha256,observed_at_utc,signature_profile,signature_key_id}) using ed25519-jcs-verifier-pin-witness-head-v1. challenge_nonce is a verifier-generated 32-byte CSPRNG value encoded as canonical unpadded base64url; exact retries reuse the same nonce/query and changed query under the same nonce conflicts. All numeric counters are bounded to the exact-integer range 0..2^53-1 required by jcs-rfc8785-v1; implementations must reject out-of-range values before canonicalization. The independently pinned witness service may append only after verifying the pin-bundle commit receipt and independently reading the committed configuration head; the consumer checks the complete chain, every referenced receipt and all three monotonic revisions, then compares the signed head with a fresh authenticated config read. Witness availability, signature, nonce freshness, source separation, receipt validity, and rollback protection are semantic/service properties, not established by this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "witness_id",
+    "environment_id",
+    "challenge_nonce",
+    "query_sha256",
+    "proof_scheme",
+    "entries",
+    "head"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-verifier-pin-bundle-history-package-v1" },
+    "witness_id": { "$ref": "#/$defs/id" },
+    "environment_id": { "$ref": "#/$defs/id" },
+    "challenge_nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    },
+    "query_sha256": { "$ref": "#/$defs/digest" },
+    "proof_scheme": { "const": "complete-from-genesis-v1" },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "head": { "$ref": "#/$defs/head" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{85}[AQgw]$" },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_id",
+        "sequence",
+        "previous_entry_sha256",
+        "bundle_id",
+        "commit_receipt_sha256",
+        "previous_configuration_revision",
+        "next_configuration_revision",
+        "previous_policy_pin_revision",
+        "next_policy_pin_revision",
+        "previous_root_pin_revision",
+        "next_root_pin_revision",
+        "previous_bundle_state_sha256",
+        "next_bundle_state_sha256",
+        "recorded_at_utc",
+        "entry_sha256"
+      ],
+      "properties": {
+        "entry_id": { "$ref": "#/$defs/id" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "previous_entry_sha256": { "$ref": "#/$defs/digest" },
+        "bundle_id": { "$ref": "#/$defs/id" },
+        "commit_receipt_sha256": { "$ref": "#/$defs/digest" },
+        "previous_configuration_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "next_configuration_revision": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "previous_policy_pin_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "next_policy_pin_revision": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 9007199254740991
+        },
+        "previous_root_pin_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "next_root_pin_revision": { "type": "integer", "minimum": 2, "maximum": 9007199254740991 },
+        "previous_bundle_state_sha256": { "$ref": "#/$defs/digest" },
+        "next_bundle_state_sha256": { "$ref": "#/$defs/digest" },
+        "recorded_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "entry_sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "entry_sha256",
+        "observed_at_utc",
+        "signature_profile",
+        "signature_key_id",
+        "signature"
+      ],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "entry_sha256": { "$ref": "#/$defs/digest" },
+        "observed_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "signature_profile": { "const": "ed25519-jcs-verifier-pin-witness-head-v1" },
+        "signature_key_id": { "$ref": "#/$defs/id" },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    }
+  }
+}

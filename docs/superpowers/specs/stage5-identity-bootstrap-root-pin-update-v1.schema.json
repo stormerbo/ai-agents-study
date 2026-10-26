@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-identity-bootstrap-root-pin-update-v1",
+  "title": "Stage 5 identity bootstrap root pin update v1",
+  "description": "Strict statement shape for planned bootstrap-root rollover or emergency recovery into a new identity policy/log scope.",
+  "$comment": "approved_intent_sha256 is SHA-256(JCS({schema,update_id,update_kind,environment_id,previous_scope,next_scope,previous_history_anchor,previous_root_pin_revision,next_root_pin_revision,previous_root_pin,next_root_pin,policy_transition})). For planned-root-rollover, old_root_approval signs JCS({schema,update_id,approved_intent_sha256,subject_id,key_id,signed_at_utc,signature_profile}) using ed25519-jcs-identity-bootstrap-root-approval-v1. For emergency-recovery, each of at least two distinct verifier-prepinned offline recovery keys signs JCS({schema,update_id,approved_intent_sha256,authority_id,key_id,signed_at_utc,signature_profile}) using ed25519-jcs-identity-bootstrap-recovery-approval-v1; the fixed deployment profile is 2-of-3, and signer membership/uniqueness is semantic. next_root_proof signs JCS({schema,update_id,approved_intent_sha256,subject_id,key_id,signed_at_utc,signature_profile}) using ed25519-jcs-identity-bootstrap-root-possession-v1. record_sha256 is SHA-256(JCS(the full record with record_sha256 and signature omitted)). The independently pinned verifier configuration authority signs JCS({schema,update_id,record_sha256,pin_authority_id,pin_authority_key_id,recorded_at_utc,signature_profile}) using ed25519-jcs-identity-bootstrap-root-pin-update-v1. A planned rollover preserves environment/log/policy identity and advances policy version exactly one; emergency recovery uses a new log and policy id at version 1, freezes and anchors the prior history, and never imports or rewrites old genesis. Schema validation does not verify any signature, digest, scope continuity, pin revision monotonicity, key uniqueness, quorum membership, or root/pin-authority separation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "update_id",
+    "update_kind",
+    "environment_id",
+    "previous_scope",
+    "next_scope",
+    "previous_history_anchor",
+    "previous_root_pin_revision",
+    "next_root_pin_revision",
+    "previous_root_pin",
+    "next_root_pin",
+    "approved_intent_sha256",
+    "policy_transition",
+    "next_root_proof",
+    "pin_authority_id",
+    "pin_authority_key_id",
+    "recorded_at_utc",
+    "record_sha256",
+    "signature_profile",
+    "signature_key_id",
+    "signature"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-identity-bootstrap-root-pin-update-v1" },
+    "update_id": { "$ref": "#/$defs/id" },
+    "update_kind": { "enum": ["planned-root-rollover", "emergency-recovery"] },
+    "environment_id": { "$ref": "#/$defs/id" },
+    "previous_scope": { "$ref": "#/$defs/scope" },
+    "next_scope": { "$ref": "#/$defs/scope" },
+    "previous_history_anchor": { "$ref": "#/$defs/historyAnchor" },
+    "previous_root_pin_revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "next_root_pin_revision": { "type": "integer", "minimum": 2, "maximum": 9007199254740991 },
+    "previous_root_pin": { "$ref": "#/$defs/rootPin" },
+    "next_root_pin": { "$ref": "#/$defs/rootPin" },
+    "approved_intent_sha256": { "$ref": "#/$defs/digest" },
+    "policy_transition": {
+      "anyOf": [{ "$ref": "#/$defs/policyTransitionRef" }, { "type": "null" }]
+    },
+    "old_root_approval": { "$ref": "#/$defs/rootApproval" },
+    "recovery_approvals": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/recoveryApproval" }
+    },
+    "next_root_proof": { "$ref": "#/$defs/rootProof" },
+    "pin_authority_id": { "$ref": "#/$defs/id" },
+    "pin_authority_key_id": { "$ref": "#/$defs/id" },
+    "recorded_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+    "record_sha256": { "$ref": "#/$defs/digest" },
+    "signature_profile": { "const": "ed25519-jcs-identity-bootstrap-root-pin-update-v1" },
+    "signature_key_id": { "$ref": "#/$defs/id" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "update_kind": { "const": "planned-root-rollover" } },
+        "required": ["update_kind"]
+      },
+      "then": {
+        "required": ["old_root_approval", "policy_transition"],
+        "properties": { "policy_transition": { "$ref": "#/$defs/policyTransitionRef" } },
+        "not": { "required": ["recovery_approvals"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "update_kind": { "const": "emergency-recovery" } },
+        "required": ["update_kind"]
+      },
+      "then": {
+        "required": ["recovery_approvals"],
+        "properties": { "policy_transition": { "type": "null" } },
+        "not": { "required": ["old_root_approval"] }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{85}[AQgw]$" },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "rootPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject_id", "key_id", "key_fingerprint_sha256"],
+      "properties": {
+        "subject_id": { "$ref": "#/$defs/id" },
+        "key_id": { "$ref": "#/$defs/id" },
+        "key_fingerprint_sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "log_id",
+        "policy_id",
+        "policy_sha256",
+        "policy_version",
+        "history_head_sequence",
+        "history_head_sha256"
+      ],
+      "properties": {
+        "log_id": { "$ref": "#/$defs/id" },
+        "policy_id": { "$ref": "#/$defs/id" },
+        "policy_sha256": { "$ref": "#/$defs/digest" },
+        "policy_version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "history_head_sequence": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "history_head_sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "historyAnchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anchor_id", "anchor_record_sha256"],
+      "properties": {
+        "anchor_id": { "$ref": "#/$defs/id" },
+        "anchor_record_sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "policyTransitionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "record_sha256"],
+      "properties": {
+        "record_id": { "$ref": "#/$defs/id" },
+        "record_sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "rootApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject_id",
+        "key_id",
+        "approved_intent_sha256",
+        "signed_at_utc",
+        "signature_profile",
+        "signature"
+      ],
+      "properties": {
+        "subject_id": { "$ref": "#/$defs/id" },
+        "key_id": { "$ref": "#/$defs/id" },
+        "approved_intent_sha256": { "$ref": "#/$defs/digest" },
+        "signed_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "signature_profile": { "const": "ed25519-jcs-identity-bootstrap-root-approval-v1" },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    },
+    "rootProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject_id",
+        "key_id",
+        "approved_intent_sha256",
+        "signed_at_utc",
+        "signature_profile",
+        "signature"
+      ],
+      "properties": {
+        "subject_id": { "$ref": "#/$defs/id" },
+        "key_id": { "$ref": "#/$defs/id" },
+        "approved_intent_sha256": { "$ref": "#/$defs/digest" },
+        "signed_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "signature_profile": { "const": "ed25519-jcs-identity-bootstrap-root-possession-v1" },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    },
+    "recoveryApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority_id",
+        "key_id",
+        "approved_intent_sha256",
+        "signed_at_utc",
+        "signature_profile",
+        "signature"
+      ],
+      "properties": {
+        "authority_id": { "$ref": "#/$defs/id" },
+        "key_id": { "$ref": "#/$defs/id" },
+        "approved_intent_sha256": { "$ref": "#/$defs/digest" },
+        "signed_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+        "signature_profile": { "const": "ed25519-jcs-identity-bootstrap-recovery-approval-v1" },
+        "signature": { "$ref": "#/$defs/signature" }
+      }
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/p5-holdout-output-seal-v1",
+  "title": "Stage 5 holdout output seal v1",
+  "description": "Custodian-signed receipt binding the exact candidate output manifest to a closed runtime, usage ledger head, and closed holdout session.",
+  "$comment": "The signature is Ed25519 over RFC 8785 JCS canonical UTF-8 bytes of output_seal, including signature_profile and signing_key_id. session_closed_event_sha256, runtime_stop_record_sha256, and usage_closure_sha256 are SHA-256 of the corresponding complete signed envelope's JCS bytes. The output seal references the digest of the complete signed session-closed event envelope; that event does not reference this seal, avoiding a cycle. Schema validity alone does not prove signature, freshness, source identity, stop-record truth, usage completeness, or exact attempt coverage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "output_seal", "signature"],
+  "properties": {
+    "schema": { "const": "p5-holdout-output-seal-envelope-v1" },
+    "output_seal": { "$ref": "#/$defs/outputSeal" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "outputSeal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seal_id",
+        "close_request_id",
+        "custodian_id",
+        "custodian_log_id",
+        "environment_id",
+        "run_id",
+        "reservation_event_id",
+        "frozen_spec_sha256",
+        "candidate_sha256",
+        "runtime_admission_sha256",
+        "runtime_image_sha256",
+        "dataset_sha256",
+        "capability_id",
+        "capability_grant_sha256",
+        "scope_sha256",
+        "runtime_id",
+        "runtime_subject",
+        "session_id",
+        "session_closed_event_sha256",
+        "runtime_stop_record_sha256",
+        "usage_ledger_id",
+        "usage_closure_sha256",
+        "usage_ledger_closed_sequence",
+        "usage_ledger_closed_head_sha256",
+        "output_manifest_sha256",
+        "attempt_count",
+        "sealed_at_utc",
+        "signature_profile",
+        "signing_key_id"
+      ],
+      "properties": {
+        "seal_id": { "$ref": "#/$defs/id" },
+        "close_request_id": { "$ref": "#/$defs/id" },
+        "custodian_id": { "$ref": "#/$defs/id" },
+        "custodian_log_id": { "$ref": "#/$defs/id" },
+        "environment_id": { "$ref": "#/$defs/id" },
+        "run_id": { "$ref": "#/$defs/id" },
+        "reservation_event_id": { "$ref": "#/$defs/id" },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "candidate_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_admission_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_image_sha256": { "$ref": "#/$defs/sha256" },
+        "dataset_sha256": { "$ref": "#/$defs/sha256" },
+        "capability_id": { "$ref": "#/$defs/id" },
+        "capability_grant_sha256": { "$ref": "#/$defs/sha256" },
+        "scope_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_id": { "$ref": "#/$defs/id" },
+        "runtime_subject": { "$ref": "#/$defs/id" },
+        "session_id": { "$ref": "#/$defs/id" },
+        "session_closed_event_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_stop_record_sha256": { "$ref": "#/$defs/sha256" },
+        "usage_ledger_id": { "$ref": "#/$defs/id" },
+        "usage_closure_sha256": { "$ref": "#/$defs/sha256" },
+        "usage_ledger_closed_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "usage_ledger_closed_head_sha256": { "$ref": "#/$defs/sha256" },
+        "output_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "attempt_count": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "sealed_at_utc": { "$ref": "#/$defs/timestamp" },
+        "signature_profile": { "const": "ed25519-jcs-p5-holdout-output-seal-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" }
+      }
+    }
+  }
+}

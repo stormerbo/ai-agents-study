@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-release-authorization-v1",
+  "title": "Stage 5 release authorization record v1",
+  "description": "Shape only. Signature, identity, acceptance linkage, freshness, role separation, source-head equality, and record digest verification are semantic consumer checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "attestation", "append_receipt"],
+  "properties": {
+    "schema": { "const": "stage5-release-authorization-v1" },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_id",
+        "authorization_intent_sha256",
+        "deployment_operation_id",
+        "acceptance_id",
+        "acceptance_record_sha256",
+        "decision_id",
+        "decision_receipt_sha256",
+        "evidence_envelope_sha256",
+        "report_sha256",
+        "frozen_spec_sha256",
+        "target_environment_id",
+        "artifact_sha256",
+        "image_digest",
+        "subject_id",
+        "required_role",
+        "release_policy_id",
+        "release_policy_sha256",
+        "consistency_profile",
+        "idempotency_key",
+        "source_snapshot",
+        "signed_at_utc",
+        "signature_profile",
+        "signing_key_id",
+        "signature"
+      ],
+      "properties": {
+        "release_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "authorization_intent_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "deployment_operation_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "acceptance_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "acceptance_record_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "decision_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "decision_receipt_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "evidence_envelope_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "report_sha256": { "$ref": "stage5-decision-consumption-common-v1#/$defs/digest" },
+        "frozen_spec_sha256": { "$ref": "stage5-decision-consumption-common-v1#/$defs/digest" },
+        "target_environment_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "artifact_sha256": { "$ref": "stage5-decision-consumption-common-v1#/$defs/digest" },
+        "image_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "subject_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "required_role": { "const": "stage5_release_authority" },
+        "release_policy_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "release_policy_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "consistency_profile": { "const": "bounded-snapshot-v1" },
+        "idempotency_key": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "source_snapshot": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/sourceSnapshot"
+        },
+        "signed_at_utc": { "$ref": "stage5-decision-consumption-common-v1#/$defs/utcTimestamp" },
+        "signature_profile": { "const": "ed25519-jcs-stage5-release-authorization-v1" },
+        "signing_key_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      }
+    },
+    "append_receipt": {
+      "allOf": [
+        { "$ref": "stage5-decision-consumption-common-v1#/$defs/appendReceipt" },
+        { "type": "object", "properties": { "record_type": { "const": "release-authorization" } } }
+      ]
+    }
+  }
+}

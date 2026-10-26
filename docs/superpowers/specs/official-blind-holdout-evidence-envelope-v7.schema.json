@@ -1,0 +1,1406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/official-blind-holdout-evidence-envelope-v7",
+  "title": "Official blind holdout evidence envelope v7",
+  "description": "Strict wire shape for holdout report, signed registry evidence, and governance evidence. Trust and state semantics remain verifier responsibilities.",
+  "$comment": "This closes the v7 envelope and nested object field allowlists. It does not prove digest equality, event-chain signatures, event-to-summary equality, exact lifecycle grammar, the semantic mapping between top-level status and outcome, status freshness, trust-domain independence, identity authorization, report scoring, or evidence authenticity. The verifier must apply the v6 domain/cryptographic checks plus the v7 governance checks before deriving any result. In particular, passed maps to passed, failed maps to failed, and aborted or incomplete maps to top-level incomplete; registry terminal evidence distinguishes aborted from a still-open incomplete run. Registry terminal consumed may accompany a complete scorer pass or fail; terminal failed requires a frozen-policy budget/deadline gate failure before the attempt set/scorer completes, with an explicit early-failure rule, no required metric unresolved, and violation recomputed from authenticated actual cost or stop time rather than a reason label alone; completed scoring uses terminal consumed regardless of score, and unknown required evidence uses aborted; terminal failed is not inferred from a low scorer result or unauthenticated crash; terminal aborted means no complete pass/fail conclusion can be derived. An authenticated source that correctly reports a required metric as unknown may still yield evidence_integrity=valid and holdout_outcome=unverified; source absence/staleness instead makes integrity unverified. These cross-field and cross-source semantics are verifier responsibilities. Derived decision fields and detached acceptance receipts are deliberately absent from this envelope. A failed terminal is admissible only with explicit frozen early_failure_policy mappings and receipt-bound runtime-stop/closed-usage evidence; the verifier must recompute the named violation and confirm all required measures are known before deriving a failed outcome.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "hash_profile",
+    "gate_id",
+    "kind",
+    "status",
+    "release_id",
+    "run_id",
+    "blind",
+    "holdout_version",
+    "candidate_sha256",
+    "image_digest",
+    "scorer_sha256",
+    "executor_sha256",
+    "authorization_event_id",
+    "reservation_event_id",
+    "terminal_event_id",
+    "frozen_spec",
+    "frozen_spec_sha256",
+    "results_sha256",
+    "output_sha256",
+    "output_seal_id",
+    "metrics",
+    "metrics_sha256",
+    "independent_task_count",
+    "sample_size",
+    "passed_tasks",
+    "pass_rate_bps",
+    "quality_criteria",
+    "quality_decision",
+    "token_usage",
+    "case_limit",
+    "max_output_bytes",
+    "deadline_utc",
+    "executed_at",
+    "outcome",
+    "cost_status",
+    "budget",
+    "stop_conditions",
+    "registry",
+    "trust_bundle",
+    "trust_bundle_root_signature",
+    "trust_bundle_sha256",
+    "report_sha256",
+    "governance"
+  ],
+  "properties": {
+    "schema": {
+      "const": "official-blind-holdout-evidence-envelope-v7"
+    },
+    "hash_profile": {
+      "const": "jcs-rfc8785-v1"
+    },
+    "gate_id": {
+      "const": "official_blind_holdout"
+    },
+    "kind": {
+      "const": "holdout"
+    },
+    "status": {
+      "enum": ["passed", "failed", "incomplete"]
+    },
+    "release_id": {
+      "$ref": "#/$defs/id"
+    },
+    "run_id": {
+      "$ref": "#/$defs/id"
+    },
+    "blind": {
+      "const": true
+    },
+    "holdout_version": {
+      "$ref": "#/$defs/id"
+    },
+    "candidate_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "image_digest": {
+      "$ref": "#/$defs/imageDigest"
+    },
+    "scorer_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "executor_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authorization_event_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "reservation_event_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "terminal_event_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "frozen_spec": {
+      "$ref": "#/$defs/frozenSpec"
+    },
+    "frozen_spec_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "results_sha256": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "output_sha256": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "output_seal_id": {
+      "$ref": "#/$defs/nullableId"
+    },
+    "metrics": {
+      "$ref": "#/$defs/nullableMetrics"
+    },
+    "metrics_sha256": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "independent_task_count": {
+      "$ref": "#/$defs/nullableCount"
+    },
+    "sample_size": {
+      "$ref": "#/$defs/nullableCount"
+    },
+    "passed_tasks": {
+      "$ref": "#/$defs/nullableCount"
+    },
+    "pass_rate_bps": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "quality_criteria": {
+      "$ref": "#/$defs/qualityCriteria"
+    },
+    "quality_decision": {
+      "enum": ["passed", "failed", "unverified", null]
+    },
+    "token_usage": {
+      "$ref": "#/$defs/nullableTokenUsage"
+    },
+    "case_limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "max_output_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "deadline_utc": {
+      "$ref": "#/$defs/utcTimestamp"
+    },
+    "executed_at": {
+      "$ref": "#/$defs/nullableTimestamp"
+    },
+    "outcome": {
+      "enum": ["passed", "failed", "aborted", "incomplete"]
+    },
+    "cost_status": {
+      "enum": ["known", "unknown"]
+    },
+    "budget": {
+      "$ref": "#/$defs/budget"
+    },
+    "stop_conditions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/stopCondition"
+      }
+    },
+    "runtime_audit_ref": {
+      "$ref": "#/$defs/nullableEvidenceRef"
+    },
+    "runtime_audit_sha256": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "capability_revocation_ref": {
+      "$ref": "#/$defs/nullableEvidenceRef"
+    },
+    "capability_revocation_sha256": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "usage_ledger_ref": {
+      "$ref": "#/$defs/nullableEvidenceRef"
+    },
+    "usage_ledger_sha256": {
+      "$ref": "#/$defs/nullableSha256"
+    },
+    "registry": {
+      "$ref": "#/$defs/registry"
+    },
+    "trust_bundle": {
+      "$ref": "#/$defs/trustBundle"
+    },
+    "trust_bundle_root_signature": {
+      "$ref": "#/$defs/rootSignature"
+    },
+    "trust_bundle_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "governance": {
+      "$ref": "https://ai-agents-study.invalid/schemas/stage5-governance-object-v1"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "nullableId": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableSha256": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "imageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "nullableTimestamp": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "nullableCount": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableDecimalUsd": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableTokenUsage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/tokenUsage"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tokenUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens"],
+      "properties": {
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "qualityCriteria": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_task_count", "minimum_pass_rate_bps", "require_all_tasks_pass"],
+      "properties": {
+        "minimum_task_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "minimum_pass_rate_bps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "require_all_tasks_pass": {
+          "type": "boolean"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_count",
+        "passed_tasks",
+        "pass_rate_bps",
+        "quality_criteria",
+        "token_usage",
+        "cost_usd"
+      ],
+      "properties": {
+        "task_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "passed_tasks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "pass_rate_bps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "quality_criteria": {
+          "$ref": "#/$defs/qualityCriteria"
+        },
+        "token_usage": {
+          "$ref": "#/$defs/tokenUsage"
+        },
+        "cost_usd": {
+          "$ref": "#/$defs/nullableDecimalUsd"
+        }
+      }
+    },
+    "nullableMetrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/metrics"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorized_max_usd", "actual_usd"],
+      "properties": {
+        "authorized_max_usd": {
+          "$ref": "#/$defs/nullableDecimalUsd"
+        },
+        "actual_usd": {
+          "$ref": "#/$defs/nullableDecimalUsd"
+        }
+      }
+    },
+    "stopCondition": {
+      "enum": [
+        "budget",
+        "deadline",
+        "side-effect",
+        "permission-boundary",
+        "evidence-missing",
+        "label-leak",
+        "identity-mismatch"
+      ]
+    },
+    "assuranceProfile": {
+      "enum": ["local-reference", "single-authority-v1", "dual-witness-v1"]
+    },
+    "frozenSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hash_profile",
+        "holdout_version",
+        "run_id",
+        "authorization_event_id",
+        "owner_id",
+        "executor_id",
+        "recovery_operator_id",
+        "candidate_sha256",
+        "image_digest",
+        "dataset_sha256",
+        "scorer_sha256",
+        "executor_sha256",
+        "max_budget_usd",
+        "early_failure_policy",
+        "max_cases",
+        "minimum_task_count",
+        "minimum_pass_rate_bps",
+        "require_all_tasks_pass",
+        "max_output_bytes",
+        "deadline_utc",
+        "stop_conditions",
+        "registry_environment_id",
+        "registry_log_id",
+        "permitted_signer_key_id",
+        "trust_bundle_sha256",
+        "receipt_hash_profile",
+        "receipt_signature_profile",
+        "max_status_age_seconds",
+        "clock_skew_seconds",
+        "verifier_input_limits_sha256",
+        "assurance_profile",
+        "append_authority_domain_id",
+        "signing_key_custodian_domain_id",
+        "witness_authority_domain_id",
+        "witness_root_fingerprint_sha256"
+      ],
+      "properties": {
+        "hash_profile": {
+          "const": "jcs-rfc8785-v1"
+        },
+        "holdout_version": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "authorization_event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "owner_id": {
+          "$ref": "#/$defs/id"
+        },
+        "executor_id": {
+          "$ref": "#/$defs/id"
+        },
+        "recovery_operator_id": {
+          "$ref": "#/$defs/id"
+        },
+        "candidate_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "image_digest": {
+          "$ref": "#/$defs/imageDigest"
+        },
+        "dataset_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "scorer_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "executor_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "max_budget_usd": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"
+        },
+        "max_cases": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "minimum_task_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "minimum_pass_rate_bps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "require_all_tasks_pass": {
+          "type": "boolean"
+        },
+        "max_output_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "deadline_utc": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "stop_conditions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/stopCondition"
+          }
+        },
+        "registry_environment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "registry_log_id": {
+          "$ref": "#/$defs/id"
+        },
+        "permitted_signer_key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "trust_bundle_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "receipt_hash_profile": {
+          "const": "jcs-rfc8785-v1"
+        },
+        "receipt_signature_profile": {
+          "const": "ed25519-jcs-receipt-v1"
+        },
+        "max_status_age_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "clock_skew_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "verifier_input_limits_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assurance_profile": {
+          "$ref": "#/$defs/assuranceProfile"
+        },
+        "append_authority_domain_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signing_key_custodian_domain_id": {
+          "$ref": "#/$defs/id"
+        },
+        "witness_authority_domain_id": {
+          "$ref": "#/$defs/nullableId"
+        },
+        "witness_root_fingerprint_sha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "early_failure_policy": {
+          "$ref": "#/$defs/earlyFailurePolicy"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "assurance_profile": {
+                "const": "dual-witness-v1"
+              }
+            },
+            "required": ["assurance_profile"]
+          },
+          "then": {
+            "required": [],
+            "properties": {
+              "witness_authority_domain_id": {
+                "$ref": "#/$defs/id"
+              },
+              "witness_root_fingerprint_sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "witness_authority_domain_id": {
+                "type": "null"
+              },
+              "witness_root_fingerprint_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "evidenceRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "nullableEvidenceRef": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/evidenceRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "eventSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "event_id",
+        "actor_id",
+        "actor_role",
+        "previous_event_id",
+        "run_id",
+        "appended_at"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/eventType"
+        },
+        "event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "actor_id": {
+          "$ref": "#/$defs/id"
+        },
+        "actor_role": {
+          "$ref": "#/$defs/id"
+        },
+        "previous_event_id": {
+          "$ref": "#/$defs/nullableId"
+        },
+        "holdout_version": {
+          "$ref": "#/$defs/id"
+        },
+        "candidate_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "image_digest": {
+          "$ref": "#/$defs/imageDigest"
+        },
+        "dataset_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "scorer_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "executor_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "hash_profile": {
+          "const": "jcs-rfc8785-v1"
+        },
+        "frozen_spec_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "appended_at": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "report_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "attestation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "attestation_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "subject_id": {
+          "$ref": "#/$defs/id"
+        },
+        "required_role": {
+          "$ref": "#/$defs/id"
+        },
+        "decision": {
+          "enum": ["accepted", "rejected"]
+        },
+        "assurance_profile": {
+          "$ref": "#/$defs/assuranceProfile"
+        },
+        "approval_policy_id": {
+          "$ref": "#/$defs/id"
+        },
+        "handoff_core_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "terminal_event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "terminal_event_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "identity_preflight_ref": {
+          "$ref": "#/$defs/evidenceRef"
+        },
+        "identity_preflight_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "trust_domains_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "compromise_in_scope": {
+          "type": "boolean"
+        },
+        "witness_authority_id": {
+          "$ref": "#/$defs/id"
+        },
+        "witness_root_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "revocation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_kind": {
+          "enum": ["assurance-approval", "handoff-review"]
+        },
+        "target_attestation_id": {
+          "$ref": "#/$defs/id"
+        },
+        "target_attestation_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "reason_code": {
+          "enum": ["signer-withdrawal", "policy-revoked", "identity-correction", "other"]
+        },
+        "early_failure_gate": {
+          "enum": ["budget_violation", "deadline_violation"]
+        },
+        "runtime_audit_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "runtime_stop_record_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "usage_ledger_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "usage_ledger_closed_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "usage_ledger_closed_head_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": ["authorized", "reserved"]
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": [
+              "holdout_version",
+              "candidate_sha256",
+              "image_digest",
+              "dataset_sha256",
+              "scorer_sha256",
+              "executor_sha256",
+              "hash_profile",
+              "frozen_spec_sha256"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "consumed"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["report_sha256"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "assurance-approved"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": [
+              "attestation_id",
+              "attestation_sha256",
+              "subject_id",
+              "required_role",
+              "decision",
+              "frozen_spec_sha256",
+              "assurance_profile",
+              "approval_policy_id",
+              "identity_preflight_ref",
+              "identity_preflight_sha256",
+              "trust_domains_sha256",
+              "compromise_in_scope"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "handoff-reviewed"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": [
+              "attestation_id",
+              "attestation_sha256",
+              "subject_id",
+              "required_role",
+              "decision",
+              "frozen_spec_sha256",
+              "handoff_core_sha256",
+              "terminal_event_id",
+              "terminal_event_hash",
+              "approval_policy_id",
+              "identity_preflight_ref",
+              "identity_preflight_sha256"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "governance-attestation-revoked"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": [
+              "revocation_id",
+              "target_kind",
+              "target_attestation_id",
+              "target_attestation_sha256",
+              "subject_id",
+              "required_role",
+              "reason_code",
+              "approval_policy_id",
+              "identity_preflight_ref",
+              "identity_preflight_sha256"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "failed"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": [
+              "report_sha256",
+              "early_failure_gate",
+              "runtime_audit_sha256",
+              "runtime_stop_record_sha256",
+              "usage_ledger_sha256",
+              "usage_ledger_closed_sequence",
+              "usage_ledger_closed_head_sha256"
+            ]
+          }
+        }
+      ]
+    },
+    "registryEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "hash_profile",
+        "run_id",
+        "sequence",
+        "event_id",
+        "previous_event_hash",
+        "event_type",
+        "actor_subject_id",
+        "actor_role",
+        "registry_recorded_at",
+        "actor_asserted_at",
+        "payload_sha256",
+        "payload",
+        "event_hash"
+      ],
+      "properties": {
+        "schema": {
+          "const": "stage5-registry-event-envelope-v1"
+        },
+        "hash_profile": {
+          "const": "jcs-rfc8785-v1"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "previous_event_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "event_type": {
+          "$ref": "#/$defs/eventType"
+        },
+        "actor_subject_id": {
+          "$ref": "#/$defs/id"
+        },
+        "actor_role": {
+          "$ref": "#/$defs/id"
+        },
+        "registry_recorded_at": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "actor_asserted_at": {
+          "$ref": "#/$defs/nullableTimestamp"
+        },
+        "payload_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "payload": {
+          "$ref": "#/$defs/eventSummary"
+        },
+        "event_hash": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "event_type": {
+              "const": "authorized"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "authorized"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "reserved"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "reserved"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "consumed"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "consumed"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "aborted"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "aborted"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "failed"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "failed"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "assurance-approved"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "assurance-approved"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "handoff-reviewed"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "handoff-reviewed"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "governance-attestation-revoked"
+            },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "governance-attestation-revoked"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "eventType": {
+      "enum": [
+        "authorized",
+        "reserved",
+        "consumed",
+        "aborted",
+        "failed",
+        "assurance-approved",
+        "handoff-reviewed",
+        "governance-attestation-revoked"
+      ]
+    },
+    "appendReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "hash_profile",
+        "environment_id",
+        "log_id",
+        "run_id",
+        "sequence",
+        "event_id",
+        "previous_event_hash",
+        "event_hash",
+        "registry_recorded_at",
+        "signature_profile",
+        "signature_algorithm",
+        "key_id",
+        "signature"
+      ],
+      "properties": {
+        "schema": {
+          "const": "stage5-append-receipt-v1"
+        },
+        "hash_profile": {
+          "const": "jcs-rfc8785-v1"
+        },
+        "environment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "log_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "previous_event_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "event_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "registry_recorded_at": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "signature_profile": {
+          "const": "ed25519-jcs-receipt-v1"
+        },
+        "signature_algorithm": {
+          "const": "Ed25519"
+        },
+        "key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signature": {
+          "$ref": "#/$defs/signature"
+        }
+      }
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "registryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event", "receipt"],
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/registryEvent"
+        },
+        "receipt": {
+          "$ref": "#/$defs/appendReceipt"
+        }
+      }
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "anchor_id",
+        "environment_id",
+        "log_id",
+        "run_id",
+        "sequence",
+        "event_id",
+        "event_hash",
+        "key_id",
+        "receipt_sha256",
+        "anchor_recorded_at_utc",
+        "anchor_authority_id",
+        "anchor_key_id",
+        "signature_algorithm",
+        "signature_profile",
+        "signature"
+      ],
+      "properties": {
+        "schema": {
+          "const": "stage5-pre-compromise-anchor-v1"
+        },
+        "anchor_id": {
+          "$ref": "#/$defs/id"
+        },
+        "environment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "log_id": {
+          "$ref": "#/$defs/id"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "event_id": {
+          "$ref": "#/$defs/id"
+        },
+        "event_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "anchor_recorded_at_utc": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "anchor_authority_id": {
+          "$ref": "#/$defs/id"
+        },
+        "anchor_key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "signature_algorithm": {
+          "const": "Ed25519"
+        },
+        "signature_profile": {
+          "const": "ed25519-jcs-precompromise-anchor-v1"
+        },
+        "signature": {
+          "$ref": "#/$defs/signature"
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry_id", "append_only", "receipt_chain"],
+      "properties": {
+        "registry_id": {
+          "$ref": "#/$defs/id"
+        },
+        "append_only": {
+          "const": true
+        },
+        "receipt_chain": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/registryEntry"
+          }
+        },
+        "pre_compromise_anchors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/anchor"
+          }
+        }
+      }
+    },
+    "trustBundleKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key_id", "algorithm", "public_key", "state", "not_before_utc", "not_after_utc"],
+      "properties": {
+        "key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "public_key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "state": {
+          "enum": ["active", "retired", "revoked"]
+        },
+        "not_before_utc": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "not_after_utc": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "retired_at_utc": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "revoked_at_utc": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "revocation_id": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "trustBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "bundle_id",
+        "hash_profile",
+        "signature_profile",
+        "environment_id",
+        "log_id",
+        "issued_at_utc",
+        "keys"
+      ],
+      "properties": {
+        "schema": {
+          "const": "stage5-receipt-trust-bundle-v1"
+        },
+        "bundle_id": {
+          "$ref": "#/$defs/id"
+        },
+        "hash_profile": {
+          "const": "jcs-rfc8785-v1"
+        },
+        "signature_profile": {
+          "const": "ed25519-jcs-receipt-v1"
+        },
+        "environment_id": {
+          "$ref": "#/$defs/id"
+        },
+        "log_id": {
+          "$ref": "#/$defs/id"
+        },
+        "issued_at_utc": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/trustBundleKey"
+          }
+        }
+      }
+    },
+    "rootSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "root_key_id", "profile", "signature"],
+      "properties": {
+        "schema": {
+          "const": "stage5-trust-root-signature-v1"
+        },
+        "root_key_id": {
+          "$ref": "#/$defs/id"
+        },
+        "profile": {
+          "const": "ed25519-jcs-trust-bundle-v1"
+        },
+        "signature": {
+          "$ref": "#/$defs/signature"
+        }
+      }
+    },
+    "earlyFailurePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["budget_violation", "deadline_violation"],
+      "properties": {
+        "budget_violation": {
+          "enum": ["disabled", "fail-before-scoring"]
+        },
+        "deadline_violation": {
+          "enum": ["disabled", "fail-before-scoring"]
+        }
+      }
+    }
+  }
+}

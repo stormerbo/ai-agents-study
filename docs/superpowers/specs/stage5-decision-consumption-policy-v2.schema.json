@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-decision-consumption-policy-v2",
+  "title": "Stage 5 decision-consumption policy v2",
+  "description": "Strict policy payload shape including a bounded challenge-monitor detection and recovery contract. Arithmetic SLA relations are semantic verifier checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "policy_id",
+    "policy_type",
+    "consistency_profile",
+    "challenge_event_schema",
+    "trigger_evidence_digest_profile",
+    "maximum_snapshot_skew_seconds",
+    "source_ttl_seconds",
+    "challenge_triggers",
+    "resolution",
+    "challenge_monitoring",
+    "residual_risk_statement"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-decision-consumption-policy-v2" },
+    "policy_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "policy_type": { "enum": ["human-acceptance", "release-authorization"] },
+    "consistency_profile": { "const": "bounded-snapshot-v1" },
+    "challenge_event_schema": { "const": "stage5-decision-challenge-v2" },
+    "trigger_evidence_digest_profile": { "const": "sha256-jcs-signed-evidence-v1" },
+    "maximum_snapshot_skew_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "source_ttl_seconds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registry",
+        "usage_ledger",
+        "governance",
+        "identity_source",
+        "witness",
+        "challenge_monitor"
+      ],
+      "properties": {
+        "registry": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "usage_ledger": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "governance": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "identity_source": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "witness": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "challenge_monitor": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "challenge_triggers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "contains": { "const": "source-unavailable" },
+      "minContains": 1,
+      "items": {
+        "enum": [
+          "source-head-advanced",
+          "source-unavailable",
+          "signer-revoked",
+          "credential-revoked",
+          "policy-digest-changed",
+          "evidence-corrected",
+          "witness-head-behind",
+          "integrity-incident"
+        ]
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requires_fresh_verifier_decision",
+        "requires_exact_challenge_digest",
+        "preserves_challenge_history"
+      ],
+      "properties": {
+        "requires_fresh_verifier_decision": { "const": true },
+        "requires_exact_challenge_digest": { "const": true },
+        "preserves_challenge_history": { "const": true }
+      }
+    },
+    "challenge_monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "monitoring_mode",
+        "notification_delivery_bound_seconds",
+        "full_reconciliation_interval_seconds",
+        "full_reconciliation_duration_bound_seconds",
+        "target_fanout_duration_bound_seconds",
+        "maximum_detection_delay_seconds",
+        "source_probe_interval_seconds",
+        "source_probe_timeout_bound_seconds",
+        "source_unavailability_threshold_seconds",
+        "source_head_confirmation",
+        "cursor_gap_action",
+        "coverage_unknown_action"
+      ],
+      "properties": {
+        "monitoring_mode": {
+          "enum": ["bounded-polling", "notifications-with-periodic-reconciliation"]
+        },
+        "notification_delivery_bound_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "full_reconciliation_interval_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "full_reconciliation_duration_bound_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "target_fanout_duration_bound_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "maximum_detection_delay_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "source_probe_interval_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "source_probe_timeout_bound_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "source_unavailability_threshold_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "source_head_confirmation": { "const": "authenticated-authoritative-read" },
+        "cursor_gap_action": { "const": "full-rescan-and-unverified" },
+        "coverage_unknown_action": { "const": "block-positive-actions" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "monitoring_mode": { "const": "bounded-polling" } } },
+          "then": { "properties": { "notification_delivery_bound_seconds": { "const": 0 } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "monitoring_mode": { "const": "notifications-with-periodic-reconciliation" }
+            }
+          },
+          "then": {
+            "properties": {
+              "notification_delivery_bound_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        }
+      ]
+    },
+    "residual_risk_statement": { "type": "string", "minLength": 1, "maxLength": 2000 }
+  }
+}

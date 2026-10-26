@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-decision-consumption-policy-v1",
+  "title": "Stage 5 decision-consumption policy v1",
+  "description": "Strict policy payload shape. The verifier must pin its digest through the approved frozen spec and independently enforce all values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "policy_id",
+    "policy_type",
+    "consistency_profile",
+    "maximum_snapshot_skew_seconds",
+    "source_ttl_seconds",
+    "challenge_triggers",
+    "resolution",
+    "residual_risk_statement"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-decision-consumption-policy-v1" },
+    "policy_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "policy_type": { "enum": ["human-acceptance", "release-authorization"] },
+    "consistency_profile": { "const": "bounded-snapshot-v1" },
+    "maximum_snapshot_skew_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "source_ttl_seconds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry", "usage_ledger", "governance", "identity_source", "witness"],
+      "properties": {
+        "registry": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "usage_ledger": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "governance": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "identity_source": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "witness": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "challenge_triggers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "source-head-advanced",
+          "source-unavailable",
+          "signer-revoked",
+          "credential-revoked",
+          "policy-digest-changed",
+          "evidence-corrected",
+          "witness-head-behind",
+          "integrity-incident"
+        ]
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requires_fresh_verifier_decision",
+        "requires_exact_challenge_digest",
+        "preserves_challenge_history"
+      ],
+      "properties": {
+        "requires_fresh_verifier_decision": { "const": true },
+        "requires_exact_challenge_digest": { "const": true },
+        "preserves_challenge_history": { "const": true }
+      }
+    },
+    "residual_risk_statement": { "type": "string", "minLength": 1, "maxLength": 2000 }
+  }
+}

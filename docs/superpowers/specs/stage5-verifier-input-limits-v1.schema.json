@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-verifier-input-limits-v1",
+  "title": "Stage 5 verifier input resource limits v1",
+  "description": "Externally pinned parser and canonicalization limits. Values are deployment-selected and must be frozen before official verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "profile_id",
+    "accepted_content_encodings",
+    "max_compressed_input_bytes",
+    "max_decompressed_input_bytes",
+    "max_json_depth",
+    "max_total_tokens",
+    "max_object_members",
+    "max_array_items",
+    "max_decoded_string_bytes",
+    "max_number_token_bytes",
+    "max_canonical_output_bytes",
+    "max_parse_wall_ms",
+    "max_parse_cpu_ms",
+    "max_parser_memory_bytes",
+    "max_total_parser_memory_bytes",
+    "max_concurrent_verification_jobs",
+    "max_concurrent_jobs_per_principal",
+    "max_queued_verification_jobs",
+    "max_queued_jobs_per_principal"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-verifier-input-limits-v1" },
+    "profile_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "accepted_content_encodings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["identity", "gzip"] },
+      "contains": { "const": "identity" },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "max_compressed_input_bytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_decompressed_input_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "max_json_depth": { "type": "integer", "minimum": 1, "maximum": 128 },
+    "max_total_tokens": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_object_members": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_array_items": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_decoded_string_bytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_number_token_bytes": { "type": "integer", "minimum": 1, "maximum": 256 },
+    "max_canonical_output_bytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_parse_wall_ms": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_parse_cpu_ms": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_parser_memory_bytes": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "max_total_parser_memory_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "max_concurrent_verification_jobs": { "type": "integer", "minimum": 1, "maximum": 1024 },
+    "max_concurrent_jobs_per_principal": { "type": "integer", "minimum": 1, "maximum": 1024 },
+    "max_queued_verification_jobs": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "max_queued_jobs_per_principal": { "type": "integer", "minimum": 0, "maximum": 10000 }
+  }
+}

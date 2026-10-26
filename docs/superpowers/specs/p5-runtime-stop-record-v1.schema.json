@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/p5-runtime-stop-record-v1",
+  "title": "Stage 5 trusted runtime stop record v1",
+  "description": "Supervisor-signed attestation that a specific admitted candidate runtime was stopped and egress-fenced, with a complete provider-call inventory at the fence point.",
+  "$comment": "The signature is Ed25519 over RFC 8785 JCS canonical UTF-8 bytes of runtime_stop, including signature_profile and signing_key_id. runtime_stop_record_sha256 means SHA-256 of the complete signed envelope's JCS bytes. Schema shape does not prove supervisor identity, actual process termination, egress enforcement, inventory completeness, or currentness. Those require a pinned runtime-control source and independent verification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runtime_stop", "signature"],
+  "properties": {
+    "schema": { "const": "p5-runtime-stop-record-envelope-v1" },
+    "runtime_stop": { "$ref": "#/$defs/runtimeStop" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "providerCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_call_id", "last_state", "last_entry_sha256"],
+      "properties": {
+        "provider_call_id": { "$ref": "#/$defs/id" },
+        "last_state": {
+          "enum": [
+            "prepared",
+            "sent",
+            "responded",
+            "unknown",
+            "cancelled",
+            "confirmed-not-executed"
+          ]
+        },
+        "last_entry_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "runtimeStop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stop_record_id",
+        "stop_request_id",
+        "environment_id",
+        "usage_ledger_id",
+        "run_id",
+        "reservation_event_id",
+        "frozen_spec_sha256",
+        "candidate_sha256",
+        "runtime_admission_sha256",
+        "runtime_image_sha256",
+        "dataset_sha256",
+        "runtime_id",
+        "runtime_subject",
+        "supervisor_subject",
+        "stop_reason",
+        "termination_status",
+        "egress_status",
+        "egress_policy_sha256",
+        "process_inventory_sha256",
+        "observed_process_count",
+        "terminated_process_count",
+        "provider_call_inventory",
+        "usage_ledger_head_sequence",
+        "usage_ledger_head_sha256",
+        "started_at_utc",
+        "stopped_at_utc",
+        "signature_profile",
+        "signing_key_id"
+      ],
+      "properties": {
+        "stop_record_id": { "$ref": "#/$defs/id" },
+        "stop_request_id": { "$ref": "#/$defs/id" },
+        "environment_id": { "$ref": "#/$defs/id" },
+        "usage_ledger_id": { "$ref": "#/$defs/id" },
+        "run_id": { "$ref": "#/$defs/id" },
+        "reservation_event_id": { "$ref": "#/$defs/id" },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "candidate_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_admission_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_image_sha256": { "$ref": "#/$defs/sha256" },
+        "dataset_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_id": { "$ref": "#/$defs/id" },
+        "runtime_subject": { "$ref": "#/$defs/id" },
+        "supervisor_subject": { "$ref": "#/$defs/id" },
+        "stop_reason": {
+          "enum": [
+            "normal-completion",
+            "deadline",
+            "budget-limit",
+            "operator-stop",
+            "integrity-failure"
+          ]
+        },
+        "termination_status": { "const": "confirmed" },
+        "egress_status": { "const": "fenced" },
+        "egress_policy_sha256": { "$ref": "#/$defs/sha256" },
+        "process_inventory_sha256": { "$ref": "#/$defs/sha256" },
+        "observed_process_count": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "terminated_process_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "provider_call_inventory": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/providerCall" }
+        },
+        "usage_ledger_head_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "usage_ledger_head_sha256": { "$ref": "#/$defs/sha256" },
+        "started_at_utc": { "$ref": "#/$defs/timestamp" },
+        "stopped_at_utc": { "$ref": "#/$defs/timestamp" },
+        "signature_profile": { "const": "ed25519-jcs-p5-runtime-stop-record-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "usage_ledger_head_sequence": { "const": 0 } } },
+          "then": {
+            "properties": {
+              "usage_ledger_head_sha256": {
+                "const": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              "provider_call_inventory": { "type": "array", "maxItems": 0 }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

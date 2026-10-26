@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-handoff-core-v1",
+  "title": "Stage 5 signed handoff core v1",
+  "description": "Stable content reviewed by the independent handoff signer. Governance attestations and registry receipts are deliberately outside this object.",
+  "$comment": "The reviewer signs SHA-256(JCS(this object)). Schema validation does not establish identity, role, evidence authenticity, event existence, deployment readiness, or equality with the frozen spec. deployment_facts contains exactly one record for each defined fact_id; arrays are canonically ordered by fact_id/risk_id and residual risk ids must be unique (semantic check). evidence_ref is an opaque evidence identifier resolved only by verifier policy; it is never an artifact-selected URL to fetch. When append-authority compromise is in scope, the frozen threat decision requires dual-witness-v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "run_id",
+    "frozen_spec_sha256",
+    "assurance_profile",
+    "compromise_in_scope",
+    "trust_domains",
+    "terminal_event",
+    "deployment_facts",
+    "residual_risks",
+    "required_subjects"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-handoff-core-v1" },
+    "run_id": { "$ref": "#/$defs/id" },
+    "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+    "assurance_profile": { "$ref": "#/$defs/assuranceProfile" },
+    "compromise_in_scope": { "type": "boolean" },
+    "trust_domains": { "$ref": "#/$defs/trustDomains" },
+    "terminal_event": { "$ref": "#/$defs/terminalEvent" },
+    "deployment_facts": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/deploymentFact" },
+      "uniqueItems": true,
+      "allOf": [
+        { "$ref": "#/$defs/requiresDeploymentTopology" },
+        { "$ref": "#/$defs/requiresIdentityOwnership" },
+        { "$ref": "#/$defs/requiresRegistryOperations" },
+        { "$ref": "#/$defs/requiresRollbackProcedure" },
+        { "$ref": "#/$defs/requiresRetentionPolicy" },
+        { "$ref": "#/$defs/requiresIncidentResponse" }
+      ]
+    },
+    "residual_risks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/residualRisk" },
+      "uniqueItems": true
+    },
+    "required_subjects": { "$ref": "#/$defs/requiredSubjects" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "compromise_in_scope": { "const": true } },
+        "required": ["compromise_in_scope"]
+      },
+      "then": { "properties": { "assurance_profile": { "const": "dual-witness-v1" } } }
+    },
+    {
+      "if": {
+        "properties": { "assurance_profile": { "const": "dual-witness-v1" } },
+        "required": ["assurance_profile"]
+      },
+      "then": {
+        "properties": {
+          "trust_domains": {
+            "type": "object",
+            "required": ["independent_witness_domain"]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "trust_domains": {
+            "type": "object",
+            "not": { "required": ["independent_witness_domain"] }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "assuranceProfile": {
+      "enum": ["local-reference", "single-authority-v1", "dual-witness-v1"]
+    },
+    "trustDomains": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["append_authority_domain", "key_custodian_domain"],
+      "properties": {
+        "append_authority_domain": { "$ref": "#/$defs/id" },
+        "key_custodian_domain": { "$ref": "#/$defs/id" },
+        "independent_witness_domain": { "$ref": "#/$defs/id" }
+      }
+    },
+    "terminalEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "event_hash", "sequence", "event_type"],
+      "properties": {
+        "event_id": { "$ref": "#/$defs/id" },
+        "event_hash": { "$ref": "#/$defs/sha256" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "event_type": { "enum": ["consumed", "aborted", "failed"] }
+      }
+    },
+    "deploymentFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "evidence_ref", "evidence_sha256"],
+      "properties": {
+        "fact_id": {
+          "enum": [
+            "deployment-topology",
+            "identity-ownership",
+            "registry-operations",
+            "rollback-procedure",
+            "retention-policy",
+            "incident-response"
+          ]
+        },
+        "evidence_ref": { "$ref": "#/$defs/id" },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "requiresDeploymentTopology": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": { "fact_id": { "const": "deployment-topology" } },
+        "required": ["fact_id"]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "requiresIdentityOwnership": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": { "fact_id": { "const": "identity-ownership" } },
+        "required": ["fact_id"]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "requiresRegistryOperations": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": { "fact_id": { "const": "registry-operations" } },
+        "required": ["fact_id"]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "requiresRollbackProcedure": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": { "fact_id": { "const": "rollback-procedure" } },
+        "required": ["fact_id"]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "requiresRetentionPolicy": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": { "fact_id": { "const": "retention-policy" } },
+        "required": ["fact_id"]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "requiresIncidentResponse": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": { "fact_id": { "const": "incident-response" } },
+        "required": ["fact_id"]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "residualRisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk_id", "severity", "statement", "disposition", "owner_subject_id"],
+      "properties": {
+        "risk_id": { "$ref": "#/$defs/id" },
+        "severity": { "enum": ["critical", "high", "medium", "low"] },
+        "statement": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "disposition": { "enum": ["accepted", "mitigated", "open"] },
+        "owner_subject_id": { "$ref": "#/$defs/id" }
+      }
+    },
+    "requiredSubjects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk_owner_subject_id", "independent_reviewer_subject_id"],
+      "properties": {
+        "risk_owner_subject_id": { "$ref": "#/$defs/id" },
+        "independent_reviewer_subject_id": { "$ref": "#/$defs/id" }
+      }
+    }
+  }
+}

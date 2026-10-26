@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-deployment-operation-v1",
+  "title": "Stage 5 deployment operation statement v1",
+  "description": "Signed append-only controller statement shape. Signature, release binding, predecessor, current state and idempotency are semantic checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "attestation", "append_receipt"],
+  "properties": {
+    "schema": { "const": "stage5-deployment-operation-event-v1" },
+    "attestation": { "$ref": "#/$defs/attestation" },
+    "append_receipt": {
+      "allOf": [
+        { "$ref": "stage5-decision-consumption-common-v1#/$defs/appendReceipt" },
+        {
+          "type": "object",
+          "properties": { "record_type": { "const": "deployment-operation" } }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+    "digest": { "$ref": "stage5-decision-consumption-common-v1#/$defs/digest" },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statement_id",
+        "operation_id",
+        "release_id",
+        "release_record_sha256",
+        "target_environment_id",
+        "artifact_sha256",
+        "image_digest",
+        "controller_id",
+        "event_type",
+        "state",
+        "idempotency_key",
+        "previous_statement_sha256",
+        "observed_at_utc",
+        "signature_profile",
+        "signing_key_id",
+        "signature"
+      ],
+      "properties": {
+        "statement_id": { "$ref": "#/$defs/id" },
+        "operation_id": { "$ref": "#/$defs/id" },
+        "release_id": { "$ref": "#/$defs/id" },
+        "release_record_sha256": { "$ref": "#/$defs/digest" },
+        "target_environment_id": { "$ref": "#/$defs/id" },
+        "artifact_sha256": { "$ref": "#/$defs/digest" },
+        "image_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "controller_id": { "$ref": "#/$defs/id" },
+        "event_type": { "enum": ["claimed", "started", "terminal", "correction"] },
+        "state": {
+          "enum": ["claimed", "started", "succeeded", "failed", "cancelled", "corrected"]
+        },
+        "idempotency_key": { "$ref": "#/$defs/id" },
+        "previous_statement_sha256": {
+          "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }]
+        },
+        "observed_at_utc": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/utcTimestamp"
+        },
+        "correction_of_sha256": { "$ref": "#/$defs/digest" },
+        "corrected_state": { "enum": ["claimed", "started", "succeeded", "failed", "cancelled"] },
+        "correction_evidence_sha256": { "$ref": "#/$defs/digest" },
+        "reason_code": { "$ref": "#/$defs/id" },
+        "signature_profile": { "const": "ed25519-jcs-deployment-operation-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "event_type": { "const": "claimed" } },
+            "required": ["event_type"]
+          },
+          "then": {
+            "properties": {
+              "state": { "const": "claimed" },
+              "previous_statement_sha256": { "type": "null" }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["correction_of_sha256"] },
+                { "required": ["corrected_state"] },
+                { "required": ["correction_evidence_sha256"] },
+                { "required": ["reason_code"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "event_type": { "const": "started" } },
+            "required": ["event_type"]
+          },
+          "then": {
+            "properties": {
+              "state": { "const": "started" },
+              "previous_statement_sha256": { "$ref": "#/$defs/digest" }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["correction_of_sha256"] },
+                { "required": ["corrected_state"] },
+                { "required": ["correction_evidence_sha256"] },
+                { "required": ["reason_code"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "event_type": { "const": "terminal" } },
+            "required": ["event_type"]
+          },
+          "then": {
+            "properties": {
+              "state": { "enum": ["succeeded", "failed", "cancelled"] },
+              "previous_statement_sha256": { "$ref": "#/$defs/digest" }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["correction_of_sha256"] },
+                { "required": ["corrected_state"] },
+                { "required": ["correction_evidence_sha256"] },
+                { "required": ["reason_code"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "event_type": { "const": "correction" } },
+            "required": ["event_type"]
+          },
+          "then": {
+            "required": [
+              "correction_of_sha256",
+              "corrected_state",
+              "correction_evidence_sha256",
+              "reason_code"
+            ],
+            "properties": {
+              "state": { "const": "corrected" },
+              "previous_statement_sha256": { "$ref": "#/$defs/digest" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

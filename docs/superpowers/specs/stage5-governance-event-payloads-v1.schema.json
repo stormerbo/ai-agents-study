@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-governance-event-payloads-v1",
+  "title": "Stage 5 governance event payloads v1",
+  "description": "Allowlisted payloads for assurance approval, independent handoff review, and governance attestation revocation registry events.",
+  "$comment": "This validates payload shape only. The append service and independent verifier must validate attestation signatures, authority sequence/time, subject and role authorization, historical/current credential status, conflict rules, target-event binding, run state, idempotency, and revocation monotonicity.",
+  "oneOf": [
+    { "$ref": "#/$defs/assuranceApproved" },
+    { "$ref": "#/$defs/handoffReviewed" },
+    { "$ref": "#/$defs/governanceAttestationRevoked" }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "assuranceProfile": {
+      "enum": ["local-reference", "single-authority-v1", "dual-witness-v1"]
+    },
+    "decisionRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "assuranceApproved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attestation_id",
+        "attestation_sha256",
+        "subject_id",
+        "required_role",
+        "decision",
+        "frozen_spec_sha256",
+        "assurance_profile",
+        "approval_policy_id",
+        "identity_preflight_ref",
+        "identity_preflight_sha256",
+        "trust_domains_sha256",
+        "compromise_in_scope"
+      ],
+      "properties": {
+        "attestation_id": { "$ref": "#/$defs/id" },
+        "attestation_sha256": { "$ref": "#/$defs/sha256" },
+        "subject_id": { "$ref": "#/$defs/id" },
+        "required_role": { "const": "stage5_risk_owner" },
+        "decision": { "enum": ["accepted", "rejected"] },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "assurance_profile": { "$ref": "#/$defs/assuranceProfile" },
+        "approval_policy_id": { "$ref": "#/$defs/id" },
+        "identity_preflight_ref": { "$ref": "#/$defs/decisionRef" },
+        "identity_preflight_sha256": { "$ref": "#/$defs/sha256" },
+        "trust_domains_sha256": { "$ref": "#/$defs/sha256" },
+        "compromise_in_scope": { "type": "boolean" },
+        "witness_authority_id": { "$ref": "#/$defs/id" },
+        "witness_root_sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "assurance_profile": { "const": "dual-witness-v1" } },
+            "required": ["assurance_profile"]
+          },
+          "then": { "required": ["witness_authority_id", "witness_root_sha256"] },
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["witness_authority_id"] },
+                { "required": ["witness_root_sha256"] }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "handoffReviewed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attestation_id",
+        "attestation_sha256",
+        "subject_id",
+        "required_role",
+        "decision",
+        "frozen_spec_sha256",
+        "handoff_core_sha256",
+        "terminal_event_id",
+        "terminal_event_hash",
+        "approval_policy_id",
+        "identity_preflight_ref",
+        "identity_preflight_sha256"
+      ],
+      "properties": {
+        "attestation_id": { "$ref": "#/$defs/id" },
+        "attestation_sha256": { "$ref": "#/$defs/sha256" },
+        "subject_id": { "$ref": "#/$defs/id" },
+        "required_role": { "const": "stage5_independent_reviewer" },
+        "decision": { "enum": ["accepted", "rejected"] },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "handoff_core_sha256": { "$ref": "#/$defs/sha256" },
+        "terminal_event_id": { "$ref": "#/$defs/id" },
+        "terminal_event_hash": { "$ref": "#/$defs/sha256" },
+        "approval_policy_id": { "$ref": "#/$defs/id" },
+        "identity_preflight_ref": { "$ref": "#/$defs/decisionRef" },
+        "identity_preflight_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "governanceAttestationRevoked": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revocation_id",
+        "target_kind",
+        "target_attestation_id",
+        "target_attestation_sha256",
+        "subject_id",
+        "required_role",
+        "reason_code",
+        "approval_policy_id",
+        "identity_preflight_ref",
+        "identity_preflight_sha256"
+      ],
+      "properties": {
+        "revocation_id": { "$ref": "#/$defs/id" },
+        "target_kind": { "enum": ["assurance-approval", "handoff-review"] },
+        "target_attestation_id": { "$ref": "#/$defs/id" },
+        "target_attestation_sha256": { "$ref": "#/$defs/sha256" },
+        "subject_id": { "$ref": "#/$defs/id" },
+        "required_role": {
+          "enum": [
+            "stage5_risk_owner",
+            "stage5_independent_reviewer",
+            "stage5_governance_administrator"
+          ]
+        },
+        "reason_code": {
+          "enum": ["signer-withdrawal", "policy-revoked", "identity-correction", "other"]
+        },
+        "approval_policy_id": { "$ref": "#/$defs/id" },
+        "identity_preflight_ref": { "$ref": "#/$defs/decisionRef" },
+        "identity_preflight_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

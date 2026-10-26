@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/p5-holdout-capability-grant-v1",
+  "title": "Stage 5 holdout capability grant v1",
+  "description": "Registry-signed, non-secret authorization claims paired with a separately delivered opaque bearer token. The grant does not itself open a session.",
+  "$comment": "Signature is Ed25519 over RFC 8785 JCS canonical UTF-8 bytes of grant, including signature_profile and signing_key_id. The custodian verifies the signature using a separately pinned registry workload key/current status, compares SHA-256 of the presented token to token_sha256, recomputes scope_sha256, and checks the grant against its frozen run configuration and authenticated caller identity. The grant and token must never be placed in registry event payloads, reports, or logs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "grant", "signature"],
+  "properties": {
+    "schema": { "const": "p5-holdout-capability-grant-envelope-v1" },
+    "grant": { "$ref": "#/$defs/grant" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_id",
+        "token_sha256",
+        "run_id",
+        "reservation_event_id",
+        "frozen_spec_sha256",
+        "candidate_hash",
+        "build_provenance_sha256",
+        "runtime_admission_sha256",
+        "platform_manifest_digest",
+        "runtime_id",
+        "runtime_subject",
+        "custodian_audience",
+        "dataset_sha256",
+        "session_policy_sha256",
+        "capability_expires_at_utc",
+        "max_attempts",
+        "operation",
+        "scope_sha256",
+        "issued_at_utc",
+        "signature_profile",
+        "signing_key_id"
+      ],
+      "properties": {
+        "capability_id": { "$ref": "#/$defs/id" },
+        "token_sha256": { "$ref": "#/$defs/sha256" },
+        "run_id": { "$ref": "#/$defs/id" },
+        "reservation_event_id": { "$ref": "#/$defs/id" },
+        "frozen_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "candidate_hash": { "$ref": "#/$defs/sha256" },
+        "build_provenance_sha256": { "$ref": "#/$defs/sha256" },
+        "runtime_admission_sha256": { "$ref": "#/$defs/sha256" },
+        "platform_manifest_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "runtime_id": { "$ref": "#/$defs/id" },
+        "runtime_subject": { "$ref": "#/$defs/id" },
+        "custodian_audience": { "$ref": "#/$defs/id" },
+        "dataset_sha256": { "$ref": "#/$defs/sha256" },
+        "session_policy_sha256": { "$ref": "#/$defs/sha256" },
+        "capability_expires_at_utc": { "$ref": "#/$defs/timestamp" },
+        "max_attempts": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "operation": { "const": "read_next_attempt" },
+        "scope_sha256": { "$ref": "#/$defs/sha256" },
+        "issued_at_utc": { "$ref": "#/$defs/timestamp" },
+        "signature_profile": { "const": "ed25519-jcs-p5-holdout-capability-grant-v1" },
+        "signing_key_id": { "$ref": "#/$defs/id" }
+      }
+    }
+  }
+}

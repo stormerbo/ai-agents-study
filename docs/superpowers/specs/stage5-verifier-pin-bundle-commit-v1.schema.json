@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-verifier-pin-bundle-commit-v1",
+  "title": "Stage 5 verifier pin bundle commit receipt v1",
+  "description": "Signed receipt proving that the verifier configuration authority atomically applied a policy-pin and bootstrap-root-pin update bundle.",
+  "$comment": "previous_bundle_state_sha256 and next_bundle_state_sha256 are SHA-256(JCS({environment_id,configuration_revision,policy_pin,root_pin,policy_pin_revision,root_pin_revision})) for the corresponding before/after state. policy_pin_revision and root_pin_revision are separate monotonic counters. record_sha256 is SHA-256(JCS(the full receipt with record_sha256 and signature omitted)). signature covers JCS({schema,bundle_id,record_sha256,pin_authority_id,pin_authority_key_id,applied_at_utc,signature_profile}) using ed25519-jcs-verifier-pin-bundle-commit-v1. The authority must durably compare-and-advance the single configuration revision and every included pin revision in one transaction; a signed receipt is only evidence of application and the verifier must still read a fresh authenticated configuration head. Exact retry of idempotency_key returns the same receipt; changed bytes with the same key conflict; unknown commit is reconciled by the original key and cannot be retried under a new key. A planned root rollover must include the matching role-policy transition; emergency recovery must use a fresh policy/log and the recovery-authorized root update, without importing old role grants. Schema validation does not verify signatures, digests, revision arithmetic, previous/current head equality, referenced record contents, signature authority, or atomic storage behavior.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "bundle_id",
+    "update_kind",
+    "environment_id",
+    "previous_configuration_revision",
+    "next_configuration_revision",
+    "previous_policy_pin_revision",
+    "next_policy_pin_revision",
+    "previous_bundle_state_sha256",
+    "next_bundle_state_sha256",
+    "previous_policy_pin",
+    "next_policy_pin",
+    "previous_root_pin_revision",
+    "next_root_pin_revision",
+    "previous_root_pin",
+    "next_root_pin",
+    "root_pin_update",
+    "policy_transition",
+    "idempotency_key",
+    "pin_authority_id",
+    "pin_authority_key_id",
+    "applied_at_utc",
+    "record_sha256",
+    "signature_profile",
+    "signature_key_id",
+    "signature"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-verifier-pin-bundle-commit-v1" },
+    "bundle_id": { "$ref": "#/$defs/id" },
+    "update_kind": { "enum": ["planned-root-rollover", "emergency-recovery"] },
+    "environment_id": { "$ref": "#/$defs/id" },
+    "previous_configuration_revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "next_configuration_revision": { "type": "integer", "minimum": 2, "maximum": 9007199254740991 },
+    "previous_policy_pin_revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "next_policy_pin_revision": { "type": "integer", "minimum": 2, "maximum": 9007199254740991 },
+    "previous_bundle_state_sha256": { "$ref": "#/$defs/digest" },
+    "next_bundle_state_sha256": { "$ref": "#/$defs/digest" },
+    "previous_policy_pin": { "$ref": "#/$defs/policyPin" },
+    "next_policy_pin": { "$ref": "#/$defs/policyPin" },
+    "previous_root_pin_revision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "next_root_pin_revision": { "type": "integer", "minimum": 2, "maximum": 9007199254740991 },
+    "previous_root_pin": { "$ref": "#/$defs/rootPin" },
+    "next_root_pin": { "$ref": "#/$defs/rootPin" },
+    "root_pin_update": { "$ref": "#/$defs/recordReference" },
+    "policy_transition": {
+      "anyOf": [{ "$ref": "#/$defs/recordReference" }, { "type": "null" }]
+    },
+    "idempotency_key": { "$ref": "#/$defs/id" },
+    "pin_authority_id": { "$ref": "#/$defs/id" },
+    "pin_authority_key_id": { "$ref": "#/$defs/id" },
+    "applied_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+    "record_sha256": { "$ref": "#/$defs/digest" },
+    "signature_profile": { "const": "ed25519-jcs-verifier-pin-bundle-commit-v1" },
+    "signature_key_id": { "$ref": "#/$defs/id" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "update_kind": { "const": "planned-root-rollover" } },
+        "required": ["update_kind"]
+      },
+      "then": {
+        "properties": { "policy_transition": { "$ref": "#/$defs/recordReference" } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "update_kind": { "const": "emergency-recovery" } },
+        "required": ["update_kind"]
+      },
+      "then": { "properties": { "policy_transition": { "type": "null" } } }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{85}[AQgw]$" },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    },
+    "policyPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_id", "policy_sha256", "policy_version"],
+      "properties": {
+        "policy_id": { "$ref": "#/$defs/id" },
+        "policy_sha256": { "$ref": "#/$defs/digest" },
+        "policy_version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "rootPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject_id", "key_id", "key_fingerprint_sha256"],
+      "properties": {
+        "subject_id": { "$ref": "#/$defs/id" },
+        "key_id": { "$ref": "#/$defs/id" },
+        "key_fingerprint_sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "recordReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "record_sha256"],
+      "properties": {
+        "record_id": { "$ref": "#/$defs/id" },
+        "record_sha256": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "schema": "stage5-v7-digest-vectors-v1",
+  "test_only": true,
+  "note": "Synthetic digest-preimage fixture for cross-language contract tests. It is not a schema-valid or production evidence package and does not verify a live registry, signature, identity source, or score.",
+  "envelope": {
+    "schema": "official-blind-holdout-evidence-envelope-v7",
+    "hash_profile": "jcs-rfc8785-v1",
+    "gate_id": "official_blind_holdout",
+    "kind": "holdout",
+    "status": "passed",
+    "release_id": "release-vector-01",
+    "run_id": "run-vector-01",
+    "blind": true,
+    "candidate_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "score": {
+      "passed": 12,
+      "total": 12,
+      "cost_usd": "1.25"
+    },
+    "frozen_spec_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "report_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "registry": {
+      "receipt_chain": [
+        {
+          "event_id": "evt-terminal",
+          "receipt_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "log_id": "holdout-log-vector"
+    },
+    "trust_bundle": {
+      "bundle_id": "bundle-vector",
+      "keys": ["registry-key-vector"]
+    },
+    "trust_bundle_root_signature": {
+      "key_id": "root-vector",
+      "signature": "test-signature"
+    },
+    "trust_bundle_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "governance": {
+      "approval_attestation": {
+        "attestation_id": "approval-vector"
+      },
+      "approval_event_id": "evt-approval",
+      "review_attestation": {
+        "attestation_id": "review-vector"
+      },
+      "review_event_id": "evt-review",
+      "revocation_event_ids": [],
+      "handoff_core": {
+        "schema": "stage5-handoff-core-v1",
+        "run_id": "run-vector-01",
+        "rollback": {
+          "owner": "operator-vector",
+          "procedure": "rollback-v1"
+        },
+        "incident_contact": "oncall-vector"
+      },
+      "identity_decisions": [
+        {
+          "event_id": "evt-approval",
+          "phase": "preflight",
+          "decision_ref": "id-decision-1"
+        },
+        {
+          "event_id": "evt-approval",
+          "phase": "record-time",
+          "decision_ref": "id-decision-2"
+        }
+      ]
+    }
+  },
+  "canonical_preimages": {
+    "report_sha256": "{\"candidate_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"frozen_spec_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"hash_profile\":\"jcs-rfc8785-v1\",\"run_id\":\"run-vector-01\",\"schema\":\"official-blind-holdout-evidence-envelope-v5\",\"score\":{\"cost_usd\":\"1.25\",\"passed\":12,\"total\":12}}",
+    "handoff_core_sha256": "{\"incident_contact\":\"oncall-vector\",\"rollback\":{\"owner\":\"operator-vector\",\"procedure\":\"rollback-v1\"},\"run_id\":\"run-vector-01\",\"schema\":\"stage5-handoff-core-v1\"}",
+    "handoff_evidence_sha256": "{\"approval_attestation\":{\"attestation_id\":\"approval-vector\"},\"approval_event_id\":\"evt-approval\",\"handoff_core\":{\"incident_contact\":\"oncall-vector\",\"rollback\":{\"owner\":\"operator-vector\",\"procedure\":\"rollback-v1\"},\"run_id\":\"run-vector-01\",\"schema\":\"stage5-handoff-core-v1\"},\"identity_decisions\":[{\"decision_ref\":\"id-decision-1\",\"event_id\":\"evt-approval\",\"phase\":\"preflight\"},{\"decision_ref\":\"id-decision-2\",\"event_id\":\"evt-approval\",\"phase\":\"record-time\"}],\"review_attestation\":{\"attestation_id\":\"review-vector\"},\"review_event_id\":\"evt-review\",\"revocation_event_ids\":[]}",
+    "evidence_envelope_sha256": "{\"blind\":true,\"candidate_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"frozen_spec_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"gate_id\":\"official_blind_holdout\",\"governance\":{\"approval_attestation\":{\"attestation_id\":\"approval-vector\"},\"approval_event_id\":\"evt-approval\",\"handoff_core\":{\"incident_contact\":\"oncall-vector\",\"rollback\":{\"owner\":\"operator-vector\",\"procedure\":\"rollback-v1\"},\"run_id\":\"run-vector-01\",\"schema\":\"stage5-handoff-core-v1\"},\"identity_decisions\":[{\"decision_ref\":\"id-decision-1\",\"event_id\":\"evt-approval\",\"phase\":\"preflight\"},{\"decision_ref\":\"id-decision-2\",\"event_id\":\"evt-approval\",\"phase\":\"record-time\"}],\"review_attestation\":{\"attestation_id\":\"review-vector\"},\"review_event_id\":\"evt-review\",\"revocation_event_ids\":[]},\"hash_profile\":\"jcs-rfc8785-v1\",\"kind\":\"holdout\",\"registry\":{\"log_id\":\"holdout-log-vector\",\"receipt_chain\":[{\"event_id\":\"evt-terminal\",\"receipt_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"}]},\"release_id\":\"release-vector-01\",\"report_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"run_id\":\"run-vector-01\",\"schema\":\"official-blind-holdout-evidence-envelope-v7\",\"score\":{\"cost_usd\":\"1.25\",\"passed\":12,\"total\":12},\"status\":\"passed\",\"trust_bundle\":{\"bundle_id\":\"bundle-vector\",\"keys\":[\"registry-key-vector\"]},\"trust_bundle_root_signature\":{\"key_id\":\"root-vector\",\"signature\":\"test-signature\"},\"trust_bundle_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"}"
+  },
+  "expected": {
+    "report_sha256": "7c6fcf52af80a36ca343e4109f634468c76224b9a48861b5a3e3c0c550050762",
+    "handoff_core_sha256": "db5513dfa7ac283171d8db790ae2c50a87241c9ff8470c4f20a729ba5cb4e9fc",
+    "handoff_evidence_sha256": "fc648ecbcfa87ef6fcc86724df0ea00560126cfba2cf9cb4a2d402dd95d5ccc4",
+    "evidence_envelope_sha256": "a98cd3f70977112553ae53dd1eef81e13e7afa8e4e5e94b079dacc3e044e7a5a"
+  }
+}

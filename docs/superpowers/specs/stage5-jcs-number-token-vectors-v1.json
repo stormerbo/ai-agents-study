@@ -1,0 +1,86 @@
+{
+  "schema": "stage5-jcs-number-token-vectors-v1",
+  "profile": "jcs-rfc8785-v1",
+  "numeric_policy": "exact-integer-safe-range-v1",
+  "maximum_absolute_integer": "9007199254740991",
+  "cases": [
+    {
+      "id": "positive-safe-boundary",
+      "raw_number_token": "9007199254740991",
+      "expected": "accept",
+      "canonical_number_token": "9007199254740991"
+    },
+    {
+      "id": "negative-safe-boundary",
+      "raw_number_token": "-9007199254740991",
+      "expected": "accept",
+      "canonical_number_token": "-9007199254740991"
+    },
+    {
+      "id": "exact-integer-exponent",
+      "raw_number_token": "1e3",
+      "expected": "accept",
+      "canonical_number_token": "1000"
+    },
+    {
+      "id": "negative-zero",
+      "raw_number_token": "-0",
+      "expected": "accept",
+      "canonical_number_token": "0"
+    },
+    {
+      "id": "positive-overflow",
+      "raw_number_token": "9007199254740992",
+      "expected": "reject",
+      "reason": "outside-safe-integer-range"
+    },
+    {
+      "id": "negative-overflow",
+      "raw_number_token": "-9007199254740992",
+      "expected": "reject",
+      "reason": "outside-safe-integer-range"
+    },
+    {
+      "id": "fraction-rounds-to-safe-integer",
+      "raw_number_token": "9007199254740991.1",
+      "expected": "reject",
+      "reason": "not-an-exact-integer"
+    },
+    {
+      "id": "ordinary-fraction",
+      "raw_number_token": "0.25",
+      "expected": "reject",
+      "reason": "not-an-exact-integer"
+    },
+    {
+      "id": "exponent-overflow",
+      "raw_number_token": "1e309",
+      "expected": "reject",
+      "reason": "outside-safe-integer-range"
+    },
+    {
+      "id": "leading-zero-is-invalid-json",
+      "raw_number_token": "01",
+      "expected": "reject",
+      "reason": "invalid-json-number"
+    },
+    {
+      "id": "leading-plus-is-invalid-json",
+      "raw_number_token": "+1",
+      "expected": "reject",
+      "reason": "invalid-json-number"
+    },
+    {
+      "id": "missing-fraction-digit-is-invalid-json",
+      "raw_number_token": "1.",
+      "expected": "reject",
+      "reason": "invalid-json-number"
+    },
+    {
+      "id": "missing-exponent-digit-is-invalid-json",
+      "raw_number_token": "1e",
+      "expected": "reject",
+      "reason": "invalid-json-number"
+    }
+  ]
+}

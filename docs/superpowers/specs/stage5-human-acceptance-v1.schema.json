@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.invalid/schemas/stage5-human-acceptance-v1",
+  "title": "Stage 5 human acceptance record v1",
+  "description": "Shape only. Signature, identity, freshness, source-head equality, role separation, and record digest verification are semantic consumer checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "attestation", "append_receipt"],
+  "properties": {
+    "schema": { "const": "stage5-human-acceptance-v1" },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptance_id",
+        "authorization_intent_sha256",
+        "decision",
+        "decision_id",
+        "decision_receipt_sha256",
+        "evidence_envelope_sha256",
+        "report_sha256",
+        "frozen_spec_sha256",
+        "subject_id",
+        "required_role",
+        "acceptance_policy_id",
+        "acceptance_policy_sha256",
+        "consistency_profile",
+        "source_snapshot",
+        "idempotency_key",
+        "signed_at_utc",
+        "signature_profile",
+        "signing_key_id",
+        "signature"
+      ],
+      "properties": {
+        "acceptance_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "authorization_intent_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "decision": { "enum": ["accepted", "rejected"] },
+        "decision_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "decision_receipt_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "evidence_envelope_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "report_sha256": { "$ref": "stage5-decision-consumption-common-v1#/$defs/digest" },
+        "frozen_spec_sha256": { "$ref": "stage5-decision-consumption-common-v1#/$defs/digest" },
+        "subject_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "required_role": { "const": "stage5_acceptance_authority" },
+        "acceptance_policy_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "acceptance_policy_sha256": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/digest"
+        },
+        "consistency_profile": { "const": "bounded-snapshot-v1" },
+        "source_snapshot": {
+          "$ref": "stage5-decision-consumption-common-v1#/$defs/sourceSnapshot"
+        },
+        "idempotency_key": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "signed_at_utc": { "$ref": "stage5-decision-consumption-common-v1#/$defs/utcTimestamp" },
+        "signature_profile": { "const": "ed25519-jcs-stage5-human-acceptance-v1" },
+        "signing_key_id": { "$ref": "stage5-decision-consumption-common-v1#/$defs/id" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      }
+    },
+    "append_receipt": {
+      "allOf": [
+        { "$ref": "stage5-decision-consumption-common-v1#/$defs/appendReceipt" },
+        { "type": "object", "properties": { "record_type": { "const": "human-acceptance" } } }
+      ]
+    }
+  }
+}

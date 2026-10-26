@@ -1,0 +1,721 @@
+{
+  "schema": "stage5-identity-signature-vectors-v1",
+  "test_only": true,
+  "notes": "All signatures use the publicly known RFC 8032 test seed solely to make deterministic interoperability vectors. Never use this test key or these identities in a deployment.",
+  "vectors": [
+    {
+      "profile": "ed25519-jcs-identity-role-change-approval-v1",
+      "message": {
+        "schema": "stage5-identity-role-change-approval-v1",
+        "approval_id": "approval-vector",
+        "approval_policy_id": "policy-vector",
+        "approval_policy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "approval_policy_revision": 4,
+        "approver_subject_id": "subject-approver-vector",
+        "approver_signing_key_id": "key-approver-vector",
+        "approved_change_sha256": "f22a9fede57dbd65b4a91e739de085ace280e71862945c550593031cc98a8a91",
+        "signed_at_utc": "2026-10-23T08:59:00Z",
+        "signature_profile": "ed25519-jcs-identity-role-change-approval-v1"
+      },
+      "canonical_utf8": "{\"approval_id\":\"approval-vector\",\"approval_policy_id\":\"policy-vector\",\"approval_policy_revision\":4,\"approval_policy_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved_change_sha256\":\"f22a9fede57dbd65b4a91e739de085ace280e71862945c550593031cc98a8a91\",\"approver_signing_key_id\":\"key-approver-vector\",\"approver_subject_id\":\"subject-approver-vector\",\"schema\":\"stage5-identity-role-change-approval-v1\",\"signature_profile\":\"ed25519-jcs-identity-role-change-approval-v1\",\"signed_at_utc\":\"2026-10-23T08:59:00Z\"}",
+      "sha256": "294bc75139c125b03688d4d8c75c7191078337a1d4af147a19be9377a868ce84",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "zyPCORPlbwpmLR12lCk5TOhV2GLPZiuBtQWGe1p9kL1lRDYTBBDzgMgVvXOg5MENTpjDRZdGO-QxbPyhsCCMBA",
+      "tamper_field": "approved_change_sha256"
+    },
+    {
+      "profile": "ed25519-jcs-identity-role-change-v1",
+      "message": {
+        "schema": "stage5-identity-role-change-v1",
+        "source_id": "identity-source-vector",
+        "record_sha256": "e64c3d4034c58cb349d4dd658e1438f2e7fab2b1dc06638cb880cbcfffb8e5ea",
+        "sequence": 12,
+        "previous_record_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "recorded_at_utc": "2026-10-23T09:00:05Z",
+        "signature_profile": "ed25519-jcs-identity-role-change-v1",
+        "signature_key_id": "identity-audit-key-vector"
+      },
+      "canonical_utf8": "{\"previous_record_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"record_sha256\":\"e64c3d4034c58cb349d4dd658e1438f2e7fab2b1dc06638cb880cbcfffb8e5ea\",\"recorded_at_utc\":\"2026-10-23T09:00:05Z\",\"schema\":\"stage5-identity-role-change-v1\",\"sequence\":12,\"signature_key_id\":\"identity-audit-key-vector\",\"signature_profile\":\"ed25519-jcs-identity-role-change-v1\",\"source_id\":\"identity-source-vector\"}",
+      "sha256": "f43edfb13103618ab742e241cbe3a558ce27f30cbf33a7dc478f3257a0ccc044",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "awYPEeo87bPlSPUEOOL-9MlH1L1OVCpkK21eiPuV3YXpgxvT3uol6pWWlxdgts-yFkh-gjBL59qyfT2CM0vpBw",
+      "tamper_field": "record_sha256",
+      "record_content": {
+        "schema": "stage5-identity-role-change-v1",
+        "source_id": "identity-source-vector",
+        "role_change_id": "role-change-vector",
+        "sequence": 12,
+        "previous_record_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "environment_id": "stage5-prod",
+        "log_id": "holdout-log-vector",
+        "action": "role-granted",
+        "target_subject_id": "subject-target-vector",
+        "role": "stage5_risk_owner",
+        "signing_key_id": null,
+        "key_fingerprint_sha256": null,
+        "actor_subject_id": "subject-actor-vector",
+        "approver_subject_id": "subject-approver-vector",
+        "approval": {
+          "approval_id": "approval-vector",
+          "approval_policy_id": "policy-vector",
+          "approval_policy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "approval_policy_revision": 4,
+          "approver_subject_id": "subject-approver-vector",
+          "approver_signing_key_id": "key-approver-vector",
+          "approved_change_sha256": "f22a9fede57dbd65b4a91e739de085ace280e71862945c550593031cc98a8a91",
+          "signed_at_utc": "2026-10-23T08:59:00Z",
+          "signature_profile": "ed25519-jcs-identity-role-change-approval-v1",
+          "signature": "zyPCORPlbwpmLR12lCk5TOhV2GLPZiuBtQWGe1p9kL1lRDYTBBDzgMgVvXOg5MENTpjDRZdGO-QxbPyhsCCMBA"
+        },
+        "effective_at_utc": "2026-10-23T09:00:00Z",
+        "recorded_at_utc": "2026-10-23T09:00:05Z",
+        "reason_code": "approved-role-assignment",
+        "signature_profile": "ed25519-jcs-identity-role-change-v1",
+        "signature_key_id": "identity-audit-key-vector"
+      },
+      "record_sha256": "e64c3d4034c58cb349d4dd658e1438f2e7fab2b1dc06638cb880cbcfffb8e5ea"
+    },
+    {
+      "profile": "ed25519-jcs-identity-role-history-head-v1",
+      "message": {
+        "schema": "stage5-identity-role-history-head-v1",
+        "source_id": "identity-source-vector",
+        "environment_id": "stage5-prod",
+        "log_id": "holdout-log-vector",
+        "query_sha256": "eb8adf41cd4ffd008dbcf8f3e1bbc6cb9acac5e8fcf3037b8cfbc6a9133247aa",
+        "sequence": 12,
+        "record_sha256": "e64c3d4034c58cb349d4dd658e1438f2e7fab2b1dc06638cb880cbcfffb8e5ea",
+        "observed_at_utc": "2026-10-23T09:01:00Z",
+        "signature_profile": "ed25519-jcs-identity-role-history-head-v1",
+        "signature_key_id": "identity-audit-key-vector"
+      },
+      "canonical_utf8": "{\"environment_id\":\"stage5-prod\",\"log_id\":\"holdout-log-vector\",\"observed_at_utc\":\"2026-10-23T09:01:00Z\",\"query_sha256\":\"eb8adf41cd4ffd008dbcf8f3e1bbc6cb9acac5e8fcf3037b8cfbc6a9133247aa\",\"record_sha256\":\"e64c3d4034c58cb349d4dd658e1438f2e7fab2b1dc06638cb880cbcfffb8e5ea\",\"schema\":\"stage5-identity-role-history-head-v1\",\"sequence\":12,\"signature_key_id\":\"identity-audit-key-vector\",\"signature_profile\":\"ed25519-jcs-identity-role-history-head-v1\",\"source_id\":\"identity-source-vector\"}",
+      "sha256": "f61bcae9afbcdcdffef2800af9205d0109092699d2a0938c349a45b55f1fb457",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "WgOAT5Yopl8GqzBJtIr4wATxKISqn4MNixa0K3CEtUATyVn2hOh1nyZi7NWAC4Zcs3-i7wD6lJeRezTRHxyuBw",
+      "tamper_field": "query_sha256"
+    },
+    {
+      "profile": "ed25519-jcs-identity-policy-transition-approval-v1",
+      "message": {
+        "approval_id": "policy-transition-approval-vector",
+        "approver_subject_id": "subject-risk-owner-vector",
+        "approver_signing_key_id": "risk-owner-key-vector",
+        "approved_intent_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "signed_at_utc": "2026-10-23T10:00:00Z",
+        "signature_profile": "ed25519-jcs-identity-policy-transition-approval-v1"
+      },
+      "canonical_utf8": "{\"approval_id\":\"policy-transition-approval-vector\",\"approved_intent_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"approver_signing_key_id\":\"risk-owner-key-vector\",\"approver_subject_id\":\"subject-risk-owner-vector\",\"signature_profile\":\"ed25519-jcs-identity-policy-transition-approval-v1\",\"signed_at_utc\":\"2026-10-23T10:00:00Z\"}",
+      "sha256": "5c4cbfd8f77dfb720686b8ad2c6be76e7072b2026a3a8ec22633488886741596",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "YhGkMlJdEHQ5Uo8ScfFBYF8OwS2x1ZH33LHCBOUPanhfg58j_N6g0M5iOpuKo21rMNM75Dm-qQOfSIRm7qpFCw",
+      "tamper_field": "approved_intent_sha256"
+    },
+    {
+      "profile": "ed25519-jcs-verifier-policy-pin-update-v1",
+      "message": {
+        "pin_authority_id": "verifier-pin-authority-vector",
+        "pin_revision": 5,
+        "transition_record_id": "policy-transition-vector",
+        "transition_approval_sha256": "61d15a7fac4bb19f2434cd3c9941010dc1dd27523e0f66630f5f672b3b450794",
+        "previous_pin_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "next_pin_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "applied_at_utc": "2026-10-23T10:00:05Z",
+        "signature_profile": "ed25519-jcs-verifier-policy-pin-update-v1",
+        "signing_key_id": "verifier-pin-key-vector"
+      },
+      "canonical_utf8": "{\"applied_at_utc\":\"2026-10-23T10:00:05Z\",\"next_pin_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"pin_authority_id\":\"verifier-pin-authority-vector\",\"pin_revision\":5,\"previous_pin_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"signature_profile\":\"ed25519-jcs-verifier-policy-pin-update-v1\",\"signing_key_id\":\"verifier-pin-key-vector\",\"transition_approval_sha256\":\"61d15a7fac4bb19f2434cd3c9941010dc1dd27523e0f66630f5f672b3b450794\",\"transition_record_id\":\"policy-transition-vector\"}",
+      "sha256": "a01fc313abb0fa7bc5b711c6fea6c57849c2e37f70eb09ab445802116805e793",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "BK5F5k_zxLHSTXidGaz15V-CTdtgSzi-ArwWFVN_NaV9YEu6TFPcgqEHxqM2-2JGNoMU5TTy4BZR_n9N2KN1DQ",
+      "tamper_field": "next_pin_sha256"
+    },
+    {
+      "profile": "ed25519-jcs-identity-policy-transition-v1",
+      "message": {
+        "schema": "stage5-identity-role-change-policy-transition-v1",
+        "record_sha256": "c90b2b664750eda45e23cb8ea16804a4090afdc986075aa65a01c89b515f5a84",
+        "recorded_at_utc": "2026-10-23T10:00:06Z",
+        "signature_profile": "ed25519-jcs-identity-policy-transition-v1",
+        "signing_key_id": "identity-audit-key-vector"
+      },
+      "canonical_utf8": "{\"record_sha256\":\"c90b2b664750eda45e23cb8ea16804a4090afdc986075aa65a01c89b515f5a84\",\"recorded_at_utc\":\"2026-10-23T10:00:06Z\",\"schema\":\"stage5-identity-role-change-policy-transition-v1\",\"signature_profile\":\"ed25519-jcs-identity-policy-transition-v1\",\"signing_key_id\":\"identity-audit-key-vector\"}",
+      "sha256": "43e6aa8290bd9dff595db1fbb1fd97431a449ccc65c45350e272311e6d4adb8e",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "BoyHxNC0-njkCjKWLzfNiVSagrHjkoEZw-tcuEeEBiaHbzalqQ-rlof2t6kYvzODVFXdSkWI0QG93AAjscouCw",
+      "tamper_field": "record_sha256",
+      "record_content": {
+        "schema": "stage5-identity-role-change-policy-transition-v1",
+        "transition_id": "policy-transition-vector",
+        "environment_id": "stage5-prod",
+        "log_id": "holdout-log-vector",
+        "policy_id": "policy-vector",
+        "previous_policy_version": 1,
+        "previous_policy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "next_policy_version": 2,
+        "next_policy_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "expected_pin_revision": 4,
+        "previous_pin_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "actor_subject_id": "subject-pin-operator-vector",
+        "transition_approval": {
+          "approval_id": "policy-transition-approval-vector",
+          "approver_subject_id": "subject-risk-owner-vector",
+          "approver_signing_key_id": "risk-owner-key-vector",
+          "approved_intent_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "signed_at_utc": "2026-10-23T10:00:00Z",
+          "signature_profile": "ed25519-jcs-identity-policy-transition-approval-v1",
+          "signature": "YhGkMlJdEHQ5Uo8ScfFBYF8OwS2x1ZH33LHCBOUPanhfg58j_N6g0M5iOpuKo21rMNM75Dm-qQOfSIRm7qpFCw"
+        },
+        "pin_update": {
+          "pin_authority_id": "verifier-pin-authority-vector",
+          "pin_revision": 5,
+          "transition_record_id": "policy-transition-vector",
+          "transition_approval_sha256": "61d15a7fac4bb19f2434cd3c9941010dc1dd27523e0f66630f5f672b3b450794",
+          "previous_pin_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "next_pin_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "applied_at_utc": "2026-10-23T10:00:05Z",
+          "signature_profile": "ed25519-jcs-verifier-policy-pin-update-v1",
+          "signing_key_id": "verifier-pin-key-vector",
+          "signature": "BK5F5k_zxLHSTXidGaz15V-CTdtgSzi-ArwWFVN_NaV9YEu6TFPcgqEHxqM2-2JGNoMU5TTy4BZR_n9N2KN1DQ"
+        },
+        "recorded_at_utc": "2026-10-23T10:00:06Z",
+        "signature_profile": "ed25519-jcs-identity-policy-transition-v1",
+        "signing_key_id": "identity-audit-key-vector"
+      },
+      "record_sha256": "c90b2b664750eda45e23cb8ea16804a4090afdc986075aa65a01c89b515f5a84"
+    },
+    {
+      "profile": "ed25519-jcs-identity-bootstrap-root-approval-v1",
+      "message": {
+        "schema": "stage5-identity-bootstrap-root-pin-update-v1",
+        "update_id": "root-pin-update-vector",
+        "approved_intent_sha256": "15adae03064e81b13708cbf067715799f1374b6d3d741ebd51c462338bf30067",
+        "subject_id": "root-owner-vector",
+        "key_id": "root-key-vector",
+        "signed_at_utc": "2026-10-23T10:00:00Z",
+        "signature_profile": "ed25519-jcs-identity-bootstrap-root-approval-v1"
+      },
+      "canonical_utf8": "{\"approved_intent_sha256\":\"15adae03064e81b13708cbf067715799f1374b6d3d741ebd51c462338bf30067\",\"key_id\":\"root-key-vector\",\"schema\":\"stage5-identity-bootstrap-root-pin-update-v1\",\"signature_profile\":\"ed25519-jcs-identity-bootstrap-root-approval-v1\",\"signed_at_utc\":\"2026-10-23T10:00:00Z\",\"subject_id\":\"root-owner-vector\",\"update_id\":\"root-pin-update-vector\"}",
+      "sha256": "3eda0e3668c385bd7e2b2eec98b85bb7f03cf6313201da09df64883987e6b7d7",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "39-0NgvJg3EJtigforV-A1Co1gFptBgR6LVy7JmI4uIa3fUXkxiF5aA5SaiBV8yVIFwrGvsARR98H07xiqlRDQ",
+      "tamper_field": "approved_intent_sha256"
+    },
+    {
+      "profile": "ed25519-jcs-identity-bootstrap-root-possession-v1",
+      "message": {
+        "schema": "stage5-identity-bootstrap-root-pin-update-v1",
+        "update_id": "root-pin-update-vector",
+        "approved_intent_sha256": "15adae03064e81b13708cbf067715799f1374b6d3d741ebd51c462338bf30067",
+        "subject_id": "root-owner-next-vector",
+        "key_id": "root-key-next-vector",
+        "signed_at_utc": "2026-10-23T10:00:01Z",
+        "signature_profile": "ed25519-jcs-identity-bootstrap-root-possession-v1"
+      },
+      "canonical_utf8": "{\"approved_intent_sha256\":\"15adae03064e81b13708cbf067715799f1374b6d3d741ebd51c462338bf30067\",\"key_id\":\"root-key-next-vector\",\"schema\":\"stage5-identity-bootstrap-root-pin-update-v1\",\"signature_profile\":\"ed25519-jcs-identity-bootstrap-root-possession-v1\",\"signed_at_utc\":\"2026-10-23T10:00:01Z\",\"subject_id\":\"root-owner-next-vector\",\"update_id\":\"root-pin-update-vector\"}",
+      "sha256": "5167e72d5cf47860730054e0e81de3b1749bad973e8e05855d177ac09eab81b4",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "py-rP_QOnul7ilbRwTzPEvdkZDls7paePPoA7eB1TFoXGmkHoIm9Tm_NEtVL2wOe6umE4-ORafH-duFls4nOCw",
+      "tamper_field": "approved_intent_sha256"
+    },
+    {
+      "profile": "ed25519-jcs-identity-bootstrap-recovery-approval-v1",
+      "message": {
+        "schema": "stage5-identity-bootstrap-root-pin-update-v1",
+        "update_id": "root-recovery-vector",
+        "approved_intent_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "authority_id": "offline-recovery-custodian-vector",
+        "key_id": "offline-recovery-key-vector",
+        "signed_at_utc": "2026-10-23T10:01:00Z",
+        "signature_profile": "ed25519-jcs-identity-bootstrap-recovery-approval-v1"
+      },
+      "canonical_utf8": "{\"approved_intent_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"authority_id\":\"offline-recovery-custodian-vector\",\"key_id\":\"offline-recovery-key-vector\",\"schema\":\"stage5-identity-bootstrap-root-pin-update-v1\",\"signature_profile\":\"ed25519-jcs-identity-bootstrap-recovery-approval-v1\",\"signed_at_utc\":\"2026-10-23T10:01:00Z\",\"update_id\":\"root-recovery-vector\"}",
+      "sha256": "3e0366e1b9339cae39b2b83caf7f4fa8ae63f2427e51ecb9726d93e0da21a452",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "V6r7MVT6b9eVLJKBTCl1Jb9zPoR3TV4fr6kT3aSI5faNVUldemY-BEs9hsJjU9EK7RutP_rFJ6I371GQ039aCw",
+      "tamper_field": "approved_intent_sha256"
+    },
+    {
+      "profile": "ed25519-jcs-identity-bootstrap-root-pin-update-v1",
+      "message": {
+        "schema": "stage5-identity-bootstrap-root-pin-update-v1",
+        "update_id": "root-pin-update-vector",
+        "record_sha256": "26e626041132ee9c484c7be6887c69d6727eec8c4a3f73d5c6722580a4ee940c",
+        "pin_authority_id": "verifier-config-vector",
+        "pin_authority_key_id": "verifier-config-key-vector",
+        "recorded_at_utc": "2026-10-23T10:00:02Z",
+        "signature_profile": "ed25519-jcs-identity-bootstrap-root-pin-update-v1"
+      },
+      "canonical_utf8": "{\"pin_authority_id\":\"verifier-config-vector\",\"pin_authority_key_id\":\"verifier-config-key-vector\",\"record_sha256\":\"26e626041132ee9c484c7be6887c69d6727eec8c4a3f73d5c6722580a4ee940c\",\"recorded_at_utc\":\"2026-10-23T10:00:02Z\",\"schema\":\"stage5-identity-bootstrap-root-pin-update-v1\",\"signature_profile\":\"ed25519-jcs-identity-bootstrap-root-pin-update-v1\",\"update_id\":\"root-pin-update-vector\"}",
+      "sha256": "7b249786b507a935301f2da88b6055afe733174d540e901064feb831c45973da",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "LggSrQ6aLLvm2nQYvCF4sSnP3qUe22Zu6AAZGDJlqiBwbEqeEpW2vEdCtcODqTVgp3b-YTqqaR9HFbV8mryXAw",
+      "tamper_field": "record_sha256",
+      "record_content": {
+        "schema": "stage5-identity-bootstrap-root-pin-update-v1",
+        "update_id": "root-pin-update-vector",
+        "update_kind": "planned-root-rollover",
+        "environment_id": "stage5-prod",
+        "previous_scope": {
+          "log_id": "identity-log-vector",
+          "policy_id": "identity-policy-vector",
+          "policy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_version": 1,
+          "history_head_sequence": 3,
+          "history_head_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "next_scope": {
+          "log_id": "identity-log-vector",
+          "policy_id": "identity-policy-vector",
+          "policy_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "policy_version": 2,
+          "history_head_sequence": 3,
+          "history_head_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "previous_history_anchor": {
+          "anchor_id": "identity-anchor-vector",
+          "anchor_record_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "previous_root_pin_revision": 4,
+        "next_root_pin_revision": 5,
+        "previous_root_pin": {
+          "subject_id": "root-owner-vector",
+          "key_id": "root-key-vector",
+          "key_fingerprint_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "next_root_pin": {
+          "subject_id": "root-owner-next-vector",
+          "key_id": "root-key-next-vector",
+          "key_fingerprint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "policy_transition": {
+          "record_id": "policy-transition-vector",
+          "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "approved_intent_sha256": "15adae03064e81b13708cbf067715799f1374b6d3d741ebd51c462338bf30067",
+        "old_root_approval": {
+          "subject_id": "root-owner-vector",
+          "key_id": "root-key-vector",
+          "approved_intent_sha256": "15adae03064e81b13708cbf067715799f1374b6d3d741ebd51c462338bf30067",
+          "signed_at_utc": "2026-10-23T10:00:00Z",
+          "signature_profile": "ed25519-jcs-identity-bootstrap-root-approval-v1",
+          "signature": "39-0NgvJg3EJtigforV-A1Co1gFptBgR6LVy7JmI4uIa3fUXkxiF5aA5SaiBV8yVIFwrGvsARR98H07xiqlRDQ"
+        },
+        "next_root_proof": {
+          "subject_id": "root-owner-next-vector",
+          "key_id": "root-key-next-vector",
+          "approved_intent_sha256": "15adae03064e81b13708cbf067715799f1374b6d3d741ebd51c462338bf30067",
+          "signed_at_utc": "2026-10-23T10:00:01Z",
+          "signature_profile": "ed25519-jcs-identity-bootstrap-root-possession-v1",
+          "signature": "py-rP_QOnul7ilbRwTzPEvdkZDls7paePPoA7eB1TFoXGmkHoIm9Tm_NEtVL2wOe6umE4-ORafH-duFls4nOCw"
+        },
+        "pin_authority_id": "verifier-config-vector",
+        "pin_authority_key_id": "verifier-config-key-vector",
+        "recorded_at_utc": "2026-10-23T10:00:02Z",
+        "signature_profile": "ed25519-jcs-identity-bootstrap-root-pin-update-v1",
+        "signature_key_id": "verifier-config-key-vector"
+      },
+      "record_sha256": "26e626041132ee9c484c7be6887c69d6727eec8c4a3f73d5c6722580a4ee940c"
+    },
+    {
+      "profile": "ed25519-jcs-verifier-pin-bundle-commit-v1",
+      "message": {
+        "schema": "stage5-verifier-pin-bundle-commit-v1",
+        "bundle_id": "pin-bundle-vector",
+        "record_sha256": "b55309371cacb033762b9107ed3decef84af2d939a56b8c0aff48ea83972703a",
+        "pin_authority_id": "verifier-config-vector",
+        "pin_authority_key_id": "verifier-config-key-vector",
+        "applied_at_utc": "2026-10-23T10:00:03Z",
+        "signature_profile": "ed25519-jcs-verifier-pin-bundle-commit-v1"
+      },
+      "canonical_utf8": "{\"applied_at_utc\":\"2026-10-23T10:00:03Z\",\"bundle_id\":\"pin-bundle-vector\",\"pin_authority_id\":\"verifier-config-vector\",\"pin_authority_key_id\":\"verifier-config-key-vector\",\"record_sha256\":\"b55309371cacb033762b9107ed3decef84af2d939a56b8c0aff48ea83972703a\",\"schema\":\"stage5-verifier-pin-bundle-commit-v1\",\"signature_profile\":\"ed25519-jcs-verifier-pin-bundle-commit-v1\"}",
+      "sha256": "0e3b8d155c455c77ecf7959805a5a33d677261d3df0c818bb3b7d5473bef28a4",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "xKjXmNcXNMcnX6IoMCweHdPyQzpIqwnAsBUsM_DW8WengTIcau-oERMIoNumZ4Nz5RXcXoX6m37Hvmz7JrdlBw",
+      "tamper_field": "record_sha256",
+      "record_content": {
+        "schema": "stage5-verifier-pin-bundle-commit-v1",
+        "bundle_id": "pin-bundle-vector",
+        "update_kind": "planned-root-rollover",
+        "environment_id": "stage5-prod",
+        "previous_configuration_revision": 7,
+        "next_configuration_revision": 8,
+        "previous_policy_pin_revision": 10,
+        "next_policy_pin_revision": 11,
+        "previous_bundle_state_sha256": "7fb170ccf45e38158b7d836652fffae8ae8b4b006d4927c196ba70b70dc3ff3b",
+        "next_bundle_state_sha256": "f8a699cbc0272c746f19f069f9451b8aa2d67eb8ca000e102c8f0eec836b37e9",
+        "previous_policy_pin": {
+          "policy_id": "identity-policy-vector",
+          "policy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_version": 1
+        },
+        "next_policy_pin": {
+          "policy_id": "identity-policy-vector",
+          "policy_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "policy_version": 2
+        },
+        "previous_root_pin_revision": 4,
+        "next_root_pin_revision": 5,
+        "previous_root_pin": {
+          "subject_id": "root-owner-vector",
+          "key_id": "root-key-vector",
+          "key_fingerprint_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "next_root_pin": {
+          "subject_id": "root-owner-next-vector",
+          "key_id": "root-key-next-vector",
+          "key_fingerprint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "root_pin_update": {
+          "record_id": "root-pin-update-vector",
+          "record_sha256": "26e626041132ee9c484c7be6887c69d6727eec8c4a3f73d5c6722580a4ee940c"
+        },
+        "policy_transition": {
+          "record_id": "policy-transition-vector",
+          "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "idempotency_key": "pin-bundle-request-vector",
+        "pin_authority_id": "verifier-config-vector",
+        "pin_authority_key_id": "verifier-config-key-vector",
+        "applied_at_utc": "2026-10-23T10:00:03Z",
+        "signature_profile": "ed25519-jcs-verifier-pin-bundle-commit-v1",
+        "signature_key_id": "verifier-config-key-vector"
+      },
+      "record_sha256": "b55309371cacb033762b9107ed3decef84af2d939a56b8c0aff48ea83972703a"
+    },
+    {
+      "profile": "ed25519-jcs-verifier-pin-witness-head-v1",
+      "message": {
+        "schema": "stage5-verifier-pin-bundle-history-package-v1",
+        "witness_id": "pin-witness-vector",
+        "environment_id": "stage5-prod",
+        "query_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "head_sequence": 1,
+        "head_entry_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "observed_at_utc": "2026-10-23T12:00:01Z",
+        "signature_profile": "ed25519-jcs-verifier-pin-witness-head-v1",
+        "signature_key_id": "pin-witness-key-vector"
+      },
+      "canonical_utf8": "{\"environment_id\":\"stage5-prod\",\"head_entry_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"head_sequence\":1,\"observed_at_utc\":\"2026-10-23T12:00:01Z\",\"query_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"schema\":\"stage5-verifier-pin-bundle-history-package-v1\",\"signature_key_id\":\"pin-witness-key-vector\",\"signature_profile\":\"ed25519-jcs-verifier-pin-witness-head-v1\",\"witness_id\":\"pin-witness-vector\"}",
+      "sha256": "2e02738c59eeb5f832155f5a21e93236e86279f696fc37431f20f7ce09c0f9a5",
+      "public_key_base64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature_base64url": "vd8S-9uCtcrh_-tEFOjKQzNmHi03lY3VZp41LpV1K5YAsNG04Lg1kulH5LZl2HkuJbN3-FqWp05mN5E1l2aPDg",
+      "tamper_field": "head_entry_sha256"
+    }
+  ],
+  "digest_vectors": [
+    {
+      "id": "identity-role-change-approved-intent",
+      "value": {
+        "schema": "stage5-identity-role-change-approval-v1",
+        "source_id": "identity-source-vector",
+        "role_change_id": "role-change-vector",
+        "sequence": 12,
+        "previous_record_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "environment_id": "stage5-prod",
+        "log_id": "holdout-log-vector",
+        "action": "role-granted",
+        "target_subject_id": "subject-target-vector",
+        "role": "stage5_risk_owner",
+        "signing_key_id": null,
+        "key_fingerprint_sha256": null,
+        "actor_subject_id": "subject-actor-vector",
+        "approver_subject_id": "subject-approver-vector",
+        "approval_policy_id": "policy-vector",
+        "approval_policy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "approval_policy_revision": 4,
+        "effective_at_utc": "2026-10-23T09:00:00Z",
+        "reason_code": "approved-role-assignment"
+      },
+      "canonical_utf8": "{\"action\":\"role-granted\",\"actor_subject_id\":\"subject-actor-vector\",\"approval_policy_id\":\"policy-vector\",\"approval_policy_revision\":4,\"approval_policy_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approver_subject_id\":\"subject-approver-vector\",\"effective_at_utc\":\"2026-10-23T09:00:00Z\",\"environment_id\":\"stage5-prod\",\"key_fingerprint_sha256\":null,\"log_id\":\"holdout-log-vector\",\"previous_record_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"reason_code\":\"approved-role-assignment\",\"role\":\"stage5_risk_owner\",\"role_change_id\":\"role-change-vector\",\"schema\":\"stage5-identity-role-change-approval-v1\",\"sequence\":12,\"signing_key_id\":null,\"source_id\":\"identity-source-vector\",\"target_subject_id\":\"subject-target-vector\"}",
+      "sha256": "f22a9fede57dbd65b4a91e739de085ace280e71862945c550593031cc98a8a91"
+    },
+    {
+      "id": "identity-role-policy-core",
+      "value": {
+        "schema": "stage5-identity-role-change-policy-v1",
+        "policy_id": "policy-vector",
+        "version": 1,
+        "environment_id": "stage5-prod",
+        "log_id": "holdout-log-vector",
+        "rules": [
+          {
+            "action": "key-bound",
+            "role": null,
+            "actor_roles": ["stage5_governance_administrator"],
+            "approver_roles": ["stage5_risk_owner"]
+          }
+        ],
+        "controls": {
+          "actor_approver_must_differ": true,
+          "target_must_differ_from_actor_and_approver": true,
+          "approval_must_bind_expected_head": true
+        },
+        "bootstrap": {
+          "bootstrap_record_id": "bootstrap-vector",
+          "authority_subject_id": "root-owner-vector",
+          "authority_key_id": "root-key-vector",
+          "approved_at_utc": "2026-10-23T08:00:00Z",
+          "initial_role_changes": [
+            {
+              "sequence": 1,
+              "role_change_id": "bootstrap-admin-grant",
+              "action": "role-granted",
+              "target_subject_id": "admin-vector",
+              "role": "stage5_governance_administrator",
+              "signing_key_id": null,
+              "key_fingerprint_sha256": null
+            },
+            {
+              "sequence": 2,
+              "role_change_id": "bootstrap-risk-grant",
+              "action": "role-granted",
+              "target_subject_id": "owner-vector",
+              "role": "stage5_risk_owner",
+              "signing_key_id": null,
+              "key_fingerprint_sha256": null
+            },
+            {
+              "sequence": 3,
+              "role_change_id": "bootstrap-owner-key",
+              "action": "key-bound",
+              "target_subject_id": "owner-vector",
+              "role": null,
+              "signing_key_id": "owner-key-vector",
+              "key_fingerprint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ]
+        }
+      },
+      "canonical_utf8": "{\"bootstrap\":{\"approved_at_utc\":\"2026-10-23T08:00:00Z\",\"authority_key_id\":\"root-key-vector\",\"authority_subject_id\":\"root-owner-vector\",\"bootstrap_record_id\":\"bootstrap-vector\",\"initial_role_changes\":[{\"action\":\"role-granted\",\"key_fingerprint_sha256\":null,\"role\":\"stage5_governance_administrator\",\"role_change_id\":\"bootstrap-admin-grant\",\"sequence\":1,\"signing_key_id\":null,\"target_subject_id\":\"admin-vector\"},{\"action\":\"role-granted\",\"key_fingerprint_sha256\":null,\"role\":\"stage5_risk_owner\",\"role_change_id\":\"bootstrap-risk-grant\",\"sequence\":2,\"signing_key_id\":null,\"target_subject_id\":\"owner-vector\"},{\"action\":\"key-bound\",\"key_fingerprint_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"role\":null,\"role_change_id\":\"bootstrap-owner-key\",\"sequence\":3,\"signing_key_id\":\"owner-key-vector\",\"target_subject_id\":\"owner-vector\"}]},\"controls\":{\"actor_approver_must_differ\":true,\"approval_must_bind_expected_head\":true,\"target_must_differ_from_actor_and_approver\":true},\"environment_id\":\"stage5-prod\",\"log_id\":\"holdout-log-vector\",\"policy_id\":\"policy-vector\",\"rules\":[{\"action\":\"key-bound\",\"actor_roles\":[\"stage5_governance_administrator\"],\"approver_roles\":[\"stage5_risk_owner\"],\"role\":null}],\"schema\":\"stage5-identity-role-change-policy-v1\",\"version\":1}",
+      "sha256": "357777645e7e488f7ad62627726bb8fb560bd27a03aa2ecfb0792898fc93ccdb"
+    },
+    {
+      "id": "identity-policy-transition-approval-envelope",
+      "value": {
+        "approval_id": "policy-transition-approval-vector",
+        "approver_subject_id": "subject-risk-owner-vector",
+        "approver_signing_key_id": "risk-owner-key-vector",
+        "approved_intent_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "signed_at_utc": "2026-10-23T10:00:00Z",
+        "signature_profile": "ed25519-jcs-identity-policy-transition-approval-v1",
+        "signature": "YhGkMlJdEHQ5Uo8ScfFBYF8OwS2x1ZH33LHCBOUPanhfg58j_N6g0M5iOpuKo21rMNM75Dm-qQOfSIRm7qpFCw"
+      },
+      "canonical_utf8": "{\"approval_id\":\"policy-transition-approval-vector\",\"approved_intent_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"approver_signing_key_id\":\"risk-owner-key-vector\",\"approver_subject_id\":\"subject-risk-owner-vector\",\"signature\":\"YhGkMlJdEHQ5Uo8ScfFBYF8OwS2x1ZH33LHCBOUPanhfg58j_N6g0M5iOpuKo21rMNM75Dm-qQOfSIRm7qpFCw\",\"signature_profile\":\"ed25519-jcs-identity-policy-transition-approval-v1\",\"signed_at_utc\":\"2026-10-23T10:00:00Z\"}",
+      "sha256": "61d15a7fac4bb19f2434cd3c9941010dc1dd27523e0f66630f5f672b3b450794"
+    },
+    {
+      "id": "identity-role-change-record-content",
+      "value": {
+        "schema": "stage5-identity-role-change-v1",
+        "source_id": "identity-source-vector",
+        "role_change_id": "role-change-vector",
+        "sequence": 12,
+        "previous_record_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "environment_id": "stage5-prod",
+        "log_id": "holdout-log-vector",
+        "action": "role-granted",
+        "target_subject_id": "subject-target-vector",
+        "role": "stage5_risk_owner",
+        "signing_key_id": null,
+        "key_fingerprint_sha256": null,
+        "actor_subject_id": "subject-actor-vector",
+        "approver_subject_id": "subject-approver-vector",
+        "approval": {
+          "approval_id": "approval-vector",
+          "approval_policy_id": "policy-vector",
+          "approval_policy_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "approval_policy_revision": 4,
+          "approver_subject_id": "subject-approver-vector",
+          "approver_signing_key_id": "key-approver-vector",
+          "approved_change_sha256": "f22a9fede57dbd65b4a91e739de085ace280e71862945c550593031cc98a8a91",
+          "signed_at_utc": "2026-10-23T08:59:00Z",
+          "signature_profile": "ed25519-jcs-identity-role-change-approval-v1",
+          "signature": "zyPCORPlbwpmLR12lCk5TOhV2GLPZiuBtQWGe1p9kL1lRDYTBBDzgMgVvXOg5MENTpjDRZdGO-QxbPyhsCCMBA"
+        },
+        "effective_at_utc": "2026-10-23T09:00:00Z",
+        "recorded_at_utc": "2026-10-23T09:00:05Z",
+        "reason_code": "approved-role-assignment",
+        "signature_profile": "ed25519-jcs-identity-role-change-v1",
+        "signature_key_id": "identity-audit-key-vector"
+      },
+      "canonical_utf8": "{\"action\":\"role-granted\",\"actor_subject_id\":\"subject-actor-vector\",\"approval\":{\"approval_id\":\"approval-vector\",\"approval_policy_id\":\"policy-vector\",\"approval_policy_revision\":4,\"approval_policy_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"approved_change_sha256\":\"f22a9fede57dbd65b4a91e739de085ace280e71862945c550593031cc98a8a91\",\"approver_signing_key_id\":\"key-approver-vector\",\"approver_subject_id\":\"subject-approver-vector\",\"signature\":\"zyPCORPlbwpmLR12lCk5TOhV2GLPZiuBtQWGe1p9kL1lRDYTBBDzgMgVvXOg5MENTpjDRZdGO-QxbPyhsCCMBA\",\"signature_profile\":\"ed25519-jcs-identity-role-change-approval-v1\",\"signed_at_utc\":\"2026-10-23T08:59:00Z\"},\"approver_subject_id\":\"subject-approver-vector\",\"effective_at_utc\":\"2026-10-23T09:00:00Z\",\"environment_id\":\"stage5-prod\",\"key_fingerprint_sha256\":null,\"log_id\":\"holdout-log-vector\",\"previous_record_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"reason_code\":\"approved-role-assignment\",\"recorded_at_utc\":\"2026-10-23T09:00:05Z\",\"role\":\"stage5_risk_owner\",\"role_change_id\":\"role-change-vector\",\"schema\":\"stage5-identity-role-change-v1\",\"sequence\":12,\"signature_key_id\":\"identity-audit-key-vector\",\"signature_profile\":\"ed25519-jcs-identity-role-change-v1\",\"signing_key_id\":null,\"source_id\":\"identity-source-vector\",\"target_subject_id\":\"subject-target-vector\"}",
+      "sha256": "e64c3d4034c58cb349d4dd658e1438f2e7fab2b1dc06638cb880cbcfffb8e5ea"
+    },
+    {
+      "id": "identity-policy-transition-record-content",
+      "value": {
+        "schema": "stage5-identity-role-change-policy-transition-v1",
+        "transition_id": "policy-transition-vector",
+        "environment_id": "stage5-prod",
+        "log_id": "holdout-log-vector",
+        "policy_id": "policy-vector",
+        "previous_policy_version": 1,
+        "previous_policy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "next_policy_version": 2,
+        "next_policy_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "expected_pin_revision": 4,
+        "previous_pin_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "actor_subject_id": "subject-pin-operator-vector",
+        "transition_approval": {
+          "approval_id": "policy-transition-approval-vector",
+          "approver_subject_id": "subject-risk-owner-vector",
+          "approver_signing_key_id": "risk-owner-key-vector",
+          "approved_intent_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "signed_at_utc": "2026-10-23T10:00:00Z",
+          "signature_profile": "ed25519-jcs-identity-policy-transition-approval-v1",
+          "signature": "YhGkMlJdEHQ5Uo8ScfFBYF8OwS2x1ZH33LHCBOUPanhfg58j_N6g0M5iOpuKo21rMNM75Dm-qQOfSIRm7qpFCw"
+        },
+        "pin_update": {
+          "pin_authority_id": "verifier-pin-authority-vector",
+          "pin_revision": 5,
+          "transition_record_id": "policy-transition-vector",
+          "transition_approval_sha256": "61d15a7fac4bb19f2434cd3c9941010dc1dd27523e0f66630f5f672b3b450794",
+          "previous_pin_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "next_pin_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "applied_at_utc": "2026-10-23T10:00:05Z",
+          "signature_profile": "ed25519-jcs-verifier-policy-pin-update-v1",
+          "signing_key_id": "verifier-pin-key-vector",
+          "signature": "BK5F5k_zxLHSTXidGaz15V-CTdtgSzi-ArwWFVN_NaV9YEu6TFPcgqEHxqM2-2JGNoMU5TTy4BZR_n9N2KN1DQ"
+        },
+        "recorded_at_utc": "2026-10-23T10:00:06Z",
+        "signature_profile": "ed25519-jcs-identity-policy-transition-v1",
+        "signing_key_id": "identity-audit-key-vector"
+      },
+      "canonical_utf8": "{\"actor_subject_id\":\"subject-pin-operator-vector\",\"environment_id\":\"stage5-prod\",\"expected_pin_revision\":4,\"log_id\":\"holdout-log-vector\",\"next_policy_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"next_policy_version\":2,\"pin_update\":{\"applied_at_utc\":\"2026-10-23T10:00:05Z\",\"next_pin_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"pin_authority_id\":\"verifier-pin-authority-vector\",\"pin_revision\":5,\"previous_pin_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"signature\":\"BK5F5k_zxLHSTXidGaz15V-CTdtgSzi-ArwWFVN_NaV9YEu6TFPcgqEHxqM2-2JGNoMU5TTy4BZR_n9N2KN1DQ\",\"signature_profile\":\"ed25519-jcs-verifier-policy-pin-update-v1\",\"signing_key_id\":\"verifier-pin-key-vector\",\"transition_approval_sha256\":\"61d15a7fac4bb19f2434cd3c9941010dc1dd27523e0f66630f5f672b3b450794\",\"transition_record_id\":\"policy-transition-vector\"},\"policy_id\":\"policy-vector\",\"previous_pin_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"previous_policy_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"previous_policy_version\":1,\"recorded_at_utc\":\"2026-10-23T10:00:06Z\",\"schema\":\"stage5-identity-role-change-policy-transition-v1\",\"signature_profile\":\"ed25519-jcs-identity-policy-transition-v1\",\"signing_key_id\":\"identity-audit-key-vector\",\"transition_approval\":{\"approval_id\":\"policy-transition-approval-vector\",\"approved_intent_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"approver_signing_key_id\":\"risk-owner-key-vector\",\"approver_subject_id\":\"subject-risk-owner-vector\",\"signature\":\"YhGkMlJdEHQ5Uo8ScfFBYF8OwS2x1ZH33LHCBOUPanhfg58j_N6g0M5iOpuKo21rMNM75Dm-qQOfSIRm7qpFCw\",\"signature_profile\":\"ed25519-jcs-identity-policy-transition-approval-v1\",\"signed_at_utc\":\"2026-10-23T10:00:00Z\"},\"transition_id\":\"policy-transition-vector\"}",
+      "sha256": "c90b2b664750eda45e23cb8ea16804a4090afdc986075aa65a01c89b515f5a84"
+    },
+    {
+      "id": "identity-history-query-including-fresh-nonce",
+      "value": {
+        "subject_id": "subject-target-vector",
+        "role": "stage5_risk_owner",
+        "signing_key_id": null,
+        "challenge_nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "canonical_utf8": "{\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"role\":\"stage5_risk_owner\",\"signing_key_id\":null,\"subject_id\":\"subject-target-vector\"}",
+      "sha256": "eb8adf41cd4ffd008dbcf8f3e1bbc6cb9acac5e8fcf3037b8cfbc6a9133247aa"
+    },
+    {
+      "id": "identity-bootstrap-root-pin-approved-intent",
+      "value": {
+        "schema": "stage5-identity-bootstrap-root-pin-update-v1",
+        "update_id": "root-pin-update-vector",
+        "update_kind": "planned-root-rollover",
+        "environment_id": "stage5-prod",
+        "previous_scope": {
+          "log_id": "identity-log-vector",
+          "policy_id": "identity-policy-vector",
+          "policy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_version": 1,
+          "history_head_sequence": 3,
+          "history_head_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "next_scope": {
+          "log_id": "identity-log-vector",
+          "policy_id": "identity-policy-vector",
+          "policy_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "policy_version": 2,
+          "history_head_sequence": 3,
+          "history_head_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "previous_history_anchor": {
+          "anchor_id": "identity-anchor-vector",
+          "anchor_record_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "previous_root_pin_revision": 4,
+        "next_root_pin_revision": 5,
+        "previous_root_pin": {
+          "subject_id": "root-owner-vector",
+          "key_id": "root-key-vector",
+          "key_fingerprint_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "next_root_pin": {
+          "subject_id": "root-owner-next-vector",
+          "key_id": "root-key-next-vector",
+          "key_fingerprint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "policy_transition": {
+          "record_id": "policy-transition-vector",
+          "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "canonical_utf8": "{\"environment_id\":\"stage5-prod\",\"next_root_pin\":{\"key_fingerprint_sha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"key_id\":\"root-key-next-vector\",\"subject_id\":\"root-owner-next-vector\"},\"next_root_pin_revision\":5,\"next_scope\":{\"history_head_sequence\":3,\"history_head_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"log_id\":\"identity-log-vector\",\"policy_id\":\"identity-policy-vector\",\"policy_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"policy_version\":2},\"policy_transition\":{\"record_id\":\"policy-transition-vector\",\"record_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\"},\"previous_history_anchor\":{\"anchor_id\":\"identity-anchor-vector\",\"anchor_record_sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"},\"previous_root_pin\":{\"key_fingerprint_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"key_id\":\"root-key-vector\",\"subject_id\":\"root-owner-vector\"},\"previous_root_pin_revision\":4,\"previous_scope\":{\"history_head_sequence\":3,\"history_head_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"log_id\":\"identity-log-vector\",\"policy_id\":\"identity-policy-vector\",\"policy_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"policy_version\":1},\"schema\":\"stage5-identity-bootstrap-root-pin-update-v1\",\"update_id\":\"root-pin-update-vector\",\"update_kind\":\"planned-root-rollover\"}",
+      "sha256": "15adae03064e81b13708cbf067715799f1374b6d3d741ebd51c462338bf30067"
+    },
+    {
+      "id": "verifier-pin-bundle-previous-state",
+      "value": {
+        "environment_id": "stage5-prod",
+        "configuration_revision": 7,
+        "policy_pin": {
+          "policy_id": "identity-policy-vector",
+          "policy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "policy_version": 1
+        },
+        "root_pin": {
+          "subject_id": "root-owner-vector",
+          "key_id": "root-key-vector",
+          "key_fingerprint_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "policy_pin_revision": 10,
+        "root_pin_revision": 4
+      },
+      "canonical_utf8": "{\"configuration_revision\":7,\"environment_id\":\"stage5-prod\",\"policy_pin\":{\"policy_id\":\"identity-policy-vector\",\"policy_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"policy_version\":1},\"policy_pin_revision\":10,\"root_pin\":{\"key_fingerprint_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"key_id\":\"root-key-vector\",\"subject_id\":\"root-owner-vector\"},\"root_pin_revision\":4}",
+      "sha256": "7fb170ccf45e38158b7d836652fffae8ae8b4b006d4927c196ba70b70dc3ff3b"
+    },
+    {
+      "id": "verifier-pin-bundle-next-state",
+      "value": {
+        "environment_id": "stage5-prod",
+        "configuration_revision": 8,
+        "policy_pin": {
+          "policy_id": "identity-policy-vector",
+          "policy_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "policy_version": 2
+        },
+        "root_pin": {
+          "subject_id": "root-owner-next-vector",
+          "key_id": "root-key-next-vector",
+          "key_fingerprint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "policy_pin_revision": 11,
+        "root_pin_revision": 5
+      },
+      "canonical_utf8": "{\"configuration_revision\":8,\"environment_id\":\"stage5-prod\",\"policy_pin\":{\"policy_id\":\"identity-policy-vector\",\"policy_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"policy_version\":2},\"policy_pin_revision\":11,\"root_pin\":{\"key_fingerprint_sha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"key_id\":\"root-key-next-vector\",\"subject_id\":\"root-owner-next-vector\"},\"root_pin_revision\":5}",
+      "sha256": "f8a699cbc0272c746f19f069f9451b8aa2d67eb8ca000e102c8f0eec836b37e9"
+    },
+    {
+      "id": "verifier-pin-witness-query-with-fresh-nonce",
+      "value": {
+        "schema": "stage5-verifier-pin-bundle-history-package-v1",
+        "witness_id": "pin-witness-vector",
+        "environment_id": "stage5-prod",
+        "challenge_nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "canonical_utf8": "{\"challenge_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"environment_id\":\"stage5-prod\",\"schema\":\"stage5-verifier-pin-bundle-history-package-v1\",\"witness_id\":\"pin-witness-vector\"}",
+      "sha256": "d337771a2c0146f497d897f46c6e72f9b476db1b3ee5a8096614ae28ac6f7e03"
+    },
+    {
+      "id": "verifier-pin-witness-entry-content",
+      "value": {
+        "entry_id": "witness-entry-vector",
+        "sequence": 1,
+        "previous_entry_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "bundle_id": "pin-bundle-vector",
+        "commit_receipt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "previous_configuration_revision": 1,
+        "next_configuration_revision": 2,
+        "previous_policy_pin_revision": 1,
+        "next_policy_pin_revision": 2,
+        "previous_root_pin_revision": 1,
+        "next_root_pin_revision": 2,
+        "previous_bundle_state_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "next_bundle_state_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "recorded_at_utc": "2026-10-23T12:00:00Z"
+      },
+      "canonical_utf8": "{\"bundle_id\":\"pin-bundle-vector\",\"commit_receipt_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"entry_id\":\"witness-entry-vector\",\"next_bundle_state_sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"next_configuration_revision\":2,\"next_policy_pin_revision\":2,\"next_root_pin_revision\":2,\"previous_bundle_state_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"previous_configuration_revision\":1,\"previous_entry_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"previous_policy_pin_revision\":1,\"previous_root_pin_revision\":1,\"recorded_at_utc\":\"2026-10-23T12:00:00Z\",\"sequence\":1}",
+      "sha256": "398844cc8188dfc305e934a27e3bb7566d0afd2440838c49d11c9d0fff85542b"
+    }
+  ]
+}
