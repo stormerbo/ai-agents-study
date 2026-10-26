@@ -52,9 +52,24 @@ def release_slots(conn, task_id):
 def expire_deadlines(conn):
     rows = conn.execute("SELECT id FROM tasks WHERE deadline<=clock_timestamp() AND status IN ('queued','running','waiting_approval') FOR UPDATE").fetchall()
     for row in rows:
-        conn.execute("UPDATE tasks SET status='failed',state_version=state_version+1,lease_owner=NULL,lease_until=NULL WHERE id=%s", (row['id'],))
+        task_id = row['id']
+        active_effect = conn.execute("SELECT 1 FROM outbox WHERE task_id=%s AND status IN ('dispatching','unknown') LIMIT 1", (task_id,)).fetchone()
+        if active_effect:
+            # A possibly sent effect must be reconciled even after the task deadline.
+            conn.execute("UPDATE tasks SET status='reconciling',state_version=state_version+1,lease_owner=NULL,lease_until=NULL WHERE id=%s", (task_id,))
+            release_slots(conn, task_id)
+            append_event(conn, task_id, 'task.deadline_reconciling', {'boundary':'possible_external_effect'})
+            continue
+        approvals = conn.execute("UPDATE approvals SET status='cancelled' WHERE task_id=%s AND status='pending'", (task_id,)).rowcount
+        actions = conn.execute("UPDATE actions SET status='cancelled' WHERE task_id=%s AND status IN ('proposed','waiting_approval','authorized_pending_delivery','authorized')", (task_id,)).rowcount
+        outbox = conn.execute("UPDATE outbox SET status='cancelled' WHERE task_id=%s AND status='queued'", (task_id,)).rowcount
+        conn.execute("UPDATE tasks SET status='failed',state_version=state_version+1,lease_owner=NULL,lease_until=NULL WHERE id=%s", (task_id,))
         release_slots(conn,row['id'])
-        append_event(conn,row['id'],'task.deadline_expired',{})
+        append_event(conn,task_id,'task.deadline_expired',{
+            'approvals_cancelled': approvals,
+            'actions_cancelled': actions,
+            'outbox_cancelled': outbox,
+        })
     return len(rows)
 
 
@@ -87,6 +102,25 @@ def claim(conn, owner, *, task_id=None, lease_seconds=30):
     return Lease(row['id'],owner,row['execution_epoch'])
 
 
+def release(conn, lease: Lease) -> bool:
+    """Release one completed wake-up so its successor need not wait for lease expiry.
+
+    The task row lock serializes release with takeover and side-effect fences. The
+    owner/epoch predicate prevents an old worker from releasing a successor's lease.
+    """
+    row = conn.execute('SELECT * FROM tasks WHERE id=%s FOR UPDATE', (lease.task_id,)).fetchone()
+    if row is None or row['lease_owner'] != lease.owner or row['execution_epoch'] != lease.epoch or row['status'] != 'running':
+        return False
+    conn.execute('DELETE FROM task_slots WHERE task_id=%s AND owner=%s AND epoch=%s',
+                 (lease.task_id, lease.owner, lease.epoch))
+    conn.execute('DELETE FROM provider_slots WHERE task_id=%s AND owner=%s AND epoch=%s',
+                 (lease.task_id, lease.owner, lease.epoch))
+    conn.execute('UPDATE tasks SET lease_owner=NULL,lease_until=NULL,state_version=state_version+1 WHERE id=%s',
+                 (lease.task_id,))
+    append_event(conn, lease.task_id, 'task.lease_released', {'epoch': lease.epoch})
+    return True
+
+
 def renew(conn, lease, lease_seconds=30):
     if not 0 < lease_seconds <= 300:
         raise ValueError('Invalid lease duration')
@@ -111,7 +145,7 @@ def emit(conn, lease, kind, payload):
     return 1
 
 
-def transition(conn, lease, status, *, output_valid=False):
+def transition(conn, lease, status):
     row = fence(conn,lease)
     if not row:
         return 0
@@ -119,8 +153,14 @@ def transition(conn, lease, status, *, output_valid=False):
         raise ValueError('Invalid task transition')
     if status=='completed':
         unresolved = conn.execute("SELECT 1 FROM actions WHERE task_id=%s AND status!='succeeded' LIMIT 1",(lease.task_id,)).fetchone()
-        if unresolved or not output_valid:
-            raise ValueError('Completion requires validated output and all actions resolved')
+        if unresolved:
+            raise ValueError('Completion requires all actions resolved')
+        durable_output = conn.execute('SELECT 1 FROM final_outputs WHERE task_id=%s',(lease.task_id,)).fetchone()
+        if not durable_output:
+            raise ValueError('Completion requires validated output in durable storage')
+        # Completion has one trusted entry point (runtime.finalize_output), which
+        # validates and stores output in the same transaction as this transition.
+        raise ValueError('Use finalize_output to complete a task')
     conn.execute('UPDATE tasks SET status=%s,state_version=state_version+1 WHERE id=%s',(status,lease.task_id))
     if status != 'running':
         release_slots(conn,lease.task_id)

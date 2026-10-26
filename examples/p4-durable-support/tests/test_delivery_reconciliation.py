@@ -17,6 +17,10 @@ from app.db import connect
 from conftest import unused_port, subprocess_environment
 from test_worker_ownership import execution_service, new_task
 
+P5 = Path(__file__).resolve().parents[2] / 'p5-agent-delivery'
+if str(P5) not in sys.path:
+    sys.path.insert(0, str(P5))
+
 pytestmark = pytest.mark.integration
 
 
@@ -24,6 +28,203 @@ def test_delivery_modules_exist():
     assert importlib.util.find_spec('app.outbox') is not None
     assert importlib.util.find_spec('app.delivery') is not None
     assert importlib.util.find_spec('app.sink') is not None
+
+
+def test_p5_coordinator_resumes_approved_write_dispatches_once_then_continues_model(service, execution_service, sink):
+    import asyncio
+    from app.actions import REGISTRY
+    from app.retrieval import seed_corpus
+    from app.worker import claim
+    from host import drive_provider_round, resume_agent_turn
+
+    api = execution_service
+    task_id = new_task(service.dsn)
+    endpoint = 'p5-orchestrator-' + uuid.uuid4().hex
+    account = 'p5-orchestrator-budget-' + uuid.uuid4().hex
+    mcp_tools = [
+        {'name': 'lookup_order', 'inputSchema': REGISTRY['lookup_order'][0]},
+        {'name': 'search_policy', 'inputSchema': REGISTRY['search_policy'][0]},
+    ]
+    with connect(service.dsn) as conn:
+        seed_corpus(conn)
+        release_id = conn.execute('SELECT release_id FROM tasks WHERE id=%s', (task_id,)).fetchone()['release_id']
+        conn.execute('INSERT INTO provider_endpoints VALUES (%s,1,4)', (endpoint,))
+        conn.execute('INSERT INTO budget_accounts(id,tenant_id,token_limit,tool_limit) VALUES (%s,%s,5000,40)',
+                     (account, 'tenant-a'))
+        lease = claim(conn, 'p5-orchestrator-first', task_id=task_id, lease_seconds=120)
+
+    class Adapter:
+        max_retries = 0
+        calls = []
+
+        def __call__(self, request):
+            self.calls.append(request)
+            if len(self.calls) == 1:
+                return {'id': 'notice-proposal', 'stop_reason': 'tool_use',
+                    'content': [{'type': 'tool_use', 'id': 'notice-1', 'name': 'send_notice',
+                                 'input': {'resource_id': 'A-1001', 'message': 'synthetic approved notice'}}],
+                    'usage': {'input_tokens': 10, 'output_tokens': 5,
+                              'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 0}}
+            return {'id': 'notice-final', 'stop_reason': 'end_turn',
+                'content': [{'type': 'text', 'text': '{"outcome":"answer","text":"已完成通知。","citations":[]}'}],
+                'usage': {'input_tokens': 20, 'output_tokens': 6,
+                          'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 0}}
+
+    class MCP:
+        async def list_tools(self):
+            return {'tools': mcp_tools}
+
+        async def call_tool(self, name, args):
+            raise AssertionError('The proposed turn contains no read actions')
+
+    adapter = Adapter()
+    common = {'endpoint': endpoint, 'budget_account': account, 'provider': adapter,
+              'mcp_tools': mcp_tools, 'system_prompt': 'Return the required JSON shape.',
+              'model': 'fixture-model', 'max_tokens': 128, 'max_rounds': 3,
+              'reserved_tokens': 512, 'reserved_tools': 4}
+    proposed = drive_provider_round(lambda: connect(service.dsn), lease, **common)
+    assert proposed['status'] == 'waiting_approval'
+    assert len(adapter.calls) == 1
+
+    approval = api.request('GET', f'/v1/tasks/{task_id}/approvals').json()['approvals'][0]
+    decision = api.request('POST', f"/v1/approvals/{approval['id']}/decision", token='dev-approver',
+                           json={'decision': 'approved'})
+    assert decision.status_code == 200, decision.text
+    with connect(service.dsn) as conn:
+        approved_lease = claim(conn, 'p5-orchestrator-approved', task_id=task_id, lease_seconds=120)
+    assert approved_lease
+
+    delivered = asyncio.run(resume_agent_turn(
+        lambda: connect(service.dsn), approved_lease, mcp_session=MCP(), **common,
+        delivery_dsn=service.dsn, sink_url=sink.url,
+    ))
+    assert delivered['status'] == 'delivery_succeeded'
+    assert delivered['action_id'] == proposed['action_ids'][0]
+    assert len(adapter.calls) == 1, 'Approval recovery must not call the model before dispatch resolves'
+
+    with connect(service.dsn) as conn:
+        assert conn.execute('SELECT status FROM tasks WHERE id=%s', (task_id,)).fetchone()['status'] == 'queued'
+        assert conn.execute('SELECT count(*) AS n FROM sink_effects WHERE action_id=%s',
+                            (uuid.UUID(delivered['action_id']),)).fetchone()['n'] == 1
+        successor = claim(conn, 'p5-orchestrator-continue', task_id=task_id, lease_seconds=120)
+    assert successor
+    completed = asyncio.run(resume_agent_turn(
+        lambda: connect(service.dsn), successor, mcp_session=MCP(), **common,
+        delivery_dsn=service.dsn, sink_url=sink.url,
+    ))
+    assert completed['status'] == 'completed'
+    assert len(adapter.calls) == 2
+    assert adapter.calls[1]['messages'][-1]['content'][0]['tool_use_id'] == 'notice-1'
+    from runner import _load_action_evidence
+    with connect(service.dsn) as conn:
+        assert conn.execute('SELECT status FROM tasks WHERE id=%s', (task_id,)).fetchone()['status'] == 'completed'
+        assert conn.execute("SELECT count(*) AS n FROM outbox WHERE task_id=%s AND status='succeeded'",
+                            (task_id,)).fetchone()['n'] == 1
+        task_status = conn.execute('SELECT status FROM tasks WHERE id=%s', (task_id,)).fetchone()['status']
+        action_status = conn.execute('SELECT status FROM actions WHERE id=%s',
+                                     (uuid.UUID(delivered['action_id']),)).fetchone()['status']
+        outbox_status = conn.execute('SELECT status FROM outbox WHERE action_id=%s',
+                                     (uuid.UUID(delivered['action_id']),)).fetchone()['status']
+        event_kinds = [row['kind'] for row in conn.execute(
+            'SELECT kind FROM events WHERE task_id=%s ORDER BY seq', (task_id,)).fetchall()]
+        effect_count = conn.execute('SELECT count(*) AS n FROM sink_effects WHERE action_id=%s',
+                                     (uuid.UUID(delivered['action_id']),)).fetchone()['n']
+        live_action = next(
+            row for row in _load_action_evidence(conn, task_id)
+            if row['tool'] == 'send_notice'
+        )
+        assert live_action['status'] == 'succeeded'
+        assert live_action['approval_verified'] is True
+        approval_record = conn.execute(
+            'SELECT * FROM approvals WHERE action_id=%s', (uuid.UUID(delivered['action_id']),)
+        ).fetchone()
+        mismatch_values = {
+            'status': 'pending',
+            'decided_by': 'alice',
+            'decided_at': None,
+            'args_hash': 'f' * 64,
+            'resource_version': approval_record['resource_version'] + 1,
+            'acl_version': approval_record['acl_version'] + 1,
+            'policy_version': approval_record['policy_version'] + 1,
+        }
+        for column, wrong_value in mismatch_values.items():
+            conn.execute(f'UPDATE approvals SET {column}=%s WHERE action_id=%s',
+                         (wrong_value, uuid.UUID(delivered['action_id'])))
+            mismatched = next(
+                row for row in _load_action_evidence(conn, task_id)
+                if row['tool'] == 'send_notice'
+            )
+            assert mismatched['approval_verified'] is False, f'{column} mismatch must invalidate witness'
+            conn.execute(f'UPDATE approvals SET {column}=%s WHERE action_id=%s',
+                         (approval_record[column], uuid.UUID(delivered['action_id'])))
+    from conftest import record_drill_observation
+    record_drill_observation('approval-pause-resume', {
+        'task_statuses': ['waiting_approval', 'queued', task_status],
+        'action_statuses': ['waiting_approval', action_status],
+        'outbox_statuses': [outbox_status], 'sink_effect_count': effect_count,
+        'event_kinds_in_order': event_kinds, 'provider_calls': len(adapter.calls),
+    }, dsn=service.dsn, task_ids=[task_id])
+
+
+def test_p5_coordinator_stops_on_unknown_delivery_without_another_model_call(service, execution_service):
+    import asyncio
+    from app.actions import REGISTRY
+    from app.retrieval import seed_corpus
+    from app.worker import claim
+    from host import drive_provider_round, resume_agent_turn
+
+    task_id = new_task(service.dsn)
+    endpoint = 'p5-unknown-' + uuid.uuid4().hex
+    account = 'p5-unknown-budget-' + uuid.uuid4().hex
+    mcp_tools = [
+        {'name': 'lookup_order', 'inputSchema': REGISTRY['lookup_order'][0]},
+        {'name': 'search_policy', 'inputSchema': REGISTRY['search_policy'][0]},
+    ]
+    with connect(service.dsn) as conn:
+        seed_corpus(conn)
+        conn.execute('INSERT INTO provider_endpoints VALUES (%s,1,4)', (endpoint,))
+        conn.execute('INSERT INTO budget_accounts(id,tenant_id,token_limit,tool_limit) VALUES (%s,%s,5000,40)',
+                     (account, 'tenant-a'))
+        lease = claim(conn, 'p5-unknown-first', task_id=task_id, lease_seconds=120)
+
+    class Adapter:
+        max_retries = 0
+        calls = 0
+
+        def __call__(self, request):
+            self.calls += 1
+            return {'id': 'unknown-notice', 'stop_reason': 'tool_use',
+                'content': [{'type': 'tool_use', 'id': 'unknown-notice-1', 'name': 'send_notice',
+                             'input': {'resource_id': 'A-1001', 'message': 'synthetic only'}}],
+                'usage': {'input_tokens': 10, 'output_tokens': 5,
+                          'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 0}}
+
+    class MCP:
+        async def list_tools(self):
+            return {'tools': mcp_tools}
+
+    adapter = Adapter()
+    common = {'endpoint': endpoint, 'budget_account': account, 'provider': adapter,
+              'mcp_tools': mcp_tools, 'system_prompt': 'Return the required JSON shape.',
+              'model': 'fixture-model', 'max_tokens': 128, 'max_rounds': 3,
+              'reserved_tokens': 512, 'reserved_tools': 4}
+    proposed = drive_provider_round(lambda: connect(service.dsn), lease, **common)
+    approval = execution_service.request('GET', f'/v1/tasks/{task_id}/approvals').json()['approvals'][0]
+    decision = execution_service.request('POST', f"/v1/approvals/{approval['id']}/decision",
+        token='dev-approver', json={'decision': 'approved'})
+    assert decision.status_code == 200, decision.text
+    with connect(service.dsn) as conn:
+        approved_lease = claim(conn, 'p5-unknown-approved', task_id=task_id, lease_seconds=120)
+
+    unavailable_sink = f'http://127.0.0.1:{unused_port()}'
+    result = asyncio.run(resume_agent_turn(lambda: connect(service.dsn), approved_lease,
+        mcp_session=MCP(), **common, delivery_dsn=service.dsn, sink_url=unavailable_sink))
+    assert result['status'] == 'reconciling'
+    assert adapter.calls == 1
+    with connect(service.dsn) as conn:
+        assert conn.execute('SELECT status FROM tasks WHERE id=%s', (task_id,)).fetchone()['status'] == 'reconciling'
+        assert conn.execute("SELECT status FROM outbox WHERE action_id=%s",
+                            (uuid.UUID(proposed['action_ids'][0]),)).fetchone()['status'] == 'unknown'
 
 
 @pytest.fixture
@@ -189,7 +390,7 @@ def test_process_death_reconciles_query_before_retry(execution_service,sink,phas
         worker.join(timeout=5)
         with connect(api.dsn) as conn:
             assert conn.execute('SELECT status FROM tasks WHERE id=%s',(task_id,)).fetchone()['status']=='reconciling'
-            assert transition(conn,lease,'completed',output_valid=True)==0
+            assert transition(conn,lease,'completed')==0
         expire_dispatch(api.dsn,action_id)
         assert reconcile(api.dsn,action_id,sink.url)=='succeeded'
         assert effect_count(api.dsn,action_id)==1
@@ -214,12 +415,24 @@ def test_connection_failure_unknown_blocks_completion_and_unavailable_query_does
     assert dispatch_once(api.dsn,lease,action_id,unavailable)=='unknown'
     assert reconcile(api.dsn,action_id,unavailable)=='unknown'
     with connect(api.dsn) as conn:
-        assert transition(conn,lease,'completed',output_valid=True)==0
+        assert transition(conn,lease,'completed')==0
         assert conn.execute('SELECT status FROM tasks WHERE id=%s',(task_id,)).fetchone()['status']=='reconciling'
         assert conn.execute('SELECT status FROM actions WHERE id=%s',(action_id,)).fetchone()['status']=='unknown'
     assert effect_count(api.dsn,action_id)==0
     assert reconcile(api.dsn,action_id,sink.url)=='succeeded'
     assert effect_count(api.dsn,action_id)==1
+    with connect(api.dsn) as conn:
+        task_status=conn.execute('SELECT status FROM tasks WHERE id=%s',(task_id,)).fetchone()['status']
+        action_status=conn.execute('SELECT status FROM actions WHERE id=%s',(action_id,)).fetchone()['status']
+        outbox_status=conn.execute('SELECT status FROM outbox WHERE action_id=%s',(action_id,)).fetchone()['status']
+        event_kinds=[r['kind'] for r in conn.execute('SELECT kind FROM events WHERE task_id=%s ORDER BY seq',(task_id,)).fetchall()]
+    from conftest import record_drill_observation
+    record_drill_observation('unknown-reconcile', {
+        'task_statuses':['reconciling',task_status], 'action_statuses':['unknown',action_status],
+        'outbox_statuses':['unknown',outbox_status], 'sink_effect_count':effect_count(api.dsn,action_id),
+        'event_kinds_in_order':event_kinds, 'request_methods':['connection-error','receipt-query'],
+        'completion_attempts':['rejected-before-reconcile'],
+    }, dsn=api.dsn, task_ids=[task_id])
 
 
 def response_loss_proxy(port,sink_address,ready):
@@ -269,6 +482,17 @@ def test_lost_http_response_after_sink_commit_is_unknown_then_queries_receipt(ex
         with connect(api.dsn) as conn:
             methods=[r['method'] for r in conn.execute('SELECT method FROM sink_requests WHERE external_key=%s ORDER BY seq',(f'p4-notice:{action_id}',)).fetchall()]
             assert methods==['POST','GET']
+            task_status=conn.execute('SELECT status FROM tasks WHERE id=%s',(task_id,)).fetchone()['status']
+            action_status=conn.execute('SELECT status FROM actions WHERE id=%s',(action_id,)).fetchone()['status']
+            outbox_status=conn.execute('SELECT status FROM outbox WHERE action_id=%s',(action_id,)).fetchone()['status']
+            event_kinds=[r['kind'] for r in conn.execute('SELECT kind FROM events WHERE task_id=%s ORDER BY seq',(task_id,)).fetchall()]
+        from conftest import record_drill_observation
+        record_drill_observation('unknown-reconcile', {
+            'task_statuses':['reconciling',task_status], 'action_statuses':['unknown',action_status],
+            'outbox_statuses':['unknown',outbox_status], 'sink_effect_count':effect_count(api.dsn,action_id),
+            'event_kinds_in_order':event_kinds, 'request_methods':methods,
+            'completion_attempts':['blocked-while-unknown'],
+        }, dsn=api.dsn, task_ids=[task_id])
     finally:
         proxy.terminate()
         proxy.join(timeout=5)
@@ -419,7 +643,7 @@ def test_multiple_notices_remain_pending_until_real_receipts_and_validated_outpu
         assert len(task['checkpoint']['tool_results'])==1
         lease=claim(conn,'second-notice',task_id=task_id)
         with pytest.raises(ValueError,match='all actions resolved'):
-            transition(conn,lease,'completed',output_valid=True)
+            transition(conn,lease,'completed')
     assert dispatch_once(api.dsn,lease,actions[1],sink.url)=='succeeded'
     with connect(api.dsn) as conn:
         task=conn.execute('SELECT status,checkpoint FROM tasks WHERE id=%s',(task_id,)).fetchone()
@@ -429,7 +653,8 @@ def test_multiple_notices_remain_pending_until_real_receipts_and_validated_outpu
         lease=claim(conn,'validated-final-output',task_id=task_id)
         with pytest.raises(ValueError,match='validated output'):
             transition(conn,lease,'completed')
-        assert transition(conn,lease,'completed',output_valid=True)==1
+        from app.runtime import finalize_output
+        assert finalize_output(conn,lease,{'outcome':'answer','text':'Synthetic notices delivered.','citations':[]})==1
     assert [effect_count(api.dsn,i) for i in actions]==[1,1]
 
 

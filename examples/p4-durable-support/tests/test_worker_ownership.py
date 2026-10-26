@@ -1,5 +1,7 @@
 """Real PostgreSQL fencing evidence; workers are independent spawn processes."""
 import importlib.util
+import hashlib
+import json
 import multiprocessing as mp
 import os
 import signal
@@ -122,10 +124,35 @@ def test_takeover_fences_all_writes_and_dead_owner(service):
             assert conn.execute('SELECT count(*) AS n FROM actions WHERE task_id=%s', (task_id,)).fetchone()['n'] == 1
             assert conn.execute("SELECT count(*) AS n FROM events WHERE task_id=%s AND kind='stale.event'",(task_id,)).fetchone()['n']==0
             assert conn.execute('SELECT checkpoint FROM tasks WHERE id=%s',(task_id,)).fetchone()['checkpoint']==current['checkpoint']
+            checkpoint_hash=hashlib.sha256(json.dumps(current['checkpoint'],sort_keys=True,default=str).encode()).hexdigest()
+            stale_event_count=conn.execute("SELECT count(*) AS n FROM events WHERE task_id=%s AND kind='stale.event'",(task_id,)).fetchone()['n']
+            action_count=conn.execute('SELECT count(*) AS n FROM actions WHERE task_id=%s',(task_id,)).fetchone()['n']
+            approval_count=conn.execute('SELECT count(*) AS n FROM approvals WHERE task_id=%s',(task_id,)).fetchone()['n']
+        from conftest import record_drill_observation
+        record_drill_observation('lease-takeover', {
+            'owner_epochs':[stale.epoch,current['execution_epoch']],
+            'stale_mutation_counts':{'actions_present':action_count,'approvals_present':approval_count,
+                                     'stale_events':stale_event_count,'checkpoint_unchanged':1},
+            'checkpoint_sha256':checkpoint_hash,
+        }, dsn=service.dsn, task_ids=[task_id])
     finally:
         if process.is_alive():
             process.kill()
         process.join(timeout=5)
+
+
+def test_finished_wakeup_releases_only_its_own_lease_for_immediate_successor(service):
+    from app.worker import claim, release
+    task_id = new_task(service.dsn)
+    with connect(service.dsn) as conn:
+        first = claim(conn, 'wakeup-one', task_id=task_id, lease_seconds=120)
+        assert first is not None
+        assert release(conn, first) is True
+        second = claim(conn, 'wakeup-two', task_id=task_id, lease_seconds=120)
+        assert second is not None
+        assert second.epoch == first.epoch + 1
+        assert release(conn, first) is False
+        assert conn.execute('SELECT lease_owner FROM tasks WHERE id=%s', (task_id,)).fetchone()['lease_owner'] == 'wakeup-two'
 
 
 def test_transitions_and_completion_require_resolved_actions(service):
@@ -140,7 +167,7 @@ def test_transitions_and_completion_require_resolved_actions(service):
             transition(conn, lease, 'queued')
         propose_turn(conn, lease, [{'id':'m1','name':'lookup_order','input':{'order_id':'A-1001'}}])
         with pytest.raises(ValueError):
-            transition(conn, lease, 'completed', output_valid=True)
+            transition(conn, lease, 'completed')
 
 
 def test_one_lease_can_persist_multiple_completed_read_turns(service):

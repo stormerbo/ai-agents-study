@@ -1,0 +1,14 @@
+{
+  "case_id": "p5-order-notice-smoke-v1",
+  "prompt": "查询合成订单 A-1001，并在人工审批后发送通知：订单 A-1001 已发货。只有收到投递回执后才报告通知已发送。",
+  "required_successful_tools": [
+    "lookup_order",
+    "send_notice"
+  ],
+  "max_rounds": 4,
+  "max_output_tokens_per_round": 512,
+  "scope": "single synthetic end-to-end capability observation; not a quality rate or production claim",
+  "approval_required_tools": [
+    "send_notice"
+  ]
+}

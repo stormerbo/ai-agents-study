@@ -46,6 +46,15 @@ class IdentityTenancyTests(unittest.TestCase):
             document_id="doc-a", action="update"
         )
         self.assertEqual(decision.reason, "not_resource_owner")
+        self.assertIsNone(decision.body)
+
+    def test_authorized_update_decision_does_not_return_document_body(self):
+        decision = self.store.access(
+            authenticated_subject="alice", trusted_tenant_id="tenant-a",
+            document_id="doc-a", action="update"
+        )
+        self.assertTrue(decision.allowed)
+        self.assertIsNone(decision.body)
 
     def test_inactive_membership_is_denied(self):
         decision = self.store.access(

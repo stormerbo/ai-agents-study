@@ -22,6 +22,16 @@ def _mcp_text(result: Any) -> str:
     return "\n".join(parts)
 
 
+def _is_mcp_client_failure(exc: Exception) -> bool:
+    if isinstance(exc, (ConnectionError, TimeoutError, OSError, EOFError)):
+        return True
+    return any(
+        (cls.__module__.startswith("httpx") and cls.__name__.endswith("TransportError"))
+        or (cls.__module__.startswith("mcp.") and cls.__name__ == "MCPError")
+        for cls in type(exc).__mro__
+    )
+
+
 async def run_agent(
     user_text: str,
     session: Any,
@@ -34,7 +44,19 @@ async def run_agent(
     """Run the provider loop while delegating every real tool to the MCP peer."""
     if max_rounds < 1 or max_tool_calls < 1 or max_output_tokens < 1:
         raise ValueError("round, tool-call, and output budgets must be positive")
-    listed = await session.list_tools()
+    try:
+        listed = await session.list_tools()
+    except Exception as exc:
+        if not _is_mcp_client_failure(exc):
+            raise
+        return {
+            "status": "mcp_client_error",
+            "text": "",
+            "rounds": 0,
+            "tool_calls": 0,
+            "trace": [{"round": 0, "stop_reason": None, "phase": "list_tools", "error_type": type(exc).__name__}],
+            "usage": None,
+        }
     tools = provider_tools(list(_value(listed, "tools", [])))
     if not tools:
         return {"status": "protocol_error", "text": "", "rounds": 0, "tool_calls": 0, "trace": [], "usage": None}
@@ -129,7 +151,23 @@ async def run_agent(
                 results.append({"type": "tool_result", "tool_use_id": call_id, "content": "Tool-call budget exhausted", "is_error": True})
                 round_error = True
                 continue
-            tool_result = await session.call_tool(name, arguments)
+            try:
+                tool_result = await session.call_tool(name, arguments)
+            except Exception as exc:
+                if not _is_mcp_client_failure(exc):
+                    raise
+                event["tool_status"] = "client_error"
+                event["execution_outcome"] = "unknown"
+                event["error_type"] = type(exc).__name__
+                trace.append(trace_row)
+                return {
+                    "status": "mcp_client_error",
+                    "text": "",
+                    "rounds": round_number,
+                    "tool_calls": tool_calls,
+                    "trace": trace,
+                    "usage": usage_totals if usage_complete else None,
+                }
             tool_calls += 1
             event["argument_validation"] = "passed"
             is_error = bool(_value(tool_result, "isError", _value(tool_result, "is_error", False)))

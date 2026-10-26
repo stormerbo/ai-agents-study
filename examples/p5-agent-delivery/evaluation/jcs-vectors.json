@@ -1,0 +1,123 @@
+[
+  {
+    "id": "rfc-8785-section-3-2",
+    "value": {
+      "numbers": [333333333.3333333, 1e30, 4.5, 0.002, 1e-27],
+      "string": "€$\u000f\nA'B\"\\\\\"/",
+      "literals": [null, true, false]
+    },
+    "canonical_utf8": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"€$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}",
+    "sha256": "2d5e01a318d0f0879ab568c4be289c8b1f64ef8921a53c6277d5e069978baacb"
+  },
+  {
+    "id": "stage5-registry-payload",
+    "value": {
+      "hash_profile": "jcs-rfc8785-v1",
+      "kind": "registry-vector",
+      "subject": "候选-A",
+      "threshold": {
+        "cost_usd": "0.10",
+        "pass_rate_bps": 9500
+      }
+    },
+    "canonical_utf8": "{\"hash_profile\":\"jcs-rfc8785-v1\",\"kind\":\"registry-vector\",\"subject\":\"候选-A\",\"threshold\":{\"cost_usd\":\"0.10\",\"pass_rate_bps\":9500}}",
+    "sha256": "cc26ccee2ea278a1af09d811aaaab2f44e831031e5c448ad40e545071feeba36"
+  },
+  {
+    "id": "stage5-report-payload",
+    "value": {
+      "decision": "completed",
+      "hash_profile": "jcs-rfc8785-v1",
+      "metrics": {
+        "attempted": 2,
+        "passed": 2,
+        "total_cost_usd": "0.10"
+      },
+      "quality_decision": "passed"
+    },
+    "canonical_utf8": "{\"decision\":\"completed\",\"hash_profile\":\"jcs-rfc8785-v1\",\"metrics\":{\"attempted\":2,\"passed\":2,\"total_cost_usd\":\"0.10\"},\"quality_decision\":\"passed\"}",
+    "sha256": "459b7330d5e3d2ef52d28f3e2b5cbf7c642a0b3a8f2065136be721cfa92b5741"
+  },
+  {
+    "id": "stage5-registry-event-payload",
+    "value": {
+      "frozen_spec_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reservation_id": "res-001"
+    },
+    "canonical_utf8": "{\"frozen_spec_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"reservation_id\":\"res-001\"}",
+    "sha256": "d3168bb57dd8b7d1434f24375786c2f3d667538a3410830ece79e3992398c34b"
+  },
+  {
+    "id": "stage5-registry-event-envelope",
+    "value": {
+      "schema": "stage5-registry-event-envelope-v1",
+      "hash_profile": "jcs-rfc8785-v1",
+      "run_id": "run-vector-1",
+      "sequence": 1,
+      "event_id": "evt-001",
+      "previous_event_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "event_type": "authorized",
+      "actor_subject_id": "owner-1",
+      "actor_role": "owner",
+      "registry_recorded_at": "2026-10-23T12:00:00Z",
+      "actor_asserted_at": "2026-10-23T11:59:59Z",
+      "payload_sha256": "d3168bb57dd8b7d1434f24375786c2f3d667538a3410830ece79e3992398c34b"
+    },
+    "canonical_utf8": "{\"actor_asserted_at\":\"2026-10-23T11:59:59Z\",\"actor_role\":\"owner\",\"actor_subject_id\":\"owner-1\",\"event_id\":\"evt-001\",\"event_type\":\"authorized\",\"hash_profile\":\"jcs-rfc8785-v1\",\"payload_sha256\":\"d3168bb57dd8b7d1434f24375786c2f3d667538a3410830ece79e3992398c34b\",\"previous_event_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"registry_recorded_at\":\"2026-10-23T12:00:00Z\",\"run_id\":\"run-vector-1\",\"schema\":\"stage5-registry-event-envelope-v1\",\"sequence\":1}",
+    "sha256": "9a84782742d143c618157fece8dca1e2b398e59653f885bae7fe76e7386e5a5c"
+  },
+  {
+    "id": "stage5-append-receipt",
+    "value": {
+      "schema": "stage5-append-receipt-v1",
+      "hash_profile": "jcs-rfc8785-v1",
+      "environment_id": "prod-eval",
+      "log_id": "official-holdout-v1",
+      "run_id": "run-vector-1",
+      "sequence": 1,
+      "event_id": "evt-001",
+      "previous_event_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "event_hash": "9a84782742d143c618157fece8dca1e2b398e59653f885bae7fe76e7386e5a5c",
+      "registry_recorded_at": "2026-10-23T12:00:00Z",
+      "signature_profile": "ed25519-jcs-receipt-v1",
+      "signature_algorithm": "Ed25519",
+      "key_id": "audit-key-vector-1"
+    },
+    "canonical_utf8": "{\"environment_id\":\"prod-eval\",\"event_hash\":\"9a84782742d143c618157fece8dca1e2b398e59653f885bae7fe76e7386e5a5c\",\"event_id\":\"evt-001\",\"hash_profile\":\"jcs-rfc8785-v1\",\"key_id\":\"audit-key-vector-1\",\"log_id\":\"official-holdout-v1\",\"previous_event_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"registry_recorded_at\":\"2026-10-23T12:00:00Z\",\"run_id\":\"run-vector-1\",\"schema\":\"stage5-append-receipt-v1\",\"sequence\":1,\"signature_algorithm\":\"Ed25519\",\"signature_profile\":\"ed25519-jcs-receipt-v1\"}",
+    "sha256": "4e0c2076e8165816d243ea47339b95c8d3fe47c53bbe7a1588baadbda3cd17ff",
+    "ed25519_signature_base64url": "n7EP3aoDUJWZWDeZ8NQv9A4vOHEMA1phSP5Zg8CVqyeMGP7FtJYujPIiPtCZk4G8L4X-uH8eph5uohBgq_WaAg"
+  },
+  {
+    "id": "stage5-source-probe-journal-page",
+    "value": {
+      "schema": "stage5-source-probe-journal-page-v1",
+      "environment_id": "vector-env",
+      "source_id": "vector-source",
+      "monitor_service_id": "vector-monitor",
+      "query_nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "requested_from_sequence": 1,
+      "requested_to_sequence": 1,
+      "entries": [
+        {
+          "started_at_utc": "2026-10-23T00:00:00Z",
+          "completed_at_utc": "2026-10-23T00:00:01Z",
+          "probe_sequence": 1,
+          "previous_probe_record_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "probe_record_sha256": "965f24e19db7908118470d8cb141f1853fd266ea74e8b1f4d19443ae0dee07d8",
+          "request_id": "probe-vector-1",
+          "outcome": "availability-failure",
+          "failure_class": "timeout"
+        }
+      ],
+      "current_head_sequence": 1,
+      "current_head_sha256": "965f24e19db7908118470d8cb141f1853fd266ea74e8b1f4d19443ae0dee07d8",
+      "observed_at_utc": "2026-10-23T00:00:02Z",
+      "signature_profile": "ed25519-jcs-stage5-source-probe-journal-page-v1",
+      "signing_key_id": "monitor-key-vector"
+    },
+    "canonical_utf8": "{\"current_head_sequence\":1,\"current_head_sha256\":\"965f24e19db7908118470d8cb141f1853fd266ea74e8b1f4d19443ae0dee07d8\",\"entries\":[{\"completed_at_utc\":\"2026-10-23T00:00:01Z\",\"failure_class\":\"timeout\",\"outcome\":\"availability-failure\",\"previous_probe_record_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"probe_record_sha256\":\"965f24e19db7908118470d8cb141f1853fd266ea74e8b1f4d19443ae0dee07d8\",\"probe_sequence\":1,\"request_id\":\"probe-vector-1\",\"started_at_utc\":\"2026-10-23T00:00:00Z\"}],\"environment_id\":\"vector-env\",\"monitor_service_id\":\"vector-monitor\",\"observed_at_utc\":\"2026-10-23T00:00:02Z\",\"query_nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"requested_from_sequence\":1,\"requested_to_sequence\":1,\"schema\":\"stage5-source-probe-journal-page-v1\",\"signature_profile\":\"ed25519-jcs-stage5-source-probe-journal-page-v1\",\"signing_key_id\":\"monitor-key-vector\",\"source_id\":\"vector-source\"}",
+    "sha256": "140f21b5c9aa4f3c375b209a94498c42b22430183102aea4b3333bfaabe57e73",
+    "ed25519_public_key_base64url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "ed25519_signature_base64url": "q2snUgLHG0HFL_AJgW4Od_tPIBCe1ughRiCE7Nun4HFpXGiDUjOOOUM2IINUFw0dq4wp5CgvvurGR5qar3VCAg"
+  }
+]

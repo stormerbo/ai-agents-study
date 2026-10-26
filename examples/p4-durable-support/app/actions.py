@@ -64,7 +64,7 @@ def move_action(conn, action, status):
     append_event(conn,action['task_id'],'action.'+status,{'action_id':str(action['id'])})
 
 
-def propose_turn(conn, lease, calls, *, approval_seconds=300):
+def propose_turn(conn, lease, calls, *, approval_seconds=300, request_id=None):
     task=fence(conn,lease)
     if not task:
         return []
@@ -73,7 +73,7 @@ def propose_turn(conn, lease, calls, *, approval_seconds=300):
     if task['checkpoint'].get('pending_action_ids'):
         raise ValueError('Resolve stored turn before proposing another')
     ids=[]
-    turn_id=uuid4()
+    turn_id=request_id or uuid4()
     waiting=False
     denied=False
     for position,call in enumerate(calls):
@@ -103,7 +103,7 @@ def propose_turn(conn, lease, calls, *, approval_seconds=300):
                  eligible['caller_id'],task['owner_id'],task['deadline'],approval_seconds))
             waiting=True
         denied=denied or status=='denied'
-    checkpoint(conn,lease,{'turn_id':str(turn_id),'pending_action_ids':[str(i) for i in ids]})
+    checkpoint(conn,lease,{**task['checkpoint'],'turn_id':str(turn_id),'provider_request_id':str(request_id) if request_id else task['checkpoint'].get('provider_request_id'),'pending_action_ids':[str(i) for i in ids]})
     if denied:
         transition(conn,lease,'failed')
     elif waiting:

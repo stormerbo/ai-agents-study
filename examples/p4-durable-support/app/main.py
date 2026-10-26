@@ -37,7 +37,7 @@ def create_app(settings: Settings | None = None):
     def ready():
         with connect(application.state.settings.database_url) as conn:
             # A connected but unmigrated database is not ready.
-            required = {"0001_base.sql", "0002_execution.sql", "0003_delivery.sql", "0004_manual_resolution.sql"}
+            required = {"0001_base.sql", "0002_execution.sql", "0003_delivery.sql", "0004_manual_resolution.sql", "0005_provider_calls.sql", "0006_final_outputs.sql"}
             applied = {row["version"] for row in conn.execute("SELECT version FROM schema_migrations").fetchall()}
             if not required.issubset(applied):
                 raise HTTPException(503, detail={"code": "schema_unavailable", "message": "Required migration missing"})

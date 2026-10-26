@@ -20,7 +20,7 @@
       "id": "reliability-fault-models",
       "runtime": "python",
       "entry": "examples/reliability/test_fault_models.py",
-      "sha256": "78ef23f6772224a1692c17075f1ddccd5723efd53dc65470c2d6f280570f3103",
+      "sha256": "f32061b2a87c06128c27e5113af183334a73e4768635b6809716e5ab17caaee1",
       "args": [
         "-m",
         "unittest",
@@ -50,7 +50,7 @@
       "id": "retrieval-permission-filtering",
       "runtime": "python",
       "entry": "examples/permission-filtering/retrieval_access.py",
-      "sha256": "443bdeffc7f9cc0f903d336d00f1f1140463f98ef3feaabbb38ccabbf7c180ca",
+      "sha256": "b5a6525c5069eb2cb928ee4fe77efcb3c7ec0e8d8a0584863acf3e251784d517",
       "args": [
         "-m",
         "unittest",
@@ -95,7 +95,7 @@
       "id": "agent-security-identity-tenancy",
       "runtime": "python",
       "entry": "examples/identity-tenancy/access_policy.py",
-      "sha256": "791babe6a09f75df133094a3379ee2733dbe7dfdb9734e2f46ee9b5e8e946527",
+      "sha256": "8062c806d6ad2e73ff02c1938e7f6e16f1d6e8cef8c42d80646c612fd0ee8e4f",
       "args": [
         "-m",
         "unittest",
@@ -110,7 +110,7 @@
       "id": "cost-and-latency-concurrency-backpressure",
       "runtime": "python",
       "entry": "examples/concurrency-backpressure/admission.py",
-      "sha256": "f57e064e067770358a401f76aadbc8b868afb9a734fa36d7279c4474f26af215",
+      "sha256": "3c8e50e8ec01dd16ba12145aa0bd0c5289981101f5b4a96979c7649c08fd773f",
       "args": [
         "-m",
         "unittest",
@@ -125,7 +125,7 @@
       "id": "evaluation-provider-migration",
       "runtime": "python",
       "entry": "examples/provider-migration/migration_gate.py",
-      "sha256": "2f59b362a0d6b2fc9cf9be813e8bc9be5c0a160e1c4fd1a583209501e9cb47c1",
+      "sha256": "4472794c3ff99bcb54a41f72eb5f2736c6a018f89860a10a92bd9c92c6436d72",
       "args": [
         "-m",
         "unittest",
@@ -138,18 +138,22 @@
     },
     {
       "id": "capstone-acceptance-evidence-gate",
-      "runtime": "python",
+      "runtime": "uv-project",
       "entry": "examples/capstone-acceptance/acceptance.py",
-      "sha256": "fc71575a26b2138e4ba62f1ec5dfcf3a954f38a2a0fba8de51774d4fa9b1d3ea",
+      "sha256": "c31327a8b86c16546106f1ecad9fb843667fab42bd74b14fdedeb898b0297449",
       "args": [
+        "python",
         "-m",
         "unittest",
         "discover",
         "-s",
-        "examples/capstone-acceptance",
+        "../capstone-acceptance",
         "-v"
       ],
-      "timeoutMs": 30000
+      "timeoutMs": 30000,
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb"
     },
     {
       "id": "stage-2-grounded-support",
@@ -188,13 +192,202 @@
       "sha256": "18fcf642db2a2a3311381113e3f976d73ff6f8bc0364a0e7e4ec272967858be5",
       "projectDir": "examples/p4-durable-support",
       "dependencyLockPath": "examples/p4-durable-support/uv.lock",
-      "dependencyLockSha256": "a60aea3e7c8a7a7ec97b3ed134546b16c80728db1807253f73ee03f758921458",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb",
       "args": [
         "pytest",
         "-m",
         "not integration",
         "-q",
         "tests/test_contracts.py"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "stage-5-offline-evaluation",
+      "runtime": "uv-project",
+      "entry": "examples/p5-agent-delivery/evaluation/test_evaluation.py",
+      "sha256": "7aa9cb4d4ebe7aa9cb994ca8a293292fb65b2262d252ec1d72186d4aa7e07ef4",
+      "args": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "../p5-agent-delivery/evaluation",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "timeoutMs": 30000,
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb"
+    },
+    {
+      "id": "stage-5-official-holdout-contracts",
+      "runtime": "uv-project",
+      "entry": "examples/p5-agent-delivery/evaluation/test_official_holdout_runner.py",
+      "sha256": "591380d7aeb81d0c1e0067891615d95b50303eece4e3d651db3764b7e065d1e5",
+      "args": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "../p5-agent-delivery/evaluation",
+        "-p",
+        "test_official_holdout_runner.py",
+        "-v"
+      ],
+      "timeoutMs": 30000,
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb"
+    },
+    {
+      "id": "stage-5-bounded-subprocess-runtime",
+      "runtime": "uv-project",
+      "entry": "examples/p5-agent-delivery/evaluation/test_subprocess_candidate.py",
+      "sha256": "9543fe4b46ca5489c185894133074a2c281019a091e0e0f715211cb6bfd24dbe",
+      "args": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "../p5-agent-delivery/evaluation",
+        "-p",
+        "test_subprocess_candidate.py",
+        "-v"
+      ],
+      "timeoutMs": 30000,
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb"
+    },
+    {
+      "id": "stage-5-host-contracts",
+      "runtime": "uv-project",
+      "entry": "examples/p5-agent-delivery/tests/test_host_contract.py",
+      "sha256": "24b7ac46f42c1b6fcf6697d134d1e6d001ff8b5c027cce7d6c3f4f487e8f3d67",
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb",
+      "args": [
+        "pytest",
+        "-q",
+        "../p5-agent-delivery/tests/test_host_contract.py"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "stage-5-live-runner-contracts",
+      "runtime": "uv-project",
+      "entry": "examples/p5-agent-delivery/tests/test_live_runner.py",
+      "sha256": "b94e06700be1bd4f08c2542a59f74ca8f17fbc9a03873ad9ad6ea762987e275b",
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb",
+      "args": [
+        "pytest",
+        "-q",
+        "../p5-agent-delivery/tests/test_live_runner.py"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "stage-5-drill-report-contracts",
+      "runtime": "uv-project",
+      "entry": "examples/p5-agent-delivery/tests/test_drill_report.py",
+      "sha256": "655d058c6d96edef573e297a097ce757e987bf82a485a1e87a1316781bc1f951",
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb",
+      "args": [
+        "pytest",
+        "-q",
+        "../p5-agent-delivery/tests/test_drill_report.py"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "stage-5-release-candidate-contracts",
+      "runtime": "uv-project",
+      "entry": "examples/p5-agent-delivery/tests/test_release_candidate.py",
+      "sha256": "35d13c546b24b9fcb68e0b22946630c65b52d493b6bf6b5dd7f9d99f0eea8d84",
+      "projectDir": "examples/p4-durable-support",
+      "dependencyLockPath": "examples/p4-durable-support/uv.lock",
+      "dependencyLockSha256": "b84a2953fd2856cde337de11deb3610aefef369e08811472a98bc4473d845ddb",
+      "args": [
+        "pytest",
+        "-q",
+        "../p5-agent-delivery/tests/test_release_candidate.py"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "multi-agent-comparison-demo",
+      "runtime": "python",
+      "entry": "examples/multi-agent-comparison/verify.py",
+      "sha256": "1d9ea48c95609411f1a45bd6cbf476ebe61cdc322d755d515bb118dd5146e659",
+      "args": [
+        "examples/multi-agent-comparison/verify.py"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "multi-agent-comparison-tests",
+      "runtime": "python",
+      "entry": "examples/multi-agent-comparison/test_comparison.py",
+      "sha256": "635efa2030296015a45a69956363083a9c661983237ed39c1969a8b6c4e86b28",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/multi-agent-comparison",
+        "-v"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "coding-agent-safety-reference",
+      "runtime": "python",
+      "entry": "examples/coding-agent-safety/verify.py",
+      "sha256": "b054965427070fcc88f8d7009f53f4320e4a66d7b6cff5c46081ed735793b141",
+      "args": [
+        "examples/coding-agent-safety/verify.py"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "prompt-regression-demo",
+      "runtime": "python",
+      "entry": "examples/prompt-regression/compare.py",
+      "sha256": "b54c0ba6233164d4f2c1a96165a49176be7768778cbc6bedc34e5c104ca2030d",
+      "args": [
+        "examples/prompt-regression/compare.py",
+        "--dataset",
+        "examples/prompt-regression/dataset.json",
+        "--before",
+        "examples/prompt-regression/results-before.json",
+        "--after",
+        "examples/prompt-regression/results-after.json"
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "id": "prompt-regression-tests",
+      "runtime": "python",
+      "entry": "examples/prompt-regression/tests/test_score.py",
+      "sha256": "835d76c3cfc339280cd0ef06e769f2964138795e9333eaa9dfdbbc2733f93ca7",
+      "args": [
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "examples/prompt-regression/tests",
+        "-v"
       ],
       "timeoutMs": 30000
     }

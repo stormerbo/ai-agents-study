@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 import unittest
 
@@ -46,13 +47,44 @@ class IndexCatalogTests(unittest.TestCase):
             self.catalog.activate_generation(stale)
         self.assertEqual(self.catalog.active_generation(), first)
 
-    def test_failed_build_leaves_previous_generation_active(self):
+    def test_failed_ready_candidate_leaves_previous_generation_active(self):
         self.catalog.upsert_document("policy", 1, "return window: 30 days")
         first = self.catalog.build_generation()
         self.catalog.activate_generation(first)
         failed = self.catalog.build_generation()
         self.catalog.fail_generation(failed)
+        with self.assertRaisesRegex(ValueError, "generation must exist and be ready"):
+            self.catalog.activate_generation(failed)
         self.assertEqual(self.catalog.active_generation(), first)
+
+
+    def test_mid_build_write_failure_rolls_back_candidate_and_keeps_active_generation(self):
+        self.catalog.upsert_document("policy-a", 1, "return window: 30 days")
+        self.catalog.upsert_document("policy-b", 1, "return window: 14 days")
+        active = self.catalog.build_generation()
+        self.catalog.activate_generation(active)
+        self.catalog.db.execute(
+            """CREATE TRIGGER fail_second_candidate_entry
+               BEFORE INSERT ON generation_entries
+               WHEN NEW.doc_id = 'policy-b'
+               BEGIN SELECT RAISE(ABORT, 'simulated build write failure'); END"""
+        )
+
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "simulated build write failure"):
+            self.catalog.build_generation()
+
+        self.assertEqual(self.catalog.active_generation(), active)
+        generations = self.catalog.db.execute(
+            "SELECT generation_id, status FROM generations ORDER BY generation_id"
+        ).fetchall()
+        self.assertEqual([(row["generation_id"], row["status"]) for row in generations], [(active, "active")])
+        entries = self.catalog.db.execute(
+            "SELECT generation_id, doc_id FROM generation_entries ORDER BY generation_id, doc_id"
+        ).fetchall()
+        self.assertEqual(
+            [(row["generation_id"], row["doc_id"]) for row in entries],
+            [(active, "policy-a"), (active, "policy-b")],
+        )
 
 
 if __name__ == "__main__":

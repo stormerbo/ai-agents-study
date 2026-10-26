@@ -48,9 +48,10 @@ def test_three_cancel_revoke_boundaries(execution_service,sink,operation,phase):
         else:
             with connect(api.dsn) as conn:
                 conn.execute("UPDATE resource_acl SET allowed=false WHERE tenant_id='tenant-a' AND caller_id='alice' AND resource_id='A-1001'")
-        if operation=='cancel' or phase!='before_claim':
+        completion_attempted=operation=='cancel' or phase!='before_claim'
+        if completion_attempted:
             with connect(api.dsn) as conn:
-                assert transition(conn,lease,'completed',output_valid=True)==0
+                assert transition(conn,lease,'completed')==0
         parent.send('continue')
         assert parent.poll(15)
         result=parent.recv()
@@ -75,6 +76,23 @@ def test_three_cancel_revoke_boundaries(execution_service,sink,operation,phase):
             if operation=='cancel':
                 assert kinds.index('action.dispatching')<kinds.index('task.cancel_requested')<kinds.index('task.cancelled')
         assert 'task.completed' not in kinds
+        with connect(api.dsn) as conn:
+            task_status=conn.execute('SELECT status FROM tasks WHERE id=%s',(task_id,)).fetchone()['status']
+            action_status=conn.execute('SELECT status FROM actions WHERE id=%s',(action_id,)).fetchone()['status']
+            outbox_status=conn.execute('SELECT status FROM outbox WHERE action_id=%s',(action_id,)).fetchone()['status']
+            event_sequence=[r['kind'] for r in conn.execute('SELECT kind FROM events WHERE task_id=%s ORDER BY seq',(task_id,)).fetchall()]
+        from conftest import record_drill_observation
+        record_drill_observation('cancel-revoke-race', {
+            'cancel_revoke_cases': [{
+                'case_id': f"{phase.replace('_','-')}-{operation}", 'phase': phase,
+                'operation': operation, 'task_status': task_status,
+                'action_status': action_status, 'outbox_status': outbox_status,
+                'sink_effect_count': effect_count(api.dsn, action_id),
+                'event_kinds_in_order': event_sequence,
+                'completion_attempted': completion_attempted,
+                'completion_rejected': completion_attempted and 'task.completed' not in event_sequence,
+            }]
+        }, dsn=api.dsn, task_ids=[task_id])
     finally:
         if process.is_alive(): process.kill()
         process.join(timeout=5)
@@ -87,6 +105,9 @@ def test_claim_revalidates_frozen_authorization(execution_service,sink,mutation)
     from app.delivery import dispatch_once
     api=execution_service
     task_id,action_id,lease=scheduled(api)
+    with connect(api.dsn) as conn:
+        original_resource=conn.execute("SELECT version,acl_version FROM resources WHERE tenant_id='tenant-a' AND resource_id='A-1001'").fetchone()
+        original_policy=conn.execute("SELECT version FROM tenant_policies WHERE tenant_id='tenant-a'").fetchone()['version']
     with connect(api.dsn) as conn:
         if mutation=='args':
             conn.execute("UPDATE actions SET args=jsonb_set(args,'{message}','\"tampered\"') WHERE id=%s",(action_id,))
@@ -110,6 +131,9 @@ def test_claim_revalidates_frozen_authorization(execution_service,sink,mutation)
         assert 'action.dispatching' not in event_kinds(api.dsn,task_id)
     finally:
         with connect(api.dsn) as conn:
+            conn.execute("UPDATE resources SET version=%s,acl_version=%s WHERE tenant_id='tenant-a' AND resource_id='A-1001'",
+                         (original_resource['version'],original_resource['acl_version']))
+            conn.execute("UPDATE tenant_policies SET version=%s WHERE tenant_id='tenant-a'",(original_policy,))
             conn.execute("UPDATE caller_identities SET active=true WHERE tenant_id='tenant-a' AND caller_id='alice'")
             conn.execute("UPDATE caller_identities SET roles=ARRAY['caller','approver'] WHERE tenant_id='tenant-a' AND caller_id='approver'")
 
@@ -123,7 +147,7 @@ def test_non_success_action_statuses_cannot_complete(execution_service):
         with connect(api.dsn) as conn:
             conn.execute('UPDATE actions SET status=%s WHERE id=%s',(status,action_id))
             with pytest.raises(ValueError,match='all actions resolved'):
-                transition(conn,lease,'completed',output_valid=True)
+                transition(conn,lease,'completed')
             if status in ('denied','invalidated','cancelled','unknown'):
                 assert schedule(conn,lease,action_id)==0
             assert conn.execute('SELECT status FROM tasks WHERE id=%s',(task_id,)).fetchone()['status']=='running'

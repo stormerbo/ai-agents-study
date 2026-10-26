@@ -100,6 +100,26 @@ def retrieve(conn, principal, query, *, index_version=None, limit=20):
         (principal.tenant_id,principal.caller_id,index_version,index_version,query,limit)).fetchall()
 
 
+def current_citations(conn, tenant_id, caller_id, resource_id, *, limit=1):
+    """Return only current authorized citation coordinates for a tool resource."""
+    if not isinstance(resource_id, str) or not resource_id or not 1 <= limit <= 10:
+        raise ValueError('Invalid citation resource or limit')
+    _tenant_lock(conn, tenant_id)
+    rows = conn.execute('''SELECT c.id AS chunk_id,c.resource_id,d.doc_version
+        FROM chunks c JOIN documents d ON c.document_id=d.id
+        JOIN resources r ON r.tenant_id=d.tenant_id AND r.resource_id=d.resource_id
+        JOIN resource_acl a ON a.tenant_id=r.tenant_id AND a.resource_id=r.resource_id
+        JOIN caller_identities u ON u.tenant_id=a.tenant_id AND u.caller_id=a.caller_id
+        JOIN index_versions i ON i.id=d.index_version AND i.tenant_id=d.tenant_id
+        WHERE d.tenant_id=%s AND d.resource_id=%s AND a.caller_id=%s AND a.allowed
+          AND u.active AND 'caller'=ANY(u.roles) AND r.deleted_at IS NULL AND d.deleted_at IS NULL
+          AND d.doc_version=r.version AND d.acl_version=r.acl_version AND i.state='active'
+        ORDER BY c.position LIMIT %s FOR SHARE OF c,d,r,a,u,i''',
+        (tenant_id,resource_id,caller_id,limit)).fetchall()
+    return [{'resource_id':row['resource_id'],'version':row['doc_version'],'chunk_id':str(row['chunk_id'])}
+            for row in rows]
+
+
 def build_context(conn, principal, query, *, capture=None):
     rows=retrieve(conn,principal,query)
     for row in rows:
@@ -115,7 +135,8 @@ def build_context(conn, principal, query, *, capture=None):
 def seed_corpus(conn):
     """Idempotent synthetic corpus, never undo deletion or revocation."""
     for tenant,contents,readers in [
-        ('tenant-a',{'A-1001':'ALICE-ORDER synthetic order','policy-public':'Synthetic return policy'},['alice']),
+        ('tenant-a',{'A-1001':'order_id A-1001 status shipped carrier 顺丰 last_update 2026-10-18',
+                     'policy-public':'returns-standard version 2026-01: 未使用商品可在签收后 30 天内申请退货。 refund-timing version 2026-01: 退货申请获批后，退款通常在 5 个工作日内处理。'},['alice']),
         ('tenant-b',{'B-1001':'MALLORY-SECRET synthetic order'},['mallory']),
     ]:
         _tenant_lock(conn,tenant)

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-agents-study.local/schemas/stage5-pre-compromise-anchor-v1.json",
+  "title": "Stage 5 pre-compromise receipt anchor v1",
+  "description": "Independent signed timestamp binding a complete committed event and receipt for historical verification after signer compromise.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "anchor_id", "environment_id", "log_id", "run_id", "sequence",
+    "event_id", "event_hash", "key_id", "receipt_sha256", "anchor_recorded_at_utc",
+    "anchor_authority_id", "anchor_key_id", "signature_algorithm", "signature_profile", "signature"
+  ],
+  "properties": {
+    "schema": { "const": "stage5-pre-compromise-anchor-v1" },
+    "anchor_id": { "$ref": "#/$defs/id" },
+    "environment_id": { "$ref": "#/$defs/id" },
+    "log_id": { "$ref": "#/$defs/id" },
+    "run_id": { "$ref": "#/$defs/id" },
+    "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "event_id": { "$ref": "#/$defs/id" },
+    "event_hash": { "$ref": "#/$defs/sha256" },
+    "key_id": { "$ref": "#/$defs/id" },
+    "receipt_sha256": { "$ref": "#/$defs/sha256" },
+    "anchor_recorded_at_utc": { "$ref": "#/$defs/utcTimestamp" },
+    "anchor_authority_id": { "$ref": "#/$defs/id" },
+    "anchor_key_id": { "$ref": "#/$defs/id" },
+    "signature_algorithm": { "const": "Ed25519" },
+    "signature_profile": { "const": "ed25519-jcs-precompromise-anchor-v1" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "utcTimestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$" }
+  }
+}

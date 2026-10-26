@@ -102,7 +102,7 @@ def test_all_manual_outcomes_close_without_receipt_or_result_and_cannot_complete
         assert audit['reason']=='Operator chose to close this synthetic incident.'
         assert audit['dispatch_token']==token
         assert claim(conn,'must-not-resume',task_id=task_id) is None
-        assert transition(conn,lease,'completed',output_valid=True)==0
+        assert transition(conn,lease,'completed')==0
         stale=Dispatch(action_id,task_id,token,f'p4-notice:{action_id}',row['payload'])
         assert save_receipt(conn,stale,{'forged':'late response'})==0
     assert reconcile(api.dsn,action_id,f'http://127.0.0.1:{unused_port()}')=='unavailable'
@@ -115,7 +115,7 @@ def test_all_manual_outcomes_close_without_receipt_or_result_and_cannot_complete
         conn.execute("UPDATE tasks SET status='queued',cancel_requested=false WHERE id=%s",(task_id,))
         renewed=claim(conn,'invalid-host-requeue',task_id=task_id)
         with pytest.raises(ValueError,match='all actions resolved'):
-            transition(conn,renewed,'completed',output_valid=True)
+            transition(conn,renewed,'completed')
         conn.rollback()
 
 

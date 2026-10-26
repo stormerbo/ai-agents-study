@@ -28,6 +28,60 @@ def make_waiting(dsn, task_id):
         return lease, actions
 
 
+def test_assigned_approver_can_review_exact_frozen_action(execution_service):
+    api = execution_service
+    task_id = new_task(api.dsn)
+    _, actions = make_waiting(api.dsn, task_id)
+    approval = api.request('GET', f'/v1/tasks/{task_id}/approvals').json()['approvals'][0]
+
+    response = api.request(
+        'GET', f"/v1/approvals/{approval['id']}/review", token='dev-approver'
+    )
+
+    assert response.status_code == 200, response.text
+    review = response.json()
+    assert str(review['action']['id']) == str(actions[1])
+    assert review['action']['tool'] == 'send_notice'
+    assert review['action']['arguments'] == CALLS[1]['input']
+    assert review['action']['resource_id'] == 'A-1001'
+    assert review['action']['canonical_args_hash'] == review['approval']['args_hash']
+    assert review['approval']['eligible_approver'] == 'approver'
+    assert review['approval']['requested_by'] == 'alice'
+    assert review['approval']['status'] == 'pending'
+    assert review['approval']['expires_at']
+    assert api.request(
+        'GET', f"/v1/approvals/{approval['id']}/review", token='dev-alice'
+    ).status_code == 404
+    assert api.request(
+        'GET', f"/v1/approvals/{approval['id']}/review", token='dev-mallory'
+    ).status_code == 404
+
+
+@pytest.mark.parametrize('mutation', ['args', 'resource_version', 'acl_version', 'policy_version'])
+def test_review_rejects_action_snapshot_mismatch(execution_service, mutation):
+    api = execution_service
+    task_id = new_task(api.dsn)
+    _, _ = make_waiting(api.dsn, task_id)
+    approval = api.request('GET', f'/v1/tasks/{task_id}/approvals').json()['approvals'][0]
+    with connect(api.dsn) as conn:
+        if mutation == 'args':
+            conn.execute(
+                "UPDATE actions SET args=jsonb_set(args,'{message}', '\"changed\"') WHERE id=%s",
+                (approval['action_id'],),
+            )
+        else:
+            conn.execute(
+                f'UPDATE actions SET {mutation}={mutation}+1 WHERE id=%s',
+                (approval['action_id'],),
+            )
+
+    response = api.request(
+        'GET', f"/v1/approvals/{approval['id']}/review", token='dev-approver'
+    )
+
+    assert response.status_code == 409
+
+
 def test_restart_frozen_turn_and_concurrent_decision(execution_service):
     from app.worker import claim
     from app.runtime import resume_turn
@@ -82,25 +136,35 @@ def test_frozen_approval_rejects_changes(execution_service, mutation):
         return
     assert decision.status_code == 200
     with connect(api.dsn) as conn:
-        if mutation == 'args':
-            conn.execute("UPDATE actions SET args=jsonb_set(args,'{message}','\"changed\"') WHERE id=%s", (action,))
-        elif mutation == 'acl':
-            conn.execute("UPDATE resources SET acl_version=acl_version+1 WHERE tenant_id='tenant-a' AND resource_id='A-1001'")
-        elif mutation == 'policy':
-            conn.execute("UPDATE tenant_policies SET version=version+1 WHERE tenant_id='tenant-a'")
-        elif mutation == 'resource':
-            conn.execute("UPDATE resources SET version=version+1 WHERE tenant_id='tenant-a' AND resource_id='A-1001'")
-        elif mutation == 'permission':
-            conn.execute("UPDATE resource_acl SET allowed=false WHERE tenant_id='tenant-a' AND resource_id='A-1001' AND caller_id='alice'")
-        elif mutation == 'identity':
-            conn.execute("UPDATE caller_identities SET active=false WHERE tenant_id='tenant-a' AND caller_id='alice'")
-        lease = claim(conn, 'changed-worker', task_id=task_id)
-        resume_turn(conn, lease)
-        status = conn.execute('SELECT status FROM actions WHERE id=%s', (action,)).fetchone()['status']
-        assert status != 'authorized_pending_delivery'
-        # Restore shared corpus/identity without resurrecting the invalidated approval.
-        conn.execute("UPDATE caller_identities SET active=true WHERE tenant_id='tenant-a' AND caller_id='alice'")
-        conn.execute("UPDATE resource_acl SET allowed=true WHERE tenant_id='tenant-a' AND resource_id='A-1001' AND caller_id='alice'")
+        original_resource = conn.execute("SELECT version,acl_version FROM resources WHERE tenant_id='tenant-a' AND resource_id='A-1001'").fetchone()
+        original_policy = conn.execute("SELECT version FROM tenant_policies WHERE tenant_id='tenant-a'").fetchone()['version']
+        original_access = conn.execute("SELECT allowed FROM resource_acl WHERE tenant_id='tenant-a' AND resource_id='A-1001' AND caller_id='alice'").fetchone()['allowed']
+        original_active = conn.execute("SELECT active FROM caller_identities WHERE tenant_id='tenant-a' AND caller_id='alice'").fetchone()['active']
+    try:
+        with connect(api.dsn) as conn:
+            if mutation == 'args':
+                conn.execute("UPDATE actions SET args=jsonb_set(args,'{message}','\"changed\"') WHERE id=%s", (action,))
+            elif mutation == 'acl':
+                conn.execute("UPDATE resources SET acl_version=acl_version+1 WHERE tenant_id='tenant-a' AND resource_id='A-1001'")
+            elif mutation == 'policy':
+                conn.execute("UPDATE tenant_policies SET version=version+1 WHERE tenant_id='tenant-a'")
+            elif mutation == 'resource':
+                conn.execute("UPDATE resources SET version=version+1 WHERE tenant_id='tenant-a' AND resource_id='A-1001'")
+            elif mutation == 'permission':
+                conn.execute("UPDATE resource_acl SET allowed=false WHERE tenant_id='tenant-a' AND resource_id='A-1001' AND caller_id='alice'")
+            elif mutation == 'identity':
+                conn.execute("UPDATE caller_identities SET active=false WHERE tenant_id='tenant-a' AND caller_id='alice'")
+            lease = claim(conn, 'changed-worker', task_id=task_id)
+            resume_turn(conn, lease)
+            status = conn.execute('SELECT status FROM actions WHERE id=%s', (action,)).fetchone()['status']
+            assert status != 'authorized_pending_delivery'
+    finally:
+        with connect(api.dsn) as conn:
+            conn.execute("UPDATE resources SET version=%s,acl_version=%s WHERE tenant_id='tenant-a' AND resource_id='A-1001'",
+                         (original_resource['version'], original_resource['acl_version']))
+            conn.execute("UPDATE tenant_policies SET version=%s WHERE tenant_id='tenant-a'", (original_policy,))
+            conn.execute("UPDATE caller_identities SET active=%s WHERE tenant_id='tenant-a' AND caller_id='alice'", (original_active,))
+            conn.execute("UPDATE resource_acl SET allowed=%s WHERE tenant_id='tenant-a' AND resource_id='A-1001' AND caller_id='alice'", (original_access,))
 
 
 def test_cancel_revoked_access_and_denial(execution_service):
@@ -161,6 +225,59 @@ def test_persist_invalid_call_independently_and_reject_approval_after_deadline(e
     assert api.request('POST',f"/v1/approvals/{approval['id']}/decision",token='dev-approver',json={'decision':'approved'}).status_code==409
 
 
+def test_task_deadline_expires_pending_approvals_and_actions(execution_service):
+    from app.worker import claim
+    api=execution_service
+    task_id=new_task(api.dsn)
+    make_waiting(api.dsn,task_id)
+    approval=api.request('GET',f'/v1/tasks/{task_id}/approvals').json()['approvals'][0]
+    with connect(api.dsn) as conn:
+        conn.execute("UPDATE tasks SET deadline=clock_timestamp()-interval '1 second' WHERE id=%s",(task_id,))
+        assert claim(conn,'deadline-expirer',task_id=task_id) is None
+        assert conn.execute('SELECT status FROM tasks WHERE id=%s',(task_id,)).fetchone()['status']=='failed'
+        assert conn.execute('SELECT status FROM approvals WHERE id=%s',(approval['id'],)).fetchone()['status']=='cancelled'
+        assert conn.execute("SELECT count(*) AS n FROM actions WHERE task_id=%s AND status<>'cancelled'",(task_id,)).fetchone()['n']==0
+        assert conn.execute("SELECT count(*) AS n FROM events WHERE task_id=%s AND kind='task.deadline_expired'",(task_id,)).fetchone()['n']==1
+
+
+def test_task_deadline_cancels_queued_delivery_before_dispatch(execution_service):
+    from app.worker import claim
+    from app.outbox import schedule
+    api=execution_service
+    task_id=new_task(api.dsn)
+    _,action_ids=make_waiting(api.dsn,task_id)
+    approval=api.request('GET',f'/v1/tasks/{task_id}/approvals').json()['approvals'][0]
+    assert api.request('POST',f"/v1/approvals/{approval['id']}/decision",token='dev-approver',json={'decision':'approved'}).status_code==200
+    with connect(api.dsn) as conn:
+        lease=claim(conn,'queued-delivery-expirer',task_id=task_id)
+        assert schedule(conn,lease,action_ids[1])==1
+        conn.execute("UPDATE tasks SET deadline=clock_timestamp()-interval '1 second' WHERE id=%s",(task_id,))
+        assert claim(conn,'post-deadline',task_id=task_id) is None
+        assert conn.execute('SELECT status FROM actions WHERE id=%s',(action_ids[1],)).fetchone()['status']=='cancelled'
+        assert conn.execute('SELECT status FROM outbox WHERE action_id=%s',(action_ids[1],)).fetchone()['status']=='cancelled'
+
+
+def test_deadline_does_not_fail_a_task_with_a_possible_external_effect(execution_service):
+    from app.worker import claim, expire_deadlines
+    from app.outbox import schedule, claim as claim_delivery
+    api=execution_service
+    task_id=new_task(api.dsn)
+    _,action_ids=make_waiting(api.dsn,task_id)
+    approval=api.request('GET',f'/v1/tasks/{task_id}/approvals').json()['approvals'][0]
+    assert api.request('POST',f"/v1/approvals/{approval['id']}/decision",token='dev-approver',json={'decision':'approved'}).status_code==200
+    with connect(api.dsn) as conn:
+        lease=claim(conn,'possible-effect',task_id=task_id)
+        assert schedule(conn,lease,action_ids[1])==1
+        dispatch=claim_delivery(conn,lease,action_ids[1])
+        assert dispatch is not None
+        # Exercise the conservative guard against inconsistent legacy state.
+        conn.execute("UPDATE tasks SET status='running',deadline=clock_timestamp()-interval '1 second' WHERE id=%s",(task_id,))
+        assert expire_deadlines(conn)==1
+        assert conn.execute('SELECT status FROM tasks WHERE id=%s',(task_id,)).fetchone()['status']=='reconciling'
+        assert conn.execute('SELECT status FROM actions WHERE id=%s',(action_ids[1],)).fetchone()['status']=='dispatching'
+        assert conn.execute('SELECT status FROM outbox WHERE action_id=%s',(action_ids[1],)).fetchone()['status']=='dispatching'
+
+
 def test_read_actions_preserve_stage3_mcp_argument_contract(service):
     from app.worker import claim
     from app.actions import propose_turn
@@ -205,8 +322,13 @@ def test_read_resume_calls_only_frozen_mcp_args_after_whole_turn_approval(execut
     assert api.request('POST',f"/v1/approvals/{approval['id']}/decision",token='dev-approver',json={'decision':'approved'}).status_code==200
     with connect(api.dsn) as conn:
         lease=claim(conn,'read-resume',task_id=task_id)
+        from app.retrieval import current_citations
+        assert current_citations(conn,'tenant-a','alice','A-1001')
+        assert current_citations(conn,'tenant-a','alice','policy-public')
         results=asyncio.run(execute_reads(conn,lease,peer,budget_account=budget))
         assert len(results)==2
+        assert [r['result']['citations'][0]['resource_id'] for r in results]==['A-1001','policy-public']
+        assert all(len(r['result']['citations'][0]['chunk_id'])==36 for r in results)
         assert peer.calls==[('lookup_order',CALLS[0]['input']),('search_policy',CALLS[2]['input'])]
         assert conn.execute('SELECT status FROM actions WHERE id=%s',(ids[1],)).fetchone()['status']=='authorized_pending_delivery'
         # Replaying the checkpoint cannot repeat completed reads.

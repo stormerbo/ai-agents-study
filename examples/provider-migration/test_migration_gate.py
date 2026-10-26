@@ -29,9 +29,13 @@ class MigrationGateTests(unittest.TestCase):
         result = evaluate_case("plain", "completed", Outcome("completed", text="ok"))
         self.assertEqual(migration_decision([result, result], {"plain"}), "incomplete")
 
+    def test_empty_required_suite_is_not_a_fixture_pass(self):
+        self.assertEqual(migration_decision([], set()), "incomplete")
+
     def test_fixture_pass_does_not_claim_live_migration(self):
         results = [evaluate_case("plain", "completed", Outcome("completed", text="ok"))]
         self.assertEqual(migration_decision(results, {"plain"}), "fixture-pass")
+
 
 
 if __name__ == "__main__":

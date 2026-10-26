@@ -68,15 +68,23 @@ class AccessStore:
         if member is None:
             return Decision(False, "inactive_or_unknown_membership")
         row = self.db.execute(
-            """SELECT body, owner_subject FROM documents
+            """SELECT owner_subject FROM documents
                WHERE document_id = ? AND tenant_id = ?""",
             (document_id, trusted_tenant_id),
         ).fetchone()
         if row is None:
             return Decision(False, "resource_outside_tenant")
-        if action == "update" and row[1] != authenticated_subject:
+        if action == "update" and row[0] != authenticated_subject:
             return Decision(False, "not_resource_owner")
-        return Decision(True, "allowed", row[0])
+        if action == "update":
+            # This method models authorization only; it does not perform a write.
+            return Decision(True, "allowed")
+        body = self.db.execute(
+            """SELECT body FROM documents
+               WHERE document_id = ? AND tenant_id = ?""",
+            (document_id, trusted_tenant_id),
+        ).fetchone()[0]
+        return Decision(True, "allowed", body)
 
     def close(self) -> None:
         self.db.close()

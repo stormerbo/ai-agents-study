@@ -33,6 +33,48 @@ class FakeSession:
 
 
 class ControlledAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mcp_discovery_exception_is_recorded_without_exception_text(self):
+        class BrokenDiscoverySession(FakeSession):
+            async def list_tools(self):
+                raise ConnectionError("private endpoint details")
+
+        result = await run_agent("查询订单", BrokenDiscoverySession(), lambda *_: self.fail("model must not run"))
+
+        self.assertEqual(result["status"], "mcp_client_error")
+        self.assertEqual(result["rounds"], 0)
+        self.assertEqual(result["trace"][0]["phase"], "list_tools")
+        self.assertEqual(result["trace"][0]["error_type"], "ConnectionError")
+        self.assertNotIn("private endpoint details", str(result))
+
+    async def test_unexpected_adapter_bug_is_not_misreported_as_mcp_transport_failure(self):
+        class BuggySession(FakeSession):
+            async def list_tools(self):
+                raise AssertionError("adapter invariant failed")
+
+        with self.assertRaisesRegex(AssertionError, "adapter invariant failed"):
+            await run_agent("查询订单", BuggySession(), lambda *_: self.fail("model must not run"))
+
+    async def test_mcp_call_exception_has_a_distinct_trace_and_stops_remaining_calls(self):
+        class BrokenCallSession(FakeSession):
+            async def call_tool(self, name, arguments):
+                self.calls.append((name, arguments))
+                raise TimeoutError("private transport details")
+
+        response = {"stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "id": "call-1", "name": "lookup_order", "input": {"order_id": "A-1001"}},
+            {"type": "tool_use", "id": "call-2", "name": "lookup_order", "input": {"order_id": "A-1002"}},
+        ]}
+        session = BrokenCallSession()
+        result = await run_agent("查询订单", session, lambda *_: response)
+
+        self.assertEqual(result["status"], "mcp_client_error")
+        self.assertEqual(len(result["trace"]), 1)
+        self.assertEqual(result["trace"][0]["tools"][0]["tool_status"], "client_error")
+        self.assertEqual(result["trace"][0]["tools"][0]["error_type"], "TimeoutError")
+        self.assertEqual(len(result["trace"][0]["tools"]), 1)
+        self.assertEqual(session.calls, [("lookup_order", {"order_id": "A-1001"})])
+        self.assertNotIn("private transport details", str(result))
+
     async def test_validated_tool_call_round_trips_and_then_finishes(self):
         session = FakeSession()
         responses = iter([

@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
+import json
+import hashlib
 import socket
 import subprocess
 import sys
@@ -25,6 +28,61 @@ def unused_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+def record_drill_observation(scenario_id, observed, *, dsn=None, task_ids=()):
+    """Write assertion-backed facts only when the P5 collector requests them."""
+    evidence_dir = os.environ.get("P5_DRILL_OBSERVATIONS_DIR")
+    if not evidence_dir:
+        return
+    observed = dict(observed)
+    if dsn is not None:
+        from app.db import connect
+        snapshots = []
+        reservations = []
+        with connect(dsn) as conn:
+            for task_id in task_ids:
+                task = conn.execute('SELECT id,status,checkpoint,execution_epoch FROM tasks WHERE id=%s', (task_id,)).fetchone()
+                if task is None:
+                    raise RuntimeError("Drill observation task is missing")
+                checkpoint = task['checkpoint']
+                checkpoint_hash = hashlib.sha256(json.dumps(
+                    checkpoint, sort_keys=True, ensure_ascii=False, default=str).encode('utf-8')).hexdigest() if checkpoint is not None else None
+                event_kinds = [row['kind'] for row in conn.execute(
+                    'SELECT kind FROM events WHERE task_id=%s ORDER BY seq', (task_id,)).fetchall()]
+                snapshots.append({"task_id": str(task['id']), "status": task['status'],
+                                  "execution_epoch": task['execution_epoch'],
+                                  "checkpoint_sha256": checkpoint_hash,
+                                  "event_kinds_in_order": event_kinds})
+                reservations.extend({"task_id": str(task_id), "state": row['state'], "tokens": row['tokens'],
+                                     "tools": row['tools'], "sent": row['sent']}
+                    for row in conn.execute(
+                        'SELECT state,tokens,tools,sent FROM budget_reservations WHERE task_id=%s ORDER BY id',
+                        (task_id,)).fetchall())
+        observed["checkpoint_snapshots"] = snapshots
+        observed["budget_reservations"] = reservations
+    else:
+        observed.setdefault("checkpoint_snapshots", [])
+        observed.setdefault("budget_reservations", [])
+    current = os.environ.get("PYTEST_CURRENT_TEST", "").split(" (", 1)[0]
+    file_name, separator, test_name = current.rpartition("::")
+    if not separator or not test_name or not isinstance(observed, dict):
+        raise RuntimeError("Cannot bind drill observation to a pytest node id")
+    source_path = Path(file_name).resolve()
+    try:
+        module_path = source_path.relative_to(HERE).with_suffix("")
+        module_name = ".".join(module_path.parts)
+    except ValueError:
+        module_name = source_path.stem
+    node_id = f"{module_name}::{test_name}"
+    record = {"scenario_id": scenario_id, "node_id": node_id, "observed": observed}
+    root = Path(evidence_dir).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    name = hashlib.sha256(node_id.encode("utf-8")).hexdigest() + ".json"
+    target = root / name
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(target)
 
 
 class ServiceHarness:
@@ -89,7 +147,10 @@ class ServiceHarness:
 
 @pytest.fixture(scope="session")
 def service():
-    harness = ServiceHarness("p4-test-" + uuid.uuid4().hex[:12])
+    configured_project = os.environ.get("P4_TEST_COMPOSE_PROJECT")
+    if configured_project is not None and not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", configured_project):
+        raise ValueError("Invalid isolated Compose project name")
+    harness = ServiceHarness(configured_project or "p4-test-" + uuid.uuid4().hex[:12])
     try:
         # No external database override and no skip fallback: this is real evidence.
         harness.compose("up", "-d", "--wait", "--wait-timeout", "90", "postgres")

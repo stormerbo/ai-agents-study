@@ -1,0 +1,30 @@
+{
+  "dataset_version": "support-fixtures-v1",
+  "dataset_sha256": "53992b69309b1dc9deba86c139dcdffb5127007ec4a75928b59d575f532920c3",
+  "prompt_version": "prompt-1",
+  "results": [
+    {
+      "case_id": "case-1",
+      "status": "ok",
+      "output": {
+        "order_id": "A-1",
+        "intent": "refund",
+        "evidence": "late delivery"
+      }
+    },
+    {
+      "case_id": "case-2",
+      "status": "ok",
+      "output": {
+        "order_id": "B-2",
+        "intent": "tracking",
+        "evidence": "late package"
+      }
+    },
+    {
+      "case_id": "case-3",
+      "status": "error",
+      "error": "timeout"
+    }
+  ]
+}

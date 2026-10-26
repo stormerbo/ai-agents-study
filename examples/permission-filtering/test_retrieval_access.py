@@ -28,6 +28,11 @@ class RetrievalAccessTests(unittest.TestCase):
         self.assertEqual([row["doc_id"] for row in rows], ["policy-a"])
         self.assertNotIn("tenant B policy", str(rows))
 
+    def test_candidate_overflow_is_rejected_instead_of_silently_truncated(self):
+        candidates = [f"missing-{index}" for index in range(500)] + ["policy-a"]
+        with self.assertRaisesRegex(ValueError, "500"):
+            self.store.retrieve_for_context(self.alice, candidates)
+
     def test_tenant_boundary_is_enforced_even_if_candidate_matches(self):
         rows = self.store.retrieve_for_context(self.alice, ["policy-b"])
         self.assertEqual(rows, [])

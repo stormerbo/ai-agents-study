@@ -6,6 +6,9 @@ import sqlite3
 from dataclasses import dataclass
 
 
+MAX_CANDIDATES = 500
+
+
 @dataclass(frozen=True)
 class Principal:
     """Identity and tenant copied from a validated server authentication context."""
@@ -53,7 +56,9 @@ class RetrievalStore:
         """Hydrate only authorized candidates; unauthorized text never reaches the caller."""
         if limit < 1:
             raise ValueError("limit must be positive")
-        ordered_ids = list(dict.fromkeys(candidate_ids))[:500]
+        ordered_ids = list(dict.fromkeys(candidate_ids))
+        if len(ordered_ids) > MAX_CANDIDATES:
+            raise ValueError(f"candidate_ids may contain at most {MAX_CANDIDATES} unique ids")
         if not ordered_ids:
             return []
         placeholders = ",".join("?" for _ in ordered_ids)

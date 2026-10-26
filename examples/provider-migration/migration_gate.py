@@ -34,7 +34,7 @@ def evaluate_case(case_id: str, expected_state: str, outcome: Outcome) -> dict:
 
 def migration_decision(results: list[dict], required_case_ids: set[str]) -> str:
     by_id = {item["case_id"]: item for item in results}
-    if len(by_id) != len(results) or set(by_id) != required_case_ids:
+    if not required_case_ids or len(by_id) != len(results) or set(by_id) != required_case_ids:
         return "incomplete"
     if not all(item["passed"] for item in results):
         return "blocked"

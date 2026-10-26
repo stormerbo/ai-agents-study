@@ -1,0 +1,141 @@
+{
+  "schema": "p5-independent-handoff-v3",
+  "record_status": "not_started",
+  "candidate": {
+    "release_id": null,
+    "commit_sha": null,
+    "image_digest": null,
+    "lockfile_sha256": null,
+    "prompt_sha256": null,
+    "tool_schema_sha256": null,
+    "dev_dataset_sha256": null,
+    "holdout_dataset_sha256": null,
+    "scorer_sha256": null,
+    "release_manifest_locator": null,
+    "release_manifest_sha256": null
+  },
+  "operator": {
+    "subject_id": null,
+    "role": "independent_operator",
+    "implementation_involvement": null,
+    "started_at_utc": null,
+    "finished_at_utc": null,
+    "host_os_arch": null,
+    "runtime_versions": {},
+    "credential_source": null,
+    "credential_present": null,
+    "credential_value_recorded": false
+  },
+  "deployment": {
+    "fresh_clone": null,
+    "clone_commit_sha": null,
+    "commands": [],
+    "readiness_checks": [],
+    "deviations": []
+  },
+  "drills": {
+    "evidence_root": null,
+    "scenarios": {
+      "approval-pause-resume": {
+        "status": "not_run",
+        "report": null,
+        "sha256": null
+      },
+      "cancel-revoke-race": {
+        "status": "not_run",
+        "report": null,
+        "sha256": null
+      },
+      "idempotency": {
+        "status": "not_run",
+        "report": null,
+        "sha256": null
+      },
+      "unknown-reconcile": {
+        "status": "not_run",
+        "report": null,
+        "sha256": null
+      },
+      "lease-takeover": {
+        "status": "not_run",
+        "report": null,
+        "sha256": null
+      },
+      "budget-unknown": {
+        "status": "not_run",
+        "report": null,
+        "sha256": null
+      }
+    }
+  },
+  "live_smoke": {
+    "status": "not_run",
+    "run_id": null,
+    "report_locator": null,
+    "report_sha256": null,
+    "evidence_registry_decision": null,
+    "review_decision": "needs-review"
+  },
+  "holdout": {
+    "holdout_version": null,
+    "roles": {
+      "owner_subject_id": null,
+      "executor_subject_id": null,
+      "custodian_subject_id": null,
+      "runtime_operator_subject_id": null,
+      "scorer_subject_id": null,
+      "recovery_operator_subject_id": null,
+      "holdout_reviewer_subject_id": null,
+      "release_approver_subject_id": null,
+      "declared_overlaps": []
+    },
+    "authorized_candidate_sha256": null,
+    "candidate_image_digest": null,
+    "dataset_sha256": null,
+    "executor_sha256": null,
+    "scorer_sha256": null,
+    "maximum_spend": null,
+    "termination_conditions": [],
+    "report_locator": null,
+    "persistent_consumption_registry": null,
+    "registry_state": "not_checked",
+    "authorization_event_id": null,
+    "reservation_event_id": null,
+    "terminal_event_id": null,
+    "execution_observation": "not_started",
+    "quality_decision": "pending",
+    "run_id": null,
+    "report_sha256": null,
+    "runner_outcome": "not_run"
+  },
+  "assurance": {
+    "profile": "local-reference",
+    "risk_owner_subject_id": null,
+    "append_authority_domain_id": null,
+    "signing_key_custodian_domain_id": null,
+    "append_authority_compromise_in_scope": null,
+    "witness_authority_domain_id": null,
+    "witness_root_fingerprint_sha256": null,
+    "terminal_witness_receipt_sha256": null
+  },
+  "review": {
+    "reviewer_subject_id": null,
+    "independent_of_implementation": null,
+    "reviewed_at_utc": null,
+    "decision": "pending",
+    "findings": []
+  },
+  "rollback": {
+    "trigger_conditions": [],
+    "rollback_target": null,
+    "commands": [],
+    "outcome": "not_run"
+  },
+  "publication": {
+    "decision_maker": null,
+    "decision_at_utc": null,
+    "decision": "pending"
+  },
+  "artifacts": [],
+  "notes": []
+}

@@ -8,10 +8,16 @@ dependencies = [
   "psycopg[binary]==3.3.6",
   "uvicorn==0.54.0",
   "httpx==0.28.1",
+  "rfc8785==0.1.4",
+  "cryptography==50.0.2",
 ]
 
 [dependency-groups]
 dev = ["pytest==9.1.1"]
+provider = [
+    "anthropic==1.15.0",
+    "mcp==2.3.0",
+]
 
 [tool.uv]
 package = false

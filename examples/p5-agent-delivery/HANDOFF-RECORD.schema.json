@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-agents-study:p5-independent-handoff-v3",
+  "title": "P5 independent handoff record v3",
+  "description": "Checks the structure of a handoff record. It does not authenticate identities, verify evidence, or prove that a run occurred.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "record_status", "candidate", "operator", "deployment", "drills",
+    "live_smoke", "holdout", "assurance", "review", "rollback", "publication", "artifacts", "notes"
+  ],
+  "$defs": {
+    "nullableText": { "type": ["string", "null"] },
+    "nullableSha256": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "nullableCommit": {
+      "type": ["string", "null"],
+      "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$"
+    },
+    "nullableImageDigest": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "nullableDecimal": {
+      "type": ["string", "null"],
+      "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
+    },
+    "textList": { "type": "array", "items": { "type": "string" } },
+    "nullableTextList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nullableText" }
+    },
+    "drill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "report", "sha256"],
+      "properties": {
+        "status": { "enum": ["not_run", "passed", "failed", "unknown"] },
+        "report": { "$ref": "#/$defs/nullableText" },
+        "sha256": { "$ref": "#/$defs/nullableSha256" }
+      }
+    }
+  },
+  "properties": {
+    "schema": { "const": "p5-independent-handoff-v3" },
+    "record_status": { "enum": ["not_started", "in_progress", "complete"] },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_id", "commit_sha", "image_digest", "lockfile_sha256", "prompt_sha256", "tool_schema_sha256", "dev_dataset_sha256", "holdout_dataset_sha256", "scorer_sha256", "release_manifest_locator", "release_manifest_sha256"],
+      "properties": {
+        "release_id": { "$ref": "#/$defs/nullableText" },
+        "commit_sha": { "$ref": "#/$defs/nullableCommit" },
+        "image_digest": { "$ref": "#/$defs/nullableImageDigest" },
+        "lockfile_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "prompt_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "tool_schema_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "dev_dataset_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "holdout_dataset_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "scorer_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "release_manifest_locator": { "$ref": "#/$defs/nullableText" },
+        "release_manifest_sha256": { "$ref": "#/$defs/nullableSha256" }
+      }
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject_id", "role", "implementation_involvement", "started_at_utc", "finished_at_utc", "host_os_arch", "runtime_versions", "credential_source", "credential_present", "credential_value_recorded"],
+      "properties": {
+        "subject_id": { "$ref": "#/$defs/nullableText" },
+        "role": { "const": "independent_operator" },
+        "implementation_involvement": { "type": ["boolean", "null"] },
+        "started_at_utc": { "$ref": "#/$defs/nullableText" },
+        "finished_at_utc": { "$ref": "#/$defs/nullableText" },
+        "host_os_arch": { "$ref": "#/$defs/nullableText" },
+        "runtime_versions": { "type": "object", "additionalProperties": { "type": "string" } },
+        "credential_source": { "$ref": "#/$defs/nullableText" },
+        "credential_present": { "type": ["boolean", "null"] },
+        "credential_value_recorded": { "const": false }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fresh_clone", "clone_commit_sha", "commands", "readiness_checks", "deviations"],
+      "properties": {
+        "fresh_clone": { "type": ["boolean", "null"] },
+        "clone_commit_sha": { "$ref": "#/$defs/nullableCommit" },
+        "commands": { "$ref": "#/$defs/textList" },
+        "readiness_checks": { "$ref": "#/$defs/textList" },
+        "deviations": { "$ref": "#/$defs/textList" }
+      }
+    },
+    "drills": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_root", "scenarios"],
+      "properties": {
+        "evidence_root": { "$ref": "#/$defs/nullableText" },
+        "scenarios": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["approval-pause-resume", "cancel-revoke-race", "idempotency", "unknown-reconcile", "lease-takeover", "budget-unknown"],
+          "properties": {
+            "approval-pause-resume": { "$ref": "#/$defs/drill" },
+            "cancel-revoke-race": { "$ref": "#/$defs/drill" },
+            "idempotency": { "$ref": "#/$defs/drill" },
+            "unknown-reconcile": { "$ref": "#/$defs/drill" },
+            "lease-takeover": { "$ref": "#/$defs/drill" },
+            "budget-unknown": { "$ref": "#/$defs/drill" }
+          }
+        }
+      }
+    },
+    "live_smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "run_id", "report_locator", "report_sha256", "evidence_registry_decision", "review_decision"],
+      "properties": {
+        "status": { "enum": ["not_run", "passed", "failed", "incomplete", "unknown"] },
+        "run_id": { "$ref": "#/$defs/nullableText" },
+        "report_locator": { "$ref": "#/$defs/nullableText" },
+        "report_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "evidence_registry_decision": { "$ref": "#/$defs/nullableText" },
+        "review_decision": { "enum": ["needs-review", "accepted", "rejected", "pending"] }
+      }
+    },
+    "holdout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["holdout_version", "roles", "authorized_candidate_sha256", "candidate_image_digest", "dataset_sha256", "executor_sha256", "scorer_sha256", "maximum_spend", "termination_conditions", "report_locator", "persistent_consumption_registry", "registry_state", "authorization_event_id", "reservation_event_id", "terminal_event_id", "execution_observation", "quality_decision", "run_id", "report_sha256", "runner_outcome"],
+      "properties": {
+        "holdout_version": { "$ref": "#/$defs/nullableText" },
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["owner_subject_id", "executor_subject_id", "custodian_subject_id", "runtime_operator_subject_id", "scorer_subject_id", "recovery_operator_subject_id", "holdout_reviewer_subject_id", "release_approver_subject_id", "declared_overlaps"],
+          "properties": {
+            "owner_subject_id": { "$ref": "#/$defs/nullableText" },
+            "executor_subject_id": { "$ref": "#/$defs/nullableText" },
+            "custodian_subject_id": { "$ref": "#/$defs/nullableText" },
+            "runtime_operator_subject_id": { "$ref": "#/$defs/nullableText" },
+            "scorer_subject_id": { "$ref": "#/$defs/nullableText" },
+            "recovery_operator_subject_id": { "$ref": "#/$defs/nullableText" },
+            "holdout_reviewer_subject_id": { "$ref": "#/$defs/nullableText" },
+            "release_approver_subject_id": { "$ref": "#/$defs/nullableText" },
+            "declared_overlaps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["roles", "reason", "permission_boundary", "compensating_control", "accepted_by_subject_id"],
+                "properties": {
+                  "roles": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+                  "reason": { "type": "string", "minLength": 1 },
+                  "permission_boundary": { "type": "string", "minLength": 1 },
+                  "compensating_control": { "type": "string", "minLength": 1 },
+                  "accepted_by_subject_id": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        },
+        "authorized_candidate_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "candidate_image_digest": { "$ref": "#/$defs/nullableImageDigest" },
+        "dataset_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "executor_sha256": {
+          "$ref": "#/$defs/nullableSha256",
+          "description": "For this repository's official holdout runner, the executor bundle SHA-256 from executor_bundle_sha256(): fixed-order, length-prefixed hash over evaluation/official_holdout.py, evaluation/subprocess_candidate.py, and evaluation/canonicalization.py. The release manifest also records each file's individual SHA-256; dependency lock and evaluator runtime image are separate handoff fields."
+        },
+        "scorer_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "maximum_spend": { "$ref": "#/$defs/nullableDecimal" },
+        "termination_conditions": { "$ref": "#/$defs/textList" },
+        "report_locator": { "$ref": "#/$defs/nullableText" },
+        "persistent_consumption_registry": { "$ref": "#/$defs/nullableText" },
+        "registry_state": { "enum": ["not_checked", "not_found", "authorized", "reserved", "consumed", "aborted", "failed", "unavailable"] },
+        "authorization_event_id": { "$ref": "#/$defs/nullableText" },
+        "reservation_event_id": { "$ref": "#/$defs/nullableText" },
+        "terminal_event_id": { "$ref": "#/$defs/nullableText" },
+        "execution_observation": { "enum": ["not_started", "known", "unknown"] },
+        "quality_decision": { "enum": ["pending", "passed", "failed", "insufficient-evidence", "unknown"] },
+        "run_id": { "$ref": "#/$defs/nullableText" },
+        "report_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "runner_outcome": { "enum": ["not_run", "completed", "aborted", "failed", "unknown"] }
+      }
+    },
+    "assurance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile", "risk_owner_subject_id", "append_authority_domain_id",
+        "signing_key_custodian_domain_id", "append_authority_compromise_in_scope",
+        "witness_authority_domain_id", "witness_root_fingerprint_sha256",
+        "terminal_witness_receipt_sha256"
+      ],
+      "properties": {
+        "profile": { "enum": ["local-reference", "single-authority-v1", "dual-witness-v1"] },
+        "risk_owner_subject_id": { "$ref": "#/$defs/nullableText" },
+        "append_authority_domain_id": { "$ref": "#/$defs/nullableText" },
+        "signing_key_custodian_domain_id": { "$ref": "#/$defs/nullableText" },
+        "append_authority_compromise_in_scope": { "type": ["boolean", "null"] },
+        "witness_authority_domain_id": { "$ref": "#/$defs/nullableText" },
+        "witness_root_fingerprint_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "terminal_witness_receipt_sha256": { "$ref": "#/$defs/nullableSha256" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewer_subject_id", "independent_of_implementation", "reviewed_at_utc", "decision", "findings"],
+      "properties": {
+        "reviewer_subject_id": { "$ref": "#/$defs/nullableText" },
+        "independent_of_implementation": { "type": ["boolean", "null"] },
+        "reviewed_at_utc": { "$ref": "#/$defs/nullableText" },
+        "decision": { "enum": ["pending", "accepted", "rejected", "needs-changes"] },
+        "findings": { "$ref": "#/$defs/textList" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger_conditions", "rollback_target", "commands", "outcome"],
+      "properties": {
+        "trigger_conditions": { "$ref": "#/$defs/textList" },
+        "rollback_target": { "$ref": "#/$defs/nullableText" },
+        "commands": { "$ref": "#/$defs/textList" },
+        "outcome": { "enum": ["not_run", "completed", "failed", "not_required", "unknown"] }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_maker", "decision_at_utc", "decision"],
+      "properties": {
+        "decision_maker": { "$ref": "#/$defs/nullableText" },
+        "decision_at_utc": { "$ref": "#/$defs/nullableText" },
+        "decision": { "enum": ["pending", "approved", "rejected", "hold"] }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "locator", "sha256"],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1 },
+          "locator": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "notes": { "$ref": "#/$defs/textList" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "assurance": { "properties": { "profile": { "const": "single-authority-v1" } } } } },
+      "then": {
+        "properties": {
+          "assurance": {
+            "properties": {
+              "risk_owner_subject_id": { "type": "string", "minLength": 1 },
+              "append_authority_domain_id": { "type": "string", "minLength": 1 },
+              "signing_key_custodian_domain_id": { "type": "string", "minLength": 1 },
+              "append_authority_compromise_in_scope": { "const": false }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "assurance": { "properties": { "profile": { "const": "dual-witness-v1" } } } } },
+      "then": {
+        "properties": {
+          "assurance": {
+            "properties": {
+              "risk_owner_subject_id": { "type": "string", "minLength": 1 },
+              "append_authority_domain_id": { "type": "string", "minLength": 1 },
+              "signing_key_custodian_domain_id": { "type": "string", "minLength": 1 },
+              "append_authority_compromise_in_scope": { "const": true },
+              "witness_authority_domain_id": { "type": "string", "minLength": 1 },
+              "witness_root_fingerprint_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "assurance": { "properties": { "profile": { "const": "dual-witness-v1" } } },
+          "holdout": { "properties": { "registry_state": { "enum": ["consumed", "aborted", "failed"] } } }
+        }
+      },
+      "then": {
+        "properties": {
+          "assurance": { "properties": { "terminal_witness_receipt_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } }
+        }
+      }
+    }
+  ]
+}

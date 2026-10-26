@@ -1,0 +1,31 @@
+{
+  "commit": "synthetic-fixture-no-live-release",
+  "hash_profile": "jcs-rfc8785-v1",
+  "live_smoke": {
+    "file": "live-smoke.json",
+    "sha256": "0d04b7a4709f6e5eb681e3e79756f6e9ff07e92e25f1e0a2d3023b174d866312"
+  },
+  "lockfile": "lockfile.txt",
+  "materials": {
+    "canonicalization.py": "9ca49e031dbd1abc18f32e25cb79566e9754fd32a03640f6cbda60189331ba3e",
+    "dev-results.json": "7ba9b3df6c70e48c767b7bc236597d5a92222b514fea680070f9eb2f51ad6bbd",
+    "dev.json": "f7bfa98bec6369fdbb13d7cd1695464f0b9c2e4233979e0b2fa70ea01b321569",
+    "evaluation.py": "e5c0e53baf2cfe58e2eb2923a3048be252077310dbd91aba6a650249b2fa5c9d",
+    "holdout-results.json": "09637218d4b8df0dcbd4a0c0e7f65dce50c8c889683261270535b831d91257e4",
+    "holdout.json": "831c90797ba6420e12582c6dde438e75d081073ab990cbb85f0dcfa3db83283e",
+    "lockfile.txt": "31c69501fac9bcb9be4cff64717ee3876f57d6721532fefa5271d1bb1c86c001",
+    "official_holdout.py": "02c5c96530a161b3a907cf973150ef5f4622e05d756ccf288e74d92870dbc68e",
+    "subprocess_candidate.py": "2d26bcab67cdc05e2c5731dd4d8d64068e8d630948e908b924575d959aceb78f",
+    "prompt.txt": "d923577d8201c062ab4aae60fd2e13a75a8d4a45632a8466e4422688d39840c9",
+    "run_fixture.py": "83254940783b673e3c95aff46cf03e14e0d7538720dc34e24fb5192e17456964",
+    "scorer.json": "60909688b83483a573199648ae34844280650700a3006b790e8cab99824ad9b1",
+    "scorer.py": "419d0635849c98d035fce08a6980208374efb6137db3c04d84efda67ddd3cf2e",
+    "tool-schema.json": "0de22228c11aadd49b42a486943140574d9bc222cdfe78ba3a5b930d8cc0f26a"
+  },
+  "model": "fixture-v1",
+  "prompt": "prompt.txt",
+  "provider": "synthetic",
+  "release_id": "p5-offline-synthetic-v1",
+  "scorer": "scorer.json",
+  "tool_schema": "tool-schema.json"
+}

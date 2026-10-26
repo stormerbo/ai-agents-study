@@ -36,7 +36,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s examples/first-loop -v
 
 ## 综合项目验收门禁
 
-`capstone-acceptance/acceptance.py` 检查 18 个固定 gate 的重复、缺项、失败、未验证状态和证据定位，并要求真模型 gate 使用 `live` 证据类型。7 项离线测试只验证证据分类，不证明任何真实服务 gate 已通过；完整报告也仅进入人工验收，不自动批准发布。
+`capstone-acceptance/acceptance.py` 检查 19 个固定 gate 的重复、缺项、失败、未验证状态和证据定位，并要求真模型 gate 使用 `live` 证据类型。验收器还校验冻结材料、盲测结果与 registry receipt、签名状态、外部状态新鲜度和双见证链；challenge reducer 只接受 v2 事件，并要求调用方分别提供已验证的 challenge trigger 与 resolution evidence 摘要，且 fresh snapshot 必须绑定到相应 source 或 policy/rule 及当前 environment/log；它只在上游已验证的事件前缀上派生状态，不验证签名、monitor 身份或实时 source。使用 `pnpm verify:examples` 在锁定的 Python 环境中运行离线套件。通过只证明仓库内合同实现符合固定测试，不证明外部 registry、身份服务、witness、隐藏数据隔离或真实 holdout 已通过；完整报告仍须人工验收，不自动批准发布。
 
 ## Provider 迁移门禁
 

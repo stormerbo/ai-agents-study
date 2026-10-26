@@ -1,0 +1,1 @@
+{"schema_id":"p5-synthetic-tools-v1","tools":[{"name":"lookup_record","side_effecting":false},{"name":"request_approval","side_effecting":false}]}

@@ -1,0 +1,34 @@
+{
+  "dataset_version": "support-fixtures-v1",
+  "dataset_sha256": "53992b69309b1dc9deba86c139dcdffb5127007ec4a75928b59d575f532920c3",
+  "prompt_version": "prompt-2",
+  "results": [
+    {
+      "case_id": "case-1",
+      "status": "ok",
+      "output": {
+        "order_id": "A-1",
+        "intent": "refund",
+        "evidence": "late delivery"
+      }
+    },
+    {
+      "case_id": "case-2",
+      "status": "ok",
+      "output": {
+        "order_id": "B-3",
+        "intent": "tracking",
+        "evidence": "package delayed"
+      }
+    },
+    {
+      "case_id": "case-3",
+      "status": "ok",
+      "output": {
+        "order_id": "C-3",
+        "intent": "cancel",
+        "evidence": "duplicate order"
+      }
+    }
+  ]
+}

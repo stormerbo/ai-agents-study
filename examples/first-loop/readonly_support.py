@@ -37,6 +37,13 @@ SYSTEM = (
 )
 
 
+class RejectRedirects(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects so an API key header cannot follow a URL to another host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def lookup_order(arguments: object) -> dict:
     """Validate arguments before reading the fixed, synthetic order fixture."""
     if not isinstance(arguments, dict) or set(arguments) != {"order_id"}:
@@ -74,7 +81,7 @@ def call_model(messages: list[dict], max_tokens: int = MAX_OUTPUT_TOKENS) -> dic
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
+        with urllib.request.build_opener(RejectRedirects()).open(request, timeout=45) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         # Do not include the request, headers or body: they may contain secrets or user data.
@@ -107,13 +114,21 @@ def run_agent(user_text: str, model_call: Callable = call_model, max_rounds: int
             return {"status": terminal_statuses[stop_reason], "text": "", "rounds": round_number, "tool_calls": tool_calls}
         if stop_reason == "end_turn":
             text = "".join(block.get("text", "") for block in content if block.get("type") == "text")
-            return {"status": "completed", "text": text, "rounds": round_number, "tool_calls": tool_calls}
+            status = "completed" if text.strip() else "completed_without_text"
+            return {"status": status, "text": text, "rounds": round_number, "tool_calls": tool_calls}
         if stop_reason != "tool_use":
             return {"status": "protocol_error", "text": "", "rounds": round_number, "tool_calls": tool_calls}
 
         calls = [block for block in content if block.get("type") == "tool_use"]
         if not calls:
             return {"status": "protocol_error", "text": "", "rounds": round_number, "tool_calls": tool_calls}
+        call_ids = [call.get("id") for call in calls]
+        if any(not isinstance(call_id, str) or not call_id.strip() for call_id in call_ids):
+            return {"status": "protocol_error", "text": "", "rounds": round_number, "tool_calls": tool_calls}
+        if len(set(call_ids)) != len(call_ids):
+            return {"status": "protocol_error", "text": "", "rounds": round_number, "tool_calls": tool_calls}
+        if round_number == max_rounds:
+            return {"status": "max_rounds", "text": "", "rounds": round_number, "tool_calls": tool_calls}
         messages.append({"role": "assistant", "content": content})
         results = []
         for call in calls:
@@ -123,7 +138,7 @@ def run_agent(user_text: str, model_call: Callable = call_model, max_rounds: int
                 result = lookup_order(call.get("input"))
             results.append({
                 "type": "tool_result",
-                "tool_use_id": call.get("id", ""),
+                "tool_use_id": call["id"],
                 "content": json.dumps(result, ensure_ascii=False),
                 "is_error": "error" in result,
             })

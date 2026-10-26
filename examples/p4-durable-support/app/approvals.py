@@ -5,11 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
+from .actions import REGISTRY, args_hash
 from .api import authorized_connection
 from .db import append_event, owned_task
 from .worker import release_slots
 
 router=APIRouter()
+REVIEWABLE_FIELDS = {'send_notice': ('resource_id', 'message')}
 
 
 def conflict(message):
@@ -27,6 +29,52 @@ def list_approvals(task_id:UUID,context=Depends(authorized_connection,scope='fun
     owned_task(conn,principal,task_id)
     rows=conn.execute('SELECT id,action_id,status,expires_at,eligible_approver,decided_by FROM approvals WHERE task_id=%s AND tenant_id=%s ORDER BY id',(task_id,principal.tenant_id)).fetchall()
     return {'approvals':rows}
+
+
+@router.get('/v1/approvals/{approval_id}/review')
+def review_approval(approval_id:UUID,context=Depends(authorized_connection,scope='function')):
+    conn,principal=context
+    if 'approver' not in principal.roles:
+        raise HTTPException(404,detail={'code':'not_found','message':'Approval not found'})
+    row=conn.execute('''SELECT a.id,a.task_id,a.status,a.eligible_approver,a.requested_by,a.expires_at,a.args_hash,
+        a.resource_version AS approved_resource_version,a.acl_version AS approved_acl_version,
+        a.policy_version AS approved_policy_version,
+        x.id AS action_id,x.tool,x.args,x.canonical_args_hash,x.resource_id,x.resource_version,x.acl_version,
+        x.policy_version,x.requires_approval
+        FROM approvals a JOIN actions x ON x.id=a.action_id AND x.tenant_id=a.tenant_id
+        WHERE a.id=%s AND a.tenant_id=%s AND a.eligible_approver=%s''',
+        (approval_id,principal.tenant_id,principal.caller_id)).fetchone()
+    if not row:
+        raise HTTPException(404,detail={'code':'not_found','message':'Approval not found'})
+    if row['status']!='pending':
+        conflict('Approval is no longer pending')
+    if not isinstance(row['args'],dict):
+        conflict('Action arguments do not match the trusted schema')
+    actual_hash=args_hash(row['args'])
+    if (row['args_hash']!=actual_hash or row['canonical_args_hash']!=actual_hash or not row['requires_approval'] or
+        (row['resource_version'],row['acl_version'],row['policy_version'])!=(
+            row['approved_resource_version'],row['approved_acl_version'],row['approved_policy_version'])):
+        conflict('Approval does not match the frozen action')
+    schema=REGISTRY.get(row['tool'])
+    fields=REVIEWABLE_FIELDS.get(row['tool'])
+    if not schema or not schema[1] or not fields or any(field not in schema[0]['properties'] for field in fields):
+        conflict('Action has no trusted review projection')
+    if set(row['args'])!=set(schema[0]['properties']):
+        conflict('Action arguments do not match the trusted schema')
+    return {
+        'approval': {
+            'id':row['id'],'task_id':row['task_id'],'status':row['status'],
+            'eligible_approver':row['eligible_approver'],'requested_by':row['requested_by'],
+            'expires_at':row['expires_at'],'args_hash':row['args_hash'],
+        },
+        'action': {
+            'id':row['action_id'],'tool':row['tool'],
+            'arguments':{field:row['args'][field] for field in fields},
+            'resource_id':row['resource_id'],'resource_version':row['resource_version'],
+            'acl_version':row['acl_version'],'policy_version':row['policy_version'],
+            'canonical_args_hash':row['canonical_args_hash'],
+        },
+    }
 
 
 @router.post('/v1/approvals/{approval_id}/decision')

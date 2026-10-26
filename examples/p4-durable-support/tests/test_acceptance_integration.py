@@ -10,21 +10,23 @@ from app.config import Settings
 pytestmark = pytest.mark.integration
 
 
-def test_stage4_acceptance_uses_latest_schema_and_cross_process_task_reads(service, monkeypatch):
+def test_stage5_acceptance_uses_latest_schema_and_cross_process_task_reads(service, monkeypatch):
     expected_migrations = {
         "0001_base.sql",
         "0002_execution.sql",
         "0003_delivery.sql",
         "0004_manual_resolution.sql",
+        "0005_provider_calls.sql",
+        "0006_final_outputs.sql",
     }
     with psycopg.connect(service.dsn) as conn:
         applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
         latest_row = conn.execute(
-            "SELECT version, checksum, applied_at FROM schema_migrations WHERE version='0004_manual_resolution.sql'"
+            "SELECT version, checksum, applied_at FROM schema_migrations WHERE version='0006_final_outputs.sql'"
         ).fetchone()
     assert applied == expected_migrations
 
-    # Both API processes must refuse readiness unless the entire Stage 4 schema exists.
+    # Both API processes must refuse readiness unless the entire current schema exists.
     assert service.request("GET", "/health/ready", index=0).status_code == 200
     assert service.request("GET", "/health/ready", index=1).status_code == 200
     monkeypatch.setenv("DATABASE_URL", service.dsn)
@@ -34,7 +36,7 @@ def test_stage4_acceptance_uses_latest_schema_and_cross_process_task_reads(servi
 
     # Readiness is tied to the latest schema, not merely a connected database.
     with psycopg.connect(service.dsn) as conn:
-        conn.execute("DELETE FROM schema_migrations WHERE version='0004_manual_resolution.sql'")
+        conn.execute("DELETE FROM schema_migrations WHERE version='0006_final_outputs.sql'")
     try:
         assert service.request("GET", "/health/ready", index=0).status_code == 503
         assert service.request("GET", "/health/ready", index=1).status_code == 503
@@ -63,6 +65,6 @@ def test_stage4_acceptance_uses_latest_schema_and_cross_process_task_reads(servi
     assert events.status_code == 200
     assert [event["kind"] for event in events.json()["events"]] == ["task.created"]
 
-    # Stage 4 proves durable control-plane behavior with synthetic data; it does not
+    # This proves durable control-plane behavior with synthetic data; it does not
     # execute a model turn or establish provider quality.
     assert read.json()["status"] == "queued"

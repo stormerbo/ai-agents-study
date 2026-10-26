@@ -50,7 +50,7 @@ def create_app(settings=None):
     @app.get('/health/ready')
     def ready():
         with connect(settings.database_url) as conn:
-            required={'0001_base.sql','0002_execution.sql','0003_delivery.sql','0004_manual_resolution.sql'}
+            required={'0001_base.sql','0002_execution.sql','0003_delivery.sql','0004_manual_resolution.sql','0005_provider_calls.sql','0006_final_outputs.sql'}
             applied={row['version'] for row in conn.execute('SELECT version FROM schema_migrations').fetchall()}
             if not required.issubset(applied):
                 raise HTTPException(503,detail='Required migration missing')

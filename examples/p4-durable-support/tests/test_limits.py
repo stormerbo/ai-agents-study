@@ -88,16 +88,25 @@ def test_shared_budget_barrier_unknown_usage_and_unsent_release(service):
         assert mark_sent(conn,reservation)
         assert not release_unsent(conn,reservation)
         reconcile(conn,reservation,tokens=None,tools=None)
-        report = budget_report(conn,account)
-        assert report['reserved_tokens']==70 and report['consumed_tokens']==0
+        report_before = budget_report(conn,account)
+        assert report_before['reserved_tokens']==70 and report_before['consumed_tokens']==0
         reconcile(conn,reservation,tokens=50,tools=5)
-        report = budget_report(conn,account)
-        assert report['reserved_tokens']==0 and report['consumed_tokens']==50
-        assert report['available_tokens']==50
+        report_after = budget_report(conn,account)
+        assert report_after['reserved_tokens']==0 and report_after['consumed_tokens']==50
+        assert report_after['available_tokens']==50
         assert not reconcile(conn,reservation,tokens=1,tools=1)
         unsent = reserve(conn,leases[0],account,tokens=30,tools=3)
         assert unsent and release_unsent(conn,unsent)
         assert budget_report(conn,account)['available_tokens']==50
+    from conftest import record_drill_observation
+    record_drill_observation('budget-unknown', {
+        'budget_before':{'reserved_tokens':report_before['reserved_tokens'],'consumed_tokens':report_before['consumed_tokens'],
+                         'reserved_tools':report_before['reserved_tools'],'consumed_tools':report_before['consumed_tools']},
+        'budget_after':{'reserved_tokens':report_after['reserved_tokens'],'consumed_tokens':report_after['consumed_tokens'],
+                        'reserved_tools':report_after['reserved_tools'],'consumed_tools':report_after['consumed_tools']},
+        'provider_call_states':['no-provider-call:tool-budget-only'],
+        'reservation_states':['unknown','settled','released'],
+    }, dsn=service.dsn, task_ids=task_ids)
 
 
 def test_provider_endpoint_capacity_is_shared_and_max_attempts_stop(service):
