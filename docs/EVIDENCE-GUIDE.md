@@ -1,6 +1,6 @@
 # 实验与论断证据指南
 
-本目录把可复核的观测、正文解释和教学建议分开登记。登记只覆盖高风险论断，不表示未登记内容已完成准确性审计。截至 2026-10-19，登记包含 8 条高风险论断与 9 项实验：首批 4 条论断/5 项实验覆盖 W1，第二批增加 Retry-After 下限、PostgreSQL 备份校验范围、provider fixture 证据边界，以及 OpenAI Structured Outputs 拒绝/不完整响应契约。全书其余论断尚未完成登记或准确性复审。
+本目录把可复核的观测、正文解释和教学建议分开登记。登记只覆盖高风险论断，不表示未登记内容已完成准确性审计。截至 2026-10-23，登记库有 254 条 claim（242 verified、12 needs-review）和 303 项实验（280 verified、23 needs-review）。这些数量是登记条数，不代表全书每条事实都已逐项核验，也不代表实验结果都绑定了执行时源码：目前只有 1 项结果含 `sourceBindings`，其余 302 项保留原始观察但无法从结果文件证明执行时源码版本。最新 W6 与逐节审计覆盖状态见 [准确性审计台账](CURRICULUM-REVIEW-TRACKER.md)，仍不能据此推出全部历史实验、真实 provider 行为或生产边界已验证。
 
 ## 证据类型
 
@@ -18,14 +18,15 @@
 
 ## 登记约定
 
-- `experiments/registry.json` 记录问题、lesson、代码围栏位置与 SHA-256、数据/评分版本、运行方式、预期不变量和结果路径。代码 hash 对应完整围栏内容，不含围栏标记。
-- `experiments/results/<id>/result.json` 保存脱敏结果、方法、日期和限制。真实在线结果还需增加 provider、协议、endpoint（移除凭据）、请求/响应模型 id、参数、usage、结束原因、运行耗时与重复次数。
+- `experiments/registry.json` 记录问题、lesson、代码围栏或脚本位置与当前工作树 SHA-256、数据/评分版本、运行方式、预期不变量和结果路径。该 hash 是防止登记代码在当前 checkout 中静默漂移的完整性 pin，**单独不能证明历史运行时执行的就是这份代码**。
+- `experiments/results/<id>/result.json` 保存脱敏结果、方法、日期和限制。新运行还应记录 `sourceBindings`，逐一绑定执行入口、被测实现、必要依赖和测试的路径及 SHA-256；运行前采集并在测试完成后复核，结果 verifier 检查每个路径/hash。该字段提供可复核的代码绑定，不是执行环境的密码学签名。真实在线结果还需增加 provider、协议、endpoint（移除凭据）、请求/响应模型 id、参数、usage、结束原因、运行耗时与重复次数。
 - `experiments/claims.json` 为高风险正文论断记录原文片段、文本 hash、适用条件、来源、实验、勘误和复核状态。source id 必须来自 `resources.ts`。
 - `result.schema.json` 的顶层字段是结果记录白名单；`tests/evidence-registry.test.ts` 对 `observations` 递归执行字段 allowlist 和高置信度敏感值扫描。添加新观测字段须先审查并显式更新 allowlist，不得把日志或原始 transcript 整体写入结果。
 - 新结果先以 `needs-review` 登记；首个人工复核完成前不得作为可发布证据或把状态改为 `verified`。`reviewedAt` 记录首次人工复核日期，尚未完成复核时必须为 `null`；登记/运行日期放在 result 记录中。该日期不能代替对方法、脱敏、限制和证据分类的人工判断。
 - `experiments/errata.json` 与 `docs/ERRATA.md` 使用相同稳定勘误编号；勘误处于 investigating 时，关联记录不得标记为已关闭。
 - 改动正文或示例后，受影响 claim/experiment 应转为需复核并更新 hash。不可只刷新日期来保留旧验证状态。
+- 历史 result 缺少 `sourceBindings` 时，保留原有观察，但不得把当前 registry 的 source hash 回填解释成“当时执行代码”的证明。要重新主张可复现性，需重跑并新增绑定源码的新 run；不能覆盖旧结果。
 
 ## 当前边界
 
-`pnpm verify:evidence` 检查当前登记的 lesson、source、实验、勘误引用，claim 原文和 hash，以及代码围栏 hash 与结果文件链接。`pnpm verify:examples` 只运行 `examples/manifest.json` 中显式登记的条目，校验入口 hash，使用临时目录、固定 30 秒上限和不继承 API Key 的环境；它不执行 MDX 中任意围栏。`tests/evidence-registry.test.ts` 使用 Ajv 2020 对 claims、experiments 和全部 result 文件分别执行对应 JSON Schema；同时校验 lesson/source/errata/experiment 关系、正文文本 hash、围栏/脚本 hash 和结果关联。当前登记仍只是高风险样本，不代表全书证据已齐。
+`pnpm verify:evidence` 检查当前登记的 lesson、source、实验、勘误引用，claim 原文和 hash，以及代码围栏 hash 与结果文件链接。`pnpm verify:examples` 只运行 `examples/manifest.json` 中显式登记的条目，校验入口 hash，使用临时目录、固定 30 秒上限和不继承 API Key 的环境；它不执行 MDX 中任意围栏。`tests/evidence-registry.test.ts` 使用 Ajv 2020 对 claims、experiments 和全部 result 文件分别执行对应 JSON Schema；同时校验 lesson/source/errata/experiment 关系、正文文本 hash、围栏/脚本 hash、结果关联，以及已记录 `sourceBindings` 的路径范围与源码 hash。当前登记仍只是高风险样本，不代表全书证据已齐。

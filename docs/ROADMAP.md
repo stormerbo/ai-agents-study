@@ -11,7 +11,7 @@
 
 ## 7. 后续设计
 
-### 7.1 章节大纲（23 章 / 6 阶段）
+### 7.1 章节大纲（26 章 / 6 阶段）
 
 ```
 阶段 0 起点（1 章）    ✅ 章 0 已完成正文
@@ -19,19 +19,19 @@
 阶段 2 原语（6 章）    ✅ 章 4-9 全部完成正文（阶段 2 收口）
 阶段 3 编排（5 章）    ✅ 章 10-14 全部完成正文（阶段 3 收口）
 阶段 4 生产化（6 章）  ✅ 章 15-20 全部完成正文（阶段 4 收口）
-阶段 5 实战（3 章）    ✅ 章 21-23 全部完成正文（**全书收口**，含新增的工具地图章）
+阶段 5 实战（5 章）    ✅ 章 21-25 全部完成正文（工具上手、源码研读、Coding Agent、持续进化与 Capstone）
 ```
 
-> ⚠️ 注意：`stages.ts` 里 `chapterIds` 已被**移除**（改为从 `Chapter.stageId` 派生），所以「有哪些章」取决于 `content/chapters/index.ts` 里注册了什么。当前注册 23 章，顺序为：0 what-is-an-agent / 1 llm-api-basics / 2 prompt-engineering / 3 context-engineering / 4 tool-calling / 5 structured-output / 6 retrieval / 7 memory / 8 multimodal / 9 computer-use / 10 agent-paradigms / 11 agent-loop / 12 multi-agent / 13 agent-frameworks / 14 mcp / 15 evaluation / 16 sandboxing / 17 agent-security / 18 cost-and-latency / 19 human-in-the-loop / 20 agent-deployment / 21 reading-source / 22 capstone。
+> ⚠️ 注意：`stages.ts` 里 `chapterIds` 已被**移除**（改为从 `Chapter.stageId` 派生），所以「有哪些章」取决于 `content/chapters/index.ts` 注册的条目及各章 `meta.ts` 的 `order`。当前注册 26 章，顺序为：0 what-is-an-agent / 1 llm-api-basics / 2 prompt-engineering / 3 context-engineering / 4 tool-calling / 5 structured-output / 6 retrieval / 7 memory / 8 multimodal / 9 computer-use / 10 agent-paradigms / 11 agent-loop / 12 multi-agent / 13 agent-frameworks / 14 mcp / 15 evaluation / 16 sandboxing / 17 agent-security / 18 cost-and-latency / 19 human-in-the-loop / 20 agent-deployment / 21 tooling / 22 reading-source / 23 coding-agent / 24 continuous-evolution / 25 capstone。
 
-### 7.2 未实现的功能（已在章 0-4 如实告知读者）
+### 7.2 产品功能状态
 
-| 功能                                 | 状态                                    | 优先级 |
-| ------------------------------------ | --------------------------------------- | ------ |
-| 站内 Playground（BYOK + 轨迹可视化） | ✅ **已完成**（2026-10-08），见下方说明 | —      |
-| 学习进度（章节完成 / 自检项勾选）    | 未开始，schema 已预留                   | 中     |
-| 全文搜索                             | 未开始（计划用 Pagefind）               | 中     |
-| 资源库筛选                           | 未开始（当前按优先级分组）              | 低     |
+| 功能                                 | 状态                                                                  | 优先级 |
+| ------------------------------------ | --------------------------------------------------------------------- | ------ |
+| 站内 Playground（BYOK + 轨迹可视化） | ✅ **已完成**（2026-10-08），见下方说明                               | —      |
+| 学习进度（章节完成 / 自检项勾选）    | ✅ **已完成**（2026-10-09）：localStorage + ProgressAdapter 扩展点    | —      |
+| 全文搜索                             | ✅ **已完成**（2026-10-09）：Pagefind，构建后运行 `pnpm build-search` | —      |
+| 资源库筛选                           | 未开始（当前按优先级分组）                                            | 低     |
 
 **Playground 现状**（`/labs` 与 `/labs/[labId]`）：
 

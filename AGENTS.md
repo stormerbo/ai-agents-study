@@ -12,7 +12,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # 项目交接文档（入口）
 
-> 最后更新：2026-10-09
+> 最后更新：2026-10-23
 
 这是一个**中文 AI Agent 学习路径站**。本文件是入口，只放「接手时立刻要知道的东西」。
 更细的参考材料拆成了四份，按**你什么时候需要它**分类：
@@ -25,6 +25,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 | **规划与设计依据**   | [docs/ROADMAP.md](docs/ROADMAP.md)   | 章节大纲、未实现功能、推进策略（原 §7）        |
 
 另外两份仍在根目录：[CONTENT_GUIDE.md](CONTENT_GUIDE.md)（内容规范，硬性要求）与 [VERIFY.md](VERIFY.md)（待验证清单与验证方法）。
+
+Stage 5 正式盲测、registry、身份授权与 verifier wire contracts 属于专项设计，入口见[Stage 5 设计索引](docs/superpowers/specs/stage5-registry-audit-integrity-index.md)；它与课程章节路线图分开维护。
 
 > **为什么拆分**：本文档长到 67,810 字节时超过了工作区指令的 **65,536 字节注入预算**，会被静默截断 ——
 > 也就是结尾的「给接手的会话的话」一度读不到。拆完之后入口约 15KB，四份参考文档按需读取，
@@ -39,10 +41,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ```bash
 pnpm dev          # 本地开发，http://localhost:3001
-pnpm build        # 构建（225 个静态页面）
+pnpm build        # 构建（当前 428 个静态页面；随课程与资源变化）
 pnpm build-search # 生成搜索索引（必须在 build 之后跑）
 pnpm typecheck    # next typegen && tsc --noEmit
 pnpm test         # vitest，内容完整性 + SSE 编解码
+pnpm test:links   # 外链提取器合同测试（不访问网络）
 pnpm lint         # eslint
 node scripts/content-stats.mjs  # 每节中文/说明文字/图/代码块，对照 §3.2 验收标准
 node scripts/check-links.mjs   # 巡检所有外链可用性
@@ -98,7 +101,7 @@ pnpm verify:depth # 对比 HEAD 基线：确认没有删改既有内容、没有
 
 **验收标准（2026-10-08 用户明确确认）：四块齐全 + 中文 ≥1500 字 + 说明文字 ≥3000 字。**
 
-> **2026-10-12 追加：五要素深度标准**（原因：134/134 节四块全达标，但一个「有后端经验、零 AI Agent 经验」的读者会在大量小节卡住 —— 四块测的是证据密度，不是可教学性）。
+> **2026-10-12 追加：五要素深度标准**（原因：当时 134/134 节四块全达标，但一个「有后端经验、零 AI Agent 经验」的读者会在大量小节卡住 —— 四块测的是证据密度，不是可教学性）。
 > 每节还必须满足 **定义 / 产物 / 判据 / 步骤 / 失败形态** 五要素，规则与样板见 [docs/CONTENT-DEPTH.md](docs/CONTENT-DEPTH.md)，全站进度见 [docs/DEPTH-FIX-TRACKER.md](docs/DEPTH-FIX-TRACKER.md)。
 > 机器可判的部分由 `pnpm depth-check`（占位符 / 代码块语言 / 自包含 / 术语首现 / 产物示例）与 `tests/depth.test.ts` 把关；`pnpm verify:depth` 用 HEAD 基线防止「修深度」时删掉已有实测。
 
@@ -136,7 +139,7 @@ pnpm verify:depth # 对比 HEAD 基线：确认没有删改既有内容、没有
 
 ### 5.1 内容完整性测试
 
-`tests/curriculum.test.ts`（39 个断言）：id 唯一性、引用完整性、依赖无环、依据标注合规、资源质量、纯文本字段与 MDX 正文的**行内标记渲染等价性**（见 §4.8）、以及**正文登记四方一致性**（见 §4.9）。
+`tests/curriculum.test.ts`（63 个测试用例）：id 唯一性、引用完整性、依赖无环、依据标注合规、资源质量、纯文本字段与 MDX 正文的**行内标记渲染等价性**（见 §4.8）、**正文登记四方一致性**（见 §4.9），以及项目交付要求与能力矩阵映射。
 
 `tests/sse.test.ts`（15 个断言）：SSE 编解码，含跨分片、多行 data、按 7 字符随机切分的往返一致性。
 
@@ -192,7 +195,7 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 
 ## 8. 待办清单
 
-**内容缺口：** 无 —— **全书 26 章 / 134 节全部完成正文**（2026-10-10 收口），每节都齐了「实测数据 + Mermaid 图 + 完整可运行代码 + 真实错误案例」。
+**课程正文基线：** 全书 26 章 / 144 节已达到篇幅与深度门禁。W6 唯一全节复核截至 2026-10-22 为 144/144（100%）；具体逐节审计台账覆盖 144/144（100%），当前为 37 节 `corrected`、0 节 `reviewed-ok`、107 节 `in-review`（按台账逐行计数）。W6 覆盖数与逐节有依据台账是两种不同口径。`reviewed-ok` 也不表示历史付费实验全部重跑；篇幅与深度门禁通过不等于事实已全部验证或可公开发布。详见 [准确性审计](docs/CURRICULUM-ACCURACY-AUDIT-2026-10-20.md) 与 [逐节台账](docs/CURRICULUM-REVIEW-TRACKER.md)。
 
 > 2026-10-10 按 [docs/GAP-ANALYSIS.md](docs/GAP-ANALYSIS.md) 补齐五项缺口：评估章 5→11 节、新增 Coding Agent 章（5 节）、
 > 上下文工程补机制层 3 节（Chat Template / KV Cache / Agent Skills）、多 Agent 补协作层失败模式、新增持续进化章（2 节）。
@@ -212,7 +215,9 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 - [x] **全文搜索**（2026-10-09）—— Pagefind，索引 158 页；`pnpm build-search`（须在 `pnpm build` 之后跑）；⌘K 打开
 - [x] **按 `VERIFY.md` 验证**（2026-10-09）—— ch1 的 SDK 脚本已实跑，修掉 3 个真实缺陷（详见 `VERIFY.md` 顶部）；prompt caching 等 4 项受限于兼容端点，待官方 Key
 
-**工具链现状（2026-10-20 更新）**：`pnpm test`（84 项 / 10 个文件）、`pnpm verify:evidence`（6 项；8 条 claim / 12 项 experiment 通过 Ajv schema、引用/hash 与观察字段 allowlist/敏感值扫描）、`pnpm verify:examples`（90 项；含阶段 4 离线 contracts，不启动 PostgreSQL、不调用 provider）、`pnpm depth-check`、`pnpm verify:depth`、`pnpm typecheck`、`pnpm lint`、`pnpm build` 与 `pnpm build-search` 均通过；构建和 Pagefind 各索引 250 页，14,961 词。阶段 4 `uv run --frozen pytest -m 'not integration' -q` 为 17 项离线测试；`uv run --frozen pytest -m integration -q` 为 91 项真实 PostgreSQL/独立 API 进程集成测试，缺 Docker/数据库即失败。两个 Stage 4 实验结果已登记但状态为 `needs-review`，首个人工复核待完成；没有执行真模型调用。全站链接扫描执行完成但因 40 个既有失效/拦截链接返回非零；本轮未新增外链。项目页深浅主题视觉检查通过，浏览器只报告既有 favicon 404。课程 **26 章 / 144 节**篇幅门禁全部达标；阶段 2 的离线检索参考实现已登记，真实 embedding 未验证；阶段 3 的 MCP stdio 双进程检查和一次 DeepSeek 真模型工具往返已记录，见 `experiments/results/exp-stage3-mcp-live-20261019/result.json`；阶段 4 本地合成多进程服务已通过 PostgreSQL 集成门禁，生产 IdP/RLS、高可用和 provider 能力均未验证。阶段 5 真模型 capstone、独立交接、holdout 与发布/回滚仍未实现。审计台账为 12 节 `corrected`、12 节 `in-review`、120 节 `not-reviewed`，不能宣称全书准确性审计完成。资源库现 49 条；新增内容和引用核对详见本轮进度记录。
+**工具链现状（2026-10-23 更新）**：本次复验 `pnpm test`（132 项 / 17 个文件）与 `pnpm verify:evidence`（16 项）通过；最近完整工具链记录为 `pnpm typecheck`、`pnpm lint`、`pnpm verify:examples`、`pnpm build`（428 个静态页面）与 `pnpm build-search`（428 页 / 15,608 词）均通过；`pnpm depth-check` 零硬错误、2 条既有建议；`pnpm verify:depth` 通过（相对 HEAD 净增 273,320 字符）。`reading-source/trace-one-task` 深浅主题全页截图 `output/playwright/reading-source-trace-one-task-w6-20261022-{light,dark}.png` 均为 1300×11,312，viewport/document=1300px、article=792px、代码溢出=0、Mermaid=1；浏览器唯一错误为既有 favicon.ico 404。本次 W6 复核 `prompt-engineering/structure-and-separation` 的浅/深主题整页截图位于 `output/playwright/prompt-structure-separation-w6-20261022-{light,dark}.png`，1300×13,076，viewport/scrollWidth=1300px、article=792px、代码溢出=0、Mermaid=1、重载后 console errors=0。本次 `tooling/agent-ui` 浅/深主题整页截图 `output/playwright/tooling-agent-ui-w6-20261022-{light,dark}.png` 均 1300×11384，viewport/document=1300px、article=792px、代码溢出=0、Mermaid=1；初次加载仅有 favicon.ico 404。
+
+本次 `tooling/first-agent` 浅/深主题整页图 `output/playwright/tooling-first-agent-w6-20261022-{light,dark}.png` 均 1300×8963，viewport/document=1300px、article=792px、代码溢出=0、Mermaid=1；重载后 console errors=0，首次加载仅有 favicon.ico 404。课程 **26 章 / 144 节**篇幅与深度门禁已通过；W6 唯一全节复核 144/144（100%），具体逐节审计依据覆盖 144/144（100%；37 corrected、107 in-review）。章节内容的历史模型结果、生产授权、用户体验或外部副作用不会因离线检查通过而自动验证；当前完整状态见 [审计台账](docs/CURRICULUM-REVIEW-TRACKER.md)。阶段 2 的离线检索参考实现与阶段 3 的 MCP stdio/DeepSeek 工具往返仍按各自限制记录；阶段 4/5 的生产 IdP/RLS、高可用、正式 holdout 与独立交接状态以对应阶段文档和 `docs/PROGRESS.md` 为准。
 
 > 2026-10-12 完成一轮全站深度修复：按 [docs/CONTENT-DEPTH.md](docs/CONTENT-DEPTH.md) 的五要素（定义／产物／判据／步骤／失败形态）逐节补齐，净增约 33.7 万字符；进度与例外见 [docs/DEPTH-FIX-TRACKER.md](docs/DEPTH-FIX-TRACKER.md)。
 
@@ -237,8 +242,11 @@ sleep 3   # 等 next-themes 水合 + mermaid 重新渲染
 
 **测量缺陷在这几轮写作里累计出现八类**（答案键写错两次、`max_tokens` 截断多次、对照组缺答案、测试数据漏字段、解析器只认对象不认顶层数组、**解析器贪婪匹配把解析失败记成「模型全错」**见 §4.16、判分口径不一致见 §4.12、把未复现当噪声丢掉见 §3.4）。它们的共同点是：**看起来都像「模型的行为异常」**。所以每当你要解释一个反直觉结果时，先用一句话自问 ——「这有没有可能是我这边的 bug？」
 
-**如实报告「未复现」的结果。** 本项目已积累二十一个未复现的实验（§6.4），它们比成功案例更有教学价值 —— 它们演示了「论文结论需要在自己的场景验证」这件事。第 17 章那 7 次注入全部失败后，我写下的是「不能读成注入不管用」，并列出了我的注入形态为什么不够 —— 这个写法比删掉它们有价值得多。
+**如实报告「未复现」的结果。** 本项目记录了多项历史未复现实验（§6.4）。先核验逐次样本和评分依据；例如结构化输出提示实验缺少原始响应与 scorer，已从“未复现”降为“无法独立复核”。这类边界本身也有教学价值。第 17 章那 7 次注入全部失败后，我写下的是「不能读成注入不管用」，并列出了我的注入形态为什么不够 —— 这个写法比删掉它们有价值得多。
 
 **不要为了字数注水。** 用 §3.2 的四块内容检查清单代替字数指标。
 
 **用户很在意两件事**：内容的准确性与可验证性（所以有 `basis` 标注机制），以及页面的实际观感（所以要截图验证，并 curl 页面剔除 `<pre>`/`<code>` 后 grep 字面 `**`，见 §4.8）。
+
+
+2026-10-22 W6 收尾：全节复核 144/144；最终 `reading-source/why-and-how` verifier 37/37，课程合同测试 51/51。全站 tests 115/115、evidence 14/14、typecheck、lint、verify:examples、depth-check（0 硬错误 / 2 条既有建议）、verify:depth（+273,320 字符）、content-stats（144/144）、build/Pagefind（428 页 / 15,594 词）通过。末节浅/深截图 `output/playwright/reading-source-why-and-how-w6-20261022-{light,dark}.png` 均 1300×9,930，viewport/document=1300px、article=792px、代码溢出=0、Mermaid=1；仅有既有 favicon.ico 404。Stage 4 人工审查与 Stage 5 验收/独立交接仍开放。

@@ -94,7 +94,7 @@ export ANTHROPIC_AUTH_TOKEN="<你的 DeepSeek Key>"
 
 - ✅ 能验证：消息结构、`system` 位置、流式事件、多轮对话、`max_tokens`
 - ❌ 验证不了：prompt caching（`cache_control` 被忽略）、`effort`、adaptive thinking
-- ⚠️ 注意：DeepSeek **支持** `temperature`，而 Claude 新模型**已移除**它 —— 同一份代码在两边行为不同，这正是多厂商适配的真实难点
+- ⚠️ 注意：当前 DeepSeek Anthropic-compatible 文档按字段与 model/mode 列出不同语义；Anthropic API 的采样参数弃用也按模型范围描述。迁移时要分开测试 SDK 方法签名、endpoint 字段处理和 model 行为，不能用“Claude 新模型”作一刀切结论。
 
 ---
 
@@ -123,15 +123,16 @@ PY
 
 ---
 
-### 2. `02-sampling-params.mdx` — 采样参数的消失
+### 2. `02-sampling-params.mdx` — 采样参数与模型/SDK 契约
 
-| #   | 待验证                                          | 怎样算通过                       |
-| --- | ----------------------------------------------- | -------------------------------- |
-| 2.1 | 传 `temperature` 是否报 400（Anthropic 新模型） | 报 400 即符合文档描述            |
-| 2.2 | `output_config.effort` 的写法                   | 请求成功，且 effort 影响输出长度 |
+| #   | 待验证 | 怎样算通过 |
+| --- | --- | --- |
+| 2.1 | 在锁定的目标 model 上传非默认 `temperature` 的 API 行为 | 与该 model 的官方弃用说明一致；记录 API model ID、endpoint、请求 ID 和响应类型，不能推广到其他模型 |
+| 2.2 | Anthropic Python SDK 1.x 的方法签名 | 直接传 `temperature=` 应在本地抛 `TypeError`，不会发 HTTP 请求；旧 model 如确需设置，另按 SDK 官方迁移指南验证 `extra_body` 与服务端支持 |
+| 2.3 | `output_config.effort` 的端点和模型支持 | 请求成功只证明配置被接受；比较行为要用固定任务集与预设判据，不能用单次响应长度证明 effort 生效或质量变化 |
 
 ```bash
-# 2.1 预期失败：Anthropic 新模型应返回 400
+# 2.1 仅在当前 model 文档仍规定非默认 sampling 返回 400 时运行；支持范围随 model 变化
 curl -s https://api.anthropic.com/v1/messages \
   -H "x-api-key: $ANTHROPIC_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
@@ -139,7 +140,7 @@ curl -s https://api.anthropic.com/v1/messages \
   -d '{"model":"claude-opus-5-5","max_tokens":64,"temperature":0.2,
        "messages":[{"role":"user","content":"hi"}]}' | head -c 400
 
-# 2.2 预期成功
+# 2.3 请求示例：成功不等于 effort 改变了输出长度或任务质量
 curl -s https://api.anthropic.com/v1/messages \
   -H "x-api-key: $ANTHROPIC_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
