@@ -2,6 +2,9 @@
 
 # dependencies
 /node_modules
+**/.venv/
+**/__pycache__/
+*.py[cod]
 /.pnp
 .pnp.*
 .yarn/*
@@ -44,6 +47,18 @@ yarn-error.log*
 # 视觉验证的临时产物（playwright 截图与快照）
 /.playwright-cli/
 /output/
+/.playwright-mcp/
+/tmp-*.png
+
+# Playwright 运行产物与隔离构建用的临时快照
+/test-results/
+/playwright-report/
+/.e2e-runner.*/
+
+# 本机 agent 工具的缓存与状态（不属于项目内容）
+/.serena/
+/.superpowers/
+/.chapter-nav-contrast.cjs
 
 # Pagefind 搜索索引（由 pnpm build-search 生成，不入库）
 /public/pagefind/
