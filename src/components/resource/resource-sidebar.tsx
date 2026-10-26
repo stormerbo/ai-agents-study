@@ -101,14 +101,21 @@ export function ResourceCardCompact({ resource }: { resource: Resource }) {
 export function ResourceSidebar({
   resources,
   title = '延伸阅读',
+  scrollContent = false,
 }: {
   resources: Resource[];
   title?: string;
+  scrollContent?: boolean;
 }) {
   if (resources.length === 0) return null;
 
   return (
-    <details className="group overflow-hidden rounded-xl border border-border bg-card">
+    <details
+      className={cn(
+        'group rounded-xl border border-border bg-card',
+        scrollContent && 'min-h-0 overflow-hidden',
+      )}
+    >
       <summary
         className={cn(
           'flex cursor-pointer list-none items-center gap-2 px-3.5 py-3 marker:hidden hover:bg-muted/50',
@@ -128,7 +135,12 @@ export function ResourceSidebar({
         </span>
       </summary>
 
-      <ul className="max-h-[60vh] overflow-y-auto border-t border-border/70">
+      <ul
+        className={cn(
+          'border-t border-border/70',
+          scrollContent && 'min-h-0 flex-1 overflow-y-auto',
+        )}
+      >
         {resources.map((r) => (
           <ResourceCardCompact key={r.id} resource={r} />
         ))}

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { CheckpointList } from '@/components/chapter/checkpoint-list';
+import { CurriculumNavigation } from '@/components/chapter/curriculum-navigation';
 import { LessonToggle } from '@/components/progress/lesson-toggle';
 import { ResourceSidebar } from '@/components/resource/resource-sidebar';
 import { InlineMd, plainText } from '@/components/ui/inline-md';
@@ -35,17 +36,20 @@ export default async function LessonPage(props: PageProps<'/chapters/[chapterId]
 
   const { lesson, chapter } = entry;
   const { prev, next } = getAdjacentLessons(lesson.id);
-  const resources = getResources(lesson.resourceIds ?? []);
+  const resources = getResources(lesson.resourceIds ?? chapter.resourceIds ?? []);
   const lessonIndex = chapter.lessons.findIndex((l) => l.id === lesson.id);
   // 正文可能还没写 —— 那时渲染大纲占位，而不是给一个空白页
   const Body = lesson.hasBody ? await getLessonBody(chapter.id, lesson.slug) : undefined;
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start lg:gap-x-10">
-        <div className="lg:col-start-1 lg:row-start-1">
+    <main className="mx-auto max-w-[96rem] px-6 py-10">
+      <div className="lg:grid lg:grid-cols-[14rem_minmax(0,48rem)_14rem] lg:items-start lg:justify-center lg:gap-x-8 xl:grid-cols-[15rem_minmax(0,54rem)_15rem] xl:gap-x-10">
+        <div className="lg:col-span-1 lg:col-start-2 lg:row-start-1">
           {/* 面包屑 */}
-          <nav className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <nav
+            aria-label="面包屑"
+            className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+          >
             <Link href="/chapters" className="hover:text-foreground">
               章节
             </Link>
@@ -56,7 +60,7 @@ export default async function LessonPage(props: PageProps<'/chapters/[chapterId]
           </nav>
 
           <header className="mt-5">
-            <div className="flex flex-wrap items-center gap-x-2.5 text-[11px] text-muted-foreground/70">
+            <div className="flex flex-wrap items-center gap-x-2.5 text-[11px] text-muted-foreground">
               <span>
                 第 {lessonIndex + 1} 节 / 共 {chapter.lessons.length} 节
               </span>
@@ -74,13 +78,21 @@ export default async function LessonPage(props: PageProps<'/chapters/[chapterId]
           </header>
         </div>
 
-        {/* 延伸阅读 —— 桌面端固定在右栏，默认折叠；窄屏落到正文之后 */}
-        <aside className="mt-8 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:self-start">
-          <ResourceSidebar resources={resources} title="本节延伸阅读" />
+        {/* 窄屏目录在标题后正文前；桌面课程导航靠左，保留右侧延伸阅读栏 */}
+        <aside
+          data-lesson-curriculum-rail
+          className="lesson-directory-auxiliary mt-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:self-start"
+        >
+          <CurriculumNavigation
+            key={lesson.id}
+            currentStageId={chapter.stageId}
+            currentChapterId={chapter.id}
+            currentLessonId={lesson.id}
+          />
         </aside>
 
-        {/* 正文主体 —— 桌面端落在第 1 列第 2 行；窄屏排在侧栏之后（侧栏默认折叠，只有一条） */}
-        <div className="lg:col-start-1 lg:row-start-2">
+        {/* 正文主体 —— 窄屏目录之后进入文章，阅读完成后再到延伸阅读。 */}
+        <div className="lg:col-span-1 lg:col-start-2 lg:row-start-2">
           {/* 正文区域 */}
           <div className="mt-8">
             {Body ? (
@@ -124,13 +136,16 @@ export default async function LessonPage(props: PageProps<'/chapters/[chapterId]
           {/* 学完标记 —— 进度存在浏览器本地，不上传（见 lib/progress/store.ts 的说明） */}
           <div className="mt-12 flex flex-wrap items-center gap-3 border-t border-border pt-6">
             <LessonToggle lessonId={lesson.id} />
-            <span className="text-xs text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground">
               进度只存在这台设备上。换设备或清缓存会重置。
             </span>
           </div>
 
           {/* 翻页 */}
-          <nav className="mt-14 grid gap-3 border-t border-border pt-6 sm:grid-cols-2">
+          <nav
+            aria-label="课程翻页"
+            className="mt-14 grid gap-3 border-t border-border pt-6 sm:grid-cols-2"
+          >
             {prev ? (
               <Link
                 href={`/chapters/${prev.chapter.id}/${prev.lesson.slug}`}
@@ -153,6 +168,12 @@ export default async function LessonPage(props: PageProps<'/chapters/[chapterId]
             )}
           </nav>
         </div>
+        <aside
+          data-lesson-recommendations-rail
+          className="lesson-recommendations-rail mt-8 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:self-start"
+        >
+          <ResourceSidebar resources={resources} title="本节延伸阅读" scrollContent={false} />
+        </aside>
       </div>
     </main>
   );

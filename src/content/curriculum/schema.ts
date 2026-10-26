@@ -276,8 +276,11 @@ export interface Project {
   constraints: string[];
   milestones: ProjectMilestone[];
   rubric: RubricItem[];
+  /** 必须全部满足、不能由其他 rubric 分数抵消的安全与状态不变量。 */
+  hardGates?: string[];
   referenceImpl?: {
     repo?: string;
+    command?: string;
     walkthroughLessonId?: LessonId;
     notes: string;
   };

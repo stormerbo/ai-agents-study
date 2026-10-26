@@ -28,7 +28,7 @@
 
   /* 阶段配色：知识地图与阶段页靠它区分 6 个学习阶段 */
   --color-stage-0: oklch(0.58 0.04 250);
-  --color-stage-1: oklch(0.58 0.16 250);
+  --color-stage-1: oklch(0.51 0.16 250);
   --color-stage-2: oklch(0.6 0.13 195);
   --color-stage-3: oklch(0.56 0.18 300);
   --color-stage-4: oklch(0.62 0.16 55);
@@ -70,6 +70,37 @@
   :focus-visible {
     outline: 2px solid var(--color-stage-1);
     outline-offset: 2px;
+  }
+}
+
+/* Lesson curriculum and resource recommendations remain independent desktop side rails. */
+.lesson-directory-auxiliary,
+.lesson-recommendations-rail {
+  overflow: visible;
+}
+
+.curriculum-navigation-root:not([open])
+  > .curriculum-navigation-root-summary
+  .curriculum-navigation-root-expanded-label,
+.curriculum-navigation-root[open]
+  > .curriculum-navigation-root-summary
+  .curriculum-navigation-root-collapsed-label {
+  display: none;
+}
+
+@media (min-width: 64rem) and (min-height: 45rem) {
+  .lesson-directory-auxiliary,
+  .lesson-recommendations-rail {
+    position: sticky;
+    top: 5rem;
+    max-block-size: calc(100dvh - 6rem);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .curriculum-navigation-root[open] > .curriculum-navigation-root-summary {
+    display: none;
   }
 }
 

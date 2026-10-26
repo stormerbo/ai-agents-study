@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react';
 import { getChapters, getChaptersByStage, getStages } from '@/content/curriculum';
 import { InlineMd } from '@/components/ui/inline-md';
 import { ProgressBar } from '@/components/progress/progress-bar';
+import { getChapterBodyLabel } from '@/lib/curriculum/presentation';
 import { DIFFICULTY_LABEL, formatMinutes } from '@/lib/labels';
 
 export const metadata: Metadata = {
@@ -43,7 +44,8 @@ export default function ChaptersPage() {
             <section key={stage.id} style={stageStyle}>
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span
-                  className="font-mono text-xs font-medium"
+                  data-stage-label
+                  className="text-sm font-medium"
                   style={{ color: 'var(--stage-color)' }}
                 >
                   阶段 {stage.order}
@@ -59,7 +61,7 @@ export default function ChaptersPage() {
               {stageChapters.length > 0 ? (
                 <ul className="mt-5 grid gap-3 sm:grid-cols-2">
                   {stageChapters.map((chapter) => {
-                    const hasBody = chapter.lessons.some((l) => l.hasBody);
+                    const bodyLabel = getChapterBodyLabel(chapter.lessons);
                     const checkpointCount = chapter.lessons.reduce(
                       (sum, l) => sum + (l.checkpoints?.length ?? 0),
                       0,
@@ -69,25 +71,34 @@ export default function ChaptersPage() {
                       <li key={chapter.id}>
                         <Link
                           href={`/chapters/${chapter.id}`}
-                          className="flex h-full flex-col rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/60"
+                          className="focus-visible:ring-ring flex h-full min-h-11 flex-col rounded-xl border border-border bg-card p-4 break-words transition-colors hover:border-accent/60 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                         >
-                          <div className="flex items-baseline gap-2.5">
-                            <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                              {String(chapter.order).padStart(2, '0')}
+                          <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                            <span
+                              data-chapter-order
+                              className="shrink-0 text-sm font-medium text-accent"
+                            >
+                              第 {chapter.order} 章
                             </span>
-                            <span className="text-sm font-medium">{chapter.title}</span>
-                            {!hasBody && (
-                              <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">
-                                大纲
-                              </span>
-                            )}
+                            <span className="min-w-0 text-sm font-medium break-words">
+                              {chapter.title}
+                            </span>
                           </div>
+                          <span
+                            data-chapter-body-label
+                            className="mt-1 inline-flex text-xs text-muted-foreground"
+                          >
+                            {bodyLabel}
+                          </span>
 
-                          <p className="mt-2 flex-1 text-xs leading-relaxed text-muted-foreground">
+                          <p className="mt-2 flex-1 text-sm leading-relaxed break-words text-muted-foreground">
                             <InlineMd text={chapter.summary} />
                           </p>
 
-                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/70">
+                          <div
+                            data-chapter-metadata
+                            className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
+                          >
                             <span>{DIFFICULTY_LABEL[chapter.difficulty]}</span>
                             <span>{formatMinutes(chapter.estimatedMinutes)}</span>
                             <span>{chapter.lessons.length} 节</span>

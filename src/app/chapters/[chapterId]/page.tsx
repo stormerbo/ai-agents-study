@@ -3,9 +3,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { CheckpointList } from '@/components/chapter/checkpoint-list';
+import { LessonRouteList } from '@/components/chapter/lesson-route-list';
+import { ProjectDetails } from '@/components/chapter/project-details';
 import { ProgressBar } from '@/components/progress/progress-bar';
 import { ResourceSidebar } from '@/components/resource/resource-sidebar';
 import { InlineMd, plainText } from '@/components/ui/inline-md';
+import { getChapterBodyLabel } from '@/lib/curriculum/presentation';
 import {
   getChapter,
   getChapters,
@@ -15,7 +18,7 @@ import {
   getStage,
 } from '@/content/curriculum';
 import type { Chapter } from '@/content/curriculum/schema';
-import { CONTENT_STATUS_LABEL, DIFFICULTY_LABEL, formatMinutes } from '@/lib/labels';
+import { DIFFICULTY_LABEL, formatMinutes } from '@/lib/labels';
 
 export function generateStaticParams() {
   return getChapters().map((chapter) => ({ chapterId: chapter.id }));
@@ -156,7 +159,7 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
   const chapterIndex = getChapters().findIndex((c) => c.id === chapter.id);
   const prevChapter = chapterIndex > 0 ? getChapters()[chapterIndex - 1] : undefined;
   const nextChapter = getChapters()[chapterIndex + 1];
-  const hasAnyBody = chapter.lessons.some((l) => l.hasBody);
+  const bodyLabel = getChapterBodyLabel(chapter.lessons);
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
@@ -178,8 +181,8 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
           {/* 标题区 */}
           <header className="mt-5">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="font-mono text-sm text-muted-foreground tabular-nums">
-                {String(chapter.order).padStart(2, '0')}
+              <span className="shrink-0 text-sm font-medium text-accent">
+                第 {chapter.order} 章
               </span>
               <h1 className="text-2xl font-semibold tracking-tight">{chapter.title}</h1>
             </div>
@@ -202,39 +205,48 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
             <MetaItem label="难度" value={DIFFICULTY_LABEL[chapter.difficulty]} />
             <MetaItem label="预计用时" value={formatMinutes(chapter.estimatedMinutes)} />
             <MetaItem label="小节" value={`${chapter.lessons.length} 节`} />
-            <MetaItem
-              label="正文状态"
-              value={hasAnyBody ? CONTENT_STATUS_LABEL[chapter.status] : '大纲完成，正文待写'}
-            />
+            <MetaItem label="正文状态" value={bodyLabel} />
           </dl>
 
-          {!hasAnyBody && (
+          {bodyLabel === '仅有大纲' && (
             <p className="mt-6 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
               这一章的正文还在撰写中。但下面的大纲、资源与自检问题已经是可用的 ——
               你完全可以按小节标题自己去找答案，再用自检问题验证。
             </p>
           )}
 
-          <div className="mt-10 space-y-12">
-            {/* 学习目标 */}
-            <section>
+          {/* 章节结果、进度与路线 */}
+          <section className="mt-6 rounded-xl border border-border bg-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-sm font-medium">学完这一章你应该能做到</h2>
-              <ul className="mt-4 space-y-2.5">
-                {chapter.outcomes.map((outcome) => (
-                  <li key={outcome} className="flex gap-2.5 text-sm leading-relaxed">
-                    <span aria-hidden className="mt-px shrink-0 text-muted-foreground/50">
-                      —
-                    </span>
-                    <span>{outcome}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+              <ProgressBar
+                lessonIds={chapter.lessons.map((lesson) => lesson.id)}
+                className="w-40"
+              />
+            </div>
+            <ul className="mt-4 space-y-2.5">
+              {chapter.outcomes.map((outcome) => (
+                <li key={outcome} className="flex gap-2.5 text-sm leading-relaxed">
+                  <span aria-hidden className="mt-px shrink-0 text-muted-foreground/50">
+                    —
+                  </span>
+                  <span>{outcome}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
 
-            {/* 后端视角对照 —— 全站差异化主线，放在最显眼的位置 */}
+          <section id="learning-route" className="mt-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-medium">按路线学习</h2>
+              <span className="text-xs text-muted-foreground">按编号顺序阅读</span>
+            </div>
+            <LessonRouteList chapterId={chapter.id} lessons={chapter.lessons} />
+          </section>
+
+          <div className="mt-10 space-y-10">
             <BackendMappingPanel chapter={chapter} />
 
-            {/* 前置章节 */}
             {prerequisites.length > 0 && (
               <section>
                 <h2 className="text-sm font-medium">建议先读</h2>
@@ -255,39 +267,6 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
                 </p>
               </section>
             )}
-
-            {/* 小节大纲 */}
-            <section>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-sm font-medium">小节</h2>
-                <ProgressBar lessonIds={chapter.lessons.map((l) => l.id)} className="w-40" />
-              </div>
-              <ol className="mt-4 divide-y divide-border overflow-hidden rounded-xl border border-border">
-                {chapter.lessons.map((lesson, i) => (
-                  <li key={lesson.id}>
-                    <Link
-                      href={`/chapters/${chapter.id}/${lesson.slug}`}
-                      className="flex items-baseline gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50"
-                    >
-                      <span className="w-5 shrink-0 font-mono text-xs text-muted-foreground/50 tabular-nums">
-                        {i + 1}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">{lesson.title}</span>
-                        {lesson.summary && (
-                          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                            <InlineMd text={lesson.summary} />
-                          </span>
-                        )}
-                      </span>
-                      <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums">
-                        {lesson.estimatedMinutes} 分
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ol>
-            </section>
 
             {/* 代码实验 */}
             {labs.length > 0 && (
@@ -333,10 +312,11 @@ export default async function ChapterPage(props: PageProps<'/chapters/[chapterId
                       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                         {project.brief}
                       </p>
-                      <p className="mt-2 text-[11px] text-muted-foreground/70">
+                      <p className="mt-2 text-[11px] text-muted-foreground">
                         预计 {project.estimatedHours[0]}–{project.estimatedHours[1]} 小时 · 评分清单{' '}
                         {project.rubric.length} 项
                       </p>
+                      <ProjectDetails project={project} />
                     </li>
                   ))}
                 </ul>
