@@ -56,6 +56,245 @@ function plainTextFields(): PlainField[] {
   return out;
 }
 
+describe('W6 全节复核清单', () => {
+  it('keeps the recorded pass list unique and covered by the review tracker', () => {
+    const plan = readFileSync(
+      new URL('../docs/superpowers/plans/2026-10-19-curriculum-reliability.md', import.meta.url),
+      'utf8',
+    );
+    const passLine = plan
+      .split('\n')
+      .find((line) => line.startsWith('**Recorded W6 full-lesson scope passes'));
+    expect(passLine).toBeDefined();
+    const lessonIds = [...passLine!.matchAll(/\x60([^\x60]+\/[^\x60]+)\x60/g)].map(([, id]) => id);
+    const uniqueIds = new Set(lessonIds);
+    const tracker = readFileSync(
+      new URL('../docs/CURRICULUM-REVIEW-TRACKER.md', import.meta.url),
+      'utf8',
+    );
+
+    expect(lessonIds).toHaveLength(144);
+    expect(uniqueIds.size).toBe(lessonIds.length);
+    expect(passLine).toContain('144/144 unique lessons (100.00%)');
+    expect(passLine).toContain('W6 whole-lesson scope review is complete');
+    expect(uniqueIds.has('tooling/orchestration-stack')).toBe(true);
+    expect(uniqueIds.has('retrieval/why-retrieval')).toBe(true);
+    expect(uniqueIds.has('reading-source/compare')).toBe(true);
+    expect(uniqueIds.has('reading-source/outputs')).toBe(true);
+    expect(uniqueIds.has('reading-source/picking-projects')).toBe(true);
+    expect(uniqueIds.has('reading-source/trace-one-task')).toBe(true);
+    expect(uniqueIds.has('reading-source/why-and-how')).toBe(true);
+    expect([...uniqueIds].every((id) => tracker.includes('| `' + id + '` |'))).toBe(true);
+  });
+
+  it('keeps W6 and per-lesson status summaries aligned with the current tracker', () => {
+    const tracker = readFileSync(
+      new URL('../docs/CURRICULUM-REVIEW-TRACKER.md', import.meta.url),
+      'utf8',
+    );
+    const audit = readFileSync(
+      new URL('../docs/CURRICULUM-ACCURACY-AUDIT-2026-10-20.md', import.meta.url),
+      'utf8',
+    );
+    const statuses = (text: string) =>
+      text
+        .split('\n')
+        .flatMap((line) => {
+          const match = line.match(/^\| `([^`]+)` \| (corrected|reviewed-ok|in-review) \|/);
+          return match ? [[match[1], match[2]] as const] : [];
+        });
+    const currentStatuses = statuses(tracker);
+    const reportStatuses = statuses(audit);
+    const counts = Object.fromEntries(
+      ['corrected', 'reviewed-ok', 'in-review'].map((status) => [
+        status,
+        currentStatuses.filter(([, value]) => value === status).length,
+      ]),
+    );
+
+    expect(currentStatuses).toHaveLength(144);
+    expect(reportStatuses).toEqual(currentStatuses);
+    expect(counts).toEqual({ corrected: 37, 'reviewed-ok': 0, 'in-review': 107 });
+    expect(tracker.split('\n')[2]).toContain('144/144');
+    expect(audit.split('\n')[2]).toContain('144/144');
+  });
+
+  it('makes model rights a documented deployment gate for local models', () => {
+    const localModels = curriculum.chapters
+      .flatMap((chapter) => chapter.lessons)
+      .find((lesson) => lesson.id === 'tooling/local-models');
+
+    expect(
+      localModels?.checkpoints?.some(
+        (checkpoint) =>
+          checkpoint.id === 'model-rights' &&
+          checkpoint.basis === 'documented' &&
+          checkpoint.sourceIds?.includes('osi-open-source-ai-definition') &&
+          checkpoint.sourceIds?.includes('huggingface-model-card-guides'),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps the retrieval latency comparison on equal top-k and repeat counts', () => {
+    const retrieval = curriculum.chapters
+      .flatMap((chapter) => chapter.lessons)
+      .find((lesson) => lesson.id === 'tooling/retrieval-stack');
+    const checkpoint = retrieval?.checkpoints?.find((item) => item.id === 'benchmark-top-k');
+    const lesson = readFileSync(
+      new URL('../src/content/chapters/tooling/01-retrieval-stack.mdx', import.meta.url),
+      'utf8',
+    );
+
+    expect(checkpoint?.basis).toBe('documented');
+    expect(checkpoint?.sourceIds).toContain('chroma-python-collection-query');
+    expect(lesson).toContain('n_results=1');
+    expect(lesson).toContain('chroma_query_time(Vs, ids_s, qs, n=11)');
+    expect(lesson).toContain('NumPy 返回 top-1、Chroma 返回 top-5');
+    expect(lesson).toContain('逐次测量没有归档');
+  });
+
+  it('qualifies retrieval cost and paraphrase recall claims', () => {
+    const lesson = readFileSync(
+      new URL('../src/content/chapters/retrieval/01-why-retrieval.mdx', import.meta.url),
+      'utf8',
+    );
+
+    expect(lesson).toContain('不能把「多取一条」直接等同于固定增加一笔费用');
+    expect(lesson).toContain('不能保证所有换说法的查询都能召回');
+    expect(lesson).not.toContain('每多取一条，就是每轮多付一条的钱');
+  });
+
+  it('scopes MCP schema generation to the illustrated server implementation', () => {
+    const compare = curriculum.chapters
+      .flatMap((chapter) => chapter.lessons)
+      .find((lesson) => lesson.id === 'reading-source/compare');
+    const checkpoint = compare?.checkpoints?.find((item) => item.id === 'mcp-schema-generation-source');
+    const lesson = readFileSync(
+      new URL('../src/content/chapters/reading-source/04-compare.mdx', import.meta.url),
+      'utf8',
+    );
+
+    expect(checkpoint?.basis).toBe('documented');
+    expect(checkpoint?.sourceIds).toContain('mcp-python-sdk-tools');
+    expect(lesson).toContain('不规定 server 必须手写 schema');
+    expect(lesson).toContain('官方 Python SDK 的 `@mcp.tool()` 会从函数类型标注生成 schema');
+    expect(lesson).not.toContain('B、C 里 schema 是另外维护的数据');
+    const pythonFence = lesson.split('```python')[1]?.split('```')[0] ?? '';
+    const longLines = pythonFence
+      .split('\n')
+      .flatMap((line, lineIndex) =>
+        line.length > 88
+          ? ['line ' + (lineIndex + 1) + ': ' + line.length]
+          : [],
+      );
+    expect(Math.max(...pythonFence.split('\n').map((line) => line.length))).toBeLessThanOrEqual(80);
+    expect(longLines).toEqual([]);
+  });
+
+
+  it('traces the model-visible LangChain schema through the pinned constructor path', () => {
+    const lesson = readFileSync(
+      new URL('../src/content/chapters/reading-source/03-trace-one-task.mdx', import.meta.url),
+      'utf8',
+    );
+    const trace = curriculum.chapters
+      .flatMap((chapter) => chapter.lessons)
+      .find((item) => item.id === 'reading-source/trace-one-task');
+    const checkpoint = trace?.checkpoints?.find(
+      (item) => item.id === 'langchain-tool-call-schema-path',
+    );
+
+    expect(checkpoint?.basis).toBe('documented');
+    expect(checkpoint?.sourceIds).toContain('langchain-core-063-tool-structured');
+    expect(checkpoint?.sourceIds).toContain('pydantic-json-schema');
+    expect(lesson).toContain('StructuredTool.from_function');
+    expect(lesson).toContain('BaseTool.tool_call_schema（base.py:464）');
+    expect(lesson).toContain('_get_filtered_args`（base.py:95）');
+    expect(lesson).toContain('只有定义，没有被 `create_schema_from_function` 或 `tool_call_schema` 调用');
+    expect(lesson).toContain('return t.tool_call_schema.model_json_schema()');
+    expect(lesson).not.toContain('前四跳都只是透传');
+    expect(lesson).not.toContain('上面三组对照');
+  });
+
+  it('grounds the source-reading lesson in the actual LangChain schema path', () => {
+    const lesson = readFileSync(
+      new URL('../src/content/chapters/reading-source/01-why-and-how.mdx', import.meta.url),
+      'utf8',
+    );
+    const entry = curriculum.chapters
+      .flatMap((chapter) => chapter.lessons)
+      .find((item) => item.id === 'reading-source/why-and-how');
+    const checkpoint = entry?.checkpoints?.find(
+      (item) => item.id === 'langchain-docstring-schema-boundary',
+    );
+
+    expect(checkpoint?.basis).toBe('documented');
+    expect(checkpoint?.sourceIds).toContain('langchain-core-063-tool-structured');
+    expect(checkpoint?.sourceIds).toContain('pydantic-json-schema');
+    expect(lesson).toContain('tool_call_schema.model_json_schema()');
+    expect(lesson).toContain('它没有把参数说明解析成字段 description');
+    expect(lesson).toContain('_get_filtered_args');
+    expect(lesson).not.toContain('结果它连读都没读');
+    expect(lesson).not.toContain('tool_.args_schema.model_json_schema()');
+  });
+
+  it('does not imply that a version-pinned script detects upstream changes automatically', () => {
+    const lesson = readFileSync(
+      new URL('../src/content/chapters/reading-source/05-outputs.mdx', import.meta.url),
+      'utf8',
+    );
+
+    expect(lesson).toContain('在目标版本环境中更新依赖快照并重跑断言');
+    expect(lesson).toContain('不能自动发现上游行为变化');
+    expect(lesson).not.toContain('它会在新版本上重新跑，自动发现结论是否还成立');
+    const pythonFence = lesson.split('```python')[1]?.split('```')[0] ?? '';
+    const longestLine = Math.max(...pythonFence.split('\n').map((line) => line.length));
+    expect(longestLine).toBeLessThanOrEqual(70);
+  });
+
+
+  it('separates LangChain schema construction from provider request dispatch', () => {
+    const lesson = readFileSync(
+      new URL('../src/content/chapters/reading-source/02-picking-projects.mdx', import.meta.url),
+      'utf8',
+    );
+    const picking = curriculum.chapters
+      .flatMap((chapter) => chapter.lessons)
+      .find((item) => item.id === 'reading-source/picking-projects');
+    const checkpoint = picking?.checkpoints?.find(
+      (item) => item.id === 'langchain-provider-integration-boundary',
+    );
+
+    expect(checkpoint?.basis).toBe('documented');
+    expect(checkpoint?.sourceIds).toContain('langchain-python-integrations');
+    expect(lesson).toContain('工具 schema：应用代码 → langchain_core.tools → Pydantic schema');
+    expect(lesson).toContain('模型请求：  Agent/应用 → provider integration → provider SDK → HTTP transport');
+    expect(lesson).not.toContain('→ httpx / anthropic（真正发请求的）');
+    expect(lesson).toContain('BASE_FILE=');
+    expect(lesson).toContain('rg -n "_get_filtered_args" "$BASE_FILE"');
+    const bashFence = lesson.split('```bash')[1]?.split('```')[0] ?? '';
+    const longestBashLine = Math.max(...bashFence.split('\n').map((line) => line.length));
+    expect(longestBashLine).toBeLessThanOrEqual(70);
+  });
+
+  it('keeps the local-model executable example within an 88-character line width', () => {
+    const lesson = readFileSync(
+      new URL('../src/content/chapters/tooling/03-local-models.mdx', import.meta.url),
+      'utf8',
+    );
+    const fences = [...lesson.matchAll(/^\x60{3}[^\n]*\n([\s\S]*?)^\x60{3}/gm)].map(([, body]) => body ?? '');
+    const longLines = fences.flatMap((fence, fenceIndex) =>
+      fence.split('\n').flatMap((line, lineIndex) =>
+        line.length > 88
+          ? ['fence ' + (fenceIndex + 1) + ', line ' + (lineIndex + 1) + ': ' + line.length]
+          : [],
+      ),
+    );
+
+    expect(longLines).toEqual([]);
+  });
+});
+
 describe('章节结构', () => {
   it('章 id 唯一', () => {
     const ids = chapters.map((c) => c.id);
@@ -288,6 +527,164 @@ describe('引用完整性', () => {
         }
       }
     }
+  });
+});
+
+
+describe('教程能力追踪矩阵', () => {
+  const matrix = readFileSync(join(process.cwd(), 'docs/CURRICULUM-CAPABILITY-MATRIX.md'), 'utf8');
+
+  it('映射的课程节与实验都在注册表中', () => {
+    const lessonIds = new Set(chapters.flatMap((chapter) => chapter.lessons.map((lesson) => lesson.id)));
+    const lessonRefs = Array.from(
+      matrix.matchAll(/\[`([^`]+)`\]\(\.\.\/src\/content\/chapters\/[^)]+\)/g),
+      (match) => match[1]!,
+    );
+    expect(lessonRefs.length).toBeGreaterThan(0);
+    for (const id of lessonRefs) {
+      expect(lessonIds.has(id as (typeof chapters)[number]['lessons'][number]['id']), `能力矩阵引用了不存在的课程节 ${id}`).toBe(true);
+    }
+    const coveredChapterIds = new Set(
+      Array.from(matrix.matchAll(/\(\.\.\/src\/content\/chapters\/([^/]+)\/meta\.ts\)/g), (match) => match[1]!),
+    );
+    for (const chapter of chapters) {
+      expect(coveredChapterIds.has(chapter.id), `能力矩阵没有覆盖章节 ${chapter.id}`).toBe(true);
+    }
+
+    const labIds = new Set(Object.keys(curriculum.labs));
+    const labRefs = new Set(Array.from(matrix.matchAll(/`(lab-[a-z0-9-]+)`/g), (match) => match[1]!));
+    expect(labRefs.size).toBeGreaterThan(0);
+    for (const id of labRefs) {
+      expect(labIds.has(id), `能力矩阵引用了不存在的实验 ${id}`).toBe(true);
+    }
+  });
+
+  it('每个能力域引用的项目至少映射一个真实 rubric 条目', () => {
+    const capabilityRows = matrix
+      .split('\n')
+      .filter((line) => /^\| [^|]+ \/ [0-3] \|/.test(line));
+    expect(capabilityRows).toHaveLength(16);
+
+    const projectIds = {
+      1: 'p1-reliable-extraction',
+      2: 'p2-grounded-support',
+      3: 'p3-controlled-agent',
+      4: 'p4-durable-support',
+      5: 'p5-agent-delivery',
+    } as const;
+    for (const row of capabilityRows) {
+      const projectCell = row.split('|')[4] ?? '';
+      for (const [, number] of projectCell.matchAll(/\bP([1-5])\b/g)) {
+        const project = curriculum.projects[projectIds[Number(number) as keyof typeof projectIds]];
+        expect(project, `能力矩阵引用了不存在的 P${number}`).toBeDefined();
+        expect(
+          project!.rubric.some((item) => row.includes(`\`${item.id}\``)),
+          `能力矩阵的 P${number} 没有映射真实 rubric ID：${row}`,
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+
+describe('阶段 4 项目预算与容量验收', () => {
+  it('把并发容量与 token/tool 预算核算纳入评分', () => {
+    const project = curriculum.projects['p4-durable-support']!;
+    expect(project.requires).toContain('cost-and-latency');
+    expect(project.requirements.some((item) => item.includes('token') && item.includes('tool'))).toBe(true);
+    expect(project.rubric.some((item) => item.criteria === '预算与容量约束')).toBe(true);
+  });
+});
+
+describe('阶段 1 Prompt 回归验收', () => {
+  it('要求冻结数据集并对提示变更做逐字段配对评分', () => {
+    const project = curriculum.projects['p1-reliable-extraction']!;
+    expect(project.requirements.some((item) =>
+      item.includes('冻结') && item.includes('prompt') && item.includes('逐字段')),
+    ).toBe(true);
+    expect(project.rubric.some((item) => item.criteria === 'Prompt 回归与逐字段评分')).toBe(true);
+  });
+});
+
+describe('阶段 2 多模态文档专题验收', () => {
+  it('提供与文本检索项目分开的视觉/文档路径实验和评分', () => {
+    const project = curriculum.projects['p2-grounded-support']!;
+    expect(project.requirements.some((item) =>
+      item.includes('专题选修') && item.includes('多模态') && item.includes('图像/PDF')),
+    ).toBe(true);
+    expect(project.rubric.some((item) => item.id === 'p2-4' && item.criteria === '多模态路径实验')).toBe(true);
+  });
+});
+
+
+describe('阶段 3 项目架构选型验收', () => {
+  it('要求读者提交有证据边界的架构决策记录', () => {
+    const project = curriculum.projects['p3-controlled-agent']!;
+    expect(project.requires).toContain('agent-paradigms');
+    expect(project.requires).toContain('agent-frameworks');
+    expect(project.requirements.some((item) => item.includes('架构决策记录'))).toBe(true);
+    expect(project.milestones.some((item) => item.title === '提交架构决策记录')).toBe(true);
+    expect(project.rubric.some((item) => item.criteria === '架构决策记录')).toBe(true);
+  });
+});
+
+describe('阶段 3 失败轨迹验收', () => {
+  it('要求分开记录 provider/MCP/工具失败和未知执行结果', () => {
+    const project = curriculum.projects['p3-controlled-agent']!;
+    expect(project.requirements.some((item) =>
+      item.includes('MCP 客户端/发现失败') && item.includes('执行结果未知') && item.includes('不自动重放'),
+    )).toBe(true);
+    expect(project.constraints.some((item) =>
+      item.includes('不等于工具业务拒绝') && item.includes('不得推断为“未执行”'),
+    )).toBe(true);
+    expect(project.rubric.some((item) =>
+      item.criteria === '停止与错误语义' && item.levels[3]?.descriptor.includes('未知执行结果'),
+    )).toBe(true);
+  });
+});
+
+describe('阶段 3 多智能体对照验收', () => {
+  it('要求在同一任务集上比较单 Agent 与多 Agent 并记录失败和成本', () => {
+    const project = curriculum.projects['p3-controlled-agent']!;
+    expect(project.requirements.some((item) => item.includes('单 Agent') && item.includes('多 Agent'))).toBe(true);
+    expect(project.requirements.some((item) => item.includes('专题选修'))).toBe(true);
+    expect(project.requirements.some((item) => item.includes('p3-5') && item.includes('不计入共同项目评价'))).toBe(true);
+    expect(project.milestones.some((item) => item.title.includes('完成多智能体对照实验'))).toBe(true);
+    expect(project.rubric.some((item) => item.criteria === '多智能体对照实验')).toBe(true);
+  });
+});
+
+
+describe('阶段 4 审批可审阅性验收', () => {
+  it('要求授权审批者查看绑定到冻结动作的安全摘要', () => {
+    const project = curriculum.projects['p4-durable-support']!;
+    expect(project.requirements.some((item) => item.includes('审批详情接口'))).toBe(true);
+    expect(project.rubric.some((item) => item.criteria === '审批信息可审阅性')).toBe(true);
+  });
+});
+
+describe('阶段 5 Coding Agent 安全协作验收', () => {
+  it('要求在隔离环境完成有范围约束和差异复核的编码任务', () => {
+    const project = curriculum.projects['p5-agent-delivery']!;
+    expect(project.requirements.some((item) =>
+      item.includes('Coding Agent') && item.includes('隔离') && item.includes('diff')),
+    ).toBe(true);
+    expect(project.requirements.some((item) => item.includes('Coding Agent') && item.includes('专题选修'))).toBe(true);
+    expect(project.requirements.some((item) => item.includes('p5-4') && item.includes('不计入共同毕业判定'))).toBe(true);
+    expect(project.milestones.some((item) => item.title.includes('完成 Coding Agent 安全任务'))).toBe(true);
+    expect(project.rubric.some((item) => item.criteria === 'Coding Agent 安全协作')).toBe(true);
+  });
+});
+
+describe('阶段 5 计算机使用安全专题验收', () => {
+  it('把本地合成 GUI 任务作为可选专项，不扩张共同毕业门槛', () => {
+    const project = curriculum.projects['p5-agent-delivery']!;
+    expect(project.requirements.some((item) => item.includes('p5-5') && item.includes('不计入共同毕业判定'))).toBe(true);
+    expect(project.requirements.some((item) => item.includes('examples/computer-use-safety/TASK.md'))).toBe(true);
+    expect(project.milestones.some((item) => item.id === 'm7' && item.title.includes('计算机使用安全'))).toBe(true);
+    expect(project.rubric.some((item) => item.id === 'p5-5' && item.criteria === '计算机使用安全')).toBe(true);
+    expect(project.referenceImpl?.notes).toContain('examples/computer-use-safety/TASK.md');
+    expect(project.hardGates).toHaveLength(4);
   });
 });
 

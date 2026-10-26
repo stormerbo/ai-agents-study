@@ -5,6 +5,7 @@
  * 用法：
  *   node scripts/check-links.mjs
  *   node scripts/check-links.mjs --timeout 20000 --concurrency 8
+ *   pnpm test:links
  *
  * 它只回答一个问题：**这个 URL 现在还打得开吗**。
  *
@@ -19,7 +20,7 @@
  */
 
 import { readdir, readFile } from 'node:fs/promises';
-import { join, extname, relative } from 'node:path';
+import { join, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -35,9 +36,64 @@ const IGNORE_PATTERNS = [
   /^https?:\/\/localhost/,
   /^https?:\/\/127\.0\.0\.1/,
   /example\.com/,
+  /\.example(?:\/|$|\?)/i,
   /acme\.com/,
   /\.local\b/,
 ];
+
+/** Extract cited/prose URLs; code snippets are examples, not hyperlinks. */
+export function extractUrls(text) {
+  const lines = text.split(/\r?\n/);
+  const proseLines = [];
+  let fence = null;
+  for (const line of lines) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fence) {
+      if (marker && marker[1][0] === fence.char && marker[1].length >= fence.length && /^ {0,3}(?:`+|~+)\s*$/.test(line)) {
+        fence = null;
+      }
+      continue;
+    }
+    if (marker) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      continue;
+    }
+    proseLines.push(line);
+  }
+  const withoutCode = proseLines.join('\n').replace(/`+[^\`\n]*?`+/g, ' ');
+  const urls = new Set();
+  const starts = /https:\/\//g;
+  let match;
+  while ((match = starts.exec(withoutCode)) !== null) {
+    const start = match.index;
+    let end = start + match[0].length;
+    let parens = 0;
+    let brackets = 0;
+    for (; end < withoutCode.length; end += 1) {
+      const char = withoutCode[end];
+      if (/\s|["'`<>}]/.test(char) || /[，。！？、）》】」』]/u.test(char)) break;
+      if (char === '(') parens += 1;
+      else if (char === ')') {
+        if (parens === 0) break;
+        parens -= 1;
+      } else if (char === '[') brackets += 1;
+      else if (char === ']') {
+        if (brackets === 0) break;
+        brackets -= 1;
+      }
+    }
+    const url = withoutCode.slice(start, end).replace(/[.,;:!?]+$/u, '');
+    let hasHost = false;
+    try {
+      hasHost = Boolean(new URL(url).hostname);
+    } catch {
+      // A bare scheme or malformed URL is not a fetchable link.
+    }
+    if (hasHost && !IGNORE_PATTERNS.some((pattern) => pattern.test(url))) urls.add(url);
+    starts.lastIndex = Math.max(end + 1, start + 1);
+  }
+  return urls;
+}
 
 // ---------------------------------------------------------------------------
 // 参数
@@ -75,10 +131,7 @@ async function collectUrls() {
   for (const dir of SCAN_DIRS) {
     for (const file of await walk(join(ROOT, dir))) {
       const text = await readFile(file, 'utf8');
-      for (const raw of text.match(/https:\/\/[^\s'"`)\]<>},]+/g) ?? []) {
-        // 去掉结尾可能被粘上的标点
-        const url = raw.replace(/[.,;:]+$/, '');
-        if (IGNORE_PATTERNS.some((re) => re.test(url))) continue;
+      for (const url of extractUrls(text)) {
         if (!found.has(url)) found.set(url, new Set());
         found.get(url).add(relative(ROOT, file));
       }
@@ -150,61 +203,76 @@ const C = {
   bold: '\x1b[1m',
 };
 
-const urls = await collectUrls();
-const list = [...urls.keys()].sort();
-console.log(
-  `${C.bold}链接巡检${C.reset} ${C.dim}共 ${list.length} 个唯一 URL，` +
-    `超时 ${TIMEOUT_MS}ms，并发 ${CONCURRENCY}${C.reset}\n`,
-);
-
-let done = 0;
-const results = await runPool(list, CONCURRENCY, async (url) => {
-  const r = await check(url);
-  done += 1;
-  const mark =
-    r.status >= 200 && r.status < 400
-      ? `${C.green}✓${C.reset}`
-      : r.status === 403 || r.status === 429
-        ? `${C.yellow}!${C.reset}`
-        : `${C.red}✗${C.reset}`;
-  process.stdout.write(
-    `  ${mark} ${String(r.status || r.error).padEnd(12)} ${url}  ${C.dim}[${done}/${list.length}]${C.reset}\n`,
-  );
-  return { url, ...r };
-});
-
-// ---------------------------------------------------------------------------
-// 报告
-// ---------------------------------------------------------------------------
-const ok = results.filter((r) => r.status >= 200 && r.status < 400);
-const blocked = results.filter((r) => r.status === 403 || r.status === 429);
-const broken = results.filter(
-  (r) => !(r.status >= 200 && r.status < 400) && !(r.status === 403 || r.status === 429),
-);
-
-console.log(`\n${C.bold}汇总${C.reset}`);
-console.log(`  ${C.green}可达${C.reset}     ${ok.length}`);
-
-if (blocked.length) {
+async function main() {
+  const urls = await collectUrls();
+  const list = [...urls.keys()].sort();
   console.log(
-    `  ${C.yellow}被拦截${C.reset}   ${blocked.length}  ${C.dim}(403/429：多半是反爬，需人工打开确认)${C.reset}`,
+    `${C.bold}链接巡检${C.reset} ${C.dim}共 ${list.length} 个唯一 URL，` +
+      `超时 ${TIMEOUT_MS}ms，并发 ${CONCURRENCY}${C.reset}\n`,
   );
-  for (const r of blocked) {
-    console.log(`    ${C.dim}${r.url}${C.reset}  ← ${[...urls.get(r.url)].join(', ')}`);
+
+  let done = 0;
+  const results = await runPool(list, CONCURRENCY, async (url) => {
+    const r = await check(url);
+    done += 1;
+    const mark =
+      r.status >= 200 && r.status < 400
+        ? `${C.green}✓${C.reset}`
+        : r.status === 401 || r.status === 403 || r.status === 429 || r.status === 999
+          ? `${C.yellow}!${C.reset}`
+          : `${C.red}✗${C.reset}`;
+    process.stdout.write(
+      `  ${mark} ${String(r.status || r.error).padEnd(12)} ${url}  ${C.dim}[${done}/${list.length}]${C.reset}\n`,
+    );
+    return { url, ...r };
+  });
+
+  // ---------------------------------------------------------------------------
+  // 报告
+  // ---------------------------------------------------------------------------
+  const ok = results.filter((r) => r.status >= 200 && r.status < 400);
+  const blocked = results.filter((r) => r.status === 401 || r.status === 403 || r.status === 429 || r.status === 999);
+  const broken = results.filter((r) => r.status === 404 || r.status === 410);
+  const unverified = results.filter(
+    (r) => r.status === 0 || (r.status >= 400 && r.status !== 404 && r.status !== 410 && r.status !== 401 && r.status !== 403 && r.status !== 429 && r.status !== 999),
+  );
+
+  console.log(`\n${C.bold}汇总${C.reset}`);
+  console.log(`  ${C.green}可达${C.reset}     ${ok.length}`);
+
+  if (blocked.length) {
+    console.log(
+      `  ${C.yellow}受限${C.reset}     ${blocked.length}  ${C.dim}(401/403/429/999：认证、反爬或请求策略限制，不据此判定失效)${C.reset}`,
+    );
+    for (const r of blocked) {
+      console.log(`    ${C.dim}${r.url}${C.reset}  ← ${[...urls.get(r.url)].join(', ')}`);
+    }
   }
+
+  if (broken.length) {
+    console.log(`  ${C.red}失效${C.reset}     ${broken.length}  ${C.dim}(优先处理这些)${C.reset}`);
+    for (const r of broken) {
+      console.log(`    ${C.red}${r.status || r.error}${C.reset}  ${r.url}`);
+      console.log(`      ${C.dim}来源: ${[...urls.get(r.url)].join(', ')}${C.reset}`);
+    }
+  }
+
+  if (unverified.length) {
+    console.log(`  ${C.yellow}待复核${C.reset}   ${unverified.length}  ${C.dim}(网络错误或临时状态，不能据此判定失效)${C.reset}`);
+    for (const r of unverified) {
+      console.log(`    ${C.yellow}${r.status || r.error}${C.reset}  ${r.url}`);
+      console.log(`      ${C.dim}来源: ${[...urls.get(r.url)].join(', ')}${C.reset}`);
+    }
+  }
+
+  if (broken.length) {
+    console.log(`\n${C.red}有 ${broken.length} 个链接返回 404/410，需处理或人工确认。${C.reset}`);
+    process.exit(1);
+  }
+  console.log(`\n${C.green}没有发现返回 404/410 的链接。${C.reset}`);
+  console.log(`${C.dim}注意：可达不等于内容正确。仍建议按 verifiedAt 定期人工复审。${C.reset}\n`);
 }
 
-if (broken.length) {
-  console.log(`  ${C.red}失效${C.reset}     ${broken.length}  ${C.dim}(优先处理这些)${C.reset}`);
-  for (const r of broken) {
-    console.log(`    ${C.red}${r.status || r.error}${C.reset}  ${r.url}`);
-    console.log(`      ${C.dim}来源: ${[...urls.get(r.url)].join(', ')}${C.reset}`);
-  }
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
 }
-
-if (broken.length) {
-  console.log(`\n${C.red}有 ${broken.length} 个链接需要处理。${C.reset}`);
-  process.exit(1);
-}
-console.log(`\n${C.green}没有发现确认失效的链接。${C.reset}`);
-console.log(`${C.dim}注意：可达不等于内容正确。仍建议按 verifiedAt 定期人工复审。${C.reset}\n`);
