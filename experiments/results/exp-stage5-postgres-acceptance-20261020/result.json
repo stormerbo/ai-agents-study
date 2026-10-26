@@ -1,0 +1,36 @@
+{
+  "experimentId": "exp-stage5-postgres-acceptance-20261020",
+  "runId": "stage5-postgres-acceptance-2026-10-20-1",
+  "evidenceType": "postgres-integration",
+  "observedAt": "2026-10-20",
+  "method": "Ran the full required PostgreSQL integration suite with DOCKER_CONTEXT=desktop-linux so the isolated test subprocess could reach the active Docker Desktop context. The session fixture created a unique Compose project and temporary PostgreSQL service, applied migrations and synthetic seeds, started two independent API OS processes, and cleaned up its project and volume after completion. The updated acceptance integration test verified migrations 0001 through 0006, confirmed both APIs and the synthetic sink returned 503 after removal of the 0006 ledger row, restored it, and verified cross-process task/event reads.",
+  "observations": {
+    "testCount": 123,
+    "passed": 123,
+    "failed": 0,
+    "deselected": 17,
+    "apiProcesses": 2,
+    "migrationVersions": [
+      "0001_base.sql",
+      "0002_execution.sql",
+      "0003_delivery.sql",
+      "0004_manual_resolution.sql",
+      "0005_provider_calls.sql",
+      "0006_final_outputs.sql"
+    ],
+    "readinessFailsWhenLatestMigrationIsMissing": true,
+    "sinkReadinessFailsWhenLatestMigrationIsMissing": true,
+    "crossProcessTaskRead": true,
+    "crossProcessEventRead": true,
+    "taskStatus": "queued",
+    "providerCalls": 0,
+    "datasetVersion": "stage5-synthetic-support-v1",
+    "durationSeconds": 109.85
+  },
+  "limitations": [
+    "This proves behavior only for the tested local Docker Compose/PostgreSQL 18.0-bookworm image and synthetic fixtures.",
+    "It does not establish production IdP behavior, PostgreSQL RLS, high availability, network partition recovery, production deployment, or provider capability.",
+    "No true-model run was performed; Stage 5 true-model capstone acceptance remains open.",
+    "The result is sanitized and awaits the required first human review; it is not publishable evidence yet."
+  ]
+}

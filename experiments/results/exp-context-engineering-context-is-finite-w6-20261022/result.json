@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-context-engineering-context-is-finite-w6-20261022",
+  "runId": "w6-context-is-finite-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Run 19 deterministic offline assertions against the complete lesson, metadata and DATA ledger. Compile the exact lesson Python fence, execute its corpus/placement helpers with a fake Anthropic SDK, and test strict scorer branches. Cross-check Anthropic stop-reason and Python SDK documentation, DeepSeek Anthropic-compatibility docs, the Chroma Context Rot report and Lost in the Middle paper. No provider request or historical run replay.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 19,
+    "testsFailed": 0,
+    "testCount": 19,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": true,
+    "pythonFencesCompiled": 1,
+    "trace": "Anthropic model_context_window_exceeded is classified as incomplete alongside max_tokens. The example now leaves API-key/Bearer-token resolution to the Anthropic SDK instead of passing ANTHROPIC_AUTH_TOKEN as api_key. Fake-SDK execution verified the unique joint-match fixture and exact needle placement at all five tested positions.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 768,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/context-engineering-context-is-finite-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/context-engineering-context-is-finite-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x11313"
+  },
+  "limitations": [
+    "Historical per-call prompts/responses, exact model/endpoint fingerprint, usage, scorer and sample map are unavailable; 15/15, 3/3 and capacity summaries cannot be independently recomputed.",
+    "No live provider call, endpoint authentication, inference, billing, latency or answer quality was tested.",
+    "The fake SDK confirms local client construction and prevents network calls; it does not verify real SDK headers or DeepSeek compatibility behavior.",
+    "Synthetic corpus checks validate only the constructed fixture and do not reproduce the historical dataset or establish long-context model capability."
+  ]
+}

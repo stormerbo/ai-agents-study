@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-100",
+  "runId": "w6-count-2026-10-22-100",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran the offline W6 unique-count consistency verifier against the explicit pass list, lesson tracker, and current plan/spec/audit/progress summaries.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The count verifier proves list/document consistency, not the substantive quality of each lesson review; each pass still depends on its own dated evidence record."
+  ]
+}

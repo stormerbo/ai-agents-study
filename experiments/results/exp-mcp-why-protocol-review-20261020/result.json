@@ -1,0 +1,16 @@
+{
+  "experimentId": "exp-mcp-why-protocol-review-20261020",
+  "runId": "local-mcp-why-protocol-review-2026-10-20",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Compile all Python fences and parse both JSON examples; assert the duplicated server source matches; execute the host adapter against the exact teaching server over stdio and inspect both MRTR rounds, JSON-RPC error mapping, and MCP result isError mapping.",
+  "observations": {
+    "pythonFencesCompiled": 5,
+    "serverRequestsChecked": 3
+  },
+  "limitations": [
+    "No external provider API or official SDK interoperability test was performed for this adapter.",
+    "The 3×4 example validates interface-count arithmetic only; it measures no labor, latency or adoption cost.",
+    "The demo server is not a production or security-certified implementation and its transfer tool has no real side effect."
+  ]
+}

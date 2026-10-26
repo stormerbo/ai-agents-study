@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-retrieval-agentic-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Ran the lesson FakePlanner fixture and required exact stdout equality with its adjacent text fence; tested one-shot rewrite fan-out/deduplication and fallback on malformed/nonterminal output, iterative planner protocol/evidence passing, search-budget exhaustion, and compiled both Python fences; manually reviewed the cited Adaptive-RAG and Self-RAG primary papers.",
+  "observations": {
+    "testCount": 26,
+    "testsPassed": 26,
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "providerHost": "none"
+  },
+  "limitations": [
+    "The local FakePlanner and keyword lookup demonstrate host control flow only; they do not measure model retrieval decisions, relevance, answer quality, or production behavior.",
+    "The 2026-10-08 three-arm results, token totals, call counts, and two reported traces lack raw queries, corpus version, evidence labels, request/response traces, aggregation rules, and scorer; they were not reproduced.",
+    "Adaptive-RAG and Self-RAG support descriptions of those research methods in their own evaluated settings; they do not establish a universal strategy or validate the historical local comparison."
+  ]
+}

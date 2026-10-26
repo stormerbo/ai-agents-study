@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-retrieval-evaluating-local-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Executed both lesson Python fences under Python 3.14.7 and compared each stdout byte-for-byte to the adjacent displayed text fence; verified the hit@k/full-ranking MRR fixture, 12 standard-error values, source/scope language, and evidence-anchor references.",
+  "observations": {
+    "testCount": 33,
+    "testsPassed": 33,
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "providerHost": "none"
+  },
+  "limitations": [
+    "Synthetic BM25 documents and queries do not measure a production retriever or model answer quality.",
+    "Historical 6-query, 10-query, and 15-query summaries lack raw queries, gold mappings, rankings, outputs, and scorer; this review does not establish whether those outcomes occurred.",
+    "Stanford IR definitions support terminology, not the lesson's historic measurements or task-specific metric choices."
+  ]
+}

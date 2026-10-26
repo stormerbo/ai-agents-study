@@ -1,0 +1,31 @@
+{
+  "experimentId": "exp-human-streaming-control-review-20261021",
+  "runId": "human-streaming-control-review-2026-10-21-02",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full lesson against current Anthropic streaming and Python SDK documentation plus the WHATWG HTML living standard. Executed both complete Python examples and expanded local assertions for policy consistency and dispatched side effects. No provider or external service was called.",
+  "observations": {
+    "status": "pass",
+    "checks": 24,
+    "checksPassed": 24,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The review fixed contradictory claims that all stopped output should be retained and that JSON is invalid during streaming. Partial output now follows an explicit task/privacy/security policy, JSON fragments are treated as incomplete until block completion, and the local fake-tool demo exercises both cancellation before dispatch and a cancellation arriving after an irreversible side effect has started.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": [
+      "GET /favicon.ico returned 404 (existing)"
+    ],
+    "lightScreenshot": "output/playwright/human-streaming-control-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/human-streaming-control-w6-20261022-dark.png",
+    "screenshotDimensions": "light=1300x12540; dark=1300x12540"
+  },
+  "limitations": [
+    "The local event and cancellation fixtures do not establish real provider cancellation, billing termination, production authorization, durable event replay, or user experience.",
+    "Historical latency and cancellation observations remain unreproducible from raw traces and are not generalized."
+  ]
+}

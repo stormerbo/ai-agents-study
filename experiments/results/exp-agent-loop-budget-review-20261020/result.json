@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-agent-loop-budget-review-20261020",
+  "runId": "local-agent-loop-budget-review-2026-10-20",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Compile all Python fences and execute the exact lesson LoopGuard, ProgressGuard, and tightened-cap examples. Assert that rejected step/token reservations leave accepted counters unchanged; inspect the budget-exhaustion guidance and ensure old unsupported fixed-utilization rules are absent.",
+  "observations": {
+    "pythonFencesCompiled": 5,
+    "testsPassed": 4,
+    "testsFailed": 0
+  },
+  "limitations": [
+    "No paid model experiment was repeated; the 2.4–5.3 ratio remains a historical observation from the cited synthetic computer-use task only.",
+    "No live provider billing, token accounting, hard budget enforcement, or reservation reconciliation was exercised.",
+    "The code is a local teaching model and does not implement distributed atomic budget reservations or production tool authorization."
+  ]
+}

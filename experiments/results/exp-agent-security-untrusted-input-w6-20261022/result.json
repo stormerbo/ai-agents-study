@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-agent-security-untrusted-input-w6-20261022",
+  "runId": "agent-security-untrusted-input-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the exact lesson Python fence using its fixed FakeClient fixtures and ran the 6-assertion offline verifier. The verifier compiles the fence, rejects duplicate IDs, unknown tools and malformed arguments before dispatch, checks that synthetic dangerous proposals are denied by the host allowlist, and compares the complete stdout with the published output. Reviewed Anthropic Handle tool calls and OWASP GenAI LLM01:2025 for source-scoped claims. No provider or external network call.",
+  "observations": {
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "testCount": 6,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "officialSourcesReviewed": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The fixed FakeClient responses are synthetic control-flow fixtures; they do not measure whether any model follows indirect prompt injections.",
+    "The allowlist is a fixed teaching gate. No production identity, object-level authorization, approval, revocation, concurrency, audit, or external side effect was tested.",
+    "Historical provider outputs and the chapter 2 label-effect counts remain unreproduced because their raw requests, responses, and scorer are unavailable.",
+    "Anthropic tool_result recommendations apply to Anthropic Messages; other providers and endpoints require their own protocol review."
+  ]
+}

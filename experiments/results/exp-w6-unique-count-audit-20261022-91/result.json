@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-91",
+  "runId": "w6-unique-count-audit-2026-10-22-91-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran experiments/scripts/verify_w6_unique_count_20261022.py against the current W6 pass ledger, plan, specification, tracker, audit and progress documents. The local verifier checks uniqueness and exact current totals; no network or provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The count verifier confirms consistency of the recorded pass set; it does not independently repeat each lesson review or establish completion of W6, Stage 4, or Stage 5 gates."
+  ]
+}

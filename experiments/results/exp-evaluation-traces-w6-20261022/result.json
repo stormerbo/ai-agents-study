@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-evaluation-traces-w6-20261022",
+  "runId": "evaluation-traces-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, metadata, OpenTelemetry GenAI semantic conventions, OpenAI Agents API tracing documentation, and Python Agents SDK tracing documentation. Compiled all four Python fences, executed the local trace fixture, and compared its complete stdout byte-for-byte with the published output. Ran a 10-check offline verifier; provider and external-service requests were not made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 10,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 4,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The published demo now matches exact local stdout. The synthetic shipping fixture returns numeric eta=1288.5, the declared timestamp-profile validator rejects it, and the recorded trace links the value to the final answer without claiming trace data alone proves root cause. The lesson now distinguishes OpenAI Agents API tracing from Python Agents SDK tracing and documents the SDK's current sensitive-data capture default and exporter boundary."
+  },
+  "limitations": [
+    "No production telemetry pipeline, exporter configuration, privacy review, retention rule, provider instrumentation, or live tracing behavior was exercised.",
+    "The local sample demonstrates data provenance and a narrow timestamp-profile check; it is not a production trace schema and does not reproduce an agent/provider failure.",
+    "OpenTelemetry semantic conventions and SDK documentation describe current recommendations and behavior; they do not establish any particular deployment's configuration, legal basis, or actual exported payload."
+  ]
+}

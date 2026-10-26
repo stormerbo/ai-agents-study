@@ -1,0 +1,28 @@
+{
+  "experimentId": "exp-computer-use-safety-scope-w6-20261022",
+  "runId": "w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Compile and execute the complete local Guard fence; test boolean configuration, reservation and actual-usage boundaries, valid integer reservation behavior, flow ordering, unique Mermaid node IDs, and documented-versus-inferred checkpoint/source binding. Run the previous independent Guard invariant verifier. No provider, UI or external network calls.",
+  "observations": {
+    "status": "passed",
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "True rejected for step/token/no-change config and reservation/usage; integer reservation accepted; diagram orders preflight < request < usage reconciliation < policy < execution; all Mermaid IDs unique.",
+    "checksPassed": 12,
+    "testsPassed": 13,
+    "testsFailed": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/computer-use-safety-scope-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/computer-use-safety-scope-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x12894 both themes"
+  },
+  "limitations": [
+    "This validates the local teaching Guard and source/diagram consistency only. It does not validate real provider usage semantics, concurrent shared reservations, production authorization, real UI coordinate mapping, sandboxing, audit logging, or business postconditions.",
+    "Historical provider/API usage and prior computer-use measurements were not replayed."
+  ]
+}

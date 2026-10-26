@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-99",
+  "runId": "w6-unique-count-audit-2026-10-22-99-01",
+  "evidenceType": "deterministic-local",
+  "method": "Ran the unique-ID coverage verifier over the master lesson list, tracker, plan, specification, audit, and latest progress entry. No network or provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "99 unique whole-lesson W6 passes match 99/144 (68.75%); all IDs resolve; 45 lessons remain."
+  },
+  "limitations": [
+    "This count covers only dated full-scope passes recorded in the W6 master; Stage 4/5 acceptance and 45 remaining lesson reviews are still open."
+  ],
+  "observedAt": "2026-10-22"
+}

@@ -1,0 +1,36 @@
+{
+  "experimentId": "exp-prompt-cot-review-20261021",
+  "runId": "prompt-cot-review-2026-10-22-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran twelve offline assertions. The verifier compiles Python examples, executes the parser against constructed full-object/suffix/duplicate-key fixtures, injects a fake Anthropic SDK response, and checks numeric answer parsing, separate usage fields, line width, and fail-closed branches. No provider call was made. The 419-page production build and Pagefind index were checked; light/dark full-page renders were measured at 1300px viewport width.",
+  "observations": {
+    "status": "pass",
+    "testCount": 12,
+    "testsPassed": 12,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "duplicateJsonKeysRejected": true,
+    "pythonMaxLineLength": 85,
+    "textFenceMaxLineLength": 70,
+    "productionBuildPages": 419,
+    "pagefindIndexedPages": 419,
+    "pagefindWords": 15548,
+    "visualViewportWidth": 1300,
+    "articleWidth": 768,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/prompt-chain-of-thought-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/prompt-chain-of-thought-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x10719 light; 1300x10719 dark"
+  },
+  "limitations": [
+    "The historical CoT requests/responses, exact model fingerprint, complete usage, item-level task set, and scorer are unavailable; the historical accuracy and token summaries were not reproduced.",
+    "The conflicting prefill values temp_c=20 and temp_c=null cannot be resolved without the raw response.",
+    "The local mocks do not validate any current Anthropic request, endpoint compatibility, model quality, cost, latency, or general CoT effect.",
+    "The cited CoT paper uses its own few-shot demonstrations and benchmark/model setup; the current example is a separate evaluation harness.",
+    "The current official Anthropic documentation was checked on 2026-10-22 for usage totals and model-specific prefill support; this does not verify the endpoint behavior of the historical DeepSeek-compatible service.",
+    "The initial visual run logs the existing favicon.ico 404; this lesson change did not introduce it."
+  ]
+}

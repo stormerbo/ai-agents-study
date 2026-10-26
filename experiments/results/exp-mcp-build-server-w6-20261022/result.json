@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-mcp-build-server-w6-20261022",
+  "runId": "mcp-build-server-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the extracted lesson server against JSON-RPC shape, schema-invalid, successful, and no-data fixtures; executed the extracted host adapter against a fake MCP response; compiled all lesson Python fences. Official MCP Tools and Transports pages were reviewed for normative claims.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 14,
+    "testsFailed": 0,
+    "oldReviewServerRequests": 7,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "W6 verifier 14/14; published client/server temporary-directory round-trip passed; prior server review verifier 7 paths passed. The valid-but-unavailable weather result is isError=true; invalid enum uses MCP isError; non-object args return -32602; host mapping forwards is_error and joins text blocks.",
+    "screenshotDimensions": "light=1280x14959; dark=1280x14959"
+  },
+  "limitations": [
+    "The tests exercise local teaching code and fixtures only; no official MCP SDK interoperability, Streamable HTTP transport, production host authorization, or external side effects were tested.",
+    "Historical SDK 2.3.0 interoperability notes refer to earlier code and were not rerun.",
+    "The text-only host adapter does not implement image/audio/resource/structuredContent conversion; production adapters must honor the downstream model API contract.",
+    "MCP tool-name rules are SHOULD recommendations in the reviewed 2026-07-28 Tools specification; provider/API constraints can differ."
+  ]
+}

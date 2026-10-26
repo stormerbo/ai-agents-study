@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-tool-poka-yoke-review-20261020",
+  "runId": "review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compile and execute the lesson’s offline in-memory FileService fixture; exercise the ten security boundaries; run the optional Anthropic loop against a fake client for visible and empty end_turn, nonterminal stop reasons, absent/duplicate tool_use IDs with no side effects, and unknown-tool tool_result pairing; assert lesson caveats and linked resource IDs.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 35,
+    "testsFailed": 0,
+    "testCount": 35,
+    "providerCalls": 0,
+    "model": "offline fixture and fake Anthropic client",
+    "fixtureOnly": true,
+    "pythonFencesCompiled": 1,
+    "checksPassed": 35
+  },
+  "limitations": [
+    "The 2026-10-08 model outputs and three-sample denominators are not independently reproducible because raw requests, responses and scorer are missing; this review does not validate their reported values or estimate model behavior.",
+    "No real provider, filesystem, authorization service, database, distributed grant store, production approval workflow or multi-process race was exercised. The teaching fixture is process-local and in-memory.",
+    "The fake Anthropic client validates local stop-reason routing, empty-turn handling, pre-dispatch tool_use ID checks and tool_result pairing only; it does not establish provider conformance or safety of external side effects.",
+    "Documentation review covers provider-specific strict schema behavior and authorization boundaries; it does not prove every endpoint supports the same JSON Schema subset."
+  ]
+}

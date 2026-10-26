@@ -1,0 +1,34 @@
+{
+  "experimentId": "exp-continuous-evolution-distill-w6-20261022",
+  "runId": "distill-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Ran the new three-case Vitest content-contract suite and the existing 29-assertion historical/scorer audit. Compared all 12 displayed sample rows by date-order pattern, checked the explicitly stated teaching fixture contract, and reviewed current Anthropic stop-reason/thinking docs and the DeepSeek Anthropic-compatible endpoint guide. No model provider was called and historical runs were not replayed.",
+  "limitations": [
+    "This verifies the current lesson text, its stated fixture contract, and source mapping; it does not recover the historical prompt, responses, scorer, or usage.",
+    "No date parser was implemented or executed; the contract makes the illustrative evaluation inputs unambiguous.",
+    "The new workflow is instructional design guidance and does not establish production rollout behavior.",
+    "No historical model run was replayed."
+  ],
+  "observations": {
+    "status": "pass",
+    "testCount": 32,
+    "testsPassed": 32,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The four held-out input strings each have a corresponding broad format family in the eight extraction examples. Lesson now labels them as row-held-out only; gives a separate date contract; adds offline acceptance before review and controlled release; and no longer equates diluted aggregate impact with lack of rollback capability. Production build generated 408 static pages and Pagefind indexed 408 pages / 15,486 words. Light/dark full-page captures are 1300x10,847; document scroll width matches viewport, article width is 792px, and one Mermaid SVG rendered. The only initial browser error was favicon.ico 404.",
+    "officialSourcesReviewed": true,
+    "productionBuildPages": 408,
+    "pagefindIndexedPages": 408,
+    "pagefindWords": 15486,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/continuous-evolution-distill-and-test-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/continuous-evolution-distill-and-test-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x10847"
+  }
+}

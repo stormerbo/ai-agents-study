@@ -1,0 +1,25 @@
+{
+  "experimentId": "exp-evaluation-contamination-review-20261021",
+  "runId": "evaluation-contamination-review-2026-10-21-02",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared contamination probes and adaptive reuse claims with Sainz et al., Deng et al., Dwork et al., and the OpenAI Realtime Eval Guide; recalculated historical answer-position counts and the exact Pearson-statistic multinomial tail from a versioned aggregate fixture under an explicitly assumed IID uniform-label null; executed the lesson's Python demo and ran eight offline assertions against prose, expected output, fixture integrity, and helper behavior. The fixture is a transcription of ignored local log summaries, not raw provider evidence. No provider calls or historical generation replay were performed.",
+  "observations": {
+    "status": "pass",
+    "testCount": 8,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "pythonDemoExecuted": true,
+    "historicalFixture": "experiments/fixtures/evaluation-contamination-historical-counts.json@sha256:dcf6e4e055a6523456f5315edf2da660092f78a3e7d33633c427ad082a7db53c",
+    "providerCalls": 0,
+    "trace": "Fixture batches report 20 generated / 20 parsed and 20 generated / 19 parsed; their analyzed A/B/C/D counts are 2/12/6/0 (n=20) and 2/14/3/0 (n=19). Exact conditional tail probabilities are approximately 0.0008710159 and 0.0000207091 under IID uniform labels. The lesson demo output matches its published text fence, including the corrected 19-to-10 literal fingerprint count; helper tests validate distribution arithmetic, input rejection, position rotation, and visible-corpus overlap candidates."
+  },
+  "limitations": [
+    "The historical prompts did not randomize answer positions; conditional tail probabilities are exploratory references, not evidence of a universal model preference or a valid pre-specified hypothesis test.",
+    "The 19-to-6 semantic grouping is a single human annotation without independent annotator agreement and cannot be generalized as a fixed generation defect rate.",
+    "Historical parser logs report only answer-field parseability (5/8, 19/20, 20/20), not complete schema validity, answer correctness, or item quality.",
+    "The original provider requests, model snapshot, complete scoring protocol, and reproducible raw responses are unavailable. The versioned fixture transcribes aggregate summaries from ignored local logs; its recorded source hashes identify those local files but do not authenticate provider output. This review does not replay the historical generation or prove/exclude training-data exposure.",
+    "Local n-gram matching only flags overlap candidates in accessible corpora; it cannot establish exposure to an unknown closed-model training corpus."
+  ]
+}

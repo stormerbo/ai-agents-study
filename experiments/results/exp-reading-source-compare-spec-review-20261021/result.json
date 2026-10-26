@@ -1,0 +1,16 @@
+{
+  "experimentId": "exp-reading-source-compare-spec-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Manually checked the JSON Schema object reference and the MCP 2026-07-28 Tools specification against the lesson claims.",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": false,
+    "testCount": 3,
+    "testsPassed": 3
+  },
+  "limitations": [
+    "This is a version-scoped documentation review; it does not test the runtime behavior or business validation of an individual MCP server."
+  ]
+}

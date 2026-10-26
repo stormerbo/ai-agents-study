@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-retrieval-vector-limits-doc-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed OpenAI Embeddings FAQ, Faiss index-selection guidance, and the original RRF paper; scope assertions ran locally.",
+  "observations": {
+    "testCount": 12,
+    "testsPassed": 12,
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "providerHost": "help.openai.com; github.com/facebookresearch/faiss; cormack.uwaterloo.ca"
+  },
+  "limitations": [
+    "Documentation supports only claims about the named API, Faiss implementation, and original paper; it does not establish which retriever is best for this course or production data.",
+    "No historical corpus, queries, gold labels, provider outputs, costs, latency, or reranker effectiveness were reproduced."
+  ]
+}

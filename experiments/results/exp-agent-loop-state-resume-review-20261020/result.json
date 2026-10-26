@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-agent-loop-state-resume-review-20261020",
+  "runId": "local-agent-loop-state-resume-review-2026-10-20",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Compile the exact Python fences from the state/resume lesson, execute its crash-window experiment in a temporary directory, and assert the pending-tool-call helper across pending, partial, complete, and non-tool transcript cases. Inspect the recovery prose for protocol, idempotency, and unknown-outcome boundaries.",
+  "observations": {
+    "pythonFencesCompiled": 2,
+    "testsPassed": 5,
+    "testsFailed": 0
+  },
+  "limitations": [
+    "The crash experiment is a local single-process sequential file model; it does not establish concurrent deduplication, transactional persistence, or production idempotency.",
+    "No live provider request or model behavior was rerun; the earlier single model response remains a historical observation only.",
+    "No PostgreSQL transaction, downstream idempotency API, external side effect, network failure, or unknown-outcome reconciliation workflow was exercised.",
+    "The tail helper checks only a narrow transcript suffix and does not validate a complete provider transcript."
+  ]
+}

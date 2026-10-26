@@ -1,0 +1,29 @@
+{
+  "experimentId": "exp-what-counts-as-agent-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 12,
+    "passed": 12,
+    "failed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 768,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/what-counts-as-agent-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/what-counts-as-agent-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x9737",
+    "status": "historical cost explanation and incomplete example labels corrected; optimized build generated 404 routes; Pagefind indexed 404 pages / 15,461 words"
+  },
+  "limitations": [
+    "The verifier checks internal arithmetic on preserved historical summary values; it does not reproduce the 2026-09-24 provider calls or establish their accuracy.",
+    "Original requests, responses, model snapshot, per-call usage, scorer, and endpoint billing records for the cost comparison remain unavailable.",
+    "The verifier is offline and does not test provider behavior, production trace handling, or runtime agent quality.",
+    "Visual inspection was performed against the optimized production build; it validates rendering only and does not prove production behavior beyond static HTML/CSS rendering."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Run pnpm build and pnpm build-search; run the offline lesson-scope verifier; recompute ratios, mean, and run spread from the displayed historical summary; inspect Anthropic architecture/tool-use documentation for taxonomy and lifecycle boundaries; render the built lesson in light and dark themes at 1300px."
+}

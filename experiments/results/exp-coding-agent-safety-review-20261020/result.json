@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-coding-agent-safety-review-20261020",
+  "evidenceType": "official-documentation-review",
+  "observations": {
+    "testCount": 13,
+    "passed": 13,
+    "failed": 0,
+    "fixtureOnly": true,
+    "status": "Wording/source audit passed; harmless pytest reproduction could not run because pytest is absent."
+  },
+  "limitations": [
+    "The local environment does not have pytest installed; the historical marker-file reproduction was not rerun.",
+    "The deterministic audit checks documentation wording and registered sources, not a real sandbox implementation.",
+    "No container escape, production authorization, network egress, package provenance, or human approval system was tested.",
+    "The lesson remains in-review until the historical pytest observation and actual enforcement examples receive stronger evidence."
+  ],
+  "runId": "local-review-20261020-safety-01",
+  "observedAt": "2026-10-20",
+  "method": "Run the 13-assertion documentation/claim-boundary audit; inspect official pytest, npm, Cargo, Docker, and pip documentation; attempt a harmless temporary pytest conftest reproduction without installing dependencies."
+}

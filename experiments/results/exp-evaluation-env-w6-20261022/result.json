@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-evaluation-env-w6-20261022",
+  "runId": "evaluation-environment-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, metadata, existing historical-claim boundary, runnable environment model, teardown negative control, and current official OpenAI evaluation and pytest fixture documentation. Reproduced the catch-all exception-classification defect with a failing boundary probe before editing, then ran the W6 verifier and both complete lesson Python fences under Python 3.14.7. No model, provider, or external service calls.",
+  "observations": {
+    "status": "pass",
+    "testCount": 12,
+    "testsPassed": 12,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "officialSourcesReviewed": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The previous runner caught every Exception as system_error, obscuring whether fixture, agent execution, environment/tool, grader, or cleanup failed. A pre-fix probe expected agent_runtime_error but observed system_error. The updated runner reports invalid_fixture, environment_error, agent_runtime_error, grader_error, and scored as separate primary outcomes, while attaching cleanup status independently so cleanup failure does not replace the execution result. W6 fault-injection assertions pass for all categories; the negative teardown example still reproduces its expected AssertionError. The historical 2026-10-09 3/5 claim remains withdrawn because raw request, tool-return, and scorer records are missing.",
+    "productionBuildPages": 410,
+    "pagefindIndexedPages": 410,
+    "pagefindWords": 15506,
+    "visualViewportWidth": 1280,
+    "articleWidth": 792,
+    "documentScrollWidth": 1280,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 0,
+    "screenshotDimensions": "1280x11326 in light and dark themes; full-page visual inspection"
+  },
+  "limitations": [
+    "The teaching environment uses an in-memory dictionary. It does not establish database, filesystem, container, sandbox, third-party service, cleanup, concurrency, or production isolation behavior.",
+    "No live model/provider run or stochastic-repeat analysis was performed, and the historical 3/5 result cannot be reconstructed.",
+    "The exception categories require production adapters to classify failures at their actual boundaries; an untyped exception cannot identify its root cause by itself."
+  ]
+}

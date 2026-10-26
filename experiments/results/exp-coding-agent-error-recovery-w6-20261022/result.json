@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-coding-agent-error-recovery-w6-20261022",
+  "runId": "coding-agent-error-recovery-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson and metadata checkpoint. Reproduced the archived assertion SyntaxError, compiled and ran the current Python fence in-process and in a clean subprocess, and exercised passed, stalled, and repair-budget exhaustion paths. The production page rendered at a 1300px viewport in light and dark themes; article width was 792px, document width 1300px, full-page height 8425px, and one Mermaid SVG rendered. Only the existing favicon 404 appeared in the console. No provider requests were made.",
+  "observations": {
+    "status": "passed",
+    "checks": 28,
+    "checksPassed": 28,
+    "testsPassed": 28,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The deterministic demo validates its toy AST controller, not a production coding-agent runner or sandbox.",
+    "The 2026-10-10 provider responses were not archived and cannot be replayed; historical model accuracy and retry benefits remain unknown.",
+    "Visual checks cover the static production page at a 1300px viewport only."
+  ]
+}

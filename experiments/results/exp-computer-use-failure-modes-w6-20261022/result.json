@@ -1,0 +1,35 @@
+{
+  "experimentId": "exp-computer-use-failure-modes-w6-20261022",
+  "runId": "computer-use-failure-modes-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, its metadata, current compatibility source, and retained archival harness summary. The W6 verifier checked evidence boundaries and metadata, compiled both Python fences, ran only the pure local field-check helper in an isolated subprocess, compared exact output, and ran the prior ERR-065 verifier. The provider-backed historical harness was compiled but not executed. Built search from the existing production output and inspected full-page light/dark screenshots at 1300px; browser measurement on the local route confirmed a 792px article, 1280px document width, and one Mermaid SVG. No provider calls or external network requests were made by the verifier.",
+  "observations": {
+    "status": "passed",
+    "checks": 32,
+    "checksPassed": 32,
+    "testsPassed": 32,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "pythonDemoExecuted": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 404,
+    "pagefindIndexedPages": 404,
+    "pagefindWords": 15461,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/computer-use-failure-modes-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/computer-use-failure-modes-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x12174"
+  },
+  "limitations": [
+    "The local checker compares two strings in a constructed fixture; it does not establish trusted identity, authoritative data provenance, authorization, normalization, or concurrency behavior.",
+    "The archived harness is only compiled and its source hash is checked; it was not executed, and original provider responses, usage details, and bills are unavailable.",
+    "The DeepSeek compatibility document does not define the historical multi-field usage sum as billable total usage; no current provider request or billing comparison was performed.",
+    "The screenshots cover this lesson at one desktop viewport in two themes; the local browser reports a favicon 404 unrelated to article rendering."
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "experimentId": "exp-tooling-agent-ui-w6-20261022",
+  "runId": "tooling-agent-ui-w6-2026-10-22-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed all lesson sections, checkpoint metadata, the rendered ApprovalDemo fixture, its copyable code sample, the prior isolated verifier, local Next.js 16.3.6 Server/Client Components and Forms guides, and the production-rendered page.",
+  "observations": {
+    "testCount": 33,
+    "testsPassed": 33,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "productionBuildPages": 420,
+    "pagefindIndexedPages": 420,
+    "pagefindWords": 15560,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/tooling-agent-ui-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/tooling-agent-ui-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x11384",
+    "providerCalls": 0
+  },
+  "limitations": [
+    "No approval backend, database transaction, production identity/authorization, external email delivery, recipient idempotency, worker crash recovery, or production reconciliation path was executed.",
+    "No historical paid/provider experiment was rerun; offline checks do not establish live model or production workflow behavior."
+  ]
+}

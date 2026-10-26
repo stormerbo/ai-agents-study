@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-human-interrupt-resume-w6-20261022",
+  "runId": "human-interrupt-resume-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full interrupt/resume lesson, its registered source checkpoints, SQL sketch, runnable Python fixture, numeric and historical claims, failure boundaries, and adjacent conclusions. Added a crash-window fixture where the receiver has committed but the caller crashes before persisting its receipt, then used test-first verification to expose that stale local approved state incorrectly returned expired instead of reconciling. Updated the fixture to reconcile a matching authoritative receiver record before expiry handling. Executed the one Python fence and compared it with the preserved prior verifier. No provider or external-service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 34,
+    "testsPassed": 34,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "trace": "The local deterministic model now reconciles a matching receiver ledger record even when local state remains approved after a crash and the approval claim deadline has passed; it does not resend. It separately rejects a delayed first claim after expiry and reconciles an unknown/lost receipt. The lesson states that lookup absence is not proof unless the receiver offers an authoritative idempotency contract. The W6 verifier passes 34/34, and the preserved 2026-10-21 verifier passes 28/28."
+  },
+  "limitations": [
+    "The in-memory fixture is sequential and models authoritative receiver evidence; it does not test a real process crash, database persistence, concurrent workers, or a production receiver API.",
+    "No real identity provider, authorization policy, queue, outbox, or external side effect was exercised.",
+    "Historical Chapter 11 injection and provider observations were not replayed because raw traces and scoring artifacts are unavailable."
+  ]
+}

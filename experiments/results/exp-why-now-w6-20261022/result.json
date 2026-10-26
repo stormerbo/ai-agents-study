@@ -1,0 +1,28 @@
+{
+  "experimentId": "exp-why-now-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 11,
+    "passed": 11,
+    "failed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 768,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/why-now-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/why-now-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x13246",
+    "status": "environment configuration and probe scope clarified"
+  },
+  "limitations": [
+    "The fake SDK validates only the probe's request shape and output handling; it does not call or measure any provider.",
+    "Historical usage, cache, model-output, and temperature observations remain unreproducible without raw requests, responses, and usage records.",
+    "Current provider documentation does not reproduce the historical model behavior or establish production costs."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Run the offline verifier; statically compare environment-variable access in the Python appendix against its setup table; execute the complete probe with a synthetic Anthropic SDK module that records two request payloads and returns fixture usage; cross-check current official tool-use, model, and cache documentation."
+}

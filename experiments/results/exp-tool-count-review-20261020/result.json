@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-tool-count-review-20261020",
+  "runId": "review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compile all three lesson Python fences. Run the selection scorer against visible/incomplete/multiple/unanswerable fixtures; AST-extract route/tools_for and test valid, unknown and list-valued groups; AST-extract usage/coverage helpers to check separate counters, malformed usage rejection, probe preflight, request-budget ordering and total-input-difference helper validation. Static assertions validate historical boundaries and provider source registration. No real API request is made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 18,
+    "testsFailed": 0,
+    "testCount": 18,
+    "providerCalls": 0,
+    "model": "offline Python AST-extracted scorer and source assertions",
+    "fixtureOnly": true,
+    "pythonFencesCompiled": 3,
+    "checksPassed": 18
+  },
+  "limitations": [
+    "The 2026-10-08 request and response traces, exact endpoint identifier, per-probe mapping, cache usage fields and historical scorer are unavailable; displayed figures remain non-reproducible historical summaries.",
+    "No live provider was called, so this does not validate current billing, cache behavior, latency, real tool-search/programmatic-calling behavior, model quality or the historical observations. The synthetic 4/8/16-tool fixture is only a code-path demonstration, not a representative selection benchmark.",
+    "The Anthropic tool-search and prompt-caching claims apply only to the documented Anthropic capabilities and are not a cross-provider guarantee."
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-mcp-remote-authorization-w6-20261022",
+  "runId": "mcp-remote-authorization-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Review the current MCP Authorization, Client Registration and Authorization Security Considerations documents; run local teaching-model regression checks.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 16,
+    "testsFailed": 0,
+    "pythonDemoExecuted": true,
+    "testCount": 7,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 415,
+    "pagefindIndexedPages": 415,
+    "pagefindWords": 15533,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/mcp-remote-authorization-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/mcp-remote-authorization-w6-20261022-dark.png"
+  },
+  "limitations": [
+    "No real OAuth client, authorization server, HTTP middleware, JWT signature verification, or cross-vendor interoperability was tested. Historical provider behavior remains unverified.",
+    "First-load browser console reported only the existing /favicon.ico 404; screenshots in both themes show centered article width 792px, no horizontal overflow, and a rendered Mermaid diagram."
+  ]
+}

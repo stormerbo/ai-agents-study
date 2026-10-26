@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-human-interrupt-resume-review-20261021",
+  "runId": "human-interrupt-resume-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the lesson against OWASP Authorization and Transaction Authorization guidance, PostgreSQL 18 row-locking documentation, Stripe API v1 idempotency semantics, and AWS Saga guidance. Compiled and executed the exact embedded local state fixture and asserted lesson/metadata boundaries. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 28,
+    "testsPassed": 28,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "trace": "The local fixture rejected an unauthorized actor and an expired approval, invalidated the previous proposal after edits, and reconciled a lost receiver receipt after the approval expired, using one fake receiver effect without sending a second effect. The fixture is sequential and in-memory; this does not prove production persistence, concurrent claims, identity security or real receiver deduplication. The lesson no longer treats approval IDs as effect idempotency keys, lets edits inherit approval, or recommends replanning around a refusal."
+  },
+  "limitations": [
+    "The Python fixture is a deterministic in-memory state model, not a durable store, database transaction, concurrency test, identity provider or actual external receiver.",
+    "No production deployment, real approval UX, live Stripe request, email/payment side effect, outbox dispatcher or unknown-result reconciliation service was exercised.",
+    "Historical chapter 11 crash-window output was not rerun in this review; its local sequential fixture limitations remain as documented in its prior evidence record."
+  ]
+}

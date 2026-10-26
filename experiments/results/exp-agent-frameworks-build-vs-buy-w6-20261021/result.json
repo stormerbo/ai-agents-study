@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-agent-frameworks-build-vs-buy-w6-20261021",
+  "runId": "agent-frameworks-build-vs-buy-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the HumanLayer 12-Factor Agents primary repository and the complete lesson and metadata. Executed the complete local reducer fixture in Python 3.10.9 and compared stdout with the published text fence. The offline verifier checks source framing, thresholds, the unverified historical enum comparison, metadata, and reducer behavior. No provider or network calls were made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 22,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 1,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 1,
+    "historicalBenchmarksRerun": false
+  },
+  "limitations": [
+    "The earlier LangChain schema comparison and 0/3 versus 3/3 model outcome lack complete raw traces and were not independently reproduced in this review.",
+    "The reducer is a local deterministic fixture; it does not validate a framework, provider wire format, persistence, authorization, production recovery, side effects, or exactly-once execution.",
+    "The review does not compare total cost or maintenance effort across framework and self-built implementations."
+  ]
+}

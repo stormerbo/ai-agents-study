@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-prompt-structure-separation-review-20261021",
+  "runId": "prompt-structure-separation-review-2026-10-22-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Re-ran the updated offline review: eight checks cover the historical evidence boundary, host authorization, trusted-source citation fixture, Python compilation, and 36 fake-SDK calls including stop states. Current Anthropic prompt-injection/prompting guidance and OWASP LLM01:2025 were checked; no provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 8,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "Historical DeepSeek traces/scorer and live provider behavior remain unavailable; local fixtures do not establish prompt injection resistance or production authorization."
+  ]
+}

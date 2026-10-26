@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-human-approval-design-w6-20261022",
+  "runId": "human-approval-design-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Re-reviewed the full lesson, its checkpoint sources, and its embedded deterministic approval-policy simulation. Checked OWASP transaction authorization/authorization guidance and the current OpenTelemetry GenAI semantic conventions. Added focused regressions for raw trace data guidance and digest integrity limits. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 19,
+    "testsPassed": 19,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "trace": "The synthetic simulation still reproduces A 7/0/0, B 2/0/0, C 1/0/1, and D 0/1/2 for pre-action approvals/post-reviews/unapproved risk actions. Trace guidance now points to validated/redacted parameters and safe summaries or controlled references; a new source-bound checkpoint records that OpenTelemetry GenAI content attributes are opt-in and the convention is in Development. The parameter digest is explicitly not presented as tamper protection."
+  },
+  "limitations": [
+    "Policy counts derive only from a deterministic local fixture and author-assigned labels; they do not measure user fatigue, approval quality, severity, or a universally optimal policy.",
+    "The pseudo-code remains an architectural sketch; it does not prove complete route coverage, production authorization, concurrency safety, immutable persistence, or exactly-once effects.",
+    "A plain digest cannot stop an actor who can modify both the proposal and digest; production integrity requires a trusted protected record and controls matched to the threat model.",
+    "No production trace pipeline, real user experience, identity provider, provider API, or external action was tested."
+  ]
+}

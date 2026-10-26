@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-sandboxing-execution-policy-review-20261021",
+  "runId": "sandboxing-execution-policy-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared execution-policy and audit claims with OWASP Authorization and Logging Cheat Sheets, Linux cgroup v2 documentation, and Python subprocess documentation. Extracted and compiled all five Python fences, then executed the policy example with offline fixtures for trusted-principal separation, deny-overrides, malformed policies, unknown tools, redacted audit events, handler exceptions, and audit-sink failure. Built 364 static pages and indexed 364 pages / 15,367 words with Pagefind. Production-rendered in light and dark themes at a 1300px viewport; both full-page screenshots were visually inspected. No provider or external network calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 7,
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The trusted principal in the example is a local fixture; no real identity provider, session binding, tenant authorization, or object-level access-control integration was tested.",
+    "The audit sink is an injected callback. Durability, tamper resistance, access controls, retention, alerting, log injection handling in a deployed sink, and cross-event correlation were not tested.",
+    "The read_file and http_get handlers are placeholders. No filesystem access, HTTP request, operating-system sandbox, deployment-level dispatch path, or production bypass testing was performed.",
+    "The path_under helper uses realpath for policy illustration and does not remove the filesystem TOCTOU risk between checking and opening a path.",
+    "A handler exception is marked unknown because external side effects may have occurred; this fixture does not test reconciliation against an actual downstream system.",
+    "The screenshots and browser checks validate layout only, not authorization or audit correctness. Both themes rendered at 1300px viewport/scrollWidth with one Mermaid SVG, no alert, and zero final console errors."
+  ]
+}

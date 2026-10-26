@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-coding-agent-error-recovery-review-20261020",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 3,
+    "passed": 3,
+    "failed": 0,
+    "pythonFencesCompiled": 1,
+    "status": "legacy fixture syntax defect confirmed; bounded repair controller demo passes"
+  },
+  "limitations": [
+    "The historical provider responses and per-turn code changes were not preserved, so no model success rate or retry-effect estimate is recoverable.",
+    "The local fake proposer validates controller bookkeeping only; it does not execute generated code or measure a model.",
+    "The historical script and log reside in ignored verify-output; a minimal malformed assertion was preserved as a committed fixture for the syntax check.",
+    "The lesson remains in-review pending whole-lesson independent source and applicability review."
+  ],
+  "runId": "local-review-20261020-01",
+  "observedAt": "2026-10-20",
+  "method": "Compile the preserved legacy truncate assertion and verify it raises SyntaxError; run the registered offline review script, which compiles and executes the deterministic AST/controller demo and checks historical claim boundaries."
+}

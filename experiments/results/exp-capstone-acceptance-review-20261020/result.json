@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-capstone-acceptance-review-20261020",
+  "runId": "local-review-20261020-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Compare the required gate set and required evidence kinds in the Python implementation against the lesson table and decision/state descriptions; run the offline audit assertions.",
+  "observations": {
+    "testCount": 4,
+    "passed": 4,
+    "failed": 0,
+    "status": "19 gate ids match implementation exactly"
+  },
+  "limitations": [
+    "Does not execute a real provider request, official blind holdout, external registry verifier, or independent human review.",
+    "The 33 unit tests use synthetic fixtures and validate local classification logic, not real-world execution or evidence authenticity.",
+    "The stored live smoke record is a single run and did not pass the live_model_normal gate."
+  ]
+}

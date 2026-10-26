@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-137",
+  "runId": "exp-w6-unique-count-audit-20261022-137-run1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran pnpm test -- tests/curriculum.test.ts; the W6 invariant parses the recorded master lesson list and verifies its exact unique cardinality, tracker references, current progress label, and inclusion of the audited lesson.",
+  "observations": {
+    "testCount": 44,
+    "passed": 44,
+    "failed": 0,
+    "uniqueLessonIds": 137,
+    "percent": 95.14,
+    "remaining": 7,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "This verifies recorded W6 pass bookkeeping and tracker coverage, not the quality of every lesson review or completion of the separate Stage 4/5 acceptance gates."
+  ]
+}

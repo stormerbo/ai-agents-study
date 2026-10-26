@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-latency-sources-w6-20261022",
+  "runId": "latency-sources-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "method": "Compared the complete lesson and documented checkpoint against current OpenAI and Anthropic primary API docs, Anthropic stream-event examples, and both arXiv records needed to identify the cited paper; ran the W6 verifier, prior review and both local Python fences; then inspected the production-built lesson in light and dark themes.",
+  "observations": {
+    "status": "pass",
+    "testCount": 29,
+    "testsPassed": 29,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 2,
+    "officialSourcesReviewed": 5,
+    "productionBuildPages": 409,
+    "pagefindIndexedPages": 409,
+    "pagefindWords": 15495,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/latency-sources-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/latency-sources-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x6873 both themes",
+    "trace": "The resource now points to arXiv:2401.09670, which matches DistServe; the previous URL, arXiv:2408.08147, identifies a different P/D-Serve paper. The title, source metadata and lesson examples now align. The sole browser-console error was the existing favicon.ico 404."
+  },
+  "limitations": [
+    "The four historical endpoint timing records remain unreproducible; no live provider latency, production workload, quality, SLA, or historical trace was measured. The static screenshots are rendering evidence only."
+  ],
+  "observedAt": "2026-10-22"
+}

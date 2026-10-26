@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-llm-tokens-context-review-20261021",
+  "runId": "offline-review-20261021-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared the lesson with Anthropic token counting, context window, model overview and Messages API references; checked historical DeepSeek report fields without reproducing response content; ran the deterministic offline review script.",
+  "observations": {
+    "testCount": 5,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 4,
+    "providerCalls": 0,
+    "trace": "Fixed unsupported fixed-overhead and language-ratio inferences; removed exposed historical reasoning text; corrected SDK filename and truncated-output handling; fenced provider/version-specific claims."
+  },
+  "limitations": [
+    "Historical report is gitignored and its complete request snapshots/model fingerprint are not archived.",
+    "No current provider API request was made; provider behavior and billing were not live-tested.",
+    "Only four Python code fences were syntax-parsed; snippets were not all executed against the current SDK.",
+    "The chapter remains in-review pending runnable SDK/provider integration and a reproducible sanitized historical dataset."
+  ]
+}

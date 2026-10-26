@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-agent-frameworks-what-frameworks-give-w6-20261021",
+  "runId": "review-2026-10-21-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the whole lesson against current official LangChain tool-schema and OpenAI Agents SDK runner/tracing documentation. Executed the complete lesson Python fence in Python 3.10 with LangChain 0.3.7, langchain-core 0.3.63 and Pydantic 2.9.2, and separately verified the install command plus exact output in a fresh Python 3.10 virtual environment; compared stdout byte-for-byte with the adjacent output fence. The verifier also compiles the code and checks bounded taxonomy, observability and historical-result wording. The code only constructs local tool schemas; no model, provider or network call is made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 19,
+    "testsFailed": 0,
+    "testCount": 19,
+    "providerCalls": 0,
+    "model": "local LangChain schema construction; no model invocation",
+    "fixtureOnly": true,
+    "pythonFencesCompiled": 1,
+    "stdoutMatchesPublishedOutput": true,
+    "checksPassed": 19
+  },
+  "limitations": [
+    "The historical Chapter 4 enum 3/3 versus free-string 0/3 measurements still lack per-call requests, responses and a replayable scorer; this review does not reproduce them or establish a general model-quality effect.",
+    "The local probe verifies only the documented schema-generation behavior for the pinned package versions and these two function signatures. It does not evaluate tool selection, provider behavior, framework performance, observability completeness or production security.",
+    "Current LangChain and OpenAI SDK documentation can change; the explicitly pinned local example is scoped to its listed versions, while other versions and providers require their own contract checks."
+  ]
+}

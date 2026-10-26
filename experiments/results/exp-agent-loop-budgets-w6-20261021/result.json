@@ -1,0 +1,33 @@
+{
+  "experimentId": "exp-agent-loop-budgets-w6-20261021",
+  "runId": "local-agent-loop-budgets-w6-2026-10-21",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compile every Python fence and execute the lesson LoopGuard, ProgressGuard, and tightened-cap examples. Check repeat_limit default and exact third-call rejection, denied-reservation state, list-value heuristic boundary, published output excerpt consistency, budget-exhaustion claims, and provider/source scoping.",
+  "observations": {
+    "pythonFencesCompiled": 5,
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 3,
+    "productionBuildPages": 399,
+    "pagefindIndexedPages": 399,
+    "pagefindWords": 15394,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/agent-loop-budgets-w6-20261021-light.png",
+    "darkScreenshot": "output/playwright/agent-loop-budgets-w6-20261021-dark.png",
+    "screenshotDimensions": "1300x12476"
+  },
+  "limitations": [
+    "No historical DeepSeek request/response trace, first-round usage record, or image-token experiment was reproduced; the historical summaries remain unverified.",
+    "No live provider loop, billing, cost reconciliation, production authorization, external side effect, or business-task success metric was tested.",
+    "ProgressGuard remains a teaching heuristic and does not measure semantic progress; the repeat threshold requires task-specific calibration.",
+    "The only browser console error was the existing missing favicon (404); the page content rendered in both themes with no horizontal overflow and one Mermaid SVG."
+  ]
+}

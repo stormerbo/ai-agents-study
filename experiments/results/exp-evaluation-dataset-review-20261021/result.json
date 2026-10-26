@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-evaluation-dataset-review-20261021",
+  "runId": "evaluation-dataset-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared dataset-source and evaluation-design guidance with OpenAI Evaluation best practices and the NIST Engineering Statistics Handbook. Reconstructed the local sample-size arithmetic, checked the Wilson interval and planning helper, reviewed the historical eval-size source script against the rendered claims, and ran six offline contract assertions. No provider calls or raw historical-response replay were performed.",
+  "observations": {
+    "status": "pass",
+    "testCount": 6,
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "trace": "The retained historical summary reports 19/20 over a deliberately stratified set, but per-item responses and a validated scorer are unavailable; the old substring scorer can false-pass. The prior bootstrap table does not match the code reconstructed from the aggregate and lacks stratified resampling support. Wilson(19,20) is 0.76386881–0.99111855 under iid representative sampling; p=.9 one-proportion Wald planning yields n=25 for ±10pp and n=98 for ±5pp. No provider calls or historical replay."
+  },
+  "limitations": [
+    "The 19/20 historical aggregate cannot be independently rescored because raw responses and per-item outcomes were not retained; the original substring scorer can produce false positives.",
+    "The 12/8 deliberately stratified difficulty mix does not establish a representative sample of production tasks; no sampling weights or target distribution were archived.",
+    "Wilson arithmetic assumes independent representative Bernoulli observations; it is shown as a conditional calculation, not an estimate of this model or application’s true production success rate.",
+    "The one-proportion Wald planning formula is approximate and is not a version-comparison power calculation; no A/B experiment or provider request was run.",
+    "Official documentation review does not verify the project’s production data collection authorization, privacy controls, labeling process, or runtime evaluation pipeline."
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "experimentId": "exp-capstone-acceptance-w6-20261022",
+  "runId": "capstone-acceptance-w6-2026-10-22-01",
+  "evidenceType": "raw-observation-review",
+  "observedAt": "2026-10-22",
+  "method": "Rechecked all 19 documented gate IDs and required evidence kinds against the current acceptance implementation, machine decision and matrix state vocabulary, the frozen local P5 smoke report, its separate task terminal snapshot, and the acceptance report. A test-first assertion exposed that the narrative called the task cancelled even though the terminal snapshot says failed; it also claimed no sink request without a receive log. Updated the lesson to distinguish report snapshot from terminal state and state the negative-evidence limit. Executed the offline acceptance unit suite and both the preserved review verifier and W6 verifier. No provider or external-service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 5,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "trace": "The 19 gate IDs and required evidence kinds match the runtime. The report snapshot is waiting_approval; the distinct terminal snapshot is task=failed with approval/action=cancelled. Registry remains incomplete, live_model_normal evidence is unverified, and final output is not_completed. No successful send_notice result, delivery receipt or independent sink receive log was present. The updated wording does not claim the task was cancelled or that the sink definitely received no request. Preserved review verifier 4/4 and acceptance unit tests 33/33. Sanitized source observation: experiments/results/exp-capstone-acceptance-w6-20261022/source-observation.json.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/capstone-acceptance-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/capstone-acceptance-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x6206"
+  },
+  "limitations": [
+    "The raw smoke artifacts are in a gitignored local directory and are unsigned; their SHA-256 values aid local identification but do not authenticate the producer or contents.",
+    "No independent sink receive log was available, so this review cannot prove the sink never received a request.",
+    "The 33 acceptance tests use synthetic local fixtures; they do not authenticate official holdout evidence or provide independent human acceptance.",
+    "No new live model call, blind holdout, external registry verification or external side effect was performed."
+  ]
+}

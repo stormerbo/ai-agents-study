@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-sandboxing-least-privilege-w6-20261022",
+  "runId": "sandboxing-least-privilege-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Rechecked the lesson against OWASP SSRF Prevention, Python ipaddress, Linux pathname lookup, openat2(2), and Linux fs sysctl documentation. Corrected stale chapter/line references, clarified synthetic filesystem fixtures and capability-interface limits, and labeled illustrative snippets. Executed all five Python fences for syntax; ran the full filesystem fixture and the offline URL-policy fixture under Python 3.10.9. The URL fixture's complete 20-case stdout matched the published text block byte-for-byte; the preserved ERR-137 verifier passed 10/10 and the W6 verifier passed 5/5. No provider calls, DNS requests, or HTTP requests were made. Production build generated 403 pages; Pagefind indexed 403 pages / 15,456 words. Light/dark full-page screenshots were visually checked at 1300px viewport: article width 792px, document scrollWidth 1300px, one rendered Mermaid SVG; each image is 1300x14982. The only initial browser console error was the existing /favicon.ico 404.",
+  "observations": {
+    "status": "pass",
+    "testCount": 5,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "pythonFencesCompiled": true,
+    "stdoutMatchesPublishedOutput": true,
+    "productionBuildPages": 403,
+    "pagefindIndexedPages": 403,
+    "pagefindWords": 15456,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/sandboxing-least-privilege-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/sandboxing-least-privilege-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x14982 both themes"
+  },
+  "limitations": [
+    "The filesystem example verifies fixed local fixtures; it does not exercise concurrent path replacement, hard-link abuse, production directory permissions, or an OS sandbox.",
+    "The URL example is a fixed policy fixture. It makes no DNS or HTTP calls and does not validate a real HTTP transport, DNS pinning, redirect handling, proxy, firewall, or deployed egress rules.",
+    "The capability-oriented interface is illustrative and not independently run; it does not demonstrate production identity binding, ID lifecycle, revocation, or an operating-system capability boundary.",
+    "The historical 2026-10-09 and 2026-10-12 provider/network observations remain limited to their recorded endpoint and lack complete raw traces for independent historical replay."
+  ]
+}

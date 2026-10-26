@@ -1,0 +1,33 @@
+{
+  "experimentId": "exp-sandboxing-isolation-levels-w6-20261022",
+  "runId": "sandboxing-isolation-levels-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Re-reviewed the lesson against registered Docker run/none-network, Python resource/subprocess, gVisor and Firecracker sources; corrected overstated mount, egress, credential, process-tree, and probe claims; replaced stale ordinal references with routes; checked every Python fence compiles, ran the harmless L1 pid-only proof, executed the complete published Docker runner and probe commands with --pull=never, and compared the configured and deliberately weak fixture stdout byte-for-byte with the lesson. Local environment: Docker server 29.3.1; cached python:3.12-alpine digest sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4; Python 3.10.9. The W6 verifier passed 9/9; the preserved 2026-10-21 verifier passed 10/10. No provider or external network calls were made. Production build generated 401 pages; Pagefind indexed 401 pages / 15,446 words. Light and dark full-page screenshots were inspected at 1300px viewport: article width 792px, document scrollWidth 1300px, one rendered Mermaid SVG; both captures are 1300x12294. The only browser console error was the existing /favicon.ico 404.",
+  "observations": {
+    "status": "pass",
+    "testCount": 9,
+    "testsPassed": 9,
+    "testsFailed": 0,
+    "pythonFencesCompiled": true,
+    "stdoutMatchesPublishedOutput": true,
+    "productionBuildPages": 401,
+    "pagefindIndexedPages": 401,
+    "pagefindWords": 15446,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/sandboxing-isolation-levels-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/sandboxing-isolation-levels-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x12294 both themes"
+  },
+  "limitations": [
+    "The Docker checks exercise one local daemon and one cached image digest; they do not establish production host hardening, multi-tenant escape resistance, image provenance policy, or deployed egress enforcement.",
+    "The route-table probe does not prove firewall, host-control-plane, or loopback-service inaccessibility; no external connectivity was attempted.",
+    "The Python resource and subprocess notes do not validate a production launcher or process-tree cleanup on other operating systems.",
+    "gVisor and Firecracker were checked against their registered architecture sources but were not installed, run, or benchmarked.",
+    "Historical L0/L1/L2/L2b timings remain non-comparable summaries with no archived raw per-run logs or complete environment metadata."
+  ]
+}

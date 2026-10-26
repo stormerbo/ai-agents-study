@@ -1,0 +1,36 @@
+{
+  "experimentId": "exp-computer-use-observe-act-loop-w6-20261022",
+  "runId": "computer-use-observe-act-loop-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, its source-bound checkpoint, metadata and historical evidence boundaries. A local verifier compiled all four Python fences, reproduced default urllib credential forwarding between two loopback servers using only a dummy token, and confirmed the lesson transport stops at 302 without reaching the redirect target. Built the production site and search index, then inspected full-page light/dark screenshots at a 1300px viewport and checked article width, horizontal overflow, Mermaid rendering and console after theme reload. No provider calls or external network requests were made.",
+  "observations": {
+    "status": "passed",
+    "checks": 13,
+    "checksPassed": 13,
+    "testsPassed": 13,
+    "testsFailed": 0,
+    "testCount": 13,
+    "pythonFencesCompiled": 4,
+    "pythonDemoExecuted": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 404,
+    "pagefindIndexedPages": 404,
+    "pagefindWords": 15463,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/computer-use-observe-act-loop-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/computer-use-observe-act-loop-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x14476"
+  },
+  "limitations": [
+    "The redirect regression uses only loopback servers and a dummy credential in the current Python runtime; it does not cover other Python versions, proxy behavior, DNS, TLS, provider redirects, or production network policy.",
+    "Rejecting redirects does not validate the configured base URL or credentials and is not a complete outbound-network control.",
+    "The verifier compiles but does not execute the full provider-backed lesson harness; historical model traces, per-step usage and click behavior remain unavailable for replay.",
+    "The screenshots cover one production lesson at one desktop viewport in two themes; an initial favicon 404 was not repeated after reload."
+  ]
+}

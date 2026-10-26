@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-107",
+  "runId": "w6-unique-count-2026-10-22-107-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed a deterministic verifier against the W6 master pass list, tracker, plan/spec/audit summaries, and latest progress entry.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "uniqueLessonIds": 107,
+    "fraction": "107/144",
+    "percent": "74.31%",
+    "remaining": 37,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "This verifies inventory synchronization only; it does not assess lesson quality or remaining curriculum review gates."
+  ]
+}

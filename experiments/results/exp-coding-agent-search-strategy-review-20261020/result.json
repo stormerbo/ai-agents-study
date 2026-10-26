@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-coding-agent-search-strategy-review-20261020",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 16,
+    "passed": 16,
+    "failed": 0,
+    "pythonFencesCompiled": 3,
+    "fixtureOnly": true,
+    "status": "11 files constructed; contexts 2460/1012/717 chars; AST index reports skipped files and lexical references"
+  },
+  "limitations": [
+    "The original search fixture and summary logs are in ignored verify-output; no provider request was made during this audit.",
+    "The archived API responses are missing and the old scorer uses expected-answer substring inclusion, so 4/4 and 3/4 do not establish model accuracy.",
+    "The 11-file synthetic fixture cannot estimate search quality in real repositories; B also combines grep hits with all function definitions.",
+    "The AST example is a lexical candidate index, not a semantic call graph or complete impact analysis."
+  ],
+  "runId": "local-review-20261020-03",
+  "observedAt": "2026-10-20",
+  "method": "Run python3 experiments/scripts/verify_coding_agent_search_strategy_review_20261020.py; reconstruct only fixed fixture and context strings, compile every Python fence, exercise bounded ranking and lexical index with synthetic valid/invalid source, and inspect the archived scorer expression without calling the model API."
+}

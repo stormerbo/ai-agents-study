@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-140",
+  "runId": "exp-w6-unique-count-audit-20261022-140-run1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "pnpm test -- tests/curriculum.test.ts; W6 checks assert the master list cardinality, uniqueness, tracker coverage, current status, and source/checkpoint coverage for the newly reviewed lesson.",
+  "observations": {
+    "checks": 47,
+    "checksPassed": 47,
+    "testsPassed": 47,
+    "testsFailed": 0,
+    "uniqueW6Lessons": 140,
+    "totalLessons": 144,
+    "percent": 97.22,
+    "remaining": 4
+  },
+  "limitations": [
+    "W6 coverage is distinct from the full accuracy tracker state and does not satisfy Stage 4 or Stage 5 acceptance gates."
+  ]
+}

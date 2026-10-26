@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-context-engineering-chat-template-review-20261021",
+  "runId": "context-chat-template-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compile the Python example, execute its token-count functions against a fake SDK, and check the historical and provider-specific claim boundaries against current official documentation. No provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 20,
+    "testsFailed": 0,
+    "testCount": 20,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "pythonFencesCompiled": 1,
+    "trace": "The fixture confirms provider-reported count values are passed through and named baseline deltas are calculated; it does not reproduce the 2026-10-08 summaries. The retained split illustration has extra assistant text and cannot isolate message-boundary overhead."
+  },
+  "limitations": [
+    "Historical per-request inputs/responses, exact endpoint/model fingerprint, raw usage, case mapping and scorer are unavailable; 238/298 and 234/238/234/254 cannot be independently recomputed.",
+    "No live provider request, cache hit, billing behavior, answer quality, or production endpoint behavior was tested.",
+    "The fake SDK fixture validates only the local count wrapper and comparison helper; it does not establish real provider token counts or credentials behavior.",
+    "Token-count and prompt-cache behavior are provider/model/API-specific and may change; consult current official documentation."
+  ]
+}

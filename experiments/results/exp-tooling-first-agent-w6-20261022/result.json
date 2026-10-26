@@ -1,0 +1,33 @@
+{
+  "experimentId": "exp-tooling-first-agent-w6-20261022",
+  "runId": "tooling-first-agent-w6-2026-10-22-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Opened current official LangGraph Graph API, Persistence, and Functional API docs; created a fresh Python 3.14.7 virtual environment from the pinned macOS ARM64 lock; ran the complete existing runtime verifier and the new W6 boundary verifier.",
+  "observations": {
+    "testCount": 25,
+    "testsPassed": 25,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "langgraphVersion": "1.2.14",
+    "providerCalls": 0,
+    "trace": "The same-process caller re-invocation fixture recorded three node executions and three in-memory rows with the fixed key u2.",
+    "officialSourcesReviewed": "LangGraph Graph API, Persistence, Functional API checked 2026-10-22",
+    "productionBuildPages": 420,
+    "pagefindIndexedPages": 420,
+    "pagefindWords": 15560,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/tooling-first-agent-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/tooling-first-agent-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x8963"
+  },
+  "limitations": [
+    "The effect is a Python in-memory list and the injected failure is a same-process RuntimeError; no process termination/restart, persistent checkpointer, real database, network effect, parallel graph, or provider was exercised.",
+    "The older 2026-10-09 observation lacks a complete dependency lock and per-attempt trace, so it remains a historical, independently unreproduced observation.",
+    "Offline behavior does not establish production authorization, external exactly-once delivery, or billing behavior."
+  ]
+}

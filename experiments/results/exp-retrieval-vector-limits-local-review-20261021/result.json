@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-retrieval-vector-limits-local-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Extracted and executed the toy retrieval fence and tested the reranker through a mocked urllib transport; asserted the reranker installs its redirect-rejecting handler, the real urllib opener has exactly one redirect handler, and the handler refuses a cross-origin redirect carrying a dummy API-key header; ran source-scope assertions.",
+  "observations": {
+    "testCount": 30,
+    "testsPassed": 30,
+    "providerCalls": 0,
+    "fixtureOnly": true
+  },
+  "limitations": [
+    "The five-document fixture and character-hash embedding are didactic only; they do not measure semantic retrieval or ANN quality.",
+    "The mocked transport and dummy redirect request validate local urllib handler wiring only; they do not validate a live provider, endpoint schema, current model behavior, billing, latency, or historical ranking results."
+  ]
+}

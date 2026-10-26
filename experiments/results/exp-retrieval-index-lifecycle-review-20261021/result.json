@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-retrieval-index-lifecycle-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Ran python3 -m unittest discover -s examples/index-lifecycle -v (6 unit tests), executed the lesson Python call-shape fence against a temporary SQLite DB, and ran the persisted review verifier (19 assertions) against the real SQLite catalog for source-revision conflicts, stale events, tombstones, restoration, generation publication, and transactional rollback after an injected mid-build write failure.",
+  "observations": {
+    "testCount": 6,
+    "testsPassed": 6,
+    "checksPassed": 19,
+    "providerCalls": 0,
+    "fixtureOnly": true
+  },
+  "limitations": [
+    "This is a local SQLite control model. It does not test a vector database, embedding pipeline, PostgreSQL multi-process behavior, distributed transactions, or production retries.",
+    "The atomic active pointer claim applies only within this SQLite transaction; cross-service publication requires readiness, rollback, and reconciliation designed and tested for the actual services.",
+    "Deletion checks cover the local catalog and active snapshot filter, not caches, logs, exports, backups, or regulatory erasure."
+  ]
+}

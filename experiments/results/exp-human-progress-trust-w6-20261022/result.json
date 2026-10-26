@@ -1,0 +1,36 @@
+{
+  "experimentId": "exp-human-progress-trust-w6-20261022",
+  "runId": "human-progress-trust-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Performed a whole-lesson review of trust/UI claims, every published JSON example against the schema, provider subset compatibility, progress helper boundaries, historical evidence, metadata and accessibility wording. Re-ran the prior review verifier (20/20) and a new W6 verifier (12/12), using Ajv 2020 and local Python only. Checked current Anthropic Structured Outputs, JSON Schema 2020-12 and WAI-ARIA range guidance. Rendered light/dark full-page screenshots at 1300px; article width 792px, scroll width 1300px, Mermaid rendered. The only console error was favicon 404. No provider calls or user study were performed.",
+  "observations": {
+    "status": "passed",
+    "checks": 12,
+    "checksPassed": 12,
+    "testsPassed": 20,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": true,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/human-progress-trust-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/human-progress-trust-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x9944",
+    "productionBuildPages": 404,
+    "pagefindIndexedPages": 404,
+    "pagefindWords": 15463
+  },
+  "limitations": [
+    "Historical user trust, model quality/cost, and prior prompt outcomes remain unverified; no user study or live provider run was performed.",
+    "Ajv validates the local schema example but does not exercise Claude Structured Outputs or another provider endpoint.",
+    "Progress helper tests cover synthetic invalid inputs and do not establish usability or assistive-technology behavior.",
+    "Trace privacy, identity and object authorization remain architecture requirements; no production authorization was tested.",
+    "The lesson remains in-review for historical claims and production/user validation."
+  ]
+}

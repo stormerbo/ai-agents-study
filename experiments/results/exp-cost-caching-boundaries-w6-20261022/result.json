@@ -1,0 +1,33 @@
+{
+  "experimentId": "exp-cost-caching-boundaries-w6-20261022",
+  "runId": "cost-caching-boundaries-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed current Anthropic Prompt Caching, OpenAI Prompt Caching, DeepSeek Context Caching, and DeepSeek Anthropic compatibility documentation. Ran the four-check W6 verifier, the prior 37-check source/boundary verifier, and the local Python example. The W6 regression tests were observed failing before the edit. No model provider or external API was called.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "officialSourcesReviewed": 4,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 1,
+    "trace": "The deterministic prefix ratio is labeled candidate reuse, not provider hit rate/probability; the remainder is not called invalidated. The Anthropic request-shaped example warns the short placeholder may not meet the current model/platform minimum and requires checking usage. The old 37/37 review still passes, and local model percentages match output.",
+    "historicalFixture": false,
+    "productionBuildPages": 408,
+    "pagefindIndexedPages": 408,
+    "pagefindWords": 15488,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/caching-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/caching-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x9412 both themes"
+  },
+  "limitations": [
+    "No historical cache usage, provider request, or real cache hit was reproduced. Current provider details are model, endpoint, and platform dependent."
+  ]
+}

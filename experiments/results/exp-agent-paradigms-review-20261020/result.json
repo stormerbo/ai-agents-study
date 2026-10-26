@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-agent-paradigms-review-20261020",
+  "runId": "agent-paradigms-review-2026-10-21-refresh-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Re-ran the dependency-free audit script after the Plan-Execute and ReAct lesson rewrites. It compiled all 7 currently published Python fences in the five targeted lessons, ran the remaining structured scorers, checked usage counters, and invoked the archived historical checker with false-positive answers. Plan-Execute DAG/conditional-routing validation is independently covered by exp-agent-paradigms-plan-execute-w6-20261021. No provider or network calls.",
+  "observations": {
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 7,
+    "weakScoreFalsePositiveFixtures": 2,
+    "planExecutorCopiesChecked": 0,
+    "structuredScorerCopiesChecked": 0,
+    "testCount": 4,
+    "usageCounterCopiesChecked": 0
+  },
+  "limitations": [
+    "Historical model responses and per-run traces remain unavailable, so historical accuracy and token totals cannot be recomputed.",
+    "Local fixtures validate only their stated deterministic contracts; they do not test live providers, production authorization, side effects, or billing.",
+    "The dedicated Plan-Execute verifier covers local DAG validation and host routing only; it does not establish model planning quality or framework runtime behavior."
+  ]
+}

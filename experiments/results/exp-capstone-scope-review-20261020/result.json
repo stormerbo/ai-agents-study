@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-capstone-scope-review-20261020",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 5,
+    "passed": 5,
+    "failed": 0,
+    "pythonFencesCompiled": 1,
+    "status": "scope contract and per-task smoke wording passed"
+  },
+  "limitations": [
+    "The scope verifier compares tool names and approval categories but does not establish production authorization, persistence, sink delivery, or provider behavior.",
+    "The bounded smoke permits multiple wake-ups and another synthetic task under the documented idempotency and budget controls; no global invocation quota was asserted.",
+    "Historical 2026-10-08 tool-count and selection summaries remain unreproducible because raw requests, usage, question mapping, and scorer are unavailable."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Reran the issue-scoped offline scope contract after the whole-lesson pass found ambiguous wording that could be read as a global one-run limit. The corrected contract distinguishes one predeclared live smoke case from task wake-ups and additional tasks, and requires per-task/per-response limits. Compiled and executed the scope example in a temporary directory; no provider or network call was made."
+}

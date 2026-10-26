@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-capstone-retrospective-review-20261020",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 5,
+    "passed": 5,
+    "failed": 0,
+    "pythonFencesCompiled": 1,
+    "status": "corrected cost claim and issue-scoped lesson contract passed"
+  },
+  "limitations": [
+    "This deterministic local check validates selected wording and the local example only.",
+    "It does not recover original multi-agent provider requests/responses, reproduce historical cost ratios, or re-run LangChain source behavior.",
+    "The lesson remains in-review pending the broader whole-curriculum audit and any unavailable historical evidence."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Reran the issue-scoped offline contract after a whole-lesson review found that the retrospective had reintroduced the unsupported 2.37x multi-agent cost claim. Updated the contract to require the withdrawal statement and reject both the table and code example wording that presented it as a retained run. Compiled and executed the lesson Python fence in a temporary directory; no provider or external network call was made."
+}

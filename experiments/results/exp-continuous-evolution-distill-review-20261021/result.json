@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-continuous-evolution-distill-review-20261021",
+  "runId": "distill-review-2026-10-21-01",
+  "evidenceType": "raw-observation-review",
+  "observedAt": "2026-10-21",
+  "method": "Preserved the retained historical summary log and a redacted note of the ignored source hash, modification times, and scorer behavior. Ran the offline lesson/evidence checks and candidate-rule fixtures. Compared current Anthropic API claims with linked official docs. No provider request or historical model run was replayed.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 29,
+    "testsFailed": 0,
+    "testCount": 29,
+    "providerCalls": 0,
+    "model": "static-archive-and-offline-fixture-review",
+    "trace": "The lesson’s historical A score is not recoverable: prose says 7/7, log says 6/7, and the displayed failure row has identical expected and visible actual dates. B and control are only unverified 4/4 summaries. Current script scoring appends a truncation marker but still uses expected-in-output substring matching; its later mtime means it cannot be established as the run version. Effect is unknown."
+  },
+  "limitations": [
+    "No raw per-request model responses, stop reasons, usage, request IDs, endpoint/model fingerprint, sample-to-response mapping, scorer version, or aggregation artifact is retained.",
+    "The archived run log and the current ignored script may represent different versions; no historical script hash ties them together.",
+    "No new provider requests were made and the old run was not replayed.",
+    "Offline fixtures verify lesson wording and the candidate-rule helper behavior only; they do not measure whether any distilled rule improves a model or production system.",
+    "Anthropic stop-reason semantics are scoped to the current Anthropic Messages API documentation; compatible endpoints require independent contract checks.",
+    "The historical log is a short summary, not the raw provider response; the source-facts note records the current ignored script hash and observed scorer behavior but cannot prove it produced the archived run."
+  ]
+}

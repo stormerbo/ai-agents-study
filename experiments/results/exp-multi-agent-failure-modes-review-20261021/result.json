@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-multi-agent-failure-modes-review-20261021",
+  "runId": "multi-agent-failure-modes-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Compiled and executed both Python examples using constructed data; added a regression proving bool counts fail before applying the rate formula; ran deterministic checks against the article and metadata. No provider call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 22,
+    "testsPassed": 22,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 2
+  },
+  "limitations": [
+    "The historical per-call prompts/responses, exact model snapshots and semantic scorer are unavailable; the historical omission and 8.1x token summaries were not reproduced.",
+    "The first fixture checks stable IDs and source IDs only; it does not evaluate natural-language meaning, source truth, or model compliance.",
+    "The rate example uses constructed counts, rejects non-integer/bool counts, and proves only local arithmetic; it does not validate a real business dataset or causal explanation.",
+    "No provider, production handoff, scheduler, authorization system, quality outcome, billing or latency was tested."
+  ]
+}

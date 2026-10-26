@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-recovery-drill-postgres-restore-20261021",
+  "runId": "2026-10-21-postgres-logical-restore-rerun-2",
+  "evidenceType": "postgres-integration",
+  "observedAt": "2026-10-21",
+  "method": "Re-ran the registered shell drill on 2026-10-21 against ephemeral PostgreSQL 18.0-bookworm source and fresh target containers. App and receiver databases were dumped separately with pg_dump -Fc and restored with pg_restore --exit-on-error; expected uncertainty state and receiver count matched. No provider endpoint was called.",
+  "observations": {
+    "postgresImage": "postgres:18.0-bookworm",
+    "restoredAppState": "reconciling:unknown:unknown:external_effect_unknown",
+    "sinkOperationCount": 1,
+    "providerRequests": 0
+  },
+  "limitations": [
+    "Synthetic schema and rows only; not the Stage 4/5 application schema or production data",
+    "Logical pg_dump restore only; no WAL/PITR, base backup verification, backup-time failure, RTO/RPO measurement, worker kill, or network partition",
+    "The drill checks restored state and receiver count; it does not exercise an automatic reconcile/retry workflow. The image is recorded by tag, not immutable digest."
+  ]
+}

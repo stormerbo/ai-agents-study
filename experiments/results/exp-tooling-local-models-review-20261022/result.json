@@ -1,0 +1,29 @@
+{
+  "experimentId": "exp-tooling-local-models-review-20261021",
+  "runId": "2026-10-22-review-continuation-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, its registered documented checkpoint and current primary documentation. Ran the full source-boundary verifier, curriculum tests, production build and Pagefind, then visually checked the production route in light and dark themes at 1300px.",
+  "observations": {
+    "checks": 18,
+    "checksPassed": 18,
+    "providerCalls": 0,
+    "historicalBenchmarksRerun": 0,
+    "officialSourcesReviewed": 5,
+    "productionBuildPages": 422,
+    "pagefindIndexedPages": 422,
+    "pagefindWords": 15569,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/tooling-local-models-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/tooling-local-models-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x7847"
+  },
+  "limitations": [
+    "The 2026-10-09 CPU embedding throughput and vector-size measurements remain historical and independently unreproduced.",
+    "No target hardware, local inference service, production concurrency, cold-start, live provider, compliance review or production deployment was exercised."
+  ]
+}

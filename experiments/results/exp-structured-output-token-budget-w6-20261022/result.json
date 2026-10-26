@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-structured-output-token-budget-w6-20261022",
+  "runId": "structured-output-token-budget-review-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Rechecked the provider-specific output-token cap names against official Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses API references. Ran the lesson verifier after correcting its code-fence matching regex so it actually extracts all Markdown fences; it compiled/executed both Python blocks and compared their stdout with the adjacent text fences. No provider calls were made.",
+  "observations": {
+    "checksPassed": 8,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 3
+  },
+  "limitations": [
+    "Documentation was checked on 2026-10-22; exact fields and output-budget semantics remain API-, model-, and endpoint-specific.",
+    "No model response, provider compatibility endpoint, billing record, or production usage was tested.",
+    "The Markdown output comparison checks authored code examples, not model-generated content quality or end-to-end task success."
+  ]
+}

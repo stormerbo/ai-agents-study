@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-agent-frameworks-leaky-abstractions-w6-20261021",
+  "runId": "agent-frameworks-leaky-abstractions-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the pinned LangChain Core 0.3.63 tool API/source behavior and current OpenAI Agents SDK retry guidance. Ran the complete schema example in a fresh Python 3.10 environment with langchain 0.3.7, langchain-core 0.3.63, and Pydantic 2.9.2; the offline verifier also checks lesson claims, metadata source IDs, code boundaries, and exact stdout. No provider or network calls were made by the verifier.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 25,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 1,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 3,
+    "historicalBenchmarksRerun": false
+  },
+  "limitations": [
+    "The 2026-10-08 0/3 versus 3/3 model outcome lacks raw requests, individual responses, a fixed model snapshot, and a scorer, so it was not independently reproduced and supports no causal or general success-rate conclusion.",
+    "The LangChain example covers local schema construction for Python 3.10, langchain 0.3.7, langchain-core 0.3.63, and Pydantic 2.9.2 only. It does not test provider acceptance, model compliance, runtime authorization, or production tool behavior.",
+    "Retry and replay guidance was checked against current OpenAI Agents SDK documentation; this does not characterize every SDK or prove side-effect safety for any deployed integration.",
+    "No live provider, external tool, production persistence, or business recovery path was exercised."
+  ]
+}

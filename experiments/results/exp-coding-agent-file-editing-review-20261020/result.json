@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-coding-agent-file-editing-review-20261020",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 18,
+    "passed": 18,
+    "failed": 0,
+    "status": "18 checks passed; fixture is 1,878 chars and empty old_string yields 1,879 matches, consistent with log; raw response absent",
+    "fixtureOnly": true
+  },
+  "limitations": [
+    "The historical provider response was not preserved. The empty-old-string explanation is a strong inference from Python str.count semantics, not a recovered model output.",
+    "The 8/5/5 measurements are single-run fixture observations with different conditions; they do not estimate general edit reliability or establish a causal effect of context size.",
+    "The local verifier checks protocol parsing and replacement guards only; it does not call a model or establish production tool behavior.",
+    "Aider and Anthropic official docs are cited in the lesson for examples of supported edit formats; they do not establish an industry-wide dominant format."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-20",
+  "method": "Run python3 experiments/scripts/verify_coding_agent_file_editing_review_20261020.py; rebuild only the old fixture AST assignments and its fixed repeated-handler template, compare length/count to the archived log, extract and execute the lesson JSON parser and guarded replacement examples, and check removal of unsupported causal/general claims."
+}

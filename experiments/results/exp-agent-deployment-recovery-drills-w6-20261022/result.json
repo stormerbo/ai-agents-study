@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-agent-deployment-recovery-drills-w6-20261022",
+  "runId": "agent-deployment-recovery-drills-w6-2026-10-22-01",
+  "evidenceType": "postgres-integration",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full lesson against PostgreSQL 18 pg_verifybackup, pg_dump, pg_restore, and continuous archiving docs. Added explicit limitations for absent worker fencing and non-atomic cross-database snapshots. Ran the seven-test SQLite failure-boundary suite and the isolated PostgreSQL 18 logical-restore script via the hash-pinned verifier.",
+  "observations": {
+    "checksPassed": 21,
+    "testsPassed": 7,
+    "sqliteTestsPassed": 7,
+    "providerCalls": 0,
+    "officialSourcesReviewed": 4,
+    "postgresImage": "postgres:18.0-bookworm",
+    "restoredAppState": "reconciling:unknown:unknown:external_effect_unknown",
+    "sinkOperationCount": 1
+  },
+  "limitations": [
+    "The PostgreSQL script restores two synthetic databases sequentially with no concurrent writes; it does not prove a coordinated cross-service point-in-time snapshot.",
+    "The SQLite fixture does not implement lease expiry, execution epochs, or stale-owner fencing.",
+    "The logical restore is not pg_verifybackup, WAL/PITR, production schema, real worker failure, RTO/RPO, or an external side-effect replay test.",
+    "The Docker image is pinned only by mutable tag, not digest. No provider was called."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-agent-security-untrusted-input-review-20261020",
+  "runId": "agent-security-untrusted-input-review-2026-10-20-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Ran the dependency-free audit script. It compiled and executed the lesson Python fence with a synthetic model response, confirming the local loop executes a requested delete_all fake sink without an authorization gate. It also asserted that injection scope, historical model outputs, boundary labels, keyword filters and official source references are described with explicit limits.",
+  "observations": {
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "testCount": 6,
+    "pythonFencesCompiled": 1
+  },
+  "limitations": [
+    "The script does not call a model, provider or external tool and cannot reproduce the historical 2026-10-09 or chapter 2 model observations.",
+    "The audit checks the lesson wording and code boundary; it does not validate a production input classifier, source provenance pipeline, retention policy, authorization service, or human approval workflow.",
+    "Anthropic tool-result guidance applies to its API and should not be generalized to other providers; OWASP recommendations are mitigations rather than proof of prevention."
+  ]
+}

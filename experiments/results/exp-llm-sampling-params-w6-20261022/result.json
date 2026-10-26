@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-llm-sampling-params-w6-20261022",
+  "runId": "sampling-params-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed Anthropic API migration 2026-10-21, model deprecations, Python SDK migration, current Effort/Thinking/prompt-caching documentation, and DeepSeek Anthropic-compatible API docs. Ran W6 offline contract checks and previous content/syntax verifier.",
+  "observations": {
+    "status": "pass",
+    "testCount": 32,
+    "testsPassed": 32,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "W6 reviewer 9/9 and prior offline review 23/23. Corrected API-version-wide removal versus earlier model-specific behavior; registered API migration source; clarified SDK 2.0.0 default version, extra_body limits, DeepSeek compatibility source, and cache invalidation boundaries."
+  },
+  "limitations": [
+    "No provider SDK request or live model call was made.",
+    "Historical DeepSeek temperature/thinking summaries remain unreproducible and do not support causal or quality claims.",
+    "No live verification of locked SDK/API version/model combinations, service behavior, parameter efficacy, or billed cache usage."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-tooling-orchestration-stack-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed pip user/CLI documentation, PyPA packaging Version documentation, exact PyPI JSON release metadata for langgraph 1.2.14 and langchain 0.3.7, and OpenTelemetry semantic-convention guidance. Ran the offline verifier (30/30). Extracted and executed the lesson Python fence in a temporary Python 3.14 virtual environment with packaging 26.3; output matched the stated direct dependency comparison. No provider calls or pip resolver dry run. Production build generated 394 pages and Pagefind indexed 394 pages/15,377 words. Full-page light/dark screenshots were inspected at 1300px; document scrollWidth=1300px, article=792px, one SVG rendered. Browser console showed only the existing missing favicon 404.",
+  "observations": {
+    "checks": 30,
+    "checksPassed": 30,
+    "providerCalls": 0,
+    "historicalBenchmarksRerun": 0,
+    "officialSourcesReviewed": 6
+  },
+  "limitations": [
+    "The exact PyPI release metadata confirms the declared langchain-core ranges do not overlap and that Pydantic 2.9.2 satisfies the displayed Pydantic constraints; it does not reproduce the historical pip command or establish what was installed in the old environment.",
+    "The Python example compares only explicit direct requirements against a fixed installed-version snapshot. It does not resolve the complete dependency graph, evaluate environment markers/extras/platform tags, or model pip upgrade behavior.",
+    "The pip dry-run command was documented but not executed. No target project requirements or lock export was available for a representative full resolver run.",
+    "The OpenTelemetry source is telemetry-attribute design guidance; it is not a product capability survey, legal interpretation, or deployment privacy audit. No specific observability platform pricing, retention, access-control, or integration behavior was tested.",
+    "Historical resolver output and historical trace experiment data remain unavailable and were not independently reproduced."
+  ]
+}

@@ -1,18 +1,3785 @@
 {
   "version": 1,
   "records": [
-    {"id":"ERR-001","status":"verified","lessonIds":["mcp/stateless-2026","mcp/build-a-server"],"experimentIds":["exp-mcp-20260728-spec-review"]},
-    {"id":"ERR-002","status":"verified","lessonIds":["capstone/skeleton"],"experimentIds":[]},
-    {"id":"ERR-003","status":"verified","lessonIds":["structured-output/json-schema-strict"],"experimentIds":[]},
-    {"id":"ERR-004","status":"verified","lessonIds":["evaluation/pass-k"],"experimentIds":["exp-passk-seeded-20261010"]},
-    {"id":"ERR-005","status":"verified","lessonIds":["evaluation/confidence"],"experimentIds":["exp-confidence-width-20261019"]},
-    {"id":"ERR-006","status":"verified","lessonIds":["human-in-the-loop/interrupt-and-resume"],"experimentIds":["exp-outbox-task-retry-sqlite-model"]},
-    {"id":"ERR-007","status":"verified","lessonIds":["agent-deployment/deployment-shape"],"experimentIds":["exp-outbox-task-retry-sqlite-model"]},
-    {"id":"ERR-008","status":"verified","lessonIds":["human-in-the-loop/automation-levels","human-in-the-loop/approval-design","capstone/skeleton"],"experimentIds":[]},
-    {"id":"ERR-009","status":"verified","lessonIds":["coding-agent/why-coding-agent"],"experimentIds":[]},
-    {"id":"ERR-010","status":"verified","lessonIds":["retrieval/why-retrieval"],"experimentIds":["exp-retrieval-token-ratio-20261019"]},
-    {"id":"ERR-011","status":"verified","lessonIds":["what-is-an-agent/what-counts-as-agent"],"experimentIds":[]},
-    {"id":"ERR-012","status":"verified","lessonIds":["agent-paradigms/react-loop"],"experimentIds":[]},
-    {"id":"ERR-013","status":"verified","lessonIds":["llm-api-basics/tokens-and-context"],"experimentIds":[]}
+    {
+      "id": "ERR-001",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/stateless-2026",
+        "mcp/build-a-server"
+      ],
+      "experimentIds": [
+        "exp-mcp-20260728-spec-review"
+      ]
+    },
+    {
+      "id": "ERR-038",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/stateless-2026"
+      ],
+      "experimentIds": [
+        "exp-mcp-stateless-wire-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-002",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/skeleton"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-003",
+      "status": "verified",
+      "lessonIds": [
+        "structured-output/json-schema-strict"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-004",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/pass-k"
+      ],
+      "experimentIds": [
+        "exp-passk-seeded-20261010"
+      ]
+    },
+    {
+      "id": "ERR-005",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/confidence"
+      ],
+      "experimentIds": [
+        "exp-confidence-width-20261019"
+      ]
+    },
+    {
+      "id": "ERR-006",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/interrupt-and-resume"
+      ],
+      "experimentIds": [
+        "exp-outbox-task-retry-sqlite-model"
+      ]
+    },
+    {
+      "id": "ERR-007",
+      "status": "verified",
+      "lessonIds": [
+        "agent-deployment/deployment-shape"
+      ],
+      "experimentIds": [
+        "exp-outbox-task-retry-sqlite-model"
+      ]
+    },
+    {
+      "id": "ERR-008",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/automation-levels",
+        "human-in-the-loop/approval-design",
+        "capstone/skeleton"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-009",
+      "status": "verified",
+      "lessonIds": [
+        "coding-agent/why-coding-agent"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-010",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/why-retrieval"
+      ],
+      "experimentIds": [
+        "exp-retrieval-token-ratio-20261019"
+      ]
+    },
+    {
+      "id": "ERR-011",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/what-counts-as-agent"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-012",
+      "status": "verified",
+      "lessonIds": [
+        "agent-paradigms/react-loop",
+        "what-is-an-agent/why-now"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-013",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/tokens-and-context",
+        "agent-loop/budgets-and-guards"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-014",
+      "status": "investigating",
+      "lessonIds": [
+        "memory/context-is-not-memory",
+        "context-engineering/kv-cache",
+        "llm-api-basics/prompt-caching",
+        "cost-and-latency/caching"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-015",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/cost-model"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-cost-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-016",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/cost-model",
+        "cost-and-latency/caching",
+        "cost-and-latency/latency-sources"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-017",
+      "status": "verified",
+      "lessonIds": [
+        "agent-deployment/versioning",
+        "evaluation/llm-as-judge",
+        "evaluation/regression"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-018",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/progress-and-trust",
+        "agent-deployment/ops-loop"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-019",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/what-differs",
+        "computer-use/observe-act-loop",
+        "computer-use/failure-modes",
+        "computer-use/safety-and-scope",
+        "computer-use/when-not-to-use"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-020",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/streaming-and-control",
+        "reading-source/why-and-how",
+        "reading-source/trace-one-task",
+        "reading-source/compare",
+        "reading-source/outputs"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-021",
+      "status": "verified",
+      "lessonIds": [
+        "continuous-evolution/from-traces",
+        "continuous-evolution/distill-and-test",
+        "capstone/deliver"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-022",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/topologies",
+        "multi-agent/cost-model",
+        "multi-agent/failure-modes",
+        "multi-agent/failure-modes-collaboration",
+        "prompt-engineering/structure-and-separation",
+        "prompt-engineering/chain-of-thought",
+        "prompt-engineering/reliability"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-023",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/tokens-and-context",
+        "context-engineering/context-is-finite"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-024",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/minimal-loop"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-025",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/minimal-loop"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-026",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/minimal-loop"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-027",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/minimal-loop"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-028",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/minimal-loop"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-029",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/provider-contracts"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-030",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/provider-migration"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-031",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/how-to-use-this-site"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-032",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/how-to-use-this-site"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-033",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/provider-migration"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-034",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/minimal-loop"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-039",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/build-a-server"
+      ],
+      "experimentIds": [
+        "exp-mcp-build-server-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-040",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/security-boundary"
+      ],
+      "experimentIds": [
+        "exp-mcp-security-boundary-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-041",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/why-protocol"
+      ],
+      "experimentIds": [
+        "exp-mcp-why-protocol-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-042",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/remote-authorization"
+      ],
+      "experimentIds": [
+        "exp-mcp-remote-authorization-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-043",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/budgets-and-guards"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-budget-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-044",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/state-and-resume",
+        "agent-loop/tool-registry",
+        "human-in-the-loop/interrupt-and-resume"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-state-resume-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-045",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/tool-registry"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-tool-registry-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-046",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/what-frameworks-do"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-framework-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-047",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/execution-ownership"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-execution-ownership-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-048",
+      "status": "verified",
+      "lessonIds": [
+        "agent-paradigms/five-paradigms",
+        "agent-paradigms/react-loop",
+        "agent-paradigms/plan-and-execute",
+        "agent-paradigms/reflection",
+        "agent-paradigms/choosing"
+      ],
+      "experimentIds": [
+        "exp-agent-paradigms-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-049",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/defense-in-depth"
+      ],
+      "experimentIds": [
+        "exp-agent-security-defense-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-050",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/injection-escalation"
+      ],
+      "experimentIds": [
+        "exp-agent-security-injection-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-051",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/tools-as-untrusted-input"
+      ],
+      "experimentIds": [
+        "exp-agent-security-untrusted-input-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-052",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/supply-chain"
+      ],
+      "experimentIds": [
+        "exp-agent-security-supply-chain-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-053",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/exfiltration"
+      ],
+      "experimentIds": [
+        "exp-agent-security-exfiltration-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-054",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/acceptance"
+      ],
+      "experimentIds": [
+        "exp-capstone-acceptance-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-055",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/deliver"
+      ],
+      "experimentIds": [
+        "exp-capstone-deliver-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-056",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/hardening"
+      ],
+      "experimentIds": [
+        "exp-capstone-hardening-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-057",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/retrospective"
+      ],
+      "experimentIds": [
+        "exp-capstone-retrospective-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-058",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/scope"
+      ],
+      "experimentIds": [
+        "exp-capstone-scope-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-059",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/skeleton"
+      ],
+      "experimentIds": [
+        "exp-capstone-skeleton-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-060",
+      "status": "verified",
+      "lessonIds": [
+        "coding-agent/error-recovery",
+        "coding-agent/why-coding-agent"
+      ],
+      "experimentIds": [
+        "exp-coding-agent-error-recovery-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-061",
+      "status": "verified",
+      "lessonIds": [
+        "coding-agent/file-editing"
+      ],
+      "experimentIds": [
+        "exp-coding-agent-file-editing-review-20261020",
+        "exp-coding-agent-file-editing-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-062",
+      "status": "verified",
+      "lessonIds": [
+        "coding-agent/search-strategy"
+      ],
+      "experimentIds": [
+        "exp-coding-agent-search-strategy-review-20261020",
+        "exp-coding-agent-search-strategy-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-063",
+      "status": "verified",
+      "lessonIds": [
+        "coding-agent/safety"
+      ],
+      "experimentIds": [
+        "exp-coding-agent-safety-review-20261020",
+        "exp-coding-agent-safety-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-064",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/observe-act-loop"
+      ],
+      "experimentIds": [
+        "exp-computer-use-observe-act-loop-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-065",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/failure-modes"
+      ],
+      "experimentIds": [
+        "exp-computer-use-failure-modes-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-066",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/safety-and-scope"
+      ],
+      "experimentIds": [
+        "exp-computer-use-safety-scope-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-067",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/when-not-to-use"
+      ],
+      "experimentIds": [
+        "exp-computer-use-selection-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-068",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/what-really-happens"
+      ],
+      "experimentIds": [
+        "exp-tool-call-lifecycle-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-069",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/schema-design"
+      ],
+      "experimentIds": [
+        "exp-tool-schema-design-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-070",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/poka-yoke"
+      ],
+      "experimentIds": [
+        "exp-tool-poka-yoke-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-071",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/parallel-and-errors"
+      ],
+      "experimentIds": [
+        "exp-tool-parallel-errors-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-073",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/what-differs"
+      ],
+      "experimentIds": [
+        "exp-computer-use-what-differs-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-072",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/tool-count"
+      ],
+      "experimentIds": [
+        "exp-tool-count-review-20261020"
+      ]
+    },
+    {
+      "id": "ERR-074",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/kv-cache"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-kv-cache-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-075",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/context-is-finite"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-context-is-finite-review-20261021",
+        "exp-context-engineering-context-is-finite-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-076",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/just-in-time"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-just-in-time-review-20261021",
+        "exp-context-engineering-just-in-time-auth-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-077",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/subagent-isolation",
+        "multi-agent/isolation-is-the-point",
+        "multi-agent/failure-modes",
+        "multi-agent/alternatives"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-subagent-isolation-review-20261021",
+        "exp-multi-agent-isolation-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-078",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/system-prompt-altitude"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-system-prompt-altitude-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-079",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/compaction"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-compaction-review-20261021",
+        "exp-context-engineering-compaction-schema-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-080",
+      "status": "investigating",
+      "lessonIds": [
+        "context-engineering/chat-template"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-chat-template-review-20261021",
+        "exp-context-engineering-chat-template-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-081",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/agent-skills"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-agent-skills-review-20261021",
+        "exp-context-engineering-agent-skills-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-083",
+      "status": "verified",
+      "lessonIds": [
+        "continuous-evolution/from-traces"
+      ],
+      "experimentIds": [
+        "exp-continuous-evolution-from-traces-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-083",
+      "status": "verified",
+      "lessonIds": [
+        "continuous-evolution/from-traces"
+      ],
+      "experimentIds": [
+        "exp-continuous-evolution-from-traces-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-082",
+      "status": "investigating",
+      "lessonIds": [
+        "continuous-evolution/distill-and-test"
+      ],
+      "experimentIds": [
+        "exp-continuous-evolution-distill-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-084",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/budget-guardrails"
+      ],
+      "experimentIds": [
+        "exp-cost-budget-guardrails-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-085",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/caching"
+      ],
+      "experimentIds": [
+        "exp-cost-caching-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-087",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/concurrency-and-backpressure"
+      ],
+      "experimentIds": [
+        "exp-concurrency-backpressure-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-088",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/latency-sources"
+      ],
+      "experimentIds": [
+        "exp-latency-sources-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-089",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/routing"
+      ],
+      "experimentIds": [
+        "exp-cost-routing-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-090",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/ablation"
+      ],
+      "experimentIds": [
+        "exp-evaluation-ablation-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-091",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/confidence"
+      ],
+      "experimentIds": [
+        "exp-evaluation-confidence-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-092",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/contamination"
+      ],
+      "experimentIds": [
+        "exp-evaluation-contamination-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-093",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/dataset"
+      ],
+      "experimentIds": [
+        "exp-evaluation-dataset-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-094",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/define-good"
+      ],
+      "experimentIds": [
+        "exp-evaluation-define-good-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-095",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/eval-env"
+      ],
+      "experimentIds": [
+        "exp-evaluation-environment-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-096",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/llm-as-judge"
+      ],
+      "experimentIds": [
+        "exp-evaluation-llm-judge-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-097",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/paired-comparison"
+      ],
+      "experimentIds": [
+        "exp-evaluation-paired-comparison-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-098",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/pass-k"
+      ],
+      "experimentIds": [
+        "exp-passk-seeded-20261010"
+      ]
+    },
+    {
+      "id": "ERR-099",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/provider-migration"
+      ],
+      "experimentIds": [
+        "exp-provider-migration-empty-suite-20261020"
+      ]
+    },
+    {
+      "id": "ERR-100",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/regression"
+      ],
+      "experimentIds": [
+        "exp-evaluation-regression-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-263",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/regression"
+      ],
+      "experimentIds": [
+        "exp-evaluation-regression-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-264",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/regression"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-104"
+      ]
+    },
+    {
+      "id": "ERR-101",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/traces"
+      ],
+      "experimentIds": [
+        "exp-evaluation-traces-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-102",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/what-counts-as-agent"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-103",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/why-now"
+      ],
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-104",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/approval-design"
+      ],
+      "experimentIds": [
+        "exp-human-approval-design-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-105",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/automation-levels",
+        "human-in-the-loop/approval-design"
+      ],
+      "experimentIds": [
+        "exp-human-automation-levels-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-106",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/interrupt-and-resume"
+      ],
+      "experimentIds": [
+        "exp-human-interrupt-resume-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-107",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/progress-and-trust"
+      ],
+      "experimentIds": [
+        "exp-human-progress-trust-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-108",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/streaming-and-control"
+      ],
+      "experimentIds": [
+        "exp-human-streaming-control-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-109",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/tokens-and-context"
+      ],
+      "experimentIds": [
+        "exp-llm-tokens-context-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-110",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/messages-api"
+      ],
+      "experimentIds": [
+        "exp-llm-messages-api-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-111",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/sampling-params"
+      ],
+      "experimentIds": [
+        "exp-llm-sampling-params-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-112",
+      "lessonIds": [
+        "tooling/first-agent"
+      ],
+      "summary": "把纯状态图称为完整 agent；混淆线程 ID 与用户授权、同进程异常注入与进程崩溃；将检查点时序绝对化并忽略 LangGraph task 对已完成工作的结果记录；把内存列表 fixture 写成真实数据库实验；依赖安装未锁定且版本说明过时。",
+      "correction": "明确该代码是无模型/工具的状态图骨架；thread_id 只定位 thread checkpoint、不证明身份或权限；按 super-step 与 task 语义说明节点异常后的重跑边界，限定外部副作用 exactly-once 需应用级幂等/事务/对账；将异常重试限定为同进程、内存列表 fixture；使用固定的 Python 3.14/macOS ARM64 LangGraph 环境锁并记录当前实跑结果。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-tooling-first-agent-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-113",
+      "lessonIds": [
+        "llm-api-basics/model-selection"
+      ],
+      "summary": "把多轮 token 摘要写成可复现账单并将 480 token/58% 归因于重发历史；固定价格、缓存倍率与变价周期；默认多数请求能用便宜模型且强模型可处理高风险动作；分类器异常路径缺失。",
+      "correction": "将历史数据限定为不可复核摘要并撤回新旧内容拆分；按 provider usage 类别核算；按代表性任务评测质量、延迟和每个成功任务成本；模型档位不替代授权/审批；分类异常和截断转人工复核。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-llm-model-selection-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-114",
+      "lessonIds": [
+        "what-is-an-agent/mindset-shift"
+      ],
+      "summary": "把精确匹配断言概括成不适用于 LLM；推测 GPU 浮点、批处理和服务端负载为非确定性原因；混淆 API 成功、任务成功与静默失败；将上下文稀释和 Lost in the Middle 外推成所有模型/任务的固定规律；旧固定标记结果被当成可复现实测。",
+      "correction": "按原始文本、schema、业务字段和任务结果分层定义测试契约；把温度和参数支持限定到 Anthropic 文档及模型版本；区分 API、停止原因与业务结果；位置效应按论文任务范围描述，将本站历史标记测试降级为不可复核探索；修正重试、日志和样本抽取建议。",
+      "status": "verified",
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-115",
+      "lessonIds": [
+        "llm-api-basics/prompt-caching"
+      ],
+      "summary": "把 prompt caching 写成通用机制并以 Anthropic-compatible endpoint 旧观测描述 DeepSeek；usage 零值解释未区分 provider；Anthropic 缓存读价使用跨模型的单一倍率。",
+      "correction": "加入 Anthropic/OpenAI/DeepSeek 原生 API 的当前契约与 usage 字段对照；区分 DeepSeek 原生磁盘前缀缓存与 Anthropic-compatible endpoint；将 Anthropic 读价限定为模型相关并给出核对日期；把零字段解释限定到 Anthropic Messages API。",
+      "status": "verified",
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-116",
+      "lessonIds": [
+        "llm-api-basics/provider-contracts"
+      ],
+      "summary": "统一分类器将外层 Responses completed 误当作 function_call item 必然完整；未检测 Anthropic tool_use 缺少 tool_use block 或 DeepSeek stop 状态却带工具调用的不一致 fixture；没有界定 DeepSeek Chat Completions 的单 choice 范围及 failed 与 retryable 的区别。",
+      "correction": "对 function_call item 明确 incomplete/in_progress 的 Responses 归为 unknown；provider 声称 tool_use/tool_calls 却缺调用 block 或 finish_reason 与工具列表冲突时 fail closed；声明 DeepSeek n=1 教学切片、其他 choice 数不支持；明确 completed 只代表 provider 正常终止、failed 不代表可安全重试；补充 Responses、Anthropic Messages、DeepSeek Chat 三种工具调用/结果 ID 的对应字段。",
+      "status": "verified",
+      "experimentIds": []
+    },
+    {
+      "id": "ERR-117",
+      "lessonIds": [
+        "agent-deployment/recovery-drills"
+      ],
+      "summary": "将“结果已收到但尚未持久化”误写为可从“已保存结果”继续，混淆了收到响应与 durable state；把本地模型的 tenant-scoped 幂等约束概括成未限定租户的单一 key。",
+      "correction": "明确结果收到但未持久化时本地无可恢复记录，应按结果未知处理并对账；只有 durable result 已保存才从它继续。明确任务幂等约束仅为同一 tenant 与 key，示例断言对照租户相同 key 会生成不同任务。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-outbox-task-retry-sqlite-model"
+      ]
+    },
+    {
+      "id": "ERR-118",
+      "lessonIds": [
+        "memory/context-is-not-memory"
+      ],
+      "summary": "教学 top-k 示例会在没有任何相关字符时仍注入任意记忆；图示混淆了当前调用结束与同一会话后续轮；把 3/3 海捞针历史摘要解释为位置无影响并声称扩展既有证据边界；将教学分类写成普遍记忆类型。；并将英文填充词数误当作近似 tokenizer token 数。",
+      "correction": "top-k 检索仅在有正分命中时返回结果，并覆盖空 query、k=0 和非法 k；区分单次调用输入、同会话状态和跨会话持久记忆；把三类记忆标成作者工作分类；历史模型数字仅作为不可独立复核的摘要，不估计位置效应或扩展证据边界。词数用于控制构造输入的相对规模，实际 token 数以 provider usage 为准。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-memory-context-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-119",
+      "lessonIds": [
+        "memory/when-to-recall"
+      ],
+      "summary": "历史误召回单次对照缺原始请求/响应与评分器，却被写成普遍静默因果；“误召回总比漏召回严重”过度概括；时效示例用近似日历算法，且 m3 先被来源闸门拦下导致 TTL 实际未触发；相似度阈值说明把 BM25 与向量分数作错误对比；轨迹代码与字段说明不一致并默认记录原始 query。",
+      "correction": "将历史对照降级为不可独立复核的风险假设；按任务比较误召回与漏召回；用时区明确的 updated_at 与每条记录 ttl_days 精确比较，增加独立过期 fixture；解释候选分数需按目标 query-memory 对校准并用独立集验证；明确候选不等于注入；轨迹记录实际注入/拦截 ID 和 request ID，不复制 query 正文，并更新字段/输出样例。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-memory-when-to-recall-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-120",
+      "lessonIds": [
+        "memory/what-to-write"
+      ],
+      "summary": "缺逐次 provider 输出和评分器的写入策略摘要被表述为准确率；一条推断句被拆为两个记忆；通用写入规则忽略授权、隐私、范围和删除；示例以关键词/长度冒充语义判定；短 ID 前缀可能碰撞且未隔离 scope；修改时间冒充事实确认时间；成本倍率未标明重发假设；截断响应仍评分，API 示例也不自包含。",
+      "correction": "将历史结果限定为无法独立复核的摘要并解释子串计分边界；将三项准入条件降为特定用途启发式，补入用户控制、敏感信息、source_ref、scope、有效期与删除；初筛只生成候选；ID 对 scope 与 dedup_key 做 SHA-256，区分 updated_at 与 last_confirmed_at；成本使用带假设的三角数模型；API 示例可选、不持久化且只对 end_turn 输出评分。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-memory-what-to-write-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-121",
+      "lessonIds": [
+        "memory/forgetting-and-conflict"
+      ],
+      "summary": "将未归档逐次轨迹的 3×2 冲突实验解释为时间戳导致稳定；将来源排成普遍真值等级并把“取最新”视为普遍正确；主题关键词/条目上限无法识别实际矛盾且未隔离 scope；固定 TTL 缺乏依据；删除示例先删索引再删权威表，且软删/硬删语义模糊；用一次历史误召回推出错误召回必然污染输出。",
+      "correction": "把旧 A/B 结果限定为不可复核摘要；自动解析限定到同 scope/key、同证据类型且存在唯一明确 supersession 链的记录，其他冲突待确认并阻止注入；主题阈值仅作按 scope 分组的审查队列容量；有效期由数据波动与误用风险制定；删除先在权威库事务中写 tombstone/清空负载并写 outbox，召回注入前校验权威状态，再幂等清理索引和副本；删除草图明确未实跑及保留边界。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-memory-forgetting-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-122",
+      "lessonIds": [
+        "memory/memory-cost-and-eval"
+      ],
+      "summary": "成本表把模型输入 token、存储 token 代理和检索/运营费用混为同一成本；正文称写入成本固定且仅取决于对话长度；显示合计与脚本对四项成本求和不一致；以单比例标准误代替 15 个任务的配对差值误差，给出小样本显著性判断及 8–10/15 组足够的建议；将用户纠正率称为唯一负向指标，并把小型内存批处理等同于真实跨会话产品评估。",
+      "correction": "成本模型只计算明确假设下的模型输入 token，存储条数单独列出；写入成本注明取决于提取频率、上下文、摘要和缓存；修正显示数值与模型输出一致。评估设计保存同任务两条件结果，按配对不一致项分析，取消固定样本量与单比例标准误阈值；补充静默错误、漏用、评分、任务代表性、运行顺序与真实持久层边界。引用 NIST McNemar 与 Fagerland 等人的配对二项区间方法；注明 NIST 单比例区间不能替代配对区间。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-memory-cost-eval-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-123",
+      "lessonIds": [
+        "multi-agent/alternatives"
+      ],
+      "summary": "把检索交叉点、单 agent 成功率和角色提示写成多智能体决策阈值；将 API 工具提议与本地合成 UI 的 14.4 倍成本差异解释成确定性工具与 agent 子任务的普遍成本比较；workflow 和多智能体分支图直接推出架构正确性；旧单次序列脚本用关键词判断硬约束是否存活，并把顺序 worker 调用及 token 总数解释成并行质量/成本实验。",
+      "correction": "将检索与上下文整理改为需在同一任务、同 rubric 下比较的候选方案；明确单 agent 基线不推出多智能体质量上限，角色名不保证能力专门化；将 14.4 倍限定为执行边界和成功条件不一致的历史比较，不能衡量工具与 agent 子任务；决策图改为配对验收流程；替换关键词判分与输入单边倍率解释，分别统计输入/输出 usage，非 end_turn fail closed，并将旧脚本标为顺序单次 API 示范，无质量评分/并行/延迟测量，历史结果无法复算。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-multi-agent-alternatives-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-124",
+      "lessonIds": [
+        "multi-agent/failure-modes"
+      ],
+      "summary": "把多智能体失败普遍归因于边界；将 8→7 历史摘要及关键词判分包装成约束已存活、失败未复现或低频；把 supervisor 输入近似全量等同于收益完全抵消；暗示换切分维度可消除矛盾；未给分母的地区比例示例推出总体趋势；结构化输出暗示语义正确。",
+      "correction": "将风险限定为依赖任务与拓扑的检查类别；披露历史请求/响应、快照和 scorer 缺失，撤回子串判分的语义结论；将 supervisor 输入规模限定为诊断信号并要求同任务评估质量、覆盖、延迟与全链路成本；用显式分子/分母展示局部与总体趋势并说明切分不自动消解冲突；区分 schema 形状保证、事实/语义校验、来源核验和宿主授权；将 Python 样例限为构造数据的离线演示。",
+      "status": "verified",
+      "experimentIds": [
+        "exp-multi-agent-failure-modes-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-125",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/failure-modes-collaboration"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-collaboration-review-20261021"
+      ],
+      "summary": "将共享状态竞态描述成 agent 特有失败；把不可复核的 5-agent Jaccard 0.24 和人工总结作为观点趋同证据；混淆执行 trace 与内容来源 lineage；过度声称依赖图可以保证正确性。",
+      "correction": "将并发结论限定为非原子共享状态更新，并以 barrier 固定交错做本地示例；披露历史逐次请求/响应、tokenizer、立场标签和 scorer 缺失，撤回普遍趋同结论；把多样性论文限制于其 NLG 研究范围；补依赖图 ID/引用/无环的结构校验，同时说明其不验证来源可信度、时效、语义或授权；将 GenAI trace 状态及敏感数据采集边界明确标注。"
+    },
+    {
+      "id": "ERR-126",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/topologies",
+        "prompt-engineering/reliability",
+        "agent-paradigms/reflection"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-topologies-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-127",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/chain-of-thought"
+      ],
+      "experimentIds": [
+        "exp-prompt-cot-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-128",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/instruction-clarity"
+      ],
+      "experimentIds": [
+        "exp-prompt-instruction-clarity-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-129",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/few-shot"
+      ],
+      "experimentIds": [
+        "exp-prompt-few-shot-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-130",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/structure-and-separation",
+        "agent-security/defense-in-depth",
+        "agent-security/tools-as-untrusted-input",
+        "agent-security/injection-escalation",
+        "agent-security/exfiltration",
+        "mcp/remote-authorization"
+      ],
+      "experimentIds": [
+        "exp-prompt-structure-separation-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-131",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/document-routes"
+      ],
+      "experimentIds": [
+        "exp-multimodal-document-routes-review-20261021"
+      ],
+      "summary": "缺少逐次请求/响应、准确 endpoint 与后端模型指纹、完整 usage 和 scorer 的 PDF 路线摘要被当作可复核实测；59 tokens 被错误解释为 PDF 字节被丢弃；旧图片路线用 ROWS 重画、文本路线直接传 ROWS，却称为同一 PDF 三路端到端比较。固定 2.7 倍成本、按页线性外推与坐标分类器也缺少验证。",
+      "correction": "将旧结果保留为不可独立复核的历史摘要并撤回字节丢弃、通用准确率/成本结论；按目标 provider/model/endpoint 核实 PDF block 能力，引用 Anthropic 官方 PDF 支持范围；用同一 PDF 建立 document/rendered-image/extracted-text smoke test，逐条保存模型、终态、完整可用 usage 与精确 JSON 判分；将行金额与总额校验定位为必要但不足的业务门禁，并要求可信来源或人工复核。离线 fake SDK/PDF harness 只验证本地流程，不代表在线行为。"
+    },
+    {
+      "id": "ERR-132",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/how-images-enter-context",
+        "multimodal/vision-in-the-loop",
+        "agent-loop/budgets-and-guards"
+      ],
+      "experimentIds": [
+        "exp-multimodal-image-context-review-20261021"
+      ],
+      "summary": "将单次 34/224 与 186–996 token 摘要、固定下限/上限、历史除法斜率和“每轮重发/计费”表述写成通用行为；提示词实际上不相同且逐次响应、精确模型快照和 scorer 未归档。把失败 URL 下载信息过度解释为私网 SSRF 证明；消息格式与“原始字节”方式也未限定 provider。",
+      "correction": "保留历史观察但禁止推导固定图像开销、缩放机制或账单；按当前 DeepSeek Vision/Token Usage/Anthropic compatibility 文档说明 provider-specific image_url/image/input_image 形状、图像估算上限及其适用边界；将 URL fetch 描述为 provider 侧公开 URL 下载，并把应用自抓 URL 的 SSRF 控制与之区分；按 stateless 完整历史、文件引用与缓存条件解释多轮输入量；用相同提示词的 smoke-test harness 归档每次响应、finish_reason 与 nullable usage。更新相关课程交叉引用。"
+    },
+    {
+      "id": "ERR-133",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/resolution-and-cost"
+      ],
+      "experimentIds": [
+        "exp-multimodal-resolution-cost-review-20261021"
+      ],
+      "summary": "历史单次合成表格数据被用来宣称分辨率对准确率无影响、压缩只改变字节、并推出 DeepSeek 风格固定图像 token 下限/上限；原始响应、精确模型快照、完整 usage、重复运行和独立评分证据不齐，且画布宽度和字号同时变化。",
+      "correction": "撤回跨 provider 固定阈值和质量/成本因果结论；按当前 DeepSeek Vision 与 Claude Vision 官方文档分开说明规则，要求按任务设置质量门槛、记录 endpoint/model/usage 并核对账单；将裁剪代码限定为本地几何工具，并用离线断言验证其边界，不宣称在线视觉效果。"
+    },
+    {
+      "id": "ERR-134",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/when-vision-fails"
+      ],
+      "experimentIds": [
+        "exp-multimodal-vision-failures-review-20261021"
+      ],
+      "summary": "历史视觉摘要曾被解释为对比度与分辨率无关、错误率随密度上升，并将 ITM 编号称为有校验位；历史 grader 实际未验证完整 schema、行数、额外字段和范围。Luhn 错误检测又被用不准确的“约 1/10 碰撞”概括。",
+      "correction": "将历史数据限定为未独立复核的单次摘要，指出尺寸阶梯同时改变字号/像素、表格行数会改变图像高度；撤回因果和总体错误率断言。明确 ITM 编号无校验位，修正旧 grader 能力说明；以纯本地严格评分与 Luhn 单字符穷举/多字符碰撞演示界定算法能力，未验证视觉模型效果。"
+    },
+    {
+      "id": "ERR-135",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/vision-in-the-loop"
+      ],
+      "experimentIds": [
+        "exp-multimodal-vision-loop-review-20261021"
+      ],
+      "summary": "重复提取历史摘要的召回/精确率与稳定错误比例被写成普遍性能；未归档的合计注错输出被描述为本次真跑；使用未经复核的视觉错误率和5%抽样阈值支持生产建议；多轮图像重发/文本路线成本被概括为普遍规律。",
+      "correction": "将模型结果与算术汇总明确降为不可独立复核的历史摘要；撤回绝对 precision/recall、固定抽样阈值和历史结果推导的生产结论；移除缺失fixture的合计输出，说明结构校验边界；增加仅用于演示差异标记的离线样例，并把图像历史累积、文本/图像成本限定为需按 provider 测量的工程假设。"
+    },
+    {
+      "id": "ERR-136",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/secrets"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-secrets-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-137",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/least-privilege"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-least-privilege-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-138",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/execution-policy"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-execution-policy-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-139",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/isolation-levels"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-isolation-levels-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-140",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/why-isolate"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-why-isolate-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-141",
+      "status": "verified",
+      "lessonIds": [
+        "structured-output/why-not-prompt-only"
+      ],
+      "experimentIds": [
+        "exp-structured-output-prompt-only-review-20261021"
+      ],
+      "summary": "将缺少逐次原始数据与 scorer 的 2026-10-08 prompt-only JSON 通过率、token、延迟和 thinking/tool_choice 400 摘要当作可复核实测；将旧 endpoint 兼容观察写成确定且当前有效的规则；把普通 tool_choice 等同结构约束；将 tool_use 与截断纳入“正常结束”；Anthropic 当前 stop reasons 未完整覆盖；概率连乘未说明独立同分布假设，且解析异常回显原始模型文本。",
+      "correction": "保留数值为不可独立复核的历史摘要并撤回“未复现/稳得出乎意料”及因果、通过率和通用性能结论；引用 DeepSeek 当前 tool-use 文档并明确 API/model/date scope；区分工具选择、受支持的严格 schema 约束、本地校验和语义/授权；把截断、工具交接、stop sequence 分流，端到端未完成仍计为失败；按 Anthropic 当前文档显式处理 `refusal`、`pause_turn` 和 `model_context_window_exceeded`，未知值仍走兜底；为概率公式声明独立同分布假设并限定零失败样本置信界；解析错误不再回显原始输出。"
+    },
+    {
+      "id": "ERR-142",
+      "status": "verified",
+      "lessonIds": [
+        "structured-output/json-schema-strict",
+        "structured-output/validation-retry",
+        "structured-output/beyond-json"
+      ],
+      "experimentIds": [
+        "exp-json-schema-strict-review-20261021"
+      ],
+      "summary": "将缺乏原始请求/响应、精确模型快照和 scorer 的 schema 关键字、strict、description、enum 与递归 $ref 数字写成确定实测；把一个旧 400 误读成 $ref 通用限制；把 tokenizer/状态机成本与“思考必须关闭”写成普遍机制；Pydantic 示例实际打印结果与代码不符、日期按字符串比较、异常输出暴露输入，并在 except 作用域外引用 exc。；并修正下一节与第四节把这些历史摘要写成当前重试/format 规则的交叉引用。",
+      "correction": "把历史 provider 数据降为待核实摘要并撤回通用性/因果结论；按 DeepSeek Beta Chat Completions strict 与 Anthropic strict tool use / JSON outputs 分开说明并引用当前官方子集；说明 description 只能引导、枚举出口按业务定义；改用 date 类型和可执行 Pydantic 2.9.2 代码，校验异常只传递字段路径/类型/消息，移除作用域外的 exc 引用与原始输入日志建议。；同步收窄重试与日期格式相关的跨节表述。"
+    },
+    {
+      "id": "ERR-143",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/why-retrieval"
+      ],
+      "experimentIds": [
+        "exp-retrieval-cache-contract-review-20261021"
+      ],
+      "summary": "把 `input_tokens`、`cache_read`/`cache_creation` 三项相加、通用前缀缓存规则以及 156 倍、18.6 倍成本/一半延迟等旧记录写成可复核的通用实测；历史逐次响应、模型指纹、完整配置与 scorer 未归档。 方案选择也曾将外部知识限定为三路，并把动态知识默认映射到检索；忽略结构化权威查询、全语料聚合和其他组合架构，embedding 距离及本地 BM25 结论表述过度绝对。",
+      "correction": "保留 2026-10-08 数字为不可独立复核的历史摘要，撤回字段总量公式、跨 endpoint 缓存/计费结论与稳定质量/成本/延迟推论；分别对照 DeepSeek Chat Completions、Responses、Context Caching 与 Anthropic 兼容文档。代码现在原样输出 usage，由调用方按 endpoint 文档解释；对照实验结果明确为需重跑的线索。 将决策框架改为上下文注入、文档检索、工具/API 查询和微调，按数据形态、权威源、更新时效、权限和查询覆盖选择/组合；补 top-k 与全量聚合边界，向量相似度不等于任务相关性，并将 BM25 结论限定于语料/切分/tokenize/实现。"
+    },
+    {
+      "id": "ERR-144",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/chunking"
+      ],
+      "experimentIds": [
+        "exp-retrieval-chunking-local-demo-20261021",
+        "exp-retrieval-chunking-defaults-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-145",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/vector-limits"
+      ],
+      "experimentIds": [
+        "exp-retrieval-vector-limits-local-review-20261021",
+        "exp-retrieval-vector-limits-doc-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-146",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/evaluating-retrieval"
+      ],
+      "experimentIds": [
+        "exp-retrieval-evaluating-local-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-147",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/agentic-retrieval"
+      ],
+      "experimentIds": [
+        "exp-retrieval-agentic-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-148",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/permission-filtering"
+      ],
+      "experimentIds": [
+        "exp-retrieval-permission-filtering-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-149",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/compare"
+      ],
+      "experimentIds": [
+        "exp-reading-source-compare-code-review-20261021",
+        "exp-reading-source-compare-spec-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-150",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/outputs"
+      ],
+      "experimentIds": [
+        "exp-reading-source-outputs-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-151",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/picking-projects"
+      ],
+      "experimentIds": [
+        "exp-reading-source-picking-projects-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-152",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/trace-one-task"
+      ],
+      "experimentIds": [
+        "exp-reading-source-trace-one-task-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-153",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/why-and-how"
+      ],
+      "experimentIds": [
+        "exp-reading-source-why-and-how-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-154",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/how-to-use-this-site"
+      ],
+      "experimentIds": [
+        "exp-site-guide-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-155",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/agent-ui"
+      ],
+      "experimentIds": [
+        "exp-tooling-agent-ui-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-156",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/local-models"
+      ],
+      "experimentIds": [
+        "exp-tooling-local-models-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-157",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/retrieval-stack"
+      ],
+      "experimentIds": [
+        "exp-tooling-retrieval-stack-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-158",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/orchestration-stack"
+      ],
+      "experimentIds": [
+        "exp-tooling-orchestration-stack-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-159",
+      "status": "verified",
+      "lessonIds": [
+        "structured-output/validation-retry"
+      ],
+      "experimentIds": [
+        "exp-structured-output-validation-retry-review-20261021"
+      ],
+      "summary": "把 2026-10-08 无原始逐次请求/响应与 scorer 的 0/6、4/6、6/6 重试摘要作为确定因果或模型成功率；将四类失败的数量写成三类，并把 API/传输错误错误描述成“不该重试”；Pydantic 未识别的校验错误被误分类为 business_rule；“降级后只有三种选择”遗漏明确拒绝/中止；首段运行输出缺少程序实际打印的提示行。",
+      "correction": "保留所有历史比例为不可独立复核摘要；区分结构校验、provider 终止状态、API/传输失败及信息缺失；仅将可识别的标准 Pydantic 错误映射到约束/形状，未知错误用 validation_other，business_rule 留给应用领域校验器；明确按幂等性与预算决定传输重试；把三种降级方式标为示例并允许明确拒绝/中止；修复并用 verifier 锁定程序 stdout 与展示文本的一致性。"
+    },
+    {
+      "id": "ERR-160",
+      "status": "verified",
+      "lessonIds": [
+        "structured-output/beyond-json"
+      ],
+      "experimentIds": [
+        "exp-structured-output-beyond-json-review-20261021"
+      ],
+      "summary": "把 schema/enum/format 校验、事实来源、跨字段业务规则与授权边界混为一谈；将 2026-10-08 的 5/5、6/6、23/23 旧模型结果作为已复核事实或因果结论；示例将状态交给模型、输出来源不可追溯、审批阈值缺版本和币种/单位/异常路径边界。",
+      "correction": "保留历史输出为不可独立复核摘要；区分 schema 声明、validator 配置、应用业务校验和权威数据源；Anthropic tool_choice/input_schema 能力限定到模型与设置并要求本地校验；重写抽取示例使模型只产出 order_id、状态由应用查询并带来源元数据；审批例明确为构造演示策略，使用版本化 CNY 分单位阈值并对缺失/无效值暂停。独立 verifier 执行两段 Python 输出并逐字匹配展示。"
+    },
+    {
+      "id": "ERR-161",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/what-really-happens"
+      ],
+      "experimentIds": [
+        "exp-tool-call-lifecycle-review-20261020"
+      ],
+      "summary": "示例将所有 `end_turn` 都直接拼成字符串并可能返回空答案，未呈现 Anthropic 文档中空 `end_turn` 响应的处理边界；执行工具前也未验证 `tool_use.id` 非空且唯一，畸形响应可能在无法可靠配对结果时仍调用工具。",
+      "correction": "将有回合终止状态但没有可展示 text 的响应显式报告，不把空字符串作为正常答案，也不盲目重试；执行前检查 client tool 调用 ID 为非空字符串且本轮唯一，缺失或重复时不执行任何工具。新增离线 fake-client 回归断言。"
+    },
+    {
+      "id": "ERR-162",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/schema-design"
+      ],
+      "experimentIds": [
+        "exp-tool-schema-design-review-20261020"
+      ],
+      "summary": "SDK 探测脚本把 `tool_use` stop reason 一律计为 complete；零个 tool block 会被当成“不调用”样本，多调用只看 bool 会计作已调用，参数检查只取第一个 call。工具参数若为 list/object 等非字符串值，`val in LEGAL` 还会因不可哈希而崩溃。末尾提示“打开 enum 后非法值应消失”与非 strict schema 不是生成硬约束相矛盾。",
+      "correction": "区分 end_turn 且无调用、唯一有效 client tool call、未完成 stop reason 和 malformed response；只在唯一调用时作样本评分，参数 membership 前显式要求字符串并验证唯一输入。改写末尾说明分别对照自由字符串、非 strict enum 和目标端点支持的 strict mode，记录选择/参数/拒答/截断，并明确非 strict enum 不保证非法值消失、宿主始终校验。Fake SDK 测例覆盖 no-call/multi-call/single-call/empty end_turn/list 参数和输出分类。"
+    },
+    {
+      "id": "ERR-163",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/poka-yoke"
+      ],
+      "experimentIds": [
+        "exp-tool-poka-yoke-review-20261020"
+      ],
+      "summary": "Anthropic loop 把空 `end_turn` 拼成 `completed: `，会把无可展示正文误报为成功；处理本轮多个 client tool_use 时也未先验证 ID 存在且唯一，前一个调用可能已产生副作用后才暴露无法配对的结果。",
+      "correction": "将无可展示正文报告为独立的 `completed_without_text` 状态，由调用方决定是否追加 continuation prompt，不盲目重试；任何工具执行前先验证本轮所有 `tool_use.id` 都是非空字符串且唯一，失败时不追加 assistant/tool_result 消息，也不 dispatch。离线 FakeClient 回归覆盖空 end_turn、缺失 ID、重复 ID 与无副作用保证。"
+    },
+    {
+      "id": "ERR-164",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/tool-count"
+      ],
+      "experimentIds": [
+        "exp-tool-count-review-20261020"
+      ],
+      "summary": "工具分组路由把模型返回的 group 直接用于 dict membership，JSON list/object 会触发 TypeError；tools_for 有相同问题。测量脚本在 baseline API 请求后才检查调用预算与每个组是否包含题目答案，可能在拒绝前已产生一次计费请求；usage 又被合并成总数且缺失字段默认为 0，无法分辨缓存读写或错误测量；独立差值 helper 也把缺失输入字段静默当 0。脚本只含四个核心工具，默认规模列表退化成单一组。审计表中的历史 input 值还与正文及既有证据 claim 不一致。",
+      "correction": "对 model-controlled group 做字符串类型检查，非法值返回 None/ValueError；在任何 provider 请求前验证每个 candidate prefix 覆盖所有 expected 工具、调用计划不超预算；默认增加 12 个显式合成 distractor，比较 4/8/16 工具并标明实际题组仍需替换为目标任务；分别保留 uncached/cache-read/cache-write usage，缺失必需字段时报错；差值 helper 使用相同的校验；更新精度审计表历史值为正文与既有 claim 中的 1326/2623。新增 FakeClient 离线覆盖。"
+    },
+    {
+      "id": "ERR-165",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/parallel-and-errors"
+      ],
+      "experimentIds": [
+        "exp-tool-parallel-errors-review-20261020"
+      ],
+      "summary": "离线工具循环将任何 end_turn 都作为 completed 返回；若正文没有 text block，会产生空成功答案。它也只检查 tool_use id 的 truthiness，未拒绝重复 ID，可能把同一 tool_result 关联到多次 dispatch。",
+      "correction": "将空白 end_turn 明确返回 completed_without_text，并说明 Anthropic 建议检查工具结果消息形态、不要原样重放空响应；确需继续时由宿主追加新的 user continuation prompt。执行前验证本批所有 tool_use ID 均为非空字符串且唯一；fill helper 独立拒绝缺失/非字符串/空白 ID。添加 FakeClient 与 dispatch counter 回归检查。"
+    },
+    {
+      "id": "ERR-166",
+      "status": "verified",
+      "lessonIds": [
+        "agent-deployment/recovery-drills"
+      ],
+      "experimentIds": [
+        "exp-outbox-task-retry-sqlite-model"
+      ],
+      "summary": "SQLite teaching model silently reused an existing task or outbox row when the tenant-scoped idempotency key / receiver operation key was reused with a different payload. Reconciliation checked only operation_id and could mark a different receiver payload as sent.",
+      "correction": "The caller model now compares the stored request payload and rejects same-key/different-payload reuse. The receiver mock enforces the same key/payload binding, and reconciliation compares the receiver payload with the durable outbox payload before writing sent/receipt state. The page now explains that the fixture compares exact payload strings and production should canonicalize business-relevant fields."
+    },
+    {
+      "id": "ERR-167",
+      "status": "verified",
+      "lessonIds": [
+        "agent-deployment/ops-loop"
+      ],
+      "experimentIds": [
+        "exp-agent-deployment-ops-loop-review-20261021"
+      ],
+      "summary": "The lesson treated a high eval pass rate as evidence the set should be expanded without separating capability evaluation from regression testing; recommended fixed thresholds and schedules without a domain basis; left task and intervention denominators unclear; described online failures as directly reusable eval cases; and printed hard-coded metrics as if derived from observations. It also overstated the determinism difference between agents and ordinary software and inferred task unsuitability or third-party causes from single operational signals.",
+      "correction": "Distinguish capability-eval saturation from regression-suite purpose; frame the 95% figure, sample cadence and work estimates as constructed examples only. Define task completion, unexpected takeover, token/task and replay-coverage denominators. Treat production events as candidates that require privacy handling, deduplication, expected behavior/rubric review and split governance; preserve trace/version/retirement history and maintain holdout separately. Replace hard-coded values with calculations from labeled synthetic fixtures and report approval and exceptional handoff separately. Qualify causal and agent-vs-traditional-software statements."
+    },
+    {
+      "id": "ERR-168",
+      "status": "verified",
+      "lessonIds": [
+        "agent-frameworks/what-frameworks-give"
+      ],
+      "experimentIds": [
+        "exp-agent-frameworks-what-frameworks-give-w6-20261021"
+      ],
+      "summary": "The lesson used a non-exhaustive four-part framework taxonomy as though it were a broad maturity ranking, described observability as the only production diagnostic, and made unqualified claims about framework capabilities and fixed evaluation times. Its first @tool fragment was not executable, the hand-written schema line counter always reported one line, the comparison did not run a manual loop or call a provider despite its description, output was produced during module import, and the adjacent output was only an excerpt. The historical Chapter 4 enum result was used as a general effect without its evidence limitations.",
+      "correction": "Reframe the categories as non-exhaustive selection lenses; distinguish SDK runtime limits from application business guarantees; explain tracing, logs and metrics as complementary evidence with privacy boundaries; remove unsupported time and maturity claims; label the historical enum summary as unreproducible; and replace fragments with one self-contained, version-pinned, provider-free LangChain schema comparison. Execute the lesson fence and require byte-for-byte output agreement."
+    },
+    {
+      "id": "ERR-169",
+      "status": "verified",
+      "lessonIds": [
+        "agent-frameworks/abstraction-models"
+      ],
+      "experimentIds": [
+        "exp-agent-frameworks-abstraction-models-w6-20261021"
+      ],
+      "summary": "The lesson treated linear chain composition as if all framework chains were linear and compile-time checked, implied graphs automatically supplied serializable checkpoint boundaries, and presented a fixed-iteration scripted loop as model-controlled autonomy. It ranked abstractions by cost without separating call count, token usage, tool work, retries, runtime limits and monetary spend; used unverified historical token summaries to make universal comparisons; and duplicated an unrelated schema-generation experiment.",
+      "correction": "Limit chain to linear RunnableSequence semantics while noting RunnableBranch; state graph state and recovery guarantees only under the documented checkpointer/store configuration; label the three-path program as a scripted control-flow fixture; distinguish runtime turn/step limits from end-to-end token, tool, time and monetary budgets; carry historical 506/1,203 and 5,000/27,000 observations as unreproduced summaries without universal ranking; remove the duplicated schema appendix and link to the structured-output lesson. Pin and execute the local comparison fixture and require exact stdout agreement."
+    },
+    {
+      "id": "ERR-170",
+      "status": "verified",
+      "lessonIds": [
+        "agent-frameworks/leaky-abstractions"
+      ],
+      "experimentIds": [
+        "exp-agent-frameworks-leaky-abstractions-w6-20261021"
+      ],
+      "summary": "The lesson conflated LangChain @tool docstrings with machine-checkable field constraints and incorrectly generalized enum behavior; treated unreproducible 0/3 vs 3/3 model results as causal; ranked leak types by unsupported frequency; treated unknown outcomes as categorically non-retriable while implying SDK retries were universal; and used unsupported zero-leak and escape-test generalizations.",
+      "correction": "Scope schema behavior to LangChain Core 0.3.63: parse_docstring defaults off and parses parameter descriptions when enabled; it does not turn prose into enum constraints, while supported Literal annotations can produce enum. Run the pinned local str/description/Literal example and match published output exactly. Preserve 0/3 vs 3/3 only as an unverified historical summary. Separate provider request retries from tool side effects and treat unknown outcomes as replay-safety questions requiring idempotency, status lookup, or reconciliation. Frame leak categories and escape tests as project-specific review aids, not universal rankings or production safety proof."
+    },
+    {
+      "id": "ERR-171",
+      "status": "verified",
+      "lessonIds": [
+        "agent-frameworks/build-vs-buy"
+      ],
+      "experimentIds": [
+        "exp-agent-frameworks-build-vs-buy-w6-20261021"
+      ],
+      "summary": "The lesson overstated 12-Factor Agents as evidence for self-building, described framework tradeoffs with unsupported universal thresholds, and treated a historical enum result as supporting evidence.",
+      "correction": "Frame 12-Factor Agents as its authors’ design principles and review checklist; preserve their explicit non-anti-framework and modular-adoption position. Compare build, buy, and hybrid options against task-specific capabilities, failure paths, ownership, upgrade and exit costs. Remove universal size/tool-count/lifetime rules. Retain historical 0/3 versus 3/3 only as an unreproducible, non-causal summary. Execute the local reducer fixture and state its production boundaries."
+    },
+    {
+      "id": "ERR-172",
+      "status": "verified",
+      "lessonIds": [
+        "agent-frameworks/selection-matrix"
+      ],
+      "experimentIds": [
+        "exp-agent-frameworks-selection-matrix-w6-20261021"
+      ],
+      "summary": "The lesson treated import/type counts as migration cost, implied a universal two-to-three-hundred-line self-build recommendation, presented a stale LangChain/provider comparison and historical 0/3 versus 3/3 as causal evidence, and gave categorical framework recommendations.",
+      "correction": "Separate hard requirements from weighted preferences; validate the target version/configuration on success and side-effect failure paths. Treat imports and signature references as coupling signals only; estimate migration by behavior, persistence, integrations, tests, operations, and a scoped rehearsal. Remove fixed-size advice and state that the AST script is a narrow heuristic. Attribute SDK-versus-direct-API guidance specifically to OpenAI. Keep historical model outcomes unreproducible and non-causal."
+    },
+    {
+      "id": "ERR-173",
+      "status": "verified",
+      "lessonIds": [
+        "agent-paradigms/choosing"
+      ],
+      "experimentIds": [
+        "exp-agent-paradigms-choosing-w6-20261021"
+      ]
+    },
+    {
+      "id": "ERR-174",
+      "status": "verified",
+      "lessonIds": [
+        "agent-paradigms/five-paradigms"
+      ],
+      "experimentIds": [
+        "exp-agent-paradigms-five-paradigms-w6-20261021"
+      ]
+    },
+    {
+      "id": "ERR-175",
+      "status": "verified",
+      "lessonIds": [
+        "agent-paradigms/react-loop"
+      ],
+      "experimentIds": [
+        "exp-agent-paradigms-react-loop-w6-20261021"
+      ],
+      "summary": "完整 ReAct 示例把确定性 mock 工具误写成可复现模型运行，实际两份样例都调用在线 provider；`stop_reason != tool_use` 被当成成功；重复检测未覆盖整批 ID/预算校验，回合数与工具调用数也混用。历史轨迹、tokens 和 4.6x 成本结论缺原始记录。",
+      "correction": "删除凭据依赖的重复在线脚本，改为 Python 标准库离线合成控制流 fixture；在 dispatch 前校验整批 tool-use ID、工具、参数与总调用预算；把空 end_turn、候选最终回答、截断、拒绝、未知状态和重复动作分开；区分模型回合、工具调用和业务完成。历史 2/3 回合、5,926/1,296 token 仅保留为不可独立复核摘要，不作普遍准确率/成本结论。"
+    },
+    {
+      "id": "ERR-176",
+      "status": "verified",
+      "lessonIds": [
+        "agent-paradigms/plan-and-execute"
+      ],
+      "experimentIds": [
+        "exp-agent-paradigms-plan-execute-w6-20261021"
+      ]
+    },
+    {
+      "id": "ERR-177",
+      "status": "verified",
+      "lessonIds": [
+        "agent-paradigms/reflection"
+      ],
+      "experimentIds": [
+        "exp-agent-paradigms-reflection-w6-20261021"
+      ]
+    },
+    {
+      "id": "ERR-178",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/identity-and-tenancy"
+      ],
+      "experimentIds": [
+        "exp-agent-security-identity-tenancy-w6-20261021"
+      ],
+      "summary": "The SQLite teaching model described update authorization without an owner-success case and read the document body for the update decision, while the lesson emphasized keeping unauthorized or unnecessary content out of the model-facing path. The RLS discussion omitted USING/WITH CHECK semantics and did not explain the trust boundary of transaction-local tenant context.",
+      "correction": "The model checks tenant and owner metadata first, returns document content only for an authorized read, and returns no body for either allowed or denied update authorization; it explicitly performs no write. The lesson now explains existing-row USING versus proposed-row WITH CHECK, shows a documentation-reviewed tenant-policy example, and states that set_config(..., true) provides transaction-local context but does not authenticate it. The verifier passes 12 assertions and SQLite tests pass 7/7. No real PostgreSQL policy, role, connection pool, IdP, or historical provider result was verified."
+    },
+    {
+      "id": "ERR-179",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/minimal-loop"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-minimal-w6-20261021"
+      ],
+      "summary": "The minimal loop treated every end_turn as a displayable answer and its max_steps cap counted model responses while still executing a tool proposal returned on the final permitted response. The recorded 2026-10-12 DeepSeek round-trip and exact 400 messages also lacked archived raw HTTP captures and replay metadata.",
+      "correction": "Check that end_turn contains displayable text and keep task-level acceptance separate from turn termination. The FakeModel example now refuses an empty final response, counts max_steps as model responses, and does not dispatch a tool batch on the final available response; document a separate tool/action budget because one model response can contain multiple tool_use blocks. Label the DeepSeek output and 400 texts as unreproduced historical excerpts and record their limitations in DATA.md. The offline verifier passes 9 assertions and executes the complete Python fence; no provider or network calls were made. Current Anthropic stop-reason/tool-call docs were reviewed. No live endpoint behavior or historical response was replayed."
+    },
+    {
+      "id": "ERR-180",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/tool-registry"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-tool-registry-w6-20261021"
+      ],
+      "summary": "The scheduling example keyed results by tool_use.id but did not preflight that IDs were present and unique before dispatch, so malformed batches could execute side effects and then overwrite or misassociate results. The teaching scheduler also called functions directly without establishing its schema/authorization precondition. A legacy statement generalized schema non-enforcement across providers, and the minimal validator used Python equality for enum membership, where True == 1.",
+      "correction": "Preflight every call ID as a non-empty unique string before dispatch and recheck before backfill; explicitly state that the scheduler assumes tool name, schema and per-call authorization gates have already passed. Scope non-strict schema behavior by provider/endpoint/model/settings and cite supported Anthropic strict tool use without implying business validation or authorization. Make enum comparison JSON-type-aware, including nested values, and describe the validator as a root-level teaching subset rather than full JSON Schema. The Python 3.14.7 offline verifier compiles all seven fences and exercises both demos and these boundaries; providerCalls=0. Historical provider results, real authorization, and external side effects were not tested."
+    },
+    {
+      "id": "ERR-181",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/budgets-and-guards"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-budgets-w6-20261021"
+      ],
+      "summary": "The repeat-action guard mixed total action count with extra-repeat count: its default limit was two while prose and output claimed rejection on the third total call. The lesson also overstated end_turn reliability, treated shape novelty as semantic progress, and retained a claim that the registry itself defines the authorization boundary. Historical usage and loop-cause claims lacked replayable traces.",
+      "correction": "Count total consecutive matching actions and default to three; verify first/second pass and third reject. Describe end_turn as protocol termination, scope ProgressGuard as structural novelty only, explain its non-dict/list blind spot, assign runtime authorization to the host/tool, and present parallel/sequential choices by dependencies and measured end-to-end outcomes. Label historical usage and incident as unreproduced; add documented and unverified checkpoints for current provider facts and old observations. The five-fence offline verifier passes six check groups with no provider/network calls."
+    },
+    {
+      "id": "ERR-182",
+      "status": "verified",
+      "lessonIds": [
+        "agent-loop/state-and-resume"
+      ],
+      "experimentIds": [
+        "exp-agent-loop-state-resume-w6-20261021"
+      ],
+      "summary": "The recovery demo deleted fixed filenames in the caller working directory; its local idempotency lookup silently deduplicated a stable id even when the payload changed. The wording inherited from ERR-044 also overstated what tool_result.is_error proves about external effects.",
+      "correction": "Run the demonstration in a private TemporaryDirectory and clean it up on exit. Bind a duplicate business key to the original payload: identical payload deduplicates, different payload returns an explicit conflict and stops before checkpoint advancement. Clarify that is_error marks a tool result as an error but does not prove the external side effect did not occur; reconcile through the operation ledger/downstream contract before continuing. The 30-assertion offline verifier compiles both Python fences, executes the full demo, matches its published stdout, preserves collision sentinels, and covers four helper-tail cases; provider/network calls are zero."
+    },
+    {
+      "id": "ERR-183",
+      "status": "verified",
+      "lessonIds": [
+        "agent-deployment/deployment-shape"
+      ],
+      "experimentIds": [
+        "exp-agent-deployment-shape-w6-20261021"
+      ],
+      "summary": "The lesson overgeneralized that agent state is outside application control, used unreproduced planning and latency summaries to justify unpredictable task duration, and stated provider-agnostic cache/timeout behavior. Its task model also conflated one logical task with one execution, treated the event cursor as a partial-result pointer, omitted request payload/idempotency scope, and showed a long-task estimate that differed from the runnable code (49.7s vs 53.7s).",
+      "correction": "Distinguish application-owned task state from optional provider-managed sessions; mark historical latency and branch-planning values as unreproduced; make idempotency tenant-scoped and request-digest-bound; model retry attempts and fencing; separate event cursor from durable validated partial artifacts; distinguish HTTP wait budget, call timeout, and task deadline; scope cancellation and prompt-cache behavior by provider/API contract. Reclassify the latency equation as synthetic scenario arithmetic and correct the displayed result to 53.7s. The Python 3.10.9 offline verifier compiles both fences, executes the scenario demo, and passes six boundary checks; no provider/network calls were made by the verifier. No database, queue, cancellation, or external side-effect behavior was exercised."
+    },
+    {
+      "id": "ERR-184",
+      "status": "verified",
+      "lessonIds": [
+        "agent-deployment/versioning"
+      ],
+      "experimentIds": [
+        "exp-agent-deployment-versioning-w6-20261022"
+      ],
+      "summary": "The lesson applied an unintended √2 adjustment to its stated single-group Wald interval-width target, doubling the reported planning sample sizes and then presenting them in gray-rollout guidance. It also treated one severe observation as enough to assess incidence, used fixed rollout percentages, and overclaimed release/model provenance: tool schema hashes did not freeze implementations, first_seen/last_pass fields could not derive current regression status, and a model ID was framed as either silently mutable or fully controllable.",
+      "correction": "Use n≈4 z²p(1-p)/w² only as a single-group normal-approximation planning reference (85/531/2,122/8,486 for p=0.02, z=1.6449, widths 5/2/1/0.5 percentage points); direct real-data reporting to suitable intervals and version comparisons to predeclared two-group/paired designs. Treat severe events as stop-rule signals, not incidence or causal estimates, and remove universal traffic percentages. Expand the release manifest to behavior inputs and per-request model metadata; derive regression status from versioned case results and evaluator provenance. Scope model IDs, aliases, and retirement to provider/API contracts. The Python 3.10.9 offline verifier passes eight checks and matches the full published stdout; provider/network calls are zero."
+    },
+    {
+      "id": "ERR-185",
+      "status": "verified",
+      "lessonIds": [
+        "structured-output/why-not-prompt-only"
+      ],
+      "experimentIds": [
+        "exp-structured-output-token-budget-w6-20261022"
+      ],
+      "summary": "The introductory max_tokens definition implied a provider-neutral request field and described non-message request parameters as fixed cost. The lesson verifier's Markdown-fence matcher also used double-escaped newline patterns and therefore passed its stdout comparison without extracting any fences.",
+      "correction": "Name output-token caps as API-specific: Anthropic Messages uses max_tokens, OpenAI Chat Completions recommends max_completion_tokens (with max_tokens deprecated), and Responses uses max_output_tokens. Note that applicable caps can include hidden reasoning tokens; describe the sample request as a protocol example and direct billing claims to endpoint usage. Fix the fence matcher and rerun both Python examples against their complete published output blocks.",
+      "sources": [
+        "https://platform.claude.com/docs/en/api/messages/create",
+        "https://platform.openai.com/docs/api-reference/chat/object",
+        "https://developers.openai.com/api/reference/resources/responses/methods/create"
+      ]
+    },
+    {
+      "id": "ERR-186",
+      "status": "verified",
+      "lessonIds": [
+        "agent-deployment/incident-response"
+      ],
+      "experimentIds": [
+        "exp-agent-deployment-incident-response-w6-20261022"
+      ],
+      "summary": "The incident-response lesson generalized provider-specific finish/status, token and cache fields; presented synthetic thresholds and alert priorities as universal; made causal claims from cache/error signals; and included a degradation drill that did not inject a failure. The demo also lacked validation for missing metrics and a zero p50 denominator.",
+      "correction": "Separate transport/response termination from task success and document API-specific fields for Anthropic Messages, OpenAI Chat Completions/Responses, and DeepSeek compatibility APIs. Scope cache formulas to each provider, qualify thresholds and alert routing as local policy, remove unsupported causal claims, and make the drill inject then remove a deterministic failure while checking recovery. Validate fixture inputs and reject zero denominators; publish and exact-match the runnable output.",
+      "sources": [
+        "https://platform.claude.com/docs/en/api/messages/create",
+        "https://platform.openai.com/docs/api-reference/chat/object",
+        "https://developers.openai.com/api/reference/resources/responses/methods/create",
+        "https://platform.openai.com/docs/guides/prompt-caching",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://api-docs.deepseek.com/"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "No live provider or production incident behavior was tested.",
+        "The thresholds and metrics are synthetic examples, not operational defaults."
+      ]
+    },
+    {
+      "id": "ERR-187",
+      "status": "verified",
+      "lessonIds": [
+        "agent-deployment/recovery-drills"
+      ],
+      "experimentIds": [
+        "exp-agent-deployment-recovery-drills-w6-20261022"
+      ],
+      "summary": "The lesson did not make two evidence boundaries explicit: the SQLite claim/dispatch fixture does not implement stale-owner fencing, and the PostgreSQL script takes sequential logical dumps of two separate databases without concurrent writes, so it cannot demonstrate a coordinated cross-service snapshot. The pg_verifybackup section also omitted the WAL tool-version and format limits.",
+      "correction": "State that lease expiry, execution epochs, and stale-worker fencing require separate implementation-specific tests; clarify that the synthetic sequential database dumps do not prove a common point-in-time snapshot; and document that pg_verifybackup WAL checks are version-specific and currently supported only for plain-format backups, with --no-parse-wal for tar format. Keep actual restore/data validation as a separate requirement.",
+      "sources": [
+        "https://www.postgresql.org/docs/18/app-pgverifybackup.html",
+        "https://www.postgresql.org/docs/18/app-pgdump.html",
+        "https://www.postgresql.org/docs/18/app-pgrestore.html",
+        "https://www.postgresql.org/docs/18/continuous-archiving.html"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "SQLite and PostgreSQL examples are synthetic local fixtures, not proof of production recovery guarantees.",
+        "No provider call, real worker takeover, coordinated cross-service backup, WAL/PITR, or production recovery was tested."
+      ]
+    },
+    {
+      "id": "ERR-188",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/defense-in-depth"
+      ],
+      "experimentIds": [
+        "exp-agent-security-defense-in-depth-w6-20261022"
+      ],
+      "summary": "Three references to chapter 16 incorrectly called it a section, and the OWASP prompt-injection statement in the lesson body did not have its own documented checkpoint/source binding.",
+      "correction": "Change the references to chapter 16, identify the exact 《执行策略与审计》 subsection where applicable, and add a documented checkpoint tying OWASP LLM01:2025 mitigations and its no-fool-proof-prevention boundary to the registered resource.",
+      "sources": [
+        "https://genai.owasp.org/llmrisk/llm01-prompt-injection/",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "No provider call or production security control was tested.",
+        "The local path-policy example is not a production filesystem sandbox."
+      ]
+    },
+    {
+      "id": "ERR-189",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/exfiltration"
+      ],
+      "experimentIds": [
+        "exp-agent-security-exfiltration-w6-20261022"
+      ],
+      "summary": "The lesson had stale chapter/section references, leaked source line numbers into reader-facing prose, used realistic-looking but unlabeled personal data in a synthetic fixture, and lacked source-bound checkpoints for CSP, SSRF request-target validation, and provider retention scope. The registered legacy verifier also expected obsolete wording.",
+      "correction": "Link the chapter-16 references to the relevant sandboxing lessons, replace the line-number artifact with reader-facing prose, mark all fixture values synthetic, describe success as a toy-model result, publish the Python fixture output and verify it byte-for-byte, bind the CSP/SSRF/Anthropic claims to opened sources, disclose the cited W3C CSP3 Working Draft status, and repair the stale verifier assertion.",
+      "sources": [
+        "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+        "https://www.w3.org/TR/CSP3/",
+        "https://platform.claude.com/docs/en/build-with-claude/working-with-messages",
+        "https://platform.claude.com/docs/en/manage-claude/api-and-data-retention",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "No live browser policy, SSRF proxy, production authorization, provider call, or retention configuration was tested.",
+        "Historical chapter 2 and chapter 8 observations remain unreproduced because the raw requests, responses, and scoring artifacts are unavailable.",
+        "The runnable Boolean fixture only verifies its own synthetic branches."
+      ]
+    },
+    {
+      "id": "ERR-190",
+      "status": "verified",
+      "lessonIds": [
+        "agent-security/injection-escalation"
+      ],
+      "experimentIds": [
+        "exp-agent-security-injection-w6-20261022"
+      ],
+      "summary": "The lesson overgeneralized the meaning of agent capability, discounted task-external security tests, presented a three-factor exfiltration heuristic as deterministic, and its demo treated all non-tool stop reasons as a final answer while dispatching malformed tool calls.",
+      "correction": "Scope risks to actual capability and host execution; distinguish task-external refusal tests from task-aligned target substitution; present the exfiltration triad as a threat-model heuristic; make the local demo complete only on non-empty end_turn and validate all tool-call IDs, names, and argument shapes before running any sink. Add exact lesson cross-links and source-bound OWASP/Anthropic checkpoints.",
+      "sources": [
+        "https://genai.owasp.org/llmrisk/llm01-prompt-injection/",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons",
+        "https://api-docs.deepseek.com/guides/anthropic_api/"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "Historical chapter 2 injection observations remain unreproducible; original requests, responses, and a reproducible denominator are missing.",
+        "The local demo uses fake sinks and does not establish production authorization, provider compatibility, model robustness, or side-effect controls."
+      ]
+    },
+    {
+      "id": "ERR-194",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/execution-policy"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-execution-policy-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-195",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/why-isolate"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-why-isolate-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-196",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/isolation-levels"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-isolation-levels-w6-20261022"
+      ],
+      "summary": "Container mount/network claims, subprocess-tree limits, runtime distinctions and finite-probe conclusions needed tighter boundaries; two Docker snippets had invalid double-backslash continuations and the lesson retained stale chapter ordinals.",
+      "correction": "Qualify claims by mount permissions, route/policy and process-visible credentials; distinguish subprocess timeout from process-tree cleanup; distinguish Docker, gVisor and Firecracker boundaries; state exactly what the probe checks and leaves unproven; fix shell continuations and use precise routes; add documented source-bound checkpoints.",
+      "sources": [
+        "https://docs.docker.com/engine/containers/run/",
+        "https://docs.docker.com/engine/network/drivers/none/",
+        "https://docs.python.org/3/library/resource.html",
+        "https://docs.python.org/3/library/subprocess.html",
+        "https://gvisor.dev/docs/architecture_guide/intro/",
+        "https://github.com/firecracker-microvm/firecracker/blob/main/docs/design.md"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The local Docker fixtures do not certify production host configuration, multi-tenant escape resistance, deployed egress, or image supply-chain policy.",
+        "No external connection, production launcher, process-tree cleanup on other operating systems, gVisor runtime, or Firecracker runtime was tested.",
+        "Historical timing summaries remain non-comparable and independently unreproducible."
+      ]
+    },
+    {
+      "id": "ERR-197",
+      "status": "verified",
+      "lessonIds": [
+        "sandboxing/least-privilege"
+      ],
+      "experimentIds": [
+        "exp-sandboxing-least-privilege-w6-20261022"
+      ],
+      "summary": "Capability-oriented interfaces were presented as structurally impossible to exceed, stale chapter/line references remained, and the URL policy fixture's displayed output was incomplete; several Linux/Python security facts lacked source-bound checkpoints.",
+      "correction": "Limit the capability claim to the interface's expressible target range and state that authorization, handle permissions/lifecycle, and OS confinement remain necessary. Replace stale references with routes, publish and verify complete fixture stdout, and add source-bound Linux, OWASP, and Python checkpoints.",
+      "sources": [
+        "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+        "https://docs.python.org/3/library/ipaddress.html",
+        "https://docs.kernel.org/filesystems/path-lookup.html",
+        "https://man7.org/linux/man-pages/man2/openat2.2.html",
+        "https://docs.kernel.org/admin-guide/sysctl/fs.html"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The local filesystem fixture does not test path races, hard-link attacks, production permissions, or an OS sandbox.",
+        "The URL-policy fixture makes no DNS or HTTP request and does not test a transport, redirects, proxy, firewall, or egress policy.",
+        "The capability interface is illustrative; no production authorization or OS capability boundary was tested."
+      ]
+    },
+    {
+      "id": "ERR-198",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/approval-design"
+      ],
+      "experimentIds": [
+        "exp-human-approval-design-w6-20261022"
+      ],
+      "summary": "The approval lesson referred readers to an earlier trace design that advised retaining raw parameters and return values; newer trace guidance requires field minimization and filtering. The proposal hash could also be read as an integrity control without explaining that an attacker who can change both content and digest can recompute it.",
+      "correction": "Align trace guidance with validated/redacted structured fields and safe summaries or controlled references, linking to the dedicated trace lesson. Clarify that a plain SHA-256 digest supports comparison under stable canonicalization but is not tamper protection unless the proposal record is independently protected; add a source-bound OpenTelemetry GenAI checkpoint for opt-in content attributes and its Development status.",
+      "sources": [
+        "https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-spans.md",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "Synthetic policy simulation only; no real user behavior or approval quality measured.",
+        "No production storage integrity, authorization system, logging pipeline, or external side effect tested."
+      ]
+    },
+    {
+      "id": "ERR-199",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/interrupt-and-resume"
+      ],
+      "experimentIds": [
+        "exp-human-interrupt-resume-w6-20261022"
+      ],
+      "summary": "The recovery fixture reconciled a lost receipt only when the local state had already become unknown. It missed the crash window where the receiver committed the effect but the caller crashed before persisting the receipt, leaving local approval status as approved; the subsequent expiry check could incorrectly return expired despite an existing receiver result.",
+      "correction": "Check the receiver’s authoritative idempotency ledger for the stable action key and payload fingerprint before expiry handling. Reconcile a matching existing result and persist local success without resending, regardless of stale local approved/unknown state. State explicitly that lookup absence cannot prove no effect unless the receiver contract makes the lookup authoritative; keep expiry as a gate on starting a new effect.",
+      "sources": [
+        "https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html",
+        "https://docs.stripe.com/api/idempotent_requests"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The deterministic in-memory fixture models an authoritative receiver ledger but does not test a real crash, concurrent worker, persistent store, or production receiver contract.",
+        "No production authorization, identity, queue, or external side effect was exercised."
+      ]
+    },
+    {
+      "id": "ERR-200",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/acceptance"
+      ],
+      "experimentIds": [
+        "exp-capstone-acceptance-w6-20261022"
+      ],
+      "summary": "The local P5 live-smoke narrative conflated a report snapshot still waiting_approval with its separate terminal snapshot, which records task=failed while the approval and send_notice action are cancelled. It also asserted the sink received no request without a delivery receipt or independent sink receive log.",
+      "correction": "Distinguish the report snapshot from the terminal state and preserve the recorded statuses: waiting_approval snapshot; terminal task failed; approval and send_notice action cancelled; acceptance registry incomplete; live_model_normal evidence unverified; final output not_completed. State that no successful tool result or receipt is present, but do not claim sink non-receipt without an independent receive log.",
+      "sources": [
+        "experiments/results/exp-capstone-acceptance-w6-20261022/source-observation.json"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The raw run artifacts are local, gitignored and unsigned; a recorded hash does not authenticate them.",
+        "No independent sink receive log was present; no provider request or external effect was executed during review."
+      ]
+    },
+    {
+      "id": "ERR-201",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/deliver"
+      ],
+      "experimentIds": [
+        "exp-capstone-deliver-w6-20261022"
+      ],
+      "summary": "The dated clean-run section inferred that all handoff cost came from finding the script path because the script itself ran in 0.03 seconds. The timing measured only that process, not the path discovery, environment setup, or total handoff.",
+      "correction": "Keep the observed first-command failure (working directory omitted) and the historical script runtime as separate observations. State explicitly that path-discovery time was not separately measured and do not attribute all handoff cost to locating the script; preserve the existing caveat that 0.03 seconds is not complete handoff cost.",
+      "sources": [],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The 0.03-second timing remains a historical observation; its raw timing trace and original environment were not independently replayed.",
+        "No clean-checkout or independent human handoff was performed."
+      ]
+    },
+    {
+      "id": "ERR-202",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/retrospective"
+      ],
+      "experimentIds": [
+        "exp-capstone-retrospective-w6-20261022"
+      ],
+      "summary": "The retrospective restated an unsupported 2.37x multi-agent cost ratio as a retained same-configuration record and used it to discuss run-to-run variation, contradicting the current data ledger.",
+      "correction": "Keep only the 1.91x and 1.99x ratios listed in the historical summary; say run-level requests and responses are missing and the ratios cannot be independently recalculated or generalized. Explicitly state that the 2.37x claim has no registered original data and was withdrawn.",
+      "sources": [
+        "docs/DATA.md",
+        "src/content/chapters/multi-agent/02-cost-model.mdx"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "No historical provider artifacts were recovered or rerun.",
+        "This correction validates consistency with the current internal data ledger, not the original provider measurements."
+      ]
+    },
+    {
+      "id": "ERR-203",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/scope"
+      ],
+      "experimentIds": [
+        "exp-capstone-scope-w6-20261022"
+      ],
+      "summary": "The scope table said “at most one bounded online smoke,” which could be read as a global cap on live invocations even though the P5 runbook advances one wake-up per invocation and allows a fresh synthetic task with a new idempotency key.",
+      "correction": "Describe one predeclared fixed smoke case, bound each task by the configured model-round and per-response output-token limits, and state that each report applies only to its observed task run. Do not imply a global one-invocation quota.",
+      "sources": [
+        "examples/p5-agent-delivery/runner.py",
+        "examples/p5-agent-delivery/RUNBOOK.md"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "No provider request or external sink action was performed.",
+        "This clarification does not define a production/global smoke invocation quota."
+      ]
+    },
+    {
+      "id": "ERR-204",
+      "status": "verified",
+      "lessonIds": [
+        "capstone/skeleton"
+      ],
+      "experimentIds": [
+        "exp-capstone-skeleton-w6-20261022"
+      ],
+      "summary": "The lesson called the chapter 18 30-round/one-round input-token ratio of about 405x a historical observation and billing metric, but the source chapter and DATA.md define it as scenario arithmetic over context and tool-schema tokens.",
+      "correction": "State the numerator and denominator, label the ratio as a fixed-assumption scenario result rather than provider measurement or billing multiplier, and distinguish it from the separate scenario cost units that apply an output weight.",
+      "sources": [
+        "src/content/chapters/cost-and-latency/01-cost-model.mdx",
+        "docs/DATA.md"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "This verifies arithmetic and evidence classification against the current local chapter and data ledger only.",
+        "No historical provider call, usage record, or bill was reproduced."
+      ]
+    },
+    {
+      "id": "ERR-205",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/why-now"
+      ],
+      "experimentIds": [
+        "exp-why-now-w6-20261022"
+      ],
+      "summary": "The setup said the endpoint probe reads only three environment variables and listed ANTHROPIC_AUTH_TOKEN, while the appendix also reads ANTHROPIC_API_KEY as its preferred credential variable.",
+      "correction": "Describe three configuration values with two accepted API-key environment-variable names, and list both names plus the code's precedence.",
+      "sources": [
+        "src/content/chapters/what-is-an-agent/01-why-now.mdx"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "This checks consistency between the local setup instructions and the probe source; it does not test live credential handling."
+      ]
+    },
+    {
+      "id": "ERR-206",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/why-now"
+      ],
+      "experimentIds": [
+        "exp-why-now-w6-20261022"
+      ],
+      "summary": "The probe sends one fixed-order pair of requests, but the surrounding verification instructions could be read as a controlled comparison of tool-definition usage despite cache and backend state changing between calls.",
+      "correction": "Label the pair as a descriptive endpoint probe, and require repeated matched pairs with alternating order and complete cache usage records before estimating a tool-definition effect; if cache state cannot be controlled, report the result descriptively or by cache stratum.",
+      "sources": [
+        "src/content/chapters/what-is-an-agent/01-why-now.mdx",
+        "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+        "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+        "https://api-docs.deepseek.com/guides/kv_cache/"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The measurement-design guidance is an engineering recommendation, not a claim that repeated sampling removes all endpoint confounding.",
+        "No provider calls or historical measurements were reproduced."
+      ]
+    },
+    {
+      "id": "ERR-208",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/mindset-shift"
+      ],
+      "experimentIds": [
+        "exp-mindset-shift-w6-20261022"
+      ],
+      "summary": "The raw-text comparison intentionally failed without showing output; the scorer example contained contradictory sample provenance comments; incomplete test, provider-error, and Anthropic-handler code excerpts were not labeled as non-runnable.",
+      "correction": "Show the raw string comparison as an executed False result; remove the false production-log description; label incomplete illustrative snippets as unrun; retain the scorer as a synthetic local fixture and verify its exact output.",
+      "sources": [
+        "src/content/chapters/what-is-an-agent/03-mindset-shift.mdx"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "This verifies local documentation, sample code and arithmetic only.",
+        "It does not reproduce historical provider results or evaluate current models on production tasks."
+      ]
+    },
+    {
+      "id": "ERR-209",
+      "status": "verified",
+      "lessonIds": [
+        "what-is-an-agent/how-to-use-this-site"
+      ],
+      "experimentIds": [
+        "exp-how-to-use-site-w6-20261022"
+      ],
+      "summary": "The runnable first-loop example followed API redirects with urllib's default opener, allowing the x-api-key request header to reach a redirect target. It also dispatched a final-round tool proposal with no remaining model request to consume the result, accepted missing/duplicate tool-use IDs, and labeled empty end_turn text completed.",
+      "correction": "Reject HTTP redirects in the API opener; validate all tool-use IDs as non-empty and unique before dispatch; skip tool execution when no model round remains; and return completed_without_text for blank end_turn output. Explain each boundary in the lesson and add offline host-control-flow and loopback credential-forwarding regression checks.",
+      "sources": [
+        "src/content/chapters/what-is-an-agent/04-how-to-use-this-site.mdx",
+        "examples/first-loop/readonly_support.py",
+        "experiments/scripts/verify_how_to_use_site_w6_20261022.py"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The verifier uses scripted model responses and a loopback HTTP redirect with a dummy credential; it makes no provider calls or external network requests.",
+        "This does not verify production authorization, real endpoint compatibility, model quality, or business task success."
+      ]
+    },
+    {
+      "id": "ERR-210",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/tokens-and-context"
+      ],
+      "experimentIds": [
+        "exp-tokens-context-w6-20261022"
+      ],
+      "summary": "The tokenizer migration paragraph generalized the ~30% count change to all Claude 4.7+ models and Mythos Preview, beyond the tokenizer-specific model list in the current official docs. The token-counting example also implied all real multimodal inputs could be counted, while server tools, MCP, and URL/file image/document sources are rejected by the endpoint.",
+      "correction": "Name only Claude Fable 5.1, Mythos 5.1, Fable 5 and Mythos 5 for the documented shared tokenizer statement; disclose count_tokens input limitations and use actual Messages usage for unsupported request shapes.",
+      "sources": [
+        "src/content/chapters/llm-api-basics/01-tokens-and-context.mdx",
+        "https://platform.claude.com/docs/en/build-with-claude/token-counting"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The official page was checked on 2026-10-22 and may change.",
+        "No live provider request or historical DeepSeek measurement was reproduced.",
+        "Offline checks validate selected lesson statements and Python syntax, not provider behavior or every factual claim."
+      ]
+    },
+    {
+      "id": "ERR-211",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/messages-api"
+      ],
+      "experimentIds": [
+        "exp-messages-api-w6-20261022"
+      ],
+      "summary": "The meta checkpoint described max_tokens as guaranteeing an incomplete structure and a JSON parse error whenever the output limit is reached. That overstates the protocol: max_tokens signals that generation reached its ceiling and output may be incomplete, but the stop reason alone does not establish whether a particular JSON string parses or satisfies the task.",
+      "correction": "Reframe the checkpoint conditionally: inspect stop_reason, parse and validate the actual output, and recover only when the result is incomplete or invalid.",
+      "sources": [
+        "src/content/chapters/llm-api-basics/meta.ts",
+        "https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The correction is grounded in the documented stop-reason semantics and a local content check; no provider response was generated.",
+        "Whether any particular truncated response remains parseable is input/output specific and must be tested on the actual response."
+      ]
+    },
+    {
+      "id": "ERR-212",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/prompt-caching"
+      ],
+      "experimentIds": [
+        "exp-prompt-caching-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-213",
+      "status": "verified",
+      "lessonIds": [
+        "structured-output/why-not-prompt-only"
+      ],
+      "experimentIds": [
+        "exp-structured-output-prompt-only-w6-20261022"
+      ],
+      "summary": "The prior review artifact recorded 7 passing checks while its executable verifier currently runs 8; the tracker also said 6/6. The stored evidence count therefore understated the verification actually performed.",
+      "correction": "Re-run the issue verifier, update its result to 8/8, and align the tracker with the executable test count. Keep this correction separate from W6 full-lesson coverage and do not imply the unavailable historical provider experiment was reproduced.",
+      "sources": [
+        "experiments/scripts/verify_structured_output_prompt_review_20261021.py",
+        "experiments/results/exp-structured-output-prompt-only-review-20261021/result.json",
+        "docs/CURRICULUM-REVIEW-TRACKER.md"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "This corrects verification bookkeeping only; it does not change the lesson's historical evidence limits.",
+        "The 8 checks are offline content/code invariants, not provider behavior or task-quality evidence."
+      ]
+    },
+    {
+      "id": "ERR-214",
+      "status": "verified",
+      "lessonIds": [
+        "tool-calling/parallel-and-errors"
+      ],
+      "experimentIds": [
+        "exp-tool-parallel-errors-w6-20261022"
+      ],
+      "summary": "The SQLite example's prose said the host first persisted a stable action_id, but the code only accepted it as an input and did not demonstrate that host persistence. The code also treated tenant/action/account identifiers as valid when they were whitespace-only or non-string; the tenant input could be mistaken for authenticated identity.",
+      "correction": "Scope the SQLite code to receiver-side atomic local effects/results and state that a trusted host must persist and reuse the action ID before invoking a retryable effect. Reject non-string and blank identifiers before database activity. Explicitly state that the example does not authenticate or authorize, and require authorization before both returning a cached result and executing a new effect.",
+      "sources": [
+        "src/content/chapters/tool-calling/04-parallel-and-errors.mdx",
+        "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The local SQLite fixture verifies only same-database behavior and input validation; production identity, authorization, persistence and cross-system effects remain untested.",
+        "Historical DeepSeek tool/error/retry observations remain unreproduced because raw requests, responses and scorer are unavailable."
+      ]
+    },
+    {
+      "id": "ERR-215",
+      "status": "verified",
+      "lessonIds": [
+        "human-in-the-loop/progress-and-trust"
+      ],
+      "experimentIds": [
+        "exp-human-progress-trust-w6-20261022"
+      ],
+      "summary": "The published `unknown` example contradicted its own schema: it included a forbidden `confirmation: null` property and placed a prose explanation in `evidence` despite instructing readers to use resolvable event IDs. The provider-facing schema also used `minLength`, which current Claude Structured Outputs documentation lists as unsupported. The progress helper accepted booleans because Python treats bool as int, and did not validate input types.",
+      "correction": "Make the unknown example conform to its schema and use a synthetic event ID. Remove `minLength` from the provider-facing schema, explain the provider limitation, and require host-side semantic checks for non-empty strings. Validate integer counts without accepting bool, validate dynamic status values, and exercise invalid cases locally.",
+      "sources": [
+        "src/content/chapters/human-in-the-loop/04-progress-and-trust.mdx",
+        "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
+        "https://json-schema.org/draft/2020-12/json-schema-core",
+        "https://www.w3.org/WAI/ARIA/apg/practices/range-related-properties/"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "Ajv tests establish local JSON Schema behavior only, not provider schema acceptance or generated model outputs.",
+        "Synthetic progress helper fixtures do not replace user research or screen reader testing."
+      ]
+    },
+    {
+      "id": "ERR-216",
+      "status": "verified",
+      "lessonIds": [
+        "structured-output/why-not-prompt-only",
+        "tool-calling/parallel-and-errors",
+        "human-in-the-loop/progress-and-trust"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022"
+      ],
+      "summary": "The W6 progress counter incremented two lesson IDs that were already present in its explicit 59-ID master list when they were re-reviewed, producing overstated 65/144 and 66/144 snapshots. The master list also omitted several later passes.",
+      "correction": "Deduplicate W6 coverage by lesson ID, keep re-review evidence without incrementing the unique count, and restore the missing IDs to the master list. The reconciled current count is 65/144 (45.14%), 79 remain.",
+      "sources": [
+        "docs/superpowers/plans/2026-10-19-curriculum-reliability.md",
+        "docs/superpowers/specs/2026-10-19-curriculum-reliability-design.md",
+        "docs/CURRICULUM-REVIEW-TRACKER.md"
+      ],
+      "verifiedAt": "2026-10-22",
+      "limitations": [
+        "The verifier enforces the reconciled master list and matching current declarations; it does not independently establish the quality of each lesson review."
+      ]
+    },
+    {
+      "id": "ERR-217",
+      "lessonIds": [
+        "human-in-the-loop/automation-levels"
+      ],
+      "issue": "The policy demo defaulted a missing amount to zero for an amount-sensitive action and did not fail closed for malformed trusted policy metadata.",
+      "correction": "Require amount fields where applicable, validate trusted policy inputs and reject malformed values; retain explicit limitations that this teaching function is not a complete authorization boundary.",
+      "status": "verified",
+      "verifiedAt": "2026-10-22",
+      "evidence": [
+        "exp-human-automation-levels-w6-20261022"
+      ],
+      "limitations": [
+        "No production authorization, complete parameter schema, execution-time revalidation, concurrency behavior, provider output, or external side effects were tested."
+      ]
+    },
+    {
+      "id": "ERR-218",
+      "lessonIds": [
+        "human-in-the-loop/streaming-and-control"
+      ],
+      "issue": "The lesson called dropping partial output an error and said it should always be retained, contradicting its own task/privacy-dependent policy. It also described JSON as invalid during streaming and labeled the first two failure modes non-errors while saying the third causes billing impact, although the first row was the cancellation/billing case. The fake-tool example did not execute its already-dispatched side-effect branch.",
+      "correction": "Make partial-output retention policy-dependent and require clear user communication; describe intermediate JSON deltas as incomplete rather than invalid; correct the failure-mode framing; extend the local fixture to prove a dispatched side effect may complete after cancellation.",
+      "status": "verified",
+      "verifiedAt": "2026-10-22",
+      "evidence": [
+        "exp-human-streaming-control-w6-20261022"
+      ],
+      "limitations": [
+        "No provider cancellation, billing, real side effects, production replay, or UX study was performed."
+      ]
+    },
+    {
+      "id": "ERR-219",
+      "lessonIds": [
+        "evaluation/define-good"
+      ],
+      "issue": "The lesson said a criterion needs at least four checklist items while listing five, then concluded that defining “good” means translating it into something automatically decidable, contradicting the preceding human/rubric/judge boundaries.",
+      "correction": "State that the checklist contains five items; clarify that only suitable criteria should be automated and semantic/subjective objectives may use explicit rubrics, human references, or calibrated judges with visible error and scope.",
+      "status": "verified",
+      "verifiedAt": "2026-10-22",
+      "evidence": [
+        "exp-evaluation-define-good-w6-20261022"
+      ],
+      "limitations": [
+        "No judge calibration, human inter-rater study, live model or production task outcome was tested."
+      ]
+    },
+    {
+      "id": "ERR-220",
+      "status": "verified",
+      "lessonIds": [
+        "coding-agent/why-coding-agent"
+      ],
+      "experimentIds": [
+        "exp-coding-agent-why-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-221",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/failure-modes"
+      ],
+      "experimentIds": [
+        "exp-computer-use-failure-modes-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-222",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/observe-act-loop"
+      ],
+      "experimentIds": [
+        "exp-computer-use-observe-act-loop-review-20261020",
+        "exp-computer-use-observe-act-loop-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-223",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/safety-and-scope"
+      ],
+      "experimentIds": [
+        "exp-computer-use-safety-scope-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-224",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/when-not-to-use"
+      ],
+      "experimentIds": [
+        "exp-computer-use-selection-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-225",
+      "status": "verified",
+      "lessonIds": [
+        "computer-use/what-differs"
+      ],
+      "experimentIds": [
+        "exp-computer-use-what-differs-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-226",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/agent-skills"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-agent-skills-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-227",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/chat-template"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-chat-template-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-228",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/context-is-finite"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-context-is-finite-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-229",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/context-is-finite"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-context-is-finite-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-230",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/just-in-time"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-just-in-time-auth-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-231",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/compaction"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-compaction-schema-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-232",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/ablation"
+      ],
+      "experimentIds": [
+        "exp-evaluation-ablation-scorer-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-233",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/dataset"
+      ],
+      "experimentIds": [
+        "exp-evaluation-dataset-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-234",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/llm-as-judge"
+      ],
+      "experimentIds": [
+        "exp-evaluation-llm-judge-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-235",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/paired-comparison"
+      ],
+      "experimentIds": [
+        "exp-evaluation-paired-comparison-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-236",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/confidence"
+      ],
+      "experimentIds": [
+        "exp-evaluation-confidence-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-237",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/kv-cache"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-kv-cache-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-238",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/kv-cache"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-91"
+      ]
+    },
+    {
+      "id": "ERR-239",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/subagent-isolation"
+      ],
+      "experimentIds": [
+        "exp-context-engineering-subagent-isolation-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-241",
+      "status": "verified",
+      "lessonIds": [
+        "continuous-evolution/distill-and-test"
+      ],
+      "experimentIds": [
+        "exp-continuous-evolution-distill-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-240",
+      "status": "verified",
+      "lessonIds": [
+        "context-engineering/subagent-isolation"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-92"
+      ]
+    },
+    {
+      "id": "ERR-242",
+      "status": "verified",
+      "lessonIds": [
+        "continuous-evolution/distill-and-test"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-93"
+      ]
+    },
+    {
+      "id": "ERR-243",
+      "status": "verified",
+      "lessonIds": [
+        "continuous-evolution/from-traces"
+      ],
+      "experimentIds": [
+        "exp-continuous-evolution-from-traces-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-244",
+      "status": "verified",
+      "lessonIds": [
+        "continuous-evolution/from-traces"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-94"
+      ]
+    },
+    {
+      "id": "ERR-245",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/concurrency-and-backpressure"
+      ],
+      "experimentIds": [
+        "exp-concurrency-backpressure-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-246",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/concurrency-and-backpressure"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-95"
+      ]
+    },
+    {
+      "id": "ERR-247",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/budget-guardrails"
+      ],
+      "experimentIds": [
+        "exp-cost-budget-guardrails-input-budget-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-248",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/budget-guardrails"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-96"
+      ]
+    },
+    {
+      "id": "ERR-249",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/caching"
+      ],
+      "experimentIds": [
+        "exp-cost-caching-boundaries-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-250",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/caching"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-97"
+      ]
+    },
+    {
+      "id": "ERR-251",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/cost-model"
+      ],
+      "experimentIds": [
+        "exp-cost-model-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-252",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/cost-model"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-98"
+      ]
+    },
+    {
+      "id": "ERR-253",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/latency-sources"
+      ],
+      "experimentIds": [
+        "exp-latency-sources-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-254",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/latency-sources"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-99"
+      ]
+    },
+    {
+      "id": "ERR-255",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/routing"
+      ],
+      "experimentIds": [
+        "exp-cost-routing-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-256",
+      "status": "verified",
+      "lessonIds": [
+        "cost-and-latency/routing"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-100"
+      ]
+    },
+    {
+      "id": "ERR-257",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/eval-env"
+      ],
+      "experimentIds": [
+        "exp-evaluation-env-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-258",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/eval-env"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-101"
+      ]
+    },
+    {
+      "id": "ERR-259",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/provider-migration"
+      ],
+      "experimentIds": [
+        "exp-evaluation-provider-migration-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-260",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/provider-migration"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-102"
+      ]
+    },
+    {
+      "id": "ERR-261",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/traces"
+      ],
+      "experimentIds": [
+        "exp-evaluation-traces-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-262",
+      "status": "verified",
+      "lessonIds": [
+        "evaluation/traces"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-103"
+      ]
+    },
+    {
+      "id": "ERR-265",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/provider-contracts"
+      ],
+      "experimentIds": [
+        "exp-provider-contracts-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-266",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/provider-contracts"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-105"
+      ]
+    },
+    {
+      "id": "ERR-267",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/sampling-params"
+      ],
+      "experimentIds": [
+        "exp-llm-sampling-params-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-268",
+      "status": "verified",
+      "lessonIds": [
+        "llm-api-basics/sampling-params"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-106"
+      ]
+    },
+    {
+      "id": "ERR-269",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/build-a-server"
+      ],
+      "experimentIds": [
+        "exp-mcp-build-server-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-270",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/build-a-server"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-107"
+      ]
+    },
+    {
+      "id": "ERR-271",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/security-boundary"
+      ],
+      "experimentIds": [
+        "exp-mcp-security-boundary-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-272",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/security-boundary"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-108"
+      ]
+    },
+    {
+      "id": "ERR-273",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/remote-authorization"
+      ],
+      "experimentIds": [
+        "exp-mcp-remote-authorization-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-274",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/remote-authorization"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-109"
+      ]
+    },
+    {
+      "id": "ERR-275",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/why-protocol"
+      ],
+      "experimentIds": [
+        "exp-mcp-why-protocol-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-276",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/why-protocol"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-110"
+      ]
+    },
+    {
+      "id": "ERR-277",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/roles-and-capabilities"
+      ],
+      "experimentIds": [
+        "exp-mcp-roles-capabilities-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-278",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/roles-and-capabilities"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-111"
+      ]
+    },
+    {
+      "id": "ERR-279",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/stateless-2026"
+      ],
+      "experimentIds": [
+        "exp-mcp-stateless-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-280",
+      "status": "verified",
+      "lessonIds": [
+        "mcp/stateless-2026"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-112"
+      ]
+    },
+    {
+      "id": "ERR-281",
+      "status": "verified",
+      "lessonIds": [
+        "memory/context-is-not-memory"
+      ],
+      "experimentIds": [
+        "exp-memory-context-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-282",
+      "status": "verified",
+      "lessonIds": [
+        "memory/context-is-not-memory"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-113"
+      ]
+    },
+    {
+      "id": "ERR-285",
+      "status": "verified",
+      "lessonIds": [
+        "memory/forgetting-and-conflict"
+      ],
+      "experimentIds": [
+        "exp-memory-forgetting-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-286",
+      "status": "verified",
+      "lessonIds": [
+        "memory/forgetting-and-conflict"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-114"
+      ]
+    },
+    {
+      "id": "ERR-287",
+      "status": "verified",
+      "lessonIds": [
+        "memory/memory-cost-and-eval"
+      ],
+      "experimentIds": [
+        "exp-memory-cost-eval-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-288",
+      "status": "verified",
+      "lessonIds": [
+        "memory/memory-cost-and-eval"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-115"
+      ]
+    },
+    {
+      "id": "ERR-289",
+      "status": "verified",
+      "lessonIds": [
+        "memory/what-to-write"
+      ],
+      "experimentIds": [
+        "exp-memory-what-to-write-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-290",
+      "status": "verified",
+      "lessonIds": [
+        "memory/what-to-write"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-116"
+      ]
+    },
+    {
+      "id": "ERR-291",
+      "status": "verified",
+      "lessonIds": [
+        "memory/when-to-recall"
+      ],
+      "experimentIds": [
+        "exp-memory-when-to-recall-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-292",
+      "status": "verified",
+      "lessonIds": [
+        "memory/when-to-recall"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-117"
+      ]
+    },
+    {
+      "id": "ERR-293",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/alternatives"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-alternatives-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-294",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/alternatives"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-118"
+      ]
+    },
+    {
+      "id": "ERR-295",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/cost-model"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-cost-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-296",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/cost-model"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-119"
+      ]
+    },
+    {
+      "id": "ERR-297",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/failure-modes"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-failure-modes-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-298",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/failure-modes"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-120"
+      ]
+    },
+    {
+      "id": "ERR-299",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/failure-modes-collaboration"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-collaboration-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-300",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/failure-modes-collaboration"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-121"
+      ]
+    },
+    {
+      "id": "ERR-301",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/isolation-is-the-point"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-isolation-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-302",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/isolation-is-the-point"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-122"
+      ]
+    },
+    {
+      "id": "ERR-303",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/topologies"
+      ],
+      "experimentIds": [
+        "exp-multi-agent-topologies-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-304",
+      "status": "verified",
+      "lessonIds": [
+        "multi-agent/topologies"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-123"
+      ]
+    },
+    {
+      "id": "ERR-305",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/how-images-enter-context"
+      ],
+      "experimentIds": [
+        "exp-multimodal-image-context-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-306",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/how-images-enter-context"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-124"
+      ]
+    },
+    {
+      "id": "ERR-307",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/vision-in-the-loop"
+      ],
+      "experimentIds": [
+        "exp-multimodal-vision-loop-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-308",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/vision-in-the-loop"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-125"
+      ]
+    },
+    {
+      "id": "ERR-309",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/resolution-and-cost"
+      ],
+      "experimentIds": [
+        "exp-multimodal-resolution-cost-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-310",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/resolution-and-cost"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-126"
+      ]
+    },
+    {
+      "id": "ERR-311",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/document-routes"
+      ],
+      "experimentIds": [
+        "exp-multimodal-document-routes-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-312",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/document-routes"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-127"
+      ]
+    },
+    {
+      "id": "ERR-313",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/when-vision-fails"
+      ],
+      "experimentIds": [
+        "exp-multimodal-vision-failures-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-314",
+      "status": "verified",
+      "lessonIds": [
+        "multimodal/when-vision-fails"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-128"
+      ]
+    },
+    {
+      "id": "ERR-315",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/chain-of-thought"
+      ],
+      "experimentIds": [
+        "exp-prompt-cot-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-316",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/chain-of-thought"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-129"
+      ]
+    },
+    {
+      "id": "ERR-317",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/few-shot"
+      ],
+      "experimentIds": [
+        "exp-prompt-few-shot-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-318",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/few-shot"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-130"
+      ]
+    },
+    {
+      "id": "ERR-319",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/instruction-clarity"
+      ],
+      "experimentIds": [
+        "exp-prompt-instruction-clarity-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-320",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/instruction-clarity"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-131"
+      ]
+    },
+    {
+      "id": "ERR-321",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/reliability"
+      ],
+      "experimentIds": [
+        "exp-prompt-reliability-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-322",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/reliability"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-132"
+      ]
+    },
+    {
+      "id": "ERR-323",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/structure-and-separation"
+      ],
+      "experimentIds": [
+        "exp-prompt-structure-separation-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-324",
+      "status": "verified",
+      "lessonIds": [
+        "prompt-engineering/structure-and-separation"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-133"
+      ]
+    },
+    {
+      "id": "ERR-325",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/first-agent"
+      ],
+      "summary": "“节点重试”容易混淆调用方捕获异常后再次 invoke 与 LangGraph 配置的节点 retry policy；输出摘录未标明是完整 stdout 的节选，且两处比较表没有把图事件流/可视化与浏览器传输分开。",
+      "correction": "将标题和说明限定为同进程异常后调用方再次 invoke 同一 thread；标注关键输出是完整 stdout 摘录；说明图流式/可视化能力不提供应用的浏览器传输；以 pinned environment 重跑两个完整 Python fence，并用独立 boundary verifier 检查范围。",
+      "experimentIds": [
+        "exp-tooling-first-agent-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-326",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/first-agent"
+      ],
+      "summary": "W6 唯一全节复核计数由 133/144 推进至 134/144；核对 master ID 列表与当前摘要同步。",
+      "correction": "把 tooling/first-agent 加入唯一 master pass list，更新计划、规范、台账、审计报告、进度和入口说明；计数 verifier 检查 134 个唯一 lesson IDs 均可在 tracker 定位，剩余 10 节。",
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-134"
+      ]
+    },
+    {
+      "id": "ERR-327",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/agent-ui"
+      ],
+      "summary": "W6 全节复核：hydration 定义不再称为本节“唯一纯前端概念”；示意代码的来源边界更明确，并修复 API 路由与 TSX 代码块横向溢出。",
+      "correction": "将唯一性断言改为“理解前端渲染边界的一个关键概念”；将可复制片段标为等价示意而非仓库逐字源码；按 88 字符回归门禁拆开路由和 JSX 长行。原有流程主张、冻结提案与外部副作用边界保持经核对；Next.js 16.3.6 本地官方文档已查。无真实审批后端或生产授权验证，lesson 继续 in-review。",
+      "experimentIds": [
+        "exp-tooling-agent-ui-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-329",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/local-models"
+      ],
+      "summary": "W6 全节复核补充开放权重/模型许可证和部署权利边界，并核对当前官方来源与历史实测适用范围。",
+      "correction": "将模型 rights 纳入部署约束：按具体 revision 核对 license、acceptable-use policy、商业/修改/再分发条款、base model 与依赖；OSAID 与 model-card source/checkpoint 已登记。现有 verifier 18/18，课程测试检查来源与 checkpoint；历史吞吐未重跑，生产硬件与合规审核未执行，lesson 仍 in-review。",
+      "experimentIds": [
+        "exp-tooling-local-models-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-330",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/local-models"
+      ],
+      "summary": "W6 唯一全节复核清单增加 `tooling/local-models`：136/144（94.44%），剩余 8 节。",
+      "correction": "课程测试验证 master pass list 当前恰有 136 个唯一 lesson ID、每项能定位 tracker，且模型许可 checkpoint 的官方 source IDs 有注册。",
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-136"
+      ]
+    },
+    {
+      "id": "ERR-331",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/orchestration-stack"
+      ],
+      "summary": "W6 全节复核确认精确 PyPI 依赖声明与历史安装行为被区分；完整 resolver 建议、直接约束示例、trace 最小化和平台差异边界均成立。",
+      "correction": "对照精确发行版 metadata、pip / PyPA / OpenTelemetry 官方文档；旧 verifier 30/30，新 W6 verifier 25/25，完整 Python 示例在 Python 3.10.9 / packaging 24.2 实跑并与正文输出一致。历史安装、目标项目 dry run、历史 trace 和产品级生产行为仍未验证，lesson 状态保持 in-review。",
+      "experimentIds": [
+        "exp-tooling-orchestration-stack-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-332",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/orchestration-stack"
+      ],
+      "summary": "W6 唯一全节复核清单增加 `tooling/orchestration-stack`：137/144（95.14%），剩余 7 节。",
+      "correction": "课程测试验证 master pass list 当前恰有 137 个唯一 lesson ID、每项能定位 tracker。",
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-137"
+      ]
+    },
+    {
+      "id": "ERR-333",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/retrieval-stack"
+      ],
+      "summary": "W6 全节复核发现并纠正检索基准的等价性缺陷：NumPy top-1 对 Chroma top-5；合成表又把 3 次中位数与 2 次中的较大值并列，历史 40 倍与交叉点结论证据不足。",
+      "correction": "撤回 40 倍与通用交叉结论；保留历史摘要并标明缺失的逐次延迟。当前可运行示例对齐 top-1、每条查询路径预热一次、11 次取中位数并打印模型设备；Chroma 返回精确个数的官方 source/checkpoint 已登记。完整与 mini 代码实跑，保留新的单次当前环境结果；历史、ANN 召回与生产行为仍未验证。",
+      "experimentIds": [
+        "exp-tooling-retrieval-stack-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-334",
+      "status": "verified",
+      "lessonIds": [
+        "tooling/retrieval-stack"
+      ],
+      "summary": "W6 唯一全节复核清单增加 `tooling/retrieval-stack`：138/144（95.83%），剩余 6 节。",
+      "correction": "课程测试验证 master pass list 当前恰有 138 个唯一 lesson ID、每项能定位 tracker，且检索基准等价性 checkpoint 来源已注册。",
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-138"
+      ]
+    },
+    {
+      "id": "ERR-335",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/why-retrieval"
+      ],
+      "experimentIds": [
+        "exp-retrieval-why-retrieval-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-336",
+      "status": "verified",
+      "lessonIds": [
+        "retrieval/why-retrieval"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-139"
+      ]
+    },
+    {
+      "id": "ERR-337",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/compare"
+      ],
+      "experimentIds": [
+        "exp-reading-source-compare-w6-20261022"
+      ]
+    },
+    {
+      "id": "ERR-338",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/compare"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-140"
+      ]
+    },
+    {
+      "id": "ERR-339",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/outputs"
+      ],
+      "experimentIds": [
+        "exp-reading-source-outputs-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-340",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/outputs"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-141"
+      ]
+    },
+    {
+      "id": "ERR-341",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/picking-projects"
+      ],
+      "experimentIds": [
+        "exp-reading-source-picking-projects-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-342",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/picking-projects"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-142"
+      ]
+    },
+    {
+      "id": "ERR-343",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/trace-one-task"
+      ],
+      "experimentIds": [
+        "exp-reading-source-trace-one-task-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-344",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/trace-one-task"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-143"
+      ]
+    },
+    {
+      "id": "ERR-345",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/why-and-how"
+      ],
+      "experimentIds": [
+        "exp-reading-source-why-and-how-review-20261021"
+      ]
+    },
+    {
+      "id": "ERR-346",
+      "status": "verified",
+      "lessonIds": [
+        "reading-source/why-and-how"
+      ],
+      "experimentIds": [
+        "exp-w6-unique-count-audit-20261022-144"
+      ]
+    }
   ]
 }

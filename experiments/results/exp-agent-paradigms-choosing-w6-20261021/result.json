@@ -1,0 +1,31 @@
+{
+  "experimentId": "exp-agent-paradigms-choosing-w6-20261021",
+  "runId": "agent-paradigms-choosing-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed Anthropic Building Effective Agents for the bounded recommendation to start with the simplest solution that meets requirements, and audited the complete lesson. Ran its local synthetic scoring fixture and whole-lesson verifier with Python standard library; no model/provider/network calls. Historical provider benchmarks were not rerun.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 16,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 1,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 1,
+    "historicalBenchmarksRerun": false,
+    "checks": [
+      "analysis axes separated",
+      "risk controls scoped",
+      "conditional workflow distinguished from model routing",
+      "history caveated",
+      "provider sample replaced with offline fixture"
+    ]
+  },
+  "limitations": [
+    "The local examples are synthetic scoring fixtures; they do not compare paradigm quality, cost, latency, or provider behavior.",
+    "Historical T1/T2 and Reflection per-run responses were not archived, so historical outcomes and token totals were not independently reproduced.",
+    "Anthropic’s article is a dated vendor-authored design essay, not a current API contract or cross-framework benchmark.",
+    "Production authorization, human approval policy, runtime recovery, and cost remain system-specific and were not exercised."
+  ]
+}

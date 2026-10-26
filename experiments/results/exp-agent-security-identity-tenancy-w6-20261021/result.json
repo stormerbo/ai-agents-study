@@ -1,0 +1,41 @@
+{
+  "experimentId": "exp-agent-security-identity-tenancy-w6-20261021",
+  "runId": "agent-security-identity-tenancy-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared PostgreSQL 18 Row Security Policies, CREATE POLICY and Configuration Settings with the lesson and OWASP Authorization Cheat Sheet. Ran the 12-assertion offline verifier and the SQLite model tests (7/7); no provider or external network calls. The illustrative PostgreSQL policy was reviewed against the documentation but not executed. Isolated production build generated 399 static pages; Pagefind indexed 399 pages / 15,393 words. Light/dark full-page screenshots were visually inspected at 1300px: viewport/document width=1300px, article=792px, Mermaid rendered; one console error was the page favicon 404.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 12,
+    "testsFailed": 0,
+    "sqliteTestsPassed": 7,
+    "sqliteTestsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": 3,
+    "historicalBenchmarksRerun": false,
+    "checks": [
+      "RLS USING and WITH CHECK boundaries checked against PostgreSQL 18 CREATE POLICY documentation",
+      "Transaction-local setting lifecycle and identity trust limitation stated",
+      "Owner update authorization returns no document body",
+      "Cross-tenant read is denied without returning body",
+      "Illustrative PostgreSQL policy was not executed"
+    ],
+    "productionBuildPages": 399,
+    "pagefindIndexedPages": 399,
+    "pagefindWords": 15393,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/identity-tenancy-w6-20261021-light.png",
+    "darkScreenshot": "output/playwright/identity-tenancy-w6-20261021-dark.png",
+    "screenshotDimensions": "1300x5019"
+  },
+  "limitations": [
+    "No real PostgreSQL 18 server, role grants, RLS policy execution, connection pool, SQL injection path, or IdP was tested.",
+    "The SQLite fixture does not establish production authorization or concurrency safety; historical provider observations were not rerun.",
+    "The sole browser console error was a missing favicon (404); no lesson rendering errors were observed."
+  ]
+}

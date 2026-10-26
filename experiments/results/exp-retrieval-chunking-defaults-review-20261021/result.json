@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-retrieval-chunking-defaults-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed LangChain Text splitter integrations and RAGFlow 1.0.0-rc2 Configure the Chunker Component on 2026-10-21, then ran the local source-scope verifier.",
+  "observations": {
+    "testCount": 8,
+    "testsPassed": 8,
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "providerHost": "docs.langchain.com; ragflow.io"
+  },
+  "limitations": [
+    "Product documentation establishes only the named product/version defaults and recommendations.",
+    "No corpus benchmark, retrieval evaluation, provider call, or historical chunk-quality result was reproduced."
+  ]
+}

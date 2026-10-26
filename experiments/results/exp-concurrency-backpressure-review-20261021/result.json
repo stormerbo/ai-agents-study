@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-concurrency-backpressure-review-20261021",
+  "runId": "concurrency-backpressure-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the lesson and metadata against current OpenAI and Anthropic API documentation and RFC 9110; extended the deterministic local admission/retry model; executed its unittest suite and offline boundary assertions. No provider requests were made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 19,
+    "testsFailed": 0,
+    "testCount": 19,
+    "pythonFencesCompiled": 0,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "Added queue-wait vs task-deadline decisions and validation for invalid capacities and non-finite values; negative Retry-After is rejected rather than treated as missing; ambiguous connection failures are not replayed unless the caller explicitly establishes replay safety. Clarified HTTP-date and seconds forms, provider-specific error semantics, maxAttempts counting, SDK retry ownership, and production/runtime limitations."
+  },
+  "limitations": [
+    "No live provider, SDK behavior, HTTP header parser, distributed queue, atomic quota store, or production scheduler was tested.",
+    "The helper consumes already-parsed delay seconds and caller-supplied queue/budget snapshots; it does not implement an RFC Retry-After parser or concurrency control.",
+    "Documentation may change; provider, endpoint, and installed SDK versions must be rechecked before deployment."
+  ]
+}

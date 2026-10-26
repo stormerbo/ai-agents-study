@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-retrieval-cache-contract-review-20261021",
+  "runId": "2026-10-21-official-doc-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "observations": {
+    "usage": "Chat Completions prompt_tokens equals cache hit plus miss; Responses reports cached tokens under input_tokens_details.cached_tokens.",
+    "providerHost": "api-docs.deepseek.com",
+    "fixtureOnly": true
+  },
+  "limitations": [
+    "No live provider calls",
+    "No billing verification",
+    "Current documentation does not prove historical endpoint behavior"
+  ],
+  "method": "Compared official DeepSeek Chat Completions, Responses API, Context Caching and Anthropic compatibility documentation."
+}

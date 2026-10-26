@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-tooling-retrieval-stack-w6-20261022",
+  "runId": "exp-tooling-retrieval-stack-w6-20261022-run1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, registered checkpoint/source, historical benchmark code paths, current primary docs for Chroma n_results, Sentence Transformers retrieve/rerank, OpenAI embedding dimensions, Faiss index trade-offs, and NumPy partition/search. Ran the retained 19-check reviewer and a new AST/boundary verifier (21 checks). Executed the mini embedding example and the current full Python example from the lesson under Python 3.10.9; full run used Sentence Transformers 3.2.1, Chroma 0.5.18, NumPy 2.2.6 on macOS 26.5.2 arm64, model device mps:0.",
+  "observations": {
+    "checks": 40,
+    "checksPassed": 40,
+    "pythonDemoExecuted": true,
+    "pythonFencesCompiled": 4,
+    "officialSourcesReviewed": 6,
+    "historicalBenchmarksRerun": 0,
+    "providerCalls": 0,
+    "trace": "Current full example, 2026-10-22: 2724 chunks; device=mps:0; encode=11.5s, 237 chunks/s, 512-dim, 5.3 MiB; NumPy top-1 p50=0.04ms; Chroma build=999ms, top-1 p50=0.75ms. Synthetic NumPy/Chroma p50: N=10000 0.42/0.87ms; N=50000 3.07/0.98ms; N=200000 18.20ms/Chroma skipped. Mini embedding output matched published cosine values: 0.805, 0.369, 0.662, 0.425."
+  },
+  "limitations": [
+    "Historical 2026-10-09 latency/throughput figures remain unreproduced; original per-run timings and runtime fingerprint are unavailable. The 2026-10-22 measurements are a new one-run sample with 11 queries per datapoint and one warm-up, not independent repeated benchmark runs.",
+    "The full script reads the current corpus and used MPS for model inference; the result is specific to this corpus, machine, model build, software versions, and measurement path. It is not a deployment benchmark.",
+    "Chroma emitted telemetry capture errors (`capture()` argument mismatch) despite `ANONYMIZED_TELEMETRY=False`. Outbound telemetry was not instrumented, so the run is not described as network-free. No provider request was made.",
+    "Top-k is aligned for latency, but NumPy is exact and Chroma uses HNSW/ANN; recall quality and result equivalence were not evaluated. Synthetic vectors do not measure semantic quality.",
+    "No production workload, target hardware, filter/update/persistence comparison, or ANN recall test was performed."
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "experimentId": "exp-memory-cost-eval-w6-20261022",
+  "runId": "memory-cost-eval-w6-2026-10-22",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Execute both lesson Python fences; compare the existing cost arithmetic output; exercise the seeded paired-run function and assert one run in each condition per task and both orderings under the recorded seed; review whole-lesson boundaries.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 36,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/memory-cost-eval-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/memory-cost-eval-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x1000"
+  },
+  "limitations": [
+    "The seeded fixture demonstrates order randomization and reproducibility; it does not validate provider behavior or production experiment assignment.",
+    "Historical model outputs, per-task paired results, billing, and production persistence/authorization were not reproduced."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-prompt-caching-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 5,
+    "status": "whole-lesson offline checks passed; provider behavior remains in-review"
+  },
+  "limitations": [
+    "The complete Anthropic tool request was exercised with a local mock SDK, not the provider.",
+    "Historical DeepSeek requests/responses, current live cache hits, latency and bills were not reproduced.",
+    "Provider documentation and model support can change after the 2026-10-22 review."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Compile all five Python fences; run the local prefix-hash example; exercise the Anthropic cache-usage diagnostic across no-request, requested-zero-usage, missing-field and positive-usage cases; execute the complete tool-cache request against a fake SDK; inspect arithmetic and provider-specific boundaries. No provider or external network calls."
+}

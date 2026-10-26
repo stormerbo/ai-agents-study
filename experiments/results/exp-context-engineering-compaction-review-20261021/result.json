@@ -1,0 +1,35 @@
+{
+  "experimentId": "exp-context-engineering-compaction-review-20261021",
+  "runId": "context-compaction-review-2026-10-22-02",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Re-run both complete Python fences and synthetic note-validation/merge fixtures after adding category-specific required-field and type checks. Review current Anthropic Compaction, Context Editing, Python SDK, and OpenAI Responses compaction documentation. No provider request was made. Production build and Pagefind search index were regenerated. Inspected full-page screenshots in both themes at a 1300px viewport.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 21,
+    "testsFailed": 0,
+    "testCount": 21,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "pythonFencesCompiled": 2,
+    "trace": "Historical cost, retention and five-run behavior cannot be reproduced. Typed schema checks cover this teaching shape only; source presence, host authorization, authoritative state and provider API behavior remain outside the offline fixture.",
+    "productionBuildPages": 405,
+    "pagefindIndexedPages": 405,
+    "pagefindWords": 15474,
+    "visualViewportWidth": 1300,
+    "articleWidth": 768,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/context-engineering-compaction-w6-20261022/light.png",
+    "darkScreenshot": "output/playwright/context-engineering-compaction-w6-20261022/dark.png",
+    "screenshotDimensions": "1300x11847 both themes"
+  },
+  "limitations": [
+    "Historical per-request inputs/outputs, exact endpoint/model fingerprint, usage fields, case mapping and scorer are unavailable; old result summaries cannot be independently recomputed.",
+    "No live provider, production store, transaction, model answer-quality evaluation, or billing test was run.",
+    "The synthetic fixture verifies local note merge/shape behavior only; it does not establish semantic extraction completeness or truth.",
+    "Anthropic and OpenAI context APIs have provider/model/version compatibility limits; consult current documentation before deployment.",
+    "The full-page screenshots confirm layout and rendering only; they do not validate provider behavior, historical measurements, or production state persistence."
+  ]
+}

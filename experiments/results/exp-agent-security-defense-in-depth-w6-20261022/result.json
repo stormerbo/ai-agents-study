@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-agent-security-defense-in-depth-w6-20261022",
+  "runId": "agent-security-defense-in-depth-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Rechecked the full lesson against the actual chapter/lesson ordering and current OWASP LLM01:2025 and Authorization Cheat Sheet guidance. Corrected three cross-references that called chapter 16 a section, added a source-bound documented checkpoint, and ran whole-lesson boundary assertions plus the existing local path-policy suite.",
+  "observations": {
+    "checksPassed": 8,
+    "testsPassed": 3,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": 2
+  },
+  "limitations": [
+    "The path-policy fixture only checks simple resolved paths and symlinks; it is not an OS sandbox and does not test a live agent or prompt injection.",
+    "The review validates the lesson’s documented examples and cross-references, not a production authorization stack, audit pipeline, incident response process, or organizational ownership."
+  ]
+}

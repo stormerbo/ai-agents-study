@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-agent-loop-tool-registry-review-20261020",
+  "runId": "local-agent-loop-tool-registry-review-2026-10-20",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Compile all Python fences and execute the scheduling and registry demos. Run synthetic mixed-order batches, verify per-call result matching and serialization, inject a peer timeout after simulated commit, ensure unknown outcomes halt for reconciliation, and exercise known error and validator cases.",
+  "observations": {
+    "pythonFencesCompiled": 7,
+    "testsPassed": 1,
+    "testsFailed": 0
+  },
+  "limitations": [
+    "Authorization is reviewed as architecture guidance; no identity provider, tenant database, authorization policy engine, or production permission boundary was exercised.",
+    "All tool calls are synthetic local functions; no provider, live model, external API, real side effect, cancellation, or distributed scheduler was tested.",
+    "The 2026-10-12 0.81 second latency remains a historical single-run measurement of sleep-based local functions; the approximately 1.2 second serial comparison is arithmetic, not a separately measured baseline.",
+    "Historical model response ratios in chapters 4 and 5 were not rerun; the prose now limits them to the original sample and setup."
+  ]
+}

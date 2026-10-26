@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-multimodal-vision-failures-review-20261021",
+  "runId": "multimodal-vision-failures-review-2026-10-22-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed four offline unittest checks: bounded historical claims, exact equality between the full Python fence stdout and published output, exhaustive one-digit mutation detection, strict schema/scoring cases, rejection of Unicode digit lookalikes and non-string helper input, and 88-character line width. The 450,000 mutation probe completed locally; no provider request or image input was used.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "singleDigitMutationsDetected": 450000,
+    "providerCalls": 0,
+    "stdoutMatchesPublishedOutput": true
+  },
+  "limitations": [
+    "The 2026-10-08 contrast, density, and cell-error summaries have no archived per-call requests/responses, precise backend model snapshot, or reproducible scorer; the old provider results were not reproduced.",
+    "The old grader parsed a JSON substring and compared expected field strings but did not validate exact row count, extra rows/keys, a complete schema, numeric ranges, finish reason, or usage. The listed 352/360 and error examples cannot be independently confirmed.",
+    "Local exhaustive Luhn checks prove properties of this implementation for one-digit changes in four-digit bodies and the listed examples only; they do not establish image-reading performance, detection rates for multi-character errors, or data authenticity.",
+    "providerCalls=0; no current model quality, visual behavior, or production extraction reliability is verified."
+  ]
+}

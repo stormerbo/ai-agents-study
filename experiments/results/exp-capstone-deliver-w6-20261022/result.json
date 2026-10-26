@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-capstone-deliver-w6-20261022",
+  "runId": "capstone-deliver-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete delivery lesson, its output-generating Python fence, checkpoint claims, referenced synthetic approval sample, and the dated clean-run narrative. Test-first checks caught an overclaim: a 0.03-second script process duration was used to attribute all handoff cost to locating the script, although path-discovery time was not separately measured. Narrowed the conclusion to the observed missing working directory and explicitly separated measured script runtime from unmeasured handoff time. Executed the handoff template offline; no provider or network call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 5,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "historicalBenchmarksRerun": false,
+    "trace": "The static template executes and prints all six sections. The six-block order is explicitly adaptable; logging guidance requires data minimization; the 7-step approval comparison is limited to a synthetic sample and not a production rule. The clean-run narrative now says the first command failed because the working directory was omitted, while the recorded 0.03 s measures only the script process; time spent discovering the path was not measured, so total handoff cost cannot be attributed to it. Preserved ERR-055 verifier passes 7/7.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/capstone-deliver-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/capstone-deliver-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x7963"
+  },
+  "limitations": [
+    "The 0.03-second value remains a dated historical observation and was not independently reproduced from its original environment or raw timing trace.",
+    "The static template does not collect project facts, run a clean-checkout handoff, validate production telemetry, or prove independent handoff readiness.",
+    "The approval comparison remains synthetic and does not establish a universal approval policy."
+  ]
+}

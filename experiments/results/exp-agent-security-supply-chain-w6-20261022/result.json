@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-agent-security-supply-chain-w6-20261022",
+  "runId": "agent-security-supply-chain-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Executed the exact lesson Python fence with deterministic FakeClient fixtures and ran the 7-assertion offline verifier. The verifier rejects malformed/duplicate tool envelopes before dispatch, checks fixed host allowlist denials, compares the complete published stdout, and binds MCP tools/list metadata claims to the registered official Tools source. Reviewed the 2026-07-28 MCP Tools and Security Best Practices documents. No provider or external network call.",
+  "observations": {
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "testCount": 7,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "officialSourcesReviewed": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "FakeClient proposals are fixed synthetic fixtures; they do not measure whether any model follows indirect prompt injection or how tool metadata changes model behavior.",
+    "The fixed read_doc allowlist is a teaching gate. No production identity, tenant/object authorization, approval, revocation, concurrency, audit pipeline, or external side effect was tested.",
+    "Historical provider observations and the reported seven-attempt injection summary remain unreproduced because raw requests, responses, and a reproducible scorer are unavailable.",
+    "MCP protocol metadata and annotations do not prove a server implementation, runtime permission, or actual side-effect behavior."
+  ]
+}

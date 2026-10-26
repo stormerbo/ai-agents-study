@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-tool-schema-design-review-20261020",
+  "runId": "w6-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compared current Anthropic Define tools and Strict tool use docs with the full lesson. Compiled three Python fences; executed the partial local schema checker and fake SDK probe responses for no tool call, multiple calls, one valid call, empty end_turn, and list-valued parameter. Verified report classification and enum caveat. No provider/network calls.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 32,
+    "testsFailed": 0,
+    "testCount": 32,
+    "providerCalls": 0,
+    "model": "offline FakeClient and local validator",
+    "fixtureOnly": true,
+    "pythonFencesCompiled": 3,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The 2026-10-08 DeepSeek outputs, prompts, raw responses, endpoint configuration and scorer are not archived, so historical rates and causal explanations were not independently reproduced.",
+    "The probe SDK example is exercised only with a FakeClient; it has not been run against a live Anthropic endpoint or other provider.",
+    "The local contract helper checks a small project convention set; it is not a full JSON Schema validator or provider acceptance test.",
+    "Strict tool guarantees apply only to Anthropic-supported models/settings and supported schema subsets; they do not enforce authorization or business semantics."
+  ]
+}

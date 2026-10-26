@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-evaluation-regression-review-20261021",
+  "runId": "evaluation-regression-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the regression lesson against OpenAI evaluation best practices and the NIST proportion-interval reference. Executed the embedded example and ran five offline assertions for scenario arithmetic/transcript consistency and interval boundaries. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 5,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "trace": "For the fixed 30-case fixture, A repairs one and regresses one (net 86.7%), B repairs cases 3 and 11 with no regressions (93.3%, +6.7pp), and C repairs two and regresses two (net 86.7%). The 26/30 single-group normal-Wald 90% width is about 20.4 percentage points and is not used to adjudicate version differences."
+  },
+  "limitations": [
+    "The fixture is deterministic constructed data; no provider request, production CI execution, or randomized model evaluation was performed.",
+    "The review did not recover original historical prompts, responses, model/endpoint fingerprints, or run-by-run scorer outputs; it therefore does not validate historical model results.",
+    "The NIST interval reference supports the limitations of proportion intervals; it does not validate a version-comparison design or the missing historical data.",
+    "The CI workflow remains an illustrative snippet and was not run in a repository workflow."
+  ]
+}

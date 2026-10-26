@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-agent-loop-execution-ownership-w6-20261021",
+  "runId": "local-agent-loop-execution-ownership-w6-2026-10-21",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compile and execute the complete SQLite MDX code fence in an isolated temporary directory, compare its final persisted task/checkpoint tuple to the published JSON state sample, and run the lesson's four unit tests. Run the P4 PostgreSQL ownership integration suite. Inspect the row-locking and database-clock implementation, the stale-worker test boundaries, and the prose distinguishing transaction locking, lease expiry, and external effects. Review PostgreSQL 18 explicit locking, SELECT/SKIP LOCKED, and date/time function documentation.",
+  "observations": {
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": 3
+  },
+  "limitations": [
+    "The SQLite code is a deterministic single-process teaching model; it does not establish production lease or concurrency guarantees.",
+    "The P4 integration test validates the configured PostgreSQL worker fencing path, but not a live worker that remains running during network isolation and later resumes.",
+    "No long-held transaction deadline behavior, clock skew, real external side effect, or exactly-once delivery was tested.",
+    "Historical provider observations and production incidents were not replayed from raw traces."
+  ]
+}

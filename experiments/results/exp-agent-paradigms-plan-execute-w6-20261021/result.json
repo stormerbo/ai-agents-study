@@ -1,0 +1,43 @@
+{
+  "experimentId": "exp-agent-paradigms-plan-execute-w6-20261021",
+  "runId": "agent-paradigms-plan-execute-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed LangGraph StateGraph conditional-edge documentation and Anthropic Building effective agents for bounded architecture descriptions, then audited the complete lesson. Ran its standard-library-only verifier under the current local Python runtime; the complete synthetic fixture output matched the published text block. No model provider or external network calls. Built an isolated production copy (397 static pages), generated the Pagefind index (397 pages / 15,378 words), and visually inspected full-page light/dark captures at a 1300px viewport; article width 792px, no horizontal overflow, Mermaid rendered, and browser console had zero errors.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 1,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 2,
+    "historicalBenchmarksRerun": false,
+    "checks": [
+      "static lists distinguished from dependency DAGs and conditional host routing",
+      "full synthetic fixture output matched exactly",
+      "invalid allowlist arguments rejected before any step dispatch",
+      "dependency cycle rejected before dispatch",
+      "historical benchmark summaries remain explicitly unreproduced",
+      "duplicate step IDs rejected before dispatch",
+      "unknown tool and unknown dependency rejected before dispatch"
+    ],
+    "productionBuildPages": 397,
+    "pagefindIndexedPages": 397,
+    "pagefindWords": 15378,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": ".playwright-mcp/agent-paradigms-plan-execute-w6-light.png",
+    "darkScreenshot": ".playwright-mcp/agent-paradigms-plan-execute-w6-dark.png",
+    "screenshotDimensions": "1300x9705"
+  },
+  "limitations": [
+    "Historical 2026-10-09 per-run prompts, responses, model snapshot, scorer output and complete usage records were not archived, so the accuracy and token summaries were not recomputed.",
+    "The fixture uses synthetic weather data and deterministic local code; it does not test model planning, live provider behavior, LangGraph execution, billing, concurrency, production authorization or side-effect recovery.",
+    "The documentation review confirms conditional-edge capability in LangGraph API references and a bounded workflow taxonomy in Anthropic’s article; neither is comparative performance evidence."
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "experimentId": "exp-capstone-hardening-w6-20261022",
+  "runId": "capstone-hardening-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete hardening lesson and its current skeleton dependency. Clarified that fourteen checklist topics produce sixteen printed records because the policy/scope topic expands into three automated predicates. Ran the W6 scope verifier and preserved issue-scoped verifier; the latter extracts the lesson Python fence and executes it against the complete current skeleton in a temporary directory. No provider or external network call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The checklist has fourteen table topics. The executable output contains nine automated predicates, five manual records and two skip records (sixteen output rows); three predicates cover the single policy/default-deny/scope topic. The preserved verifier passes 9/9, including execution of all six smoke cases, budget stop, idempotency, trace locators and expected approval/version gaps. Production build generated 404 pages and Pagefind indexed 404 pages / 15,462 words. Light/dark full-page captures are 1300x8115 with 792px article width, viewport/document scroll width 1300px and Mermaid rendered; one browser error was the existing favicon 404.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/capstone-hardening-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/capstone-hardening-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x8115"
+  },
+  "limitations": [
+    "This is a local deterministic code and documentation check; it does not establish production authorization, cross-user/global quotas, real model tool-result provenance, deployment/versioning, or log storage and retention.",
+    "The six fixed smoke cases are not a representative evaluation set or a production release gate.",
+    "No new provider call, external service, production deployment, or visual rebuild was performed in this pass."
+  ]
+}

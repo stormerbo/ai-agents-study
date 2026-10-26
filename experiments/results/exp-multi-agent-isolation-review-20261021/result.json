@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-multi-agent-isolation-review-20261021",
+  "runId": "multi-agent-isolation-review-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran seven offline assertions; compiled/executed the complete Python fence against mocked urllib responses and checked that the linked resource card keeps the BrowseComp variance result non-causal and system-scoped. No provider call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 7,
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The historical provider requests/responses, model fingerprint, per-call usage, task mapping, and scorer are unavailable; historical route attribution and quality equivalence cannot be independently reproduced.",
+    "Mocks verify local parsing and aggregation only; they do not validate current endpoint contracts, billing, answer quality, latency, or actual parallel scheduling.",
+    "The cited BrowseComp variance analysis is reported by Anthropic for its Research system and does not establish a causal effect of context isolation; DeepSeek Anthropic-compatible endpoint usage/stop-reason behavior, billing, answer quality, latency, and actual parallel scheduling were not live-tested."
+  ]
+}

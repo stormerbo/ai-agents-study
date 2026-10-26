@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-agent-frameworks-selection-matrix-w6-20261021",
+  "runId": "agent-frameworks-selection-matrix-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the OpenAI Agents SDK official product overview for its own SDK-versus-Responses-API guidance. Reworked the lesson into a hard-gate and weighted-preference matrix, scoped migration estimates to representative changeover rehearsals, and narrowed the AST example to direct imported type names in sync/async signatures. Ran the complete Python 3.10.9 fixture and exact stdout comparison; no provider or network calls were made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 21,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 1,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 1,
+    "historicalBenchmarksRerun": false
+  },
+  "limitations": [
+    "The AST checker is a local heuristic. It does not resolve indirect exports, string forward references, runtime objects, function bodies, serialized data, or other languages.",
+    "The OpenAI documentation describes OpenAI products only; no comparative framework benchmark was conducted.",
+    "The historical LangChain 0.3.7 schema comparison and 0/3 versus 3/3 model outcomes were not rerun; total migration cost, provider acceptance, and production recovery remain unverified."
+  ]
+}

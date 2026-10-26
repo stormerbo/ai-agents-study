@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-json-schema-strict-review-20261021",
+  "runId": "json-schema-strict-review-2026-10-21-02",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed current official DeepSeek Tool Calls, Anthropic strict tool use, Anthropic Structured Outputs and Pydantic 2.9 error and strict-mode documentation. Ran the pinned offline verifier (14 assertions), which compiled both Python fences, executed the Pydantic 2.9.2 example and decision helper, checked strict rejection of a string for an integer, confirmed the default lax coercion example, compared exact demo output and checked historical evidence and direct cross-lesson boundaries. No provider or external network calls were made by the verifier. Also checked the built production page in both themes at 1300px viewport; full-page screenshots show matching 1300px viewport and scroll width. Also sampled the next two lessons at 1280px; document scroll width stayed equal to the viewport, with a 792px article column.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 14,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerRequests": 0,
+    "pydanticStrictRejectsStringInteger": true,
+    "decisionHelperBranchesTested": 2,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The 2026-10-08 schema prompts, complete schemas, per-call requests/responses, exact model snapshot and scorer are absent from the current workspace; none of those endpoint results was reproduced.",
+    "Provider documentation was checked on 2026-10-21 and describes documented routes and schema subsets; it does not prove a compatibility proxy or deployed endpoint behaves identically.",
+    "The local Pydantic demo verifies parsing, strict integer typing, declared multiple-of/enum constraints, ISO date parsing, the explicit date-order rule, and a small decision helper; it does not test provider structured-output quality or production authorization.",
+    "Anthropic refusal/truncation/casing/complexity caveats were checked against current official docs on 2026-10-21; provider behavior can change and these details must not be generalized to other vendors."
+  ]
+}

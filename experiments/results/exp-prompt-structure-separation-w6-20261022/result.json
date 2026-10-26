@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-prompt-structure-separation-w6-20261022",
+  "runId": "prompt-structure-separation-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran the W6 offline verifier with Python stdlib and fake Anthropic SDK. Eleven checks cover full lesson scope, code compilation/readability, zero-call default, bounded opt-in, exclusive archive creation, failed-attempt retention, and a durable write-ahead marker for process interruption. Checked current Anthropic Messages/stop-reason/Python SDK and prompt-injection guidance plus OWASP LLM01:2025. providerCalls=0; externalNetworkCalls=0.",
+  "observations": {
+    "status": "pass",
+    "testCount": 11,
+    "testsPassed": 11,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "Historical DeepSeek 0/6, 2/6, and 6/6 results remain unreproducible without per-call traces and the scorer.",
+    "Fake SDK tests verify local control flow only; they do not establish current live SDK/provider behavior, model resistance, semantic scoring validity, costs, or production authorization.",
+    "Exact quote presence in an allowlisted record does not prove semantic entailment or source truth."
+  ]
+}

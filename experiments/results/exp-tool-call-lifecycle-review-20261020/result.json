@@ -1,0 +1,25 @@
+{
+  "experimentId": "exp-tool-call-lifecycle-review-20261020",
+  "runId": "w6-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compared Anthropic Handle tool calls and Stop reasons docs with the complete lesson. Ran the SHA-pinned FakeClient verifier, including empty end_turn output, missing/duplicate IDs that must not dispatch, stop reasons, input validation, pairing and sanitized errors. No provider/network calls.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 19,
+    "testsFailed": 0,
+    "testCount": 19,
+    "providerCalls": 0,
+    "model": "offline FakeClient and static source checks",
+    "fixtureOnly": true,
+    "toolCalls": 1,
+    "decisionForFixtureOnly": "empty end_turn, missing/duplicate IDs fail closed before dispatch, end_turn text, max_tokens, refusal, unsupported pause_turn, valid tool, invalid arguments, unknown tool, and sanitized exception fixtures passed",
+    "checksPassed": 19
+  },
+  "limitations": [
+    "Anthropic documents that end_turn can accompany an empty response; the example detects no displayable text, but product-specific recovery or user messaging is outside the sample.",
+    "The verifier uses a FakeClient and does not call a live Anthropic/DeepSeek/provider endpoint or test SDK serialization.",
+    "The exchange-rate function is a constant local fixture; no real rates, authentication, authorization, database, idempotency, or external side effect is tested.",
+    "Historical 2026-10-08 model outputs and tool-result format comparison lack original responses and scorer and remain unreproduced."
+  ]
+}

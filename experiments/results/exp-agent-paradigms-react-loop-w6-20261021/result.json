@@ -1,0 +1,31 @@
+{
+  "experimentId": "exp-agent-paradigms-react-loop-w6-20261021",
+  "runId": "agent-paradigms-react-loop-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the original ReAct paper and current Anthropic stop-reason/tool-use documentation. Re-audited the complete lesson and ran its standard-library-only deterministic fixture verifier under Python 3.14.7; no provider or network calls.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 1,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 2,
+    "historicalBenchmarksRerun": false,
+    "checks": [
+      "offline fixture exact output",
+      "empty end_turn not counted as success",
+      "repeat action stops before second dispatch",
+      "duplicate tool IDs reject whole batch",
+      "tool budget preflight prevents partial batch",
+      "model turn and tool-call counts remain separate"
+    ]
+  },
+  "limitations": [
+    "Historical ReAct provider outputs, usage, latency, and scorer artifacts from 2026-10-09/12 were not archived and were not independently reproduced.",
+    "The synthetic fixture validates only its local host-control branches; it does not establish model branch selection, live API behavior, production authorization, side-effect safety, or billing.",
+    "The exact-repeat detector is a local heuristic and may reject legitimate repeated reads or miss other forms of no progress; production policy needs task-specific state and hard budgets."
+  ]
+}

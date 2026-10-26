@@ -1,0 +1,35 @@
+{
+  "observedAt": "2026-10-20",
+  "sourceFiles": {
+    "report.json": {
+      "sha256": "efa87c80632ce6214b700f3bd0cdb97691b449990b984241d38e6898e5ef4b79",
+      "reportStatus": "waiting_approval",
+      "taskStatusSnapshot": "waiting_approval",
+      "stopReason": "tool_use",
+      "outputValidation": "not_completed",
+      "sendNoticeProposalStatus": "waiting_approval"
+    },
+    "task-terminal-state.json": {
+      "sha256": "db1bcc72db032b271c3b7e2cbf007e740983fbf7c22188c7d58c942831d5ae29",
+      "taskStatus": "failed",
+      "approvalStatus": "cancelled",
+      "sendNoticeActionStatus": "cancelled"
+    },
+    "evidence/acceptance-report.json": {
+      "sha256": "b8aad3938a342bf733befb77472d4841523c8b71441ce1e3d1261991f4625c74",
+      "registryDecision": "incomplete",
+      "liveModelNormalEvidenceStatus": "unverified"
+    }
+  },
+  "negativeEvidence": {
+    "successfulSendNoticeToolResult": false,
+    "deliveryReceipt": false,
+    "independentSinkReceiveLog": false
+  },
+  "interpretation": "The snapshots show a live request stopping at approval and later terminal state failed with the approval and send_notice action cancelled. The files do not independently prove the sink never received a request. The acceptance decision remains incomplete; this is not a passed live_model_normal result.",
+  "limitations": [
+    "The original run directory is ignored and its local artifacts are not signed or authenticated by the repository.",
+    "Only the stored report, terminal-state snapshot, and acceptance report were inspected; no independent sink receive log was available.",
+    "No new provider request or external side effect was performed during this review."
+  ]
+}

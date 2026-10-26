@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-llm-sampling-params-review-20261021",
+  "runId": "offline-review-20261021-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared the lesson with Anthropic model parameter deprecations, model migration, Python SDK v1 migration, effort and thinking documentation, and DeepSeek Anthropic compatibility documentation. Ran the offline review script and parsed each Python fence without contacting a provider.",
+  "observations": {
+    "testCount": 23,
+    "testsPassed": 23,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "trace": "Separated SDK TypeError from API model rejection; replaced global removal claims with version-specific contracts; withdrew unsupported historical causal conclusions; clarified effort and cache interaction limits; updated model configuration to use VERIFY_MODEL."
+  },
+  "limitations": [
+    "No provider request was made and no live SDK/model combination was tested.",
+    "Historical temperature and thinking summaries have no full request/response archive, model snapshot or reproducible scorer; they remain unverified.",
+    "The static review script checks source wording and Python syntax; it does not establish provider behavior, parameter efficacy, costs, or quality changes.",
+    "The lesson remains in-review pending any requested live provider integration and recovery of reproducible historical evidence."
+  ]
+}

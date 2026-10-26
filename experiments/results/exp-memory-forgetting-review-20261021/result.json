@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-memory-forgetting-review-20261021",
+  "runId": "memory-forgetting-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compiled the three Python fences, executed the resolver and topic-gate examples, tested supersession chains, scope partitioning, mixed evidence, expiry and timezone boundaries, and checked the deletion protocol ordering. No provider calls or external store operations were performed.",
+  "observations": {
+    "status": "pass",
+    "testCount": 26,
+    "testsPassed": 26,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 3
+  },
+  "limitations": [
+    "Historical timestamp/no-timestamp provider runs are preserved only as a 2026-10-08 summary; raw requests, responses, prompt snapshots, exact route and scorer were unavailable and were not reproduced.",
+    "The local resolver trusts normalized scope/key/source/version metadata and does not establish semantic equivalence or user intent.",
+    "Deletion and outbox interfaces are conceptual; no database transaction, index, cache, replica, backup, authorization integration or physical erasure was executed.",
+    "Topic thresholds and expiry examples are constructed policy placeholders, not production defaults."
+  ]
+}

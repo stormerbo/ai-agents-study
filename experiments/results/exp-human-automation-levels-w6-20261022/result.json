@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-human-automation-levels-w6-20261022",
+  "runId": "human-automation-levels-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the automation-level policy path against OWASP authorization and excessive-agency guidance; ran complete local Python fences and adversarial policy-input fixtures. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "checks": 6,
+    "checksPassed": 6,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The lesson now rejects a missing amount for tools that require one, and fails closed on malformed trusted policy inputs instead of treating missing values as safe defaults. The teaching policy remains illustrative and does not establish production authorization."
+  },
+  "limitations": [
+    "The fixture does not prove completeness of production parameter schemas, object-level authorization, authorization at execution time, or concurrency safety.",
+    "Historical provider observations remain unreproduced; no provider was called."
+  ]
+}

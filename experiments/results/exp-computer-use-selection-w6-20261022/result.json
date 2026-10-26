@@ -1,0 +1,31 @@
+{
+  "experimentId": "exp-computer-use-selection-w6-20261022",
+  "runId": "w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Run the two credentialed request functions from the lesson against local loopback redirect and target servers. First confirm the original default-urlopen behavior reaches the redirect target; then execute the lesson's post() and api_arm() functions and check that each stops on HTTP 302 without sending x-api-key to the target. Compile all lesson Python fences and rerun the existing selection-review verifier. No provider or external network calls.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "testCount": 6,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": true,
+    "pythonFencesCompiled": true,
+    "trace": "Default redirect-following reproducer delivers the dummy x-api-key to the loopback target. Both post() and api_arm() then stop at HTTP 302; neither target receives a key.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/computer-use-selection-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/computer-use-selection-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x12949 both themes"
+  },
+  "limitations": [
+    "This verifies the lesson's urllib behavior against local loopback servers, not an external API or provider.",
+    "It does not validate the configured base URL, TLS, proxies, credential provenance, or server-side redirect behavior in other HTTP clients.",
+    "Historical per-request provider responses remain missing; this does not reproduce the old API/UI comparison or test real UI/business side effects."
+  ]
+}

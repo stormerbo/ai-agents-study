@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-context-engineering-system-prompt-altitude-review-20261021",
+  "runId": "system-prompt-altitude-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compile the complete lesson Python fence and run offline fake-response tests for credential selection, candidate keyword labels, raw-output opt-in, stop reasons, error handling, and evidence-scope statements. Review current Anthropic prompt engineering, Python SDK, and Messages stop-reason documentation. No provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 26,
+    "testsFailed": 0,
+    "testCount": 26,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "pythonFencesCompiled": 1,
+    "trace": "Historical 2026-10-08 prompt comparisons and 4/4 model self-audit remain unreplayed. The sample records returned model, stop reason, usage, request configuration, and output hash; raw responses are opt-in. Candidate labels explicitly require adjudication."
+  },
+  "limitations": [
+    "Historical raw outputs, precise endpoint/model fingerprint, sampling parameters, task mapping, and scorer are unavailable; output counts and candidate scoring cannot be independently recomputed.",
+    "No model request, answer-quality equivalence test, model-consistency estimate, or provider evaluation was performed.",
+    "Keyword labels are not a semantic commitment classifier; they only route text into a manual review queue.",
+    "Offline fake responses validate local sample control flow only; they do not prove policy correctness, prompt quality, or production authorization."
+  ]
+}

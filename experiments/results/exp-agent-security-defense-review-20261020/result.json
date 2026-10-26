@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-agent-security-defense-review-20261020",
+  "runId": "agent-security-defense-review-2026-10-20-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Ran the dependency-free audit script. It compiled and executed the lesson's Python fence, checked the synthetic in-root, traversal and symlink path decisions, and asserted that the lesson states its threat-model, audit and TOCTOU limits and links the official OWASP source.",
+  "observations": {
+    "testsPassed": 3,
+    "testsFailed": 0,
+    "testCount": 3,
+    "pythonFencesCompiled": 1
+  },
+  "limitations": [
+    "The local path example checks resolved path containment but does not open files and does not prevent a check-to-open race; it is not a production sandbox.",
+    "No LLM, provider, production authorization stack, OS sandbox, or audit pipeline was exercised.",
+    "Official OWASP guidance supports impact-mitigation recommendations; the lesson's layered-control framing is an engineering synthesis, not a proof of statistical independence or security."
+  ]
+}

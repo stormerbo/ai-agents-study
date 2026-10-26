@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-mcp-roles-capabilities-w6-20261022",
+  "runId": "mcp-roles-capabilities-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Compare the whole lesson and all displayed wire examples with the MCP 2026-07-28 Resources, Prompts, Discovery, Versioning, Tools, Base Protocol, and Security Best Practices pages; execute the published offline Python examples through a deterministic verifier.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 56,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "serverRequestsChecked": 24,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/mcp-roles-capabilities-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/mcp-roles-capabilities-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x12379"
+  },
+  "limitations": [
+    "The production page's only browser console error was the existing /favicon.ico 404.",
+    "This offline teaching server was not tested against the official SDK, remote HTTP transport, or a live provider.",
+    "The transfer tool is a no-side-effect simulation; it does not test production authorization, approval storage, or transaction execution.",
+    "Visual checks establish the local rendered page and do not establish behavior in every browser/container."
+  ]
+}

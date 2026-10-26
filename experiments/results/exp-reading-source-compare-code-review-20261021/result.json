@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-reading-source-compare-code-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Executed the Python fence in the pinned local environment, compared the printed A/B/C schema results, and invoked the LangChain tool with missing required arguments and an invalid enum value.",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "testCount": 14,
+    "testsPassed": 14,
+    "pythonFencesCompiled": 1
+  },
+  "limitations": [
+    "The MCP entry is constructed fixture data, not a captured tools/list response. No live server or provider was called; the test does not establish behavior of any deployed MCP server."
+  ]
+}

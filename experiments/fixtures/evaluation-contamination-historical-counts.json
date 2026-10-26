@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-21",
+  "provenance": {
+    "fixtureKind": "transcribed-local-log-summary",
+    "rawProviderResponsesAvailable": false,
+    "originalRequestsAvailable": false,
+    "replayed": false,
+    "notes": "Aggregate counts were transcribed from ignored local verify-output logs. The checksums identify those local files only; they do not authenticate provider output or make the historical experiment independently reproducible.",
+    "sourceSummaries": [
+      {
+        "localPath": "verify-output/eval-genflaws.log",
+        "sha256": "75e30bb20d36d7cb39c1a8f0e7c00e6b7c6543025397d579b759bae55d56ea2e"
+      },
+      {
+        "localPath": "verify-output/eval-genflaws2.log",
+        "sha256": "03dc9a9c341751b6e18fd938ed6cdd00cf6328d24edb746fa588df4bc1d51953"
+      }
+    ]
+  },
+  "batches": {
+    "A": {
+      "generatedCount": 20,
+      "analysisN": 20,
+      "parsedCount": 20,
+      "answerCounts": { "A": 2, "B": 12, "C": 6, "D": 0 }
+    },
+    "B": {
+      "generatedCount": 20,
+      "analysisN": 19,
+      "parsedCount": 19,
+      "answerCounts": { "A": 2, "B": 14, "C": 3, "D": 0 }
+    }
+  }
+}

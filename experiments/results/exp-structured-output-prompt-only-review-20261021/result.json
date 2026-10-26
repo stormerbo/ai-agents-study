@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-structured-output-prompt-only-review-20261021",
+  "runId": "structured-output-prompt-only-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared current DeepSeek Tool Calls and Anthropic API compatibility docs, Anthropic stop reasons and structured outputs, and OpenAI Chat Completions response fields with the lesson. Ran the offline verifier, which compiled and executed both Python fences, required each Python fence stdout to match its following text fence exactly, and checked historical-evidence boundaries, parser exception redaction, provider stop-state classification, and probability arithmetic. No provider or external network calls were made by the verifier.",
+  "observations": {
+    "status": "pass",
+      "testsPassed": 8,
+    "testsFailed": 0,
+    "providerRequests": 0
+  },
+  "limitations": [
+    "The 2026-10-08 model outputs, exact model revision, requests, usage records and scorer are absent from the current workspace; historical prompt-format, latency, token and 400-error claims were not independently reproduced.",
+    "Official documentation is current only as checked on 2026-10-21 and does not prove that a compatibility endpoint behaves exactly as documented; target endpoints still need tests.",
+    "The offline verifier covers authored prose invariants, local code behavior and arithmetic only; it does not evaluate model output quality or production task reliability."
+  ]
+}

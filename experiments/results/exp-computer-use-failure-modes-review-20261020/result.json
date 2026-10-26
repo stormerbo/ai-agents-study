@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-computer-use-failure-modes-review-20261020",
+  "runId": "review-2026-10-20-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Run the offline archive-consistency verifier. It checks the tracked archive-summary fixture against the lesson claims, optional local archive source hashes, downstream references and compilation of the complete Python fence. The historical provider harness is inspected statically and never executed.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 18,
+    "testsFailed": 0,
+    "testCount": 18,
+    "providerCalls": 0,
+    "model": "static archive and lesson audit",
+    "trace": "Tiny 4 / decoy 2 / noop 1 historical run counts are bounded to retained labels; weak scorer, missing responses and missing click coordinates are disclosed; unsupported rates and cross-chapter multipliers were removed."
+  },
+  "limitations": [
+    "No original per-turn provider requests/responses, model routing trace, click coordinates, or final stored field values are present.",
+    "The archived pass/fail labels are outputs of a weak scorer, not verified task-success observations; this review does not estimate a success rate.",
+    "The fixture records inspected historical summaries and source hashes. It does not make the ignored historical provider artifacts available in a clean checkout.",
+    "No live provider call, real browser/desktop action, production authorization, or external business side effect was tested."
+  ]
+}

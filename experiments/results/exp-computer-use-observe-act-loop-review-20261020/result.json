@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-computer-use-observe-act-loop-review-20261020",
+  "runId": "review-2026-10-20-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Run the offline consistency audit and compile the lesson’s complete Python fence. Separately inspect the linked DeepSeek Vision and Anthropic Computer Use Tool official documentation. No API call or model experiment was made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 17,
+    "testsFailed": 0,
+    "testCount": 17,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "Historical usage totals are retained but cannot be reconciled to the per-step table; conditional image-history formula, hash comparison semantics, controller outcome boundaries and example limitations are checked."
+  },
+  "limitations": [
+    "The original provider request/response traces, per-round usage, model routing version and historical endpoint behavior are unavailable.",
+    "The historical click metric is distance to the nearest registered element center, not error to a specified target center.",
+    "The dHash observations cover six synthetic frames and do not measure collisions, missed meaningful state changes or production UI reliability.",
+    "Current official provider docs are rolling documentation and cannot establish the endpoint behavior from 2026-10-09.",
+    "The audit does not validate a real desktop/browser executor, authorization, provider performance or production safety."
+  ]
+}

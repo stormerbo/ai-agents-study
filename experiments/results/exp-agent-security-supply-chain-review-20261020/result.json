@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-agent-security-supply-chain-review-20261020",
+  "runId": "local-synthetic-20261020-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Compile all Python fences, inspect lesson scope assertions, then execute the embedded loop with a synthetic model response and local fake tool sinks. No API credentials are read and no network request is made.",
+  "observations": {
+    "testCount": 4,
+    "passed": 4,
+    "failed": 0,
+    "pythonFencesCompiled": 1,
+    "toolsCall": "synthetic delete_all request reached local fake sink directly",
+    "status": "no live provider API call"
+  },
+  "limitations": [
+    "Does not reproduce or verify the historical DeepSeek response or the historical seven-attempt aggregate.",
+    "Does not test real MCP client/server interoperability, authorization, sandboxing, or production side effects.",
+    "The synthetic response is an intentionally constructed fixture, not model behavior evidence."
+  ]
+}

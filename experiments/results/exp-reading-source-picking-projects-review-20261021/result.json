@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-reading-source-picking-projects-review-20261021",
+  "runId": "2026-10-22-w6-rerun",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the Python measurement fence and both bash path-location commands under the exact recorded Python 3.14.7 dependency lock; checked package counts, missing-package and read-error reporting, code width, the separate schema/provider paths, and that the helper symbol is searched in its actual base.py file.",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "testCount": 25,
+    "testsPassed": 25,
+    "pythonFencesCompiled": 1,
+    "officialSourcesReviewed": 1,
+    "productionBuildPages": 425,
+    "pagefindIndexedPages": 425,
+    "pagefindWords": 15582,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "screenshotDimensions": "1300x8257",
+    "lightScreenshot": "output/playwright/reading-source-picking-projects-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/reading-source-picking-projects-w6-20261022-dark.png"
+  },
+  "limitations": [
+    "The package-size table covers only Python import roots in the recorded environment and does not estimate reading duration. The LangChain provider package documentation establishes package boundaries, not the runtime call path of any target project; that path must be traced in its actual version. No provider call was made.",
+    "Production light/dark pages were checked at 1300px with zero code overflow; the initial page load had only the existing favicon.ico 404."
+  ]
+}

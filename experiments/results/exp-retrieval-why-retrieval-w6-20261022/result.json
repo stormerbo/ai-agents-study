@@ -1,0 +1,37 @@
+{
+  "experimentId": "exp-retrieval-why-retrieval-w6-20261022",
+  "runId": "exp-retrieval-why-retrieval-w6-20261022-run1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the whole lesson, current source/checkpoint registrations, historical measurement boundaries, and DeepSeek Chat Completions, Responses API, and Anthropic-compatible usage docs. Executed the single standard-library Python fence with provider credentials explicitly unset; ran the focused curriculum test suite.",
+  "observations": {
+    "checks": 46,
+    "checksPassed": 46,
+    "testCount": 46,
+    "testsPassed": 46,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "providerCalls": 0,
+    "localDemoOutput": "退款问题召回：退款政策、价格保护；秒杀差价问题召回：价格保护、换货政策。",
+    "officialSourcesReviewed": 3,
+    "historicalBenchmarksRerun": 0,
+    "productionBuildPages": 423,
+    "pagefindIndexedPages": 423,
+    "pagefindWords": 15578,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/retrieval-why-retrieval-w6-20261022-light-full.png",
+    "darkScreenshot": "output/playwright/retrieval-why-retrieval-w6-20261022-dark-full.png",
+    "screenshotDimensions": "1300x10251"
+  },
+  "limitations": [
+    "The historical 2026-10-08 token, cache, answer-quality, usage, cost, and latency summaries lack per-request raw responses and complete runtime/task/scorer records; they remain unreproduced.",
+    "No live provider request or billing inspection was performed. The documentation check establishes endpoint contracts only.",
+    "The local BM25 fixture checks deterministic retrieval paths, not semantic vector retrieval quality, production cost, or model answer quality.",
+    "The browser captured the existing /favicon.ico 404; no lesson layout or code overflow was observed."
+  ]
+}

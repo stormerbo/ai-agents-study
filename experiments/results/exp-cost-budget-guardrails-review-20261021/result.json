@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-cost-budget-guardrails-review-20261021",
+  "runId": "cost-budget-guardrails-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Review the lesson text, metadata checkpoints, registered provider and circuit-breaker sources, and execute all Python fences. Run the offline assertion script. No provider requests or archived provider runs were made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 43,
+    "testsFailed": 0,
+    "testCount": 43,
+      "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "Corrected the fixed-input and growing-context arithmetic; separated request output limits, task budgets, account/project caps and dependency breakers; added request-time reservation and response-time reconciliation; constrained partial results by task contract; scoped historical usage fields to their provider snapshot; revised the breaker demo labels to match actual execution; and removed unsupported universal P99 and weekly-doubling thresholds."
+  },
+  "limitations": [
+    "No live provider request, model behavior, billing reconciliation, or production budget enforcement was tested.",
+    "The historical DeepSeek usage snapshot remains a local normalized replay; archived raw requests and responses were not reproduced.",
+    "The first Python example is a toy simulation that counts fixed successful-call resource amounts and excludes failed-call cost, account quotas, distributed breaker state, timeouts, and half-open probing.",
+    "The offline assertions verify editorial boundaries and displayed code behavior, not that the proposed policy is appropriate for every task or workload."
+  ]
+}

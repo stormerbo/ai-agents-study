@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-evaluation-environment-review-20261021",
+  "runId": "evaluation-environment-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed evaluation variability and task-specific evaluation workflow against OpenAI Evaluation best practices, and fixture instance/teardown lifecycle against pytest fixture documentation. Extracted and executed both Python fences offline, including a negative-control reproduction of a teardown assertion that rejects a valid state mutation. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 8,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "trace": "Synthetic clean fixture returned count 3 and passed; stale fixture was marked invalid_fixture and not scored; legitimate create_refund action passed against expected terminal state; negative control printed the caught AssertionError showing why teardown must not require every task to restore the initial snapshot. The 2026-10-09 3/5 record lacks raw request/tool-return/scorer evidence and is not independently reproducible."
+  },
+  "limitations": [
+    "The executable environment is an in-memory teaching model; it does not prove database, filesystem, sandbox, external API, cleanup, concurrency or production isolation behavior.",
+    "No live model/provider calls, stochastic-repeat analysis, judge validation, or production fixture pipeline were performed.",
+    "The historical 3/5 refund claim cannot be reconstructed from retained raw artifacts; the synthetic example illustrates a possible confound, not the historical cause."
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-computer-use-what-differs-review-20261020",
+  "runId": "review-2026-10-20-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Run the offline wording/code audit and compile the lesson's API request example. Review the current Anthropic Computer use, Browser use, and Tool combinations documentation. No provider request or real GUI action was performed.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 13,
+    "testsFailed": 0,
+    "testCount": 13,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "The lesson limits its comparison to the custom screenshot-coordinate adapter; browser accessibility-tree observations and provider-native action batches are distinct. Archived coordinates are proposals, not executed clicks, and the historical 3/3 success and token table are retained only as unreconciled summaries."
+  },
+  "limitations": [
+    "The original 2026-10-09 provider request and response bodies, endpoint routing, and per-request usage are unavailable; historical model outputs cannot be independently replayed.",
+    "The historical 5-step token table and 3/3 success note lack a reconciled run ledger and a complete business postcondition scorer.",
+    "The example's click coordinate was not executed; its 2 px distance from a drawn field center is only static arithmetic and does not establish click accuracy.",
+    "Current Anthropic documentation describes current provider toolsets and does not establish the exact behavior of the historical DeepSeek-compatible endpoint.",
+    "No real desktop/browser executor, coordinate calibration, authorization policy, application postcondition, or production safety boundary was tested."
+  ]
+}

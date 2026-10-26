@@ -1,0 +1,16 @@
+Review date: 2026-10-21
+Ignored local source observed: verify-output/evolve-distill.py
+SHA-256: f928ea2947c3fac8b39c323807aa702c55d748933039b693c76d7f2a55f1a7e1
+Source mtime: 2026-10-10 17:32:50 CST
+Archived log mtime: 2026-10-10 17:30:08 CST
+
+Relevant current-source behavior observed during review:
+
+    if d.get("stop_reason") == "max_tokens":
+        txt = txt + "  [!! 被 max_tokens 截断]"
+    return txt
+
+    out = call(sysp, "把「%s」归一化。" % s[0]).strip()
+    return (s[1] in out, out[:26])
+
+The scorer checks only whether the expected substring appears in output. Appending a truncation marker does not make a truncated sample ineligible. The distillation call also returns text without separately preserving or validating the response stop reason. This snapshot records the inspected source facts; it does not identify the source version that produced the older log.

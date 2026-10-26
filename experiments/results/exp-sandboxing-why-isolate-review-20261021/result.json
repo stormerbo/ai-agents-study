@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-sandboxing-why-isolate-review-20261021",
+  "runId": "sandboxing-why-isolate-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared risk, logging and URL-fetching claims with Python tempfile, Linux pathname lookup and OWASP SSRF guidance. Ran the offline verifier (8/8); executed the extracted 01-why-isolate path fixture and the duplicated 03-least-privilege fixture. The verifier isolated TMPDIR, created a pre-existing sandbox-demo/preserve.txt sentinel, ran the lesson code, and confirmed the sentinel remained unchanged while the local fixture still produced 4/6. Both lessons’ Python fences compiled. No provider, DNS, HTTP or other external network calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 8,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The 4/6 result describes only six fixed local path inputs and does not estimate a vulnerability rate or rank production isolation designs.",
+    "The realpath/isfile/open example is not race safe and does not validate an OS sandbox, deployment filesystem, multi-tenant boundary, or resource limits.",
+    "The URL row describes controls to validate; no URL fetcher, HTTP client, redirect handling, DNS pinning, firewall, or egress policy was exercised.",
+    "The temporary directory test verifies this lesson script preserves one pre-existing same-named directory; it is not a general test of tempfile cleanup behavior on every platform."
+  ]
+}

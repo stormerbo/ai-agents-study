@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-mcp-remote-authorization-review-20261020",
+  "runId": "local-mcp-remote-authorization-review-2026-10-20",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Compare lesson wording against MCP Authorization 2026-07-28, assert the Markdown and local-diagnostic/wire-error distinction, then run the isolated offline teaching-model test suite.",
+  "observations": {
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "status": "401 invalid token; 403 insufficient permissions; runtime insufficient-scope challenge SHOULD"
+  },
+  "limitations": [
+    "No JWT signature verification, key rotation, HTTP middleware, or wire response serialization was exercised.",
+    "No authorization-server discovery or OAuth client interoperability flow was run.",
+    "The Python model consumes synthetic claims that are assumed to have already passed cryptographic validation."
+  ]
+}

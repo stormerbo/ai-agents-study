@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-agent-deployment-incident-response-w6-20261022",
+  "runId": "agent-deployment-incident-response-review-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the whole incident-response lesson for provider-specific response/usage contracts, operational thresholds, alarm semantics, fallback claims, fault-drill validity, and runnable examples. Executed the published Python fixture and exact-matched its complete stdout; ran offline assertions for missing and invalid metrics. Reviewed eight current official provider/API sources. No provider calls were made.",
+  "observations": {
+    "checksPassed": 5,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 8
+  },
+  "limitations": [
+    "The threshold values belong to the local synthetic fixture and are not universal operational recommendations.",
+    "No live provider calls, production telemetry, incident, alert routing, fallback behavior, or external side effects were tested.",
+    "Provider response and cache fields remain API/model-specific; verify the deployed endpoint contract before wiring production alerts."
+  ]
+}

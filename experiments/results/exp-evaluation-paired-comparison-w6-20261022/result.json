@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-evaluation-paired-comparison-w6-20261022",
+  "runId": "evaluation-paired-comparison-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full lesson, metadata/source registrations, DATA ledger, and existing dated review. Re-ran the 11-check offline verifier and independently recomputed all eight differences, paired and independent-sample standard errors, and exact sign-test tails. Opened the official NIST paired-observation, sign-test, and DOE handbook pages. No provider calls were made by local verification.",
+  "observations": {
+    "status": "pass",
+    "checks": 11,
+    "checksPassed": 11,
+    "officialSourcesReviewed": 3,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The statistical derivations and task-ID alignment were consistent: differences [37, 39, 1297, 307, 37, -202, -534, 837], mean +227.25, paired SE 206.765, independent-sample SE 248.636, and two-sided sign-test p=74/256=0.2890625. A fresh run exposed that these historical figures were missing from docs/DATA.md; the ledger now records the arithmetic-only results and unavailable raw evidence. NIST's paired-observation definition and sign-test treatment of ties and binomial signs align with the lesson's bounded claims. Source review is not a model rerun."
+  },
+  "limitations": [
+    "The original per-call prompts and responses, endpoint/model fingerprint, complete usage, scorer source, task-run mapping, and run order are unavailable; the historical measurements remain independently unreproducible.",
+    "The displayed values support arithmetic over the retained summary only. They do not establish quality equivalence, billed cost changes, a causal prompt effect, or population-level model behavior.",
+    "The sign test's inferential interpretation depends on independent paired units and balanced signs under the null; the eight historical tasks cannot be confirmed to satisfy those assumptions or represent a target workload."
+  ]
+}

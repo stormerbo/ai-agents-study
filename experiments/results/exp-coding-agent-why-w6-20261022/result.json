@@ -1,0 +1,36 @@
+{
+  "experimentId": "exp-coding-agent-why-w6-20261022",
+  "runId": "coding-agent-why-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, its checkpoints, historical recovery fixture, and registered official source. The W6 verifier checked scope/wording, the cross-lesson history boundary and metadata, compiled and executed the single Python fixture in an isolated subprocess, and confirmed all five assertions pass. Built the production site and search index, then inspected full-page light/dark screenshots with a 1300px viewport; measured article width and horizontal overflow and checked browser console. No provider calls or network requests were made by the verifier.",
+  "observations": {
+    "status": "passed",
+    "checks": 34,
+    "checksPassed": 34,
+    "testsPassed": 34,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "testCount": 5,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 404,
+    "pagefindIndexedPages": 404,
+    "pagefindWords": 15462,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/coding-agent-why-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/coding-agent-why-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x5564"
+  },
+  "limitations": [
+    "The Python fixture checks a small in-memory tenant/grant example; it does not validate trusted identity, database row-level isolation, serialization, pagination, or production authorization.",
+    "The Anthropic documentation comparison supports grader choices and coding-agent evaluation examples; it does not prove that coding tasks are easier to evaluate in every repository.",
+    "Historical coding-recover provider responses and scorer were not available, so past model outcomes remain unverified.",
+    "Visual checks cover this production route at 1300px in two themes; they do not certify every route or viewport."
+  ]
+}

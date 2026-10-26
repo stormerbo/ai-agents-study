@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-prompt-reliability-w6-20261022",
+  "runId": "prompt-reliability-w6-2026-10-22",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the lesson's complete Python fences in one module with a fake Anthropic client and constructed offline fixtures; no API key or provider access.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 2
+  },
+  "limitations": [
+    "Historical self-consistency, temperature and self-evaluation results remain unreproduced because per-request traces and scoring artifacts are unavailable.",
+    "The fake client validates local parsing and control flow only; it does not validate a live Anthropic-compatible endpoint, model quality, billing, authorization or production security.",
+    "Numeric source-presence and other proxy metrics do not prove attribution, entailment or summary quality."
+  ]
+}

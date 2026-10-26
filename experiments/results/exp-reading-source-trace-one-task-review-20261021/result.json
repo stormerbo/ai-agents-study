@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-reading-source-trace-one-task-review-20261021",
+  "runId": "2026-10-22-review-2",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the complete lesson Python fence and source-path verifier in the pinned Python 3.14.7 / langchain-core 0.3.63 environment. Inspected the actual StructuredTool.from_function, create_schema_from_function, get_input_schema, and tool_call_schema implementations; checked that _get_filtered_args is not called by this path; compared exact model-visible tool-call schemas and descriptions across default parsing, parse_docstring=True, Literal, and explicit Pydantic args_schema; 36 checks passed, including code width guards.",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "testCount": 36,
+    "testsPassed": 36,
+    "pythonFencesCompiled": 1
+  },
+  "limitations": [
+    "Verifies the four constructed examples and traced source functions against langchain-core 0.3.63 and the locked dependency environment. It does not establish later LangChain/Pydantic versions, live provider behavior, or all schema forms."
+  ]
+}

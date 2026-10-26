@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-concurrency-backpressure-w6-20261022",
+  "runId": "concurrency-backpressure-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Ran a new five-check W6 verifier, the prior seven-check lesson/source audit, and all 14 deterministic Python unit tests. The new invalid-count tests were observed failing first for six Boolean/fractional cases, then passing after exact integer validation. Reviewed current OpenAI and Anthropic rate-limit/error documentation, RFC 9110 §10.2.3, and Python 3.14 built-in types. Built and visually inspected the production lesson in light and dark themes. No model provider was called.",
+  "observations": {
+    "status": "pass",
+    "testCount": 19,
+    "testsPassed": 19,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": 5,
+    "productionBuildPages": 408,
+    "pagefindIndexedPages": 408,
+    "pagefindWords": 15486,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/concurrency-backpressure-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/concurrency-backpressure-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x6008 both themes",
+    "trace": "The admission helper now requires exact integer types for active, queued, max_active, and max_queue; the retry helper applies the same boundary to attempt and max_attempts before classifying the error. Regression fixtures reject fractional and Boolean inputs. The full local suite passes 14/14 and the W6 verifier passes 5/5. The production page renders centered at 792px with one Mermaid SVG and no horizontal overflow. The only browser console error is the existing favicon.ico 404."
+  },
+  "limitations": [
+    "The local helper is a deterministic policy model; it does not implement a production queue, atomic shared-budget reservation, provider SDK retries, or fairness scheduling.",
+    "The HTTP Retry-After parser and live provider behavior were not tested, and no historical provider experiment was replayed."
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-memory-when-to-recall-review-20261021",
+  "runId": "memory-when-to-recall-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Extracted and compiled all three Python fences from the lesson; executed the threshold, recall-gate, and trace examples; checked exact TTL boundaries, failure behavior, output goldens, privacy fields, and historical evidence caveats. No provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 32,
+    "testsPassed": 32,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 3,
+    "trace": "The fixed-clock fixture independently rejects two disallowed sources and one expired user-stated memory; trace records injected/blocked IDs and request IDs without raw query text."
+  },
+  "limitations": [
+    "Historical A/B/C model requests, responses, route/version and scorer are unavailable; the 2026-10-08 output comparison was not reproduced and cannot establish causality or frequency.",
+    "The threshold fixture uses constructed scores only; it does not test embeddings, BM25, retrieval quality, or production task outcomes.",
+    "The source allowlist is one conservative teaching policy, not a universal trust policy.",
+    "Local tests do not verify production clocks, memory ownership, authorization, logging retention, or data quality."
+  ]
+}

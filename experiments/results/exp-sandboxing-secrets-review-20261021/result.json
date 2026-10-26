@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-sandboxing-secrets-review-20261021",
+  "runId": "sandboxing-secrets-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared lesson text, local synthetic fixtures, checkpoint metadata, and registered official OWASP/AWS references. Executed all three complete Python fences and checked host-bound tenant/scope authorization and safe error/log output. No provider calls were made. Rendered the production page at 1300px CSS width in light and dark themes; both full-page captures have 1300px width, document scrollWidth is 1300px, one Mermaid diagram renders, and no page alert appears.",
+  "observations": {
+    "status": "pass",
+    "testCount": 6,
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The 2026-10-09 three-path demonstration constructs local test strings only; it did not inspect production traces, logs, network requests, or provider retention.",
+    "The new broker and upstream are fake local objects. They do not validate a real secrets manager, workload identity, tenant authorization service, sandbox isolation, or deployed logging pipeline.",
+    "Official documentation was opened on 2026-10-21; no live credential was used and no production/provider behavior was tested.",
+    "The browser run emitted a favicon 404; the page itself had no alert, rendered the Mermaid diagram, and had no horizontal overflow. Browser console also retained prior-session errors from other localhost ports, so no claim is made about clearing the shared console history."
+  ]
+}

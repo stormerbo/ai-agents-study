@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-model-selection-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testsPassed": 36,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "status": "whole-lesson scope checks passed; historical/provider observations remain in-review"
+  },
+  "limitations": [
+    "Historical 2026-09-24 token and tool-schema summaries lack raw requests/responses and were not reproduced.",
+    "The mocked examples and arithmetic do not verify current provider price, model quality, cache hit rate, or endpoint usage semantics.",
+    "Anthropic model and pricing documentation can change after the 2026-10-22 source review."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Compile both Python fences, recompute displayed token arithmetic, assert historical evidence and model-routing boundaries, and execute the preserved 36-check offline verifier with mock SDK calls only. No provider/network calls."
+}

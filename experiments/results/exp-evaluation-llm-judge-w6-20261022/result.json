@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-evaluation-llm-judge-w6-20261022",
+  "runId": "evaluation-llm-judge-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full LLM-as-a-judge lesson, its recorded historical evidence boundary, the metadata checkpoint, and Zheng et al.'s primary MT-Bench paper. Executed the complete Python fence and matched stdout; ran the retained ten-check lesson verifier and five W6 boundary assertions. No provider or network calls were made by local verification.",
+  "observations": {
+    "status": "pass",
+    "testCount": 5,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "stdoutMatchesPublishedOutput": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The lesson correctly treated answer identity as distinct from A/B slot, but the explanation called four unreproducible historical pairs 'evidence of no position bias' despite the broader caveats. It now states only that, if the summary is accurate, no identity flip was observed in those four pairs; the sample cannot establish the absence of position bias. The MT-Bench paper reports position, verbosity, and self-enhancement risks and evaluates swapped-order consistency, while cautioning that consistency does not imply accuracy. The offline example still executes with exact expected output."
+  },
+  "limitations": [
+    "The historical DeepSeek prompts, per-call outputs, exact model snapshot, decoding settings, human references and scorer are unavailable; the 0/12, 4/4 and 0/6 figures remain unverified summaries.",
+    "The review did not calibrate a judge against humans or test any production scoring workflow.",
+    "The MT-Bench paper's results are bounded to its studied models, tasks, prompts and datasets; they do not establish the behavior of current models or this application's judge."
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-cost-caching-review-20261021",
+  "runId": "cost-caching-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Review the lesson and metadata against registered Anthropic, DeepSeek and OpenAI provider documentation; inspect the historical measurement caveats; execute the complete local Python fence and run offline editorial-boundary assertions. No provider requests were made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 37,
+    "testsFailed": 0,
+    "testCount": 37,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "Scoped cache_control to Anthropic Messages API; documented that the current DeepSeek Anthropic compatibility endpoint ignores it; separated Anthropic, DeepSeek Chat and OpenAI cache usage semantics; marked archived DeepSeek cache observations as non-reproducible without raw responses; bounded agent history resubmission and the quadratic toy model to stateless assumptions; added tool-result freshness and read-time authorization checks."
+  },
+  "limitations": [
+    "No live provider request or current endpoint cache behavior was tested.",
+    "Archived 2026-09 and 2026-10 observations lack per-request raw responses and cannot be independently recomputed; their causal interpretation remains unknown.",
+    "No live billing calculation, cache hit-rate measurement, production tenant-isolation check, or end-to-end latency comparison was performed.",
+    "Offline assertions check documented boundaries and the local example output; they do not prove production runtime behavior."
+  ]
+}

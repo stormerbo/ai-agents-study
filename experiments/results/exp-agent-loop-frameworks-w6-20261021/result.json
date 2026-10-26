@@ -1,0 +1,29 @@
+{
+  "experimentId": "exp-agent-loop-frameworks-w6-20261021",
+  "runId": "local-agent-loop-frameworks-w6-2026-10-21",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Recompile both lesson Python fences and rerun the LangGraph comparison under the pinned Python 3.10.9 / LangGraph 1.2.14 dependency set. Check the final StateSnapshot fields and checkpoint values. Add static checks for the lesson's process-local InMemorySaver scope, thread_id/get_state semantics, reducer and parallel-update boundaries, replayable side effects, and bounded framework comparisons. Review the current LangGraph checkpointer, graph API, persistence, and replay documentation.",
+  "observations": {
+    "pythonFencesCompiled": 2,
+    "pythonDemoExecuted": true,
+    "testsPassed": 13,
+    "testsFailed": 0,
+    "checksPassed": 23,
+    "langgraphVersion": "1.2.14",
+    "trace": ["search", "fetch", "fetch", "summarize"],
+    "next": [],
+    "step": 4,
+    "checkpointChannels": ["trace"],
+    "checkpointValuesMatchFinalState": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": 4
+  },
+  "limitations": [
+    "This deterministic no-model example validates only the displayed LangGraph 1.2.14 API path and checkpoint state; it is not a cross-framework feature or performance benchmark.",
+    "InMemorySaver restart loss is established by the official documentation, not by killing and restarting a process in this run.",
+    "No production database saver, crash recovery, concurrent state updates, deployment configuration, or external side effect was exercised.",
+    "The checkpoint JSON contains implementation-version details and should not be treated as a stable application-level data contract."
+  ]
+}

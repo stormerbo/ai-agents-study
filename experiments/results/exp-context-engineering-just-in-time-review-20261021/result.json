@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-context-engineering-just-in-time-review-20261021",
+  "runId": "jit-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Run the offline lesson audit script, compile the complete sample Python fence, and review current DeepSeek Context Caching, Anthropic Prompt Caching, and Anthropic stop-reason documentation. No model or provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 16,
+    "testsFailed": 0,
+    "testCount": 16,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "Historical 2026-10-08 token ratios and the 4/4 missing-document summary remain unreplayed. The sample now rejects incomplete routes, distinguishes endpoint usage schemas, and treats token counts separately from billing and answer quality."
+  },
+  "limitations": [
+    "Historical per-call requests/responses, exact model backend, usage fields, task mapping, and scorer are unavailable; the numeric crossover and 4/4 behavior cannot be independently verified.",
+    "No answer-quality equivalence test, provider request, billed cost, or endpoint latency measurement was performed.",
+    "The sample uses Anthropic Messages usage and stop-reason semantics; other providers/endpoints require their own adapters and contract checks.",
+    "Local checks do not verify production authorization, catalogue filtering, document freshness, or downstream side effects."
+  ]
+}

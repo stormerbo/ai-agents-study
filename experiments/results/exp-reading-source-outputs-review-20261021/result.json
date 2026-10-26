@@ -1,0 +1,29 @@
+{
+  "experimentId": "exp-reading-source-outputs-review-20261021",
+  "runId": "2026-10-22-w6-rerun",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the lesson Python fence and tracked LangChain reproduction under pinned Python 3.14.7 / langchain-core 0.3.63; enforced a <=70-character code line contract, rejected an unsupported inspect target clearly, and checked output categories, placement, inspect-derived locations, version scope, pinned-script upgrade boundary, metadata, and evidence wiring.",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "testCount": 20,
+    "testsPassed": 20,
+    "pythonFencesCompiled": 1,
+    "productionBuildPages": 424,
+    "pagefindIndexedPages": 424,
+    "pagefindWords": 15580,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "screenshotDimensions": "1300x7733",
+    "lightScreenshot": "output/playwright/reading-source-outputs-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/reading-source-outputs-w6-20261022-dark.png"
+  },
+  "limitations": [
+    "This validates only the local examples and pinned langchain-core version; an unchanged pinned script does not detect upstream changes. A new release must be installed in a separately updated environment and the assertions rerun. It does not establish general learning-value rankings or production behavior.",
+    "Production rendering was checked at 1300px in light and dark themes; the only initial console error was the existing favicon.ico 404."
+  ]
+}

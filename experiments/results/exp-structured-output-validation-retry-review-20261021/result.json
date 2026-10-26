@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-structured-output-validation-retry-review-20261021",
+  "runId": "structured-output-validation-retry-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared the lesson with Anthropic Handle tool calls and Define tools docs; ran the SHA-pinned offline verifier under Python 3.10 with Pydantic 2.9.2. The verifier executes both Python examples, checks exact published stdout, exercises fake tool_use/tool_result rounds, retry exhaustion, stop reasons, redaction and fallback behavior, and propagation of transport errors to the outer runtime. No provider/network calls.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 17,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "checksPassed": 17
+  },
+  "limitations": [
+    "The 2026-10-08 retry trajectories, exact prompts, model revision and scorer are not present, so historical 0/6, 4/6 and 6/6 outcomes were not reproduced or confirmed.",
+    "The fake client verifies local control flow and message shape only; no live Anthropic, DeepSeek, proxy, provider-side tool parsing or model correction behavior was tested.",
+    "The degradation example emits a field-level dispatch plan but does not implement the downstream worker, human queue, ACL store or production retention policy.",
+    "The verifier checks Pydantic 2.9.2 local validation and redaction; production business validators, sensitive-data classification and task-specific risk policy remain application responsibilities."
+  ]
+}

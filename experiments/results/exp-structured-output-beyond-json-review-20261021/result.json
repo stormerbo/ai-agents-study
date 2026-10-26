@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-structured-output-beyond-json-review-20261021",
+  "runId": "structured-output-beyond-json-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared JSON Schema Validation 2020-12 and Anthropic Define tools docs with the lesson; ran the SHA-pinned offline verifier under Python 3.10 and Pydantic 2.9.2. The verifier executes both Python examples, checks exact published stdout, exercises fake tool-call success/failure, provenance boundaries, date/enum claims, and approval policy edge cases. No provider/network calls.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 17,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "checksPassed": 17
+  },
+  "limitations": [
+    "The 2026-10-08 model outputs and arithmetic runs lack per-request raw traces, model snapshot and scorer, so they remain historical summaries and were not reproduced.",
+    "The fake client checks local control flow and constructed schema only; no live provider, production database, authorization boundary, or tool-choice support was tested.",
+    "The provenance fields are application-generated metadata and do not prove source integrity, freshness, or authorization.",
+    "The approval threshold is a constructed demonstration, not a recommended financial or business policy."
+  ]
+}

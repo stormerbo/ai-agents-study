@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-context-engineering-subagent-isolation-review-20261021",
+  "runId": "subagent-isolation-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Run the offline contract audit against the complete lesson Python fence; review Anthropic Python SDK authentication, stop-reason, tool-use, caching, and multi-agent research documentation plus OpenAI Agents SDK orchestration and handoff documentation. No provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 27,
+    "testsFailed": 0,
+    "testCount": 27,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "The complete sample fence compiles. Offline checks cover SDK credential parameters, usage totals, end_turn/tool_use/refusal/max_tokens handling, tool and summary schema validation, nonempty findings, host-owned statuses, exhausted loops, historical-claim caveats, and host-enforced authorization. Historical token summaries remain unreplayed."
+  },
+  "limitations": [
+    "Historical requests/responses, exact endpoint/model fingerprint, usage fields, task mapping, and scorer are unavailable; the historical token totals and 8.1 ratio cannot be independently recomputed.",
+    "No answer-quality equivalence, billed cost, cache hit rate, or endpoint latency measurement was performed.",
+    "The example uses Anthropic Messages SDK semantics; compatibility endpoints require contract validation and provider-specific usage accounting.",
+    "Offline fixtures validate local control flow only; they do not prove model findings, production tool authorization, concurrency, or downstream effects."
+  ]
+}

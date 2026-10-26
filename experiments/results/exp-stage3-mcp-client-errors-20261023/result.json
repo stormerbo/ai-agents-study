@@ -1,0 +1,48 @@
+{
+  "experimentId": "exp-stage3-mcp-client-errors-20261023",
+  "runId": "exp-stage3-mcp-client-errors-20261023-run1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-23",
+  "method": "Captured SHA-256 for implementation, dependencies, entrypoint and test sources immediately before invoking the pinned P3 pytest command. The command completed with 12 passing tests.",
+  "sourceBindings": [
+    {
+      "path": "examples/support_agent/runtime.py",
+      "sha256": "130c9e83bfb531fa388f895be2480c07fe21d5b466ac353f4a9b3f29efca9287",
+      "role": "implementation"
+    },
+    {
+      "path": "examples/support_agent/providers.py",
+      "sha256": "700dfe05703ac4d1cb2b89f1c0d5a9504857e9e8d5d443f3a255ff87912aa184",
+      "role": "dependency"
+    },
+    {
+      "path": "examples/support_agent/tool_gateway.py",
+      "sha256": "de293da59759fcac723c28b45f2762d4f68591a636471ae20694f2e3fef98de2",
+      "role": "dependency"
+    },
+    {
+      "path": "examples/p3-controlled-agent/controlled_agent.py",
+      "sha256": "d6538b9cc96b56bc74f2cac6a670aabceb5ee9bd862477c8e69b55be94b2ee24",
+      "role": "entrypoint"
+    },
+    {
+      "path": "examples/p3-controlled-agent/test_controlled_agent.py",
+      "sha256": "5c48ea9d3af44d3fad19d189c1f57fec7bafe0b1878ccb1525c291418a872336",
+      "role": "test"
+    }
+  ],
+  "observations": {
+    "testCount": 12,
+    "testsPassed": 12,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "mcpClientExceptionsRecorded": true,
+    "unknownToolCallNotReplayed": true,
+    "implementationAssertionPropagates": true
+  },
+  "limitations": [
+    "Tests use a fake MCP session; they verify host error classification and do not establish the behavior of a real MCP SDK transport or server.",
+    "No provider, network service, production tool or external side effect was invoked.",
+    "Source hashes bind the checked-out files recorded for this run; they are not a signed attestation of the execution environment."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-sandboxing-isolation-levels-review-20261021",
+  "runId": "sandboxing-isolation-levels-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared the lesson with Docker run/none-network docs, Python resource/subprocess docs, gVisor security architecture and Firecracker design. Compiled all three Python fences and ran the extracted L1 demonstration; the local Python 3.14.7 process recovered __import__ through warnings.catch_warnings and only read its PID. On Docker 29.3.1 with the cached python:3.12-alpine image (--pull=never), ran the documented runner/input bind mounts and the read-only/non-root/resource/network probe. The configured none-network run passed five local checks; the default-network comparison exposed a non-loopback default route and failed the read-only/non-root/workspace/host-marker checks as expected. The none-network container also showed extra tunnel device names without non-loopback default routes, so the probe uses route tables rather than interface names. Production build generated 369 pages; Pagefind indexed 369 pages / 15,374 words. Light/dark full-page screenshots were visually reviewed at 1300x11918 with viewport/scrollWidth both 1300, one Mermaid SVG and zero alerts; the initial light load recorded only a favicon.ico 404. The separate repository link checker requested 734 URLs, found no 404/410, and left 19 transient/network-restricted results unverified, including the gVisor docs URL. No provider API calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 10,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The older L0/L1/L2/L2b timings have no archived per-run logs or complete environment metadata and use different workloads; they remain historical summaries and are not a comparable isolation-overhead benchmark.",
+    "The harmless Python object-tree proof demonstrates one blacklist bypass on Python 3.14.7; it is not a claim that all restricted interpreters or versions share the same object graph.",
+    "The Docker tests validate one local daemon, one mutable image tag and one configuration. They do not establish production host hardening, multi-tenant escape resistance, image provenance, process-tree cleanup, or deployed egress enforcement.",
+    "The L2 subprocess example is a Unix-only local illustration. Python resource limits vary by OS, preexec_fn is unsafe in threaded parents, and the lesson does not validate a production launcher or cgroup policy.",
+    "gVisor and Firecracker descriptions were checked against their official architecture documents; neither runtime was installed or benchmarked in this run."
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-context-engineering-chat-template-w6-20261022",
+  "runId": "w6-context-chat-template-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Run 25 deterministic offline assertions against the full lesson, metadata and data ledger, plus the exact Python example with a fake SDK. Cross-check current Anthropic token-counting/Messages/compaction, OpenAI prompt-caching, and DeepSeek context-caching documentation. No provider call or historical run replay.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 25,
+    "testsFailed": 0,
+    "testCount": 25,
+    "providerCalls": 0,
+    "officialSourcesReviewed": true,
+    "pythonFencesCompiled": 1,
+    "trace": "The fixture confirms named baseline deltas and validates unique labels and baseline existence before any fake provider call. The lesson narrows adjacent same-role message merging to documented Anthropic API contexts, separates count_tokens from cache usage/billing, and preserves the historical 238/298 and 234/238/234/254 figures only as non-reproducible summaries.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/context-engineering-chat-template-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/context-engineering-chat-template-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x7632 both themes"
+  },
+  "limitations": [
+    "Historical request/response bodies, exact endpoint/model fingerprint, raw usage, task mapping and scorer are unavailable; historical token figures cannot be independently recomputed.",
+    "No live provider, cache, billing, answer-quality or production endpoint behavior was tested.",
+    "The fake SDK validates local wrapper/control flow only; it does not establish real token counts or provider runtime semantics.",
+    "Provider token-count and cache rules are model/API-specific and can change; consult current official documentation.",
+    "Visual verification uses a local static production build in a desktop browser; it does not validate responsive behavior on mobile or provider API behavior."
+  ]
+}

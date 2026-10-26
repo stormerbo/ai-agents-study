@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-tooling-first-agent-review-20261021",
+  "runId": "tooling-first-agent-review-2026-10-21-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Created a fresh Python 3.14.7 virtual environment from the pinned macOS ARM64 lock, then ran the dependency-free audit script with that interpreter. It compiled and executed both complete Python fences and checked the displayed retry trace and scope statements.",
+  "observations": {
+    "testCount": 20,
+    "testsPassed": 20,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "langgraphVersion": "1.2.14",
+    "providerCalls": 0,
+    "trace": "The complete second example recorded 3 work-node executions and test-list users [u2, u2, u2] after a same-process injected exception and a subsequent invoke on the same thread."
+  },
+  "limitations": [
+    "The fixture writes to a Python list; it does not test a database, network side effect, production checkpointer, parallel nodes, or an actual process termination/restart.",
+    "No model provider was called. The lesson now states that its first graph is a workflow skeleton, not a complete Agent loop.",
+    "The historical 2026-10-09 environment was not captured by a complete dependency lock; this run is a separate reproduction using the pinned 2026-10-21 environment.",
+    "Official LangGraph documentation supports the checkpoint/task semantics; the local run does not establish production exactly-once behavior."
+  ]
+}

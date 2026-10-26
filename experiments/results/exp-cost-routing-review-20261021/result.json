@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-cost-routing-review-20261021",
+  "runId": "cost-routing-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared model-selection claims with current OpenAI and Anthropic official documentation, an OpenAI agent cost-quality cookbook and RouterBench; executed eight offline editorial-boundary assertions and every Python fence. No provider request or benchmark call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 8,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "trace": "Removed universal token-length/model-tier and cascade-percentage heuristics; corrected the synthetic cascade break-even from 50% to 85% for the declared parameters; separated response structure, semantic/task acceptance, provider errors, safety and authorization."
+  },
+  "limitations": [
+    "No candidate model quality benchmark, judge calibration, provider request, production route, or side-effecting shadow traffic was run.",
+    "Historical routing cost numbers are local arithmetic over assumptions; they are not real prices, token usage or task outcomes.",
+    "The historic 14.4x API/UI token comparison used non-equivalent execution and success criteria and cannot establish model-routing gains."
+  ]
+}

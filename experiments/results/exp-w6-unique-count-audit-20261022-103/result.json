@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-103",
+  "runId": "w6-unique-count-audit-2026-10-22-103-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran the offline unique-lesson count verifier against the W6 master pass list, lesson tracker, current plan/spec/audit/progress summaries, and latest progress entry.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The W6 master contains 103 distinct lesson IDs, including evaluation/traces exactly once; every ID resolves in the tracker. The label is 103/144 (71.53%), and current status documents report 41 remaining lessons."
+  },
+  "limitations": [
+    "This verifies unique list cardinality and synchronized status only; it does not establish that lesson reviews or Stage 4/5 gates are complete."
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "experimentId": "exp-tool-parallel-errors-w6-20261022",
+  "runId": "tool-parallel-errors-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Performed a W6 whole-lesson review of parallel tool execution semantics, tool-result/error mapping, stop states, retry/idempotency boundaries, SQLite side effects, examples, metadata and evidence scope. Ran the prior issue verifier, a new offline full-lesson verifier, the complete two Python fences, and SQLite identity/amount/rollback fixtures. Reviewed Anthropic parallel-tool, tool-call, stop-reason, extended-thinking and API-error documentation, Stripe idempotency behavior, and OWASP authorization guidance. No provider or external effect was invoked. Rendered the complete lesson in light and dark themes at a 1300px viewport; article width was 792px, document scroll width was 1300px and the Mermaid diagram rendered in both. The only console error was the existing missing favicon 404.",
+  "observations": {
+    "status": "passed",
+    "checks": 7,
+    "checksPassed": 7,
+    "testsPassed": 2,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "historicalBenchmarksRerun": false,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/tool-parallel-errors-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/tool-parallel-errors-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x14614"
+  },
+  "limitations": [
+    "The 2026-10-08 DeepSeek stdout summaries lack raw requests, responses, sample mapping and scorer, so historical model behavior remains unreproduced.",
+    "SQLite fixtures establish only local transaction behavior; no production database, identity provider, authorization service, distributed idempotency store or cross-system side effect was tested.",
+    "Provider protocol claims are scoped to the cited Anthropic Messages API; Stripe documents its own API-specific idempotency behavior.",
+    "OWASP guidance supports request/object authorization checks; the verifier does not implement or validate a production authorization policy.",
+    "The lesson remains in-review for missing historical provider artifacts and untested production behavior."
+  ]
+}

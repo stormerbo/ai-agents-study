@@ -1,0 +1,26 @@
+{
+  "experimentId": "exp-multi-agent-topologies-review-20261021",
+  "runId": "multi-agent-topologies-review-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Re-reviewed official topology definitions and case-study boundaries; ten offline assertions compile/run the whole Python fence against mocks and validate cross-lesson claims and code line width. Production light/dark renders were inspected; providerCalls=0.",
+  "observations": {
+    "status": "pass",
+    "testCount": 10,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "lightScreenshot": "output/playwright/multi-agent-topologies-w6-20261022.png",
+    "darkScreenshot": "output/playwright/multi-agent-topologies-w6-20261022-dark.png",
+    "articleWidth": 792,
+    "visualViewportWidth": 1300,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "screenshotDimensions": "Both full-page renders 1300x9297 CSS pixels; max code-block overflow 0."
+  },
+  "limitations": [
+    "The historical provider requests, complete responses, model fingerprint, task mapping, scorer, and full usage records are not available; 2026-10-08 summaries were not reproduced.",
+    "Mocks verify local example parsing and aggregation only; they do not validate the current DeepSeek Anthropic-compatible response contract, billing, quality, latency, or actual parallel scheduling.",
+    "Graph counts are arithmetic under the stated topology assumptions and do not imply API call counts or runtime performance."
+  ]
+}

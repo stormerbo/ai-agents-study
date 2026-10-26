@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-human-progress-trust-review-20261021",
+  "runId": "human-progress-trust-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the lesson against Lee and See on trust in automation, JSON Schema Draft 2020-12, Claude structured-output schema support, and W3C WCAG/WAI-ARIA status and progress guidance. The audit script validates the embedded JSON Schema with Ajv 2020, executes the complete Python example, and checks the lesson boundaries against the DATA ledger. No provider or external service was called.",
+  "observations": {
+    "status": "pass",
+    "testCount": 20,
+    "testsPassed": 20,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "trace": "The schema accepts each of the three intended branches and rejects missing conditional fields, contradictory values and extra keys. The example reports a measured 60% only for a fixed 3-of-5 batch, reports current state without a guessed percent for a dynamic agent, and rejects an out-of-range count. The lesson removes unsupported attribution of model awareness, limits historical 11,827-token/noop and Plan-Execute 0/3 observations, treats trust-related telemetry as non-causal signals, separates user trust from authorization, and requires privacy/authorization projection before trace data is shown."
+  },
+  "limitations": [
+    "The old chapter 9 provider responses and full scorer were not recovered; the 11,827-token noop observation remains a limited archived summary, not a reproducible experiment.",
+    "The chapter 10 Plan-Execute 0/3 historical score is not independently reproducible and its old scorer cannot establish answer or branch correctness.",
+    "No live model/provider call, user study, screen-reader test, production trace pipeline, authorization service or real permission rollout was exercised.",
+    "The schema was tested with Ajv 2020 only; provider acceptance and generated semantic correctness remain separate checks."
+  ]
+}

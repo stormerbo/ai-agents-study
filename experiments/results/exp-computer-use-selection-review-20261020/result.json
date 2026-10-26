@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-computer-use-selection-review-20261020",
+  "runId": "review-2026-10-20-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Run the tracked offline verifier. It compiles all three Python fences, executes the deterministic synthetic CSV fixture, and checks that the lesson, source metadata, and DATA record retain the historical execution-boundary and current browser-versus-desktop limitations.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "testCount": 8,
+    "providerCalls": 0,
+    "model": "static lesson/source audit plus synthetic fixture",
+    "fixtureOnly": true,
+    "decisionForFixtureOnly": "synthetic CSV fixture matched 103 input rows, 98 accepted, and 5 rejected; no endpoint comparison was executed"
+  },
+  "limitations": [
+    "Archived per-request model responses are missing, so historical token values cannot be independently replayed.",
+    "The preserved API arm did not execute create_user or verify a backend postcondition.",
+    "The preserved UI arm only modified local synthetic state and its done flag checked non-empty fields.",
+    "No provider, real browser/desktop UI, production authorization, or business backend was exercised.",
+    "Official provider/tool documentation is rolling and should be rechecked for the target runtime."
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-141",
+  "runId": "2026-10-22-141",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Vitest verifies the W6 master pass list has 141 distinct lesson IDs, includes reading-source/outputs, records 141/144 (97.92%) with three remaining lessons, and every listed ID exists in the review tracker.",
+  "observations": {
+    "testCount": 48,
+    "testsPassed": 48,
+    "uniqueLessonIds": 141,
+    "totalLessons": 144,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "This is a list-integrity check only; it does not itself establish the correctness of lesson content or close Stage 4/5 acceptance."
+  ]
+}

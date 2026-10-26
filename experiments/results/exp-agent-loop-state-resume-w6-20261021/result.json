@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-agent-loop-state-resume-w6-20261021",
+  "runId": "local-agent-loop-state-resume-w6-2026-10-21",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compile both Python fences and execute the complete crash/recovery script in an isolated temporary working directory. Require exact stdout equality with the published text fence. Run collision sentinels in the current directory, verify same-key/same-payload deduplication, same-key/different-payload conflict, checkpoint non-advancement on conflict, and JSON boolean-versus-number distinction, and exercise four trailing tool_use helper cases. Review current Anthropic client tool result/error flag guidance and PostgreSQL 18 ON CONFLICT concurrency semantics.",
+  "observations": {
+    "pythonFencesCompiled": 2,
+    "pythonDemoExecuted": true,
+    "stdoutMatchesPublishedOutput": true,
+    "testsPassed": 30,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": 2,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/agent-loop-state-resume-w6-20261021/light.png",
+    "darkScreenshot": "output/playwright/agent-loop-state-resume-w6-20261021/dark.png",
+    "screenshotDimensions": "1300x11792"
+  },
+  "limitations": [
+    "The file scan followed by append is only a single-process sequential teaching fixture; it does not establish concurrent safety or production idempotency.",
+    "No real downstream side effect, network timeout ambiguity, PostgreSQL transaction, or live provider call was exercised.",
+    "The historical 2026-10-09 experiment and provider observations were not replayed from raw traces; they remain historical summaries.",
+    "Anthropic documents is_error as an error marker for tool execution; the conclusion that it does not prove absence of an external effect is an application-level inference and must be resolved using the downstream contract.",
+    "The production screenshots were visually reviewed in light and dark themes; the one browser console error is the existing missing favicon (404)."
+  ]
+}

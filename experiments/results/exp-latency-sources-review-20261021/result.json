@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-latency-sources-review-20261021",
+  "runId": "latency-sources-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared lesson and checkpoint claims with registered OpenAI and Anthropic latency documentation, Anthropic streaming event documentation and the DistServe paper; executed the local boundary assertions and every Python fence. No provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 6,
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "trace": "Retained the four historical rows as non-reproducible observations; removed fixed-rate and causal extrapolations; distinguished TTFT, first visible text, TPOT and task latency; added agent critical-path model and offline-only runnable examples."
+  },
+  "limitations": [
+    "Historical raw requests, responses, request IDs, endpoint/model fingerprints, per-event timestamps, repeated samples and scorer are unavailable; the 2026-10-09 observations were not rerun.",
+    "No live provider, production agent trace, browser rendering latency, SDK, billing, cache or workload-specific p95 was tested.",
+    "Offline boundary assertions verify editorial constraints, not production latency behavior."
+  ]
+}

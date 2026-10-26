@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-tooling-retrieval-stack-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed current Sentence Transformers retrieve/rerank documentation and OpenAI Embeddings API reference. Ran the offline lesson verifier (19/19), the local-models follow-up verifier (16/16), existing curriculum tests, typecheck, and lint. No provider requests, historical benchmark rerun, or target-workload benchmark was performed.",
+  "observations": {
+    "checks": 19,
+    "checksPassed": 19,
+    "providerCalls": 0,
+    "historicalBenchmarksRerun": 0,
+    "officialSourcesReviewed": 2
+  },
+  "limitations": [
+    "The Sentence Transformers documentation establishes lexical-versus-dense retrieval options and demonstrates direct cross-encoder scoring for a small single-document collection; it does not establish acceptable latency or improved quality for this project's target corpus.",
+    "The OpenAI dimensions parameter applies to text-embedding-3 and later models; no dimension configurability is inferred for other providers or for BAAI/bge-small-zh-v1.5.",
+    "The 2026-10-09 corpus, latency, and memory values remain historical reports whose original request traces, full hardware snapshot, and scoring artifacts are unavailable here; they were not rerun and are not independently validated by this review.",
+    "No profiling data establishes which portion of the Chroma client path contributed most to its historical latency. No current semantic recall, ANN recall, production workload, or target-hardware measurement was conducted."
+  ]
+}

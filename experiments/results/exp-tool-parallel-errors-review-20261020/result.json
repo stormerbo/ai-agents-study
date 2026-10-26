@@ -1,0 +1,29 @@
+{
+  "experimentId": "exp-tool-parallel-errors-review-20261020",
+  "runId": "review-2026-10-21-followup-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compile and execute both Python fences extracted from the lesson; SQLite checks concurrent stable-action replay and conflicting arguments. Scripted client checks bounded tool-result pairing, errors, stop reasons and round caps. Follow-up regressions cover empty end_turn, duplicate IDs with a dispatch counter, and missing/non-string/blank IDs at both loop and fill boundaries. Static assertions check current Anthropic source claims and evidence links.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 2,
+    "testsFailed": 0,
+    "testCount": 2,
+    "providerCalls": 0,
+    "model": "offline Python fixtures and scripted client",
+    "fixtureOnly": true,
+    "pythonFencesCompiled": 2,
+    "checks": [
+      "empty end_turn returns completed_without_text",
+      "duplicate tool IDs are rejected before dispatch and side effects",
+      "missing, non-string, empty, and whitespace-only IDs fail closed at loop and fill boundaries"
+    ]
+  },
+  "limitations": [
+    "The 2026-10-08 DeepSeek stdout summaries lack raw requests, responses, sample mapping and scorer; their denominators and reported model behavior could not be independently reproduced.",
+    "No live provider, API transport, production database, distributed idempotency store, downstream payment/message receiver or cross-system failure window was exercised.",
+    "SQLite verifies only a single local database transaction; it does not prove exactly-once effects across systems.",
+    "Official documentation review applies to the named Anthropic Messages API and Stripe API behavior; it does not establish a universal provider contract.",
+    "The empty-end_turn recovery text reflects current Anthropic documentation only; the offline fixture returns a state to the caller and does not test a live recovery prompt or current SDK behavior."
+  ]
+}

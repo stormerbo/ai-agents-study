@@ -1,0 +1,27 @@
+{
+  "experimentId": "exp-memory-context-w6-20261022",
+  "runId": "memory-context-w6-2026-10-22",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Review the full lesson against official provider conversation-state and model-list documentation; execute published local Python examples and deterministic arithmetic/claim checks.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 23,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "officialSourcesReviewed": 3,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/memory-context-is-not-memory-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/memory-context-is-not-memory-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x10272"
+  },
+  "limitations": [
+    "Historical provider calls and raw responses were not recreated; published historical measurements remain non-reproducible summaries.",
+    "No paid API experiment or production memory system was tested."
+  ]
+}

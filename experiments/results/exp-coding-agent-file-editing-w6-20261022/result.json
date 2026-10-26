@@ -1,0 +1,25 @@
+{
+  "experimentId": "exp-coding-agent-file-editing-w6-20261022",
+  "runId": "coding-agent-file-editing-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Run the whole-lesson offline verifier, which compiles all lesson Python fences, executes the strict JSON parser and guarded edit helper against malformed and overlapping fixtures, reruns the preserved issue-specific verifier, and checks wording boundaries. Reviewed Python str.count semantics, Aider edit formats, and Anthropic text editor tool documentation. No provider or external network calls. Production build generated 404 pages and Pagefind indexed 404 pages / 15,466 words. Light/dark full-page captures output/playwright/coding-agent-file-editing-w6-20261022-{light,dark}.png are 1300×7,164; article=792px, document width=1300px, one Mermaid SVG rendered; the only console error is the existing favicon 404.",
+  "observations": {
+    "status": "passed",
+    "checks": 37,
+    "checksPassed": 37,
+    "testsPassed": 37,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "fixtureOnly": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 404,
+    "pagefindIndexedPages": 404,
+    "pagefindWords": 15466
+  },
+  "limitations": [
+    "The historical provider response, exact model snapshot, and scoring traces were not preserved; the empty-anchor explanation remains an inference from the archived fixture and Python str.count semantics.",
+    "Offline helper fixtures do not prove any provider output rate, production editor behavior, or causal benefit from whole-file versus snippet context."
+  ]
+}

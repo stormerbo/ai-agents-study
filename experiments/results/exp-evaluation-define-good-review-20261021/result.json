@@ -1,0 +1,34 @@
+{
+  "experimentId": "exp-evaluation-define-good-review-20261021",
+  "runId": "evaluation-define-good-review-2026-10-22-02",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full lesson against current OpenAI evaluation guidance and executed its Python fixture plus boundary checks for the lesson checklist and conclusion. No provider calls or historical response replay were performed.",
+  "observations": {
+    "status": "pass",
+    "checks": 9,
+    "checksPassed": 9,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "trace": "The review found two internal contradictions: the checklist said four items while listing five, and the conclusion implied every objective should be automated despite the lesson’s human/rubric guidance. Both are corrected. The three-case fixture still produces TP=1, FP=1, TN=0, FN=1 for a deliberately weak keyword-plus-length proxy; this illustrates error modes but cannot estimate population error rates. Historical enum 0/3 and 3/3 counts lack raw per-call evidence and remain unverified.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": [
+      "GET /favicon.ico returned 404 (existing)"
+    ],
+    "lightScreenshot": "output/playwright/evaluation-define-good-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/evaluation-define-good-w6-20261022-dark.png",
+    "screenshotDimensions": "light=1300x9536; dark=1300x9536",
+    "productionBuildPages": 404,
+    "pagefindIndexedPages": 404,
+    "pagefindWords": 15464
+  },
+  "limitations": [
+    "The synthetic fixture has three manually labeled examples and is not representative of user behavior.",
+    "No live model, provider, judge calibration dataset, human inter-rater study, or production event stream was evaluated.",
+    "The historical enum observation remains an unverified aggregate; no causal schema effect is established."
+  ]
+}

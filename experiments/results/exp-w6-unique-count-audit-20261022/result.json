@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022",
+  "runId": "w6-unique-count-audit-2026-10-22-25",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reconciled the named W6 master list against recorded whole-lesson passes, added evaluation/confidence once, and checked plan, spec, tracker, audit ledger and latest progress note. The verifier checks 90 unique IDs and consistent current counts. No provider or network calls.",
+  "observations": {
+    "status": "passed",
+    "checks": 4,
+    "checksPassed": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The counter verifier checks the published unique set and declarations; it does not independently certify the technical quality of each lesson pass."
+  ]
+}

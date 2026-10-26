@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-cost-routing-w6-20261022",
+  "runId": "cost-routing-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full lesson, metadata, existing 8-check source audit, executable examples, and current OpenAI and Anthropic model-selection/cost guidance. Checked the 2026 Findings ACL LLMRouterBench paper at the ACL Anthology and ran the offline W6 verifier plus both complete lesson code fences.",
+  "observations": {
+    "status": "pass",
+    "testCount": 11,
+    "testsPassed": 11,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "officialSourcesReviewed": 5,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "No existing numerical or economic defect was found in the corrected routing examples. Added the 2026 LLMRouterBench primary source and a scoped documented checkpoint: its unified benchmark reports that several routing approaches do not reliably beat a simple baseline under that evaluated candidate pool and datasets; the lesson expressly avoids generalizing this to local traffic. Both examples compile and execute offline, and the cost equations reproduce the displayed values. Production build and Pagefind each cover 410 pages / 15,499 words. Both 1300px full-page screenshots render at article width 792px with no horizontal overflow and one Mermaid SVG; the only browser-console error is the existing favicon.ico 404.",
+    "productionBuildPages": 410,
+    "pagefindIndexedPages": 410,
+    "pagefindWords": 15499,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/cost-routing-w6-20261022-light-1300.png",
+    "darkScreenshot": "output/playwright/cost-routing-w6-20261022-dark-1300.png",
+    "screenshotDimensions": "1300x11043 both themes"
+  },
+  "limitations": [
+    "The historical 1,000-token, 14.4x, and model-routing observations were not replayed because original per-call traces and scorer evidence are unavailable. No live provider, real workload routing policy, semantic judge quality, production latency, billing, or side-effecting traffic was tested."
+  ]
+}

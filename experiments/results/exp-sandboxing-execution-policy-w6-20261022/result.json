@@ -1,0 +1,36 @@
+{
+  "experimentId": "exp-sandboxing-execution-policy-w6-20261022",
+  "runId": "sandboxing-execution-policy-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Ran the six-assertion W6 verifier and the preserved seven-assertion ERR-138 verifier. Compiled all five lesson Python fences, executed the primary demo and compared its full stdout byte-for-byte with the published text block, and executed all four functions in the published attack-test fence against the exact policy module. Reviewed current OWASP Authorization and Logging guidance, Linux cgroup v2 controller availability/enabling, and Python Popen.communicate timeout cleanup and output buffering. No provider request or external network call. The production build generated 400 pages and Pagefind indexed 400 pages/15,444 words. Captured the rendered lesson in light and dark themes at 1300px viewport width and checked article width, document overflow, Mermaid rendering, stylesheet HTTP status, and browser console.",
+  "observations": {
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "testCount": 6,
+    "checksPassed": 4,
+    "pythonFencesCompiled": 5,
+    "pythonDemoExecuted": true,
+    "officialSourcesReviewed": 4,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 400,
+    "pagefindIndexedPages": 400,
+    "pagefindWords": 15444,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/sandboxing-execution-policy-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/sandboxing-execution-policy-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x16710"
+  },
+  "limitations": [
+    "The primary policy demo is deliberately vulnerable and its allow/deny behavior is a local teaching fixture, not evidence of production enforcement.",
+    "The final dispatch example was tested with local in-memory handlers and a synthetic audit sink; no real identity provider, durable/tamper-resistant log backend, deployed route coverage, or external side effect was exercised.",
+    "No host cgroup configuration, kernel controller, process-group/container termination, resource cap, or output cap was exercised; documentation checkpoints establish platform contract, not deployment state.",
+    "The historical prompt-injection and provider experiment summaries lack original request/response traces and remain unverified.",
+    "The browser console reported only the existing missing favicon.ico (404); the lesson stylesheet returned HTTP 200 and the page had no horizontal overflow."
+  ]
+}

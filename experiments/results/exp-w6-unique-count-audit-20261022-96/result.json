@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-96",
+  "runId": "w6-unique-count-audit-2026-10-22-96-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran experiments/scripts/verify_w6_unique_count_20261022_96.py against the master lesson list, tracker, plan, specification, audit, and latest progress entry. The verifier checks cardinality, label/percentage agreement, tracker resolution, and synchronized counts. No network or provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "checks": 4,
+    "checksPassed": 4,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The master line lists 96 unique lesson IDs including cost-and-latency/budget-guardrails; 96/144 (66.67%) matches its cardinality and current plan/spec/tracker/audit/progress show 48 remaining."
+  },
+  "limitations": [
+    "This is documentation-set consistency evidence only; it does not establish technical correctness of every lesson or close Stage 4/5 acceptance gates."
+  ]
+}

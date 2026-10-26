@@ -1,0 +1,16 @@
+{
+  "experimentId": "exp-mcp-security-boundary-review-20261020",
+  "runId": "local-mcp-security-review-2026-10-20",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Compile all lesson Python fences, execute deny-by-default policy/projection/heuristic examples, run the host probe against the neighboring exact server code, and smoke-test tools/list in Docker with no network, read-only root, dropped capabilities and non-root UID.",
+  "observations": {
+    "pythonFencesCompiled": 5,
+    "serverRequestsChecked": 11
+  },
+  "limitations": [
+    "The examples are deterministic demonstrations, not a security certification or proof against prompt injection.",
+    "Docker run verifies startup and tools/list only; it does not test real MCP clients, HTTP transport, provider behavior or real side effects.",
+    "The prompt-injection counts are a small DeepSeek deepseek-flash sample from 2026-10-08 and were not rerun."
+  ]
+}

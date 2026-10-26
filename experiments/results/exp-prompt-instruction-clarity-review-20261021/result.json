@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-prompt-instruction-clarity-review-20261021",
+  "runId": "instruction-clarity-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran ten offline assertions. The verifier compiles the lesson Python fence, checks lexical proxies and Han counting, response/usage fail-closed paths, all 24 fake Anthropic request slots, archive overwrite protection and stdout privacy. It also checks that the lesson scopes mid-conversation system messages to Claude Fable 5 and Opus 4.8 and links the official Messages guide. Reopened current Anthropic Messages and Working with Messages docs on 2026-10-22. No live provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 10,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The historical 8-run comparison and 3-run role-conflict observations have no archived per-call prompts, responses, exact model snapshot or scorer and were not reproduced.",
+    "The local fake SDK does not establish current Anthropic SDK, endpoint, model behavior, semantic scorer validity, quality, cost or latency.",
+    "The lexical keyword/digit flags and Han-character threshold are weak proxies; they require task-specific human calibration."
+  ]
+}

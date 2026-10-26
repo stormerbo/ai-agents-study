@@ -1,0 +1,16 @@
+{
+  "experimentId": "exp-retrieval-permission-filtering-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Ran 5 unittest cases for the SQLite authorization model, including rejection of oversized candidate sets; ran the intentionally vulnerable request-tenant query fixture and matched its exact output; executed the lesson Python fence; and checked the versioned PostgreSQL 18 source link plus claim scope.",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "testCount": 20,
+    "testsPassed": 20
+  },
+  "limitations": [
+    "This validates only local SQLite query behavior; it does not validate identity-provider authentication, PostgreSQL RLS, vector search, cache invalidation, logging access controls, or production deployment."
+  ]
+}

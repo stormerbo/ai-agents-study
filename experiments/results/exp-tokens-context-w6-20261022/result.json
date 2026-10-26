@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-tokens-context-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 4,
+    "status": "whole-lesson offline scope checks passed; historical/provider behavior remains in-review"
+  },
+  "limitations": [
+    "Historical 2026-09-24 DeepSeek measurements lack raw requests/responses and were not reproduced.",
+    "No current provider request was made; this validates selected source boundaries, arithmetic and Python syntax only.",
+    "Anthropic documentation can change after the 2026-10-22 review date."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Compile every Python fence and assert historical measurement limits, current Anthropic tokenizer model scope, official token-count endpoint input limitations, source linkage, and arithmetic. No provider or external network calls."
+}

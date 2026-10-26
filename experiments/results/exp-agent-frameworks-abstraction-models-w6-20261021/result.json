@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-agent-frameworks-abstraction-models-w6-20261021",
+  "runId": "agent-frameworks-abstraction-models-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared the lesson with the current LangChain RunnableSequence/RunnableBranch reference, LangGraph Graph API and persistence documentation, and OpenAI Agents SDK running/usage documentation. Executed the complete local comparison fixture in a fresh Python 3.10.9 virtual environment with LangGraph 1.2.14 and langchain-core 1.6.12. The verifier checks lesson scope and requires stdout to match the adjacent text fence exactly. No provider or network calls were made by the verifier.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 1,
+    "langgraphVersion": "1.2.14",
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 6,
+    "historicalBenchmarksRerun": false
+  },
+  "limitations": [
+    "The 2026-10-12 execution environment and original traces for the 506/1,203 and 5,000/27,000 token summaries are not present; those historical comparisons were not reproduced.",
+    "The fixture uses a deterministic scripted policy in place of model decisions. It demonstrates control-flow placement only and does not establish autonomous-agent quality, behavior, cost, or reliability.",
+    "Documentation was checked on 2026-10-21. Current behavior still depends on the target framework version, model/provider, runtime configuration, tool implementation and deployment.",
+    "No production persistence, external side effects, business budget enforcement, or live provider behavior was tested."
+  ]
+}

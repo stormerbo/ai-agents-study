@@ -1,9 +1,9 @@
 {
   "experimentId": "exp-passk-seeded-20261010",
-  "runId": "2026-10-19-review-1",
+  "runId": "2026-10-21-review-1",
   "evidenceType": "deterministic-local",
-  "observedAt": "2026-10-19",
-  "method": "Re-ran the fixed-seed Python example and checked 1 <= k <= n guards.",
-  "observations": {"singleSuccessRatePercent": 91.0, "passAt5Percent": 100.0, "passPow5Percent": 60.0, "interval": "[85.0%, 96.0%]", "intervalWidthPp": 11.0},
-  "limitations": ["The deterministic teaching sample is not a population estimate of model capability."]
+  "observedAt": "2026-10-21",
+  "method": "Ran the complete embedded Python example and an offline verifier. The fixed-seed synthetic task groups are resampled as clusters for percentile intervals; no provider is called.",
+  "observations": {"singleSuccessRatePercent": 91.0, "passAt5Percent": 100.0, "passPow5Percent": 60.0, "interval": "single=[86.0%, 96.0%]; Pass@5=[100.0%, 100.0%]; Pass^5=[40.0%, 80.0%]", "intervalWidthPp": 10.0, "providerCalls": 0},
+  "limitations": ["The 20 task groups are synthetic and do not estimate model capability.", "The percentile interval is illustrative; 20 clusters do not establish nominal 95% coverage.", "Historical provider requests, responses, grader, and environment were not archived and remain unverified."]
 }

@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-multimodal-document-routes-review-20261021",
+  "runId": "multimodal-document-routes-review-2026-10-22-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Rechecked the current Anthropic PDF support documentation and reran seven offline assertions. The synthetic same-PDF harness was exercised through fake SDK/PDF libraries; validator tests now include malformed containers, non-string, NaN/Infinity values, and invalid totals; exact-JSON scoring rejects duplicate keys; every Python fence fits the 88-character article line-width check. No provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 7,
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The 2026-10-08 DeepSeek summary has no per-call request/response, exact endpoint/model fingerprint, full usage, or scorer and was not reproduced. The legacy image and text routes were not equivalent transformations of the same PDF.",
+    "The fake SDK and fake PDF libraries validate local harness control flow and fixtures only; they do not validate real PDF rendering/extraction, current SDK/provider compatibility, endpoint capabilities, model quality, usage, cost, latency, or billing.",
+    "Anthropic documentation establishes behavior for the documented Anthropic API scope only; it does not establish compatibility for third-party endpoints or other providers. Invoice arithmetic is a deliberately simplified fixture and does not encode taxes, discounts, rounding, or other real business rules."
+  ]
+}

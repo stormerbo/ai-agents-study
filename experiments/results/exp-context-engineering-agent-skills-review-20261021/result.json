@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-context-engineering-agent-skills-review-20261021",
+  "runId": "context-agent-skills-review-2026-10-22-02",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Run 25 deterministic offline assertions against the complete lesson, metadata, DATA ledger and current Anthropic Agent Skills and OpenAI Skills official documentation. Review the provider-specific discovery and instruction message-role differences. No provider request, runtime integration, or historical model replay.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 25,
+    "testsFailed": 0,
+    "testCount": 25,
+    "providerCalls": 0,
+    "officialSourcesReviewed": true,
+    "trace": "Anthropic documents metadata in system prompt and file-read instructions; OpenAI Responses API hosted shell places skill metadata and instructions in user-prompt context, while Agents API capability directories use separate discovery. Lesson preserves host authorization and historical evidence limits."
+  },
+  "limitations": [
+    "The offline assertions verify source-bounded lesson claims and metadata presence; they do not execute provider runtimes, measure selection quality/cost/latency, or verify production authorization.",
+    "Historical per-call requests/responses, exact model/endpoint, usage, task mapping and scorer remain unavailable."
+  ]
+}

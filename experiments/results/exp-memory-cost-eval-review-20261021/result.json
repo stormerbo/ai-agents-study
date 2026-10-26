@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-memory-cost-eval-review-20261021",
+  "runId": "memory-cost-eval-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compiled both Python fences from the lesson, executed the three-task stub, recomputed the 20-turn input-token arithmetic for 0/3/10/30 injected memories, compared output to the displayed golden, and checked statistical/cost caveats and registered references. No provider calls or billing queries were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 32,
+    "testsPassed": 32,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 2
+  },
+  "limitations": [
+    "The task examples and three-task fixture are constructed; they do not establish task representativeness, model performance, memory-extraction quality, retrieval quality, or product benefit.",
+    "The arithmetic is a simplified input-token model under fixed assumptions; it excludes output tokens, provider caching and prices, storage, retrieval infrastructure, retries, and human operations. No provider usage or bill was measured.",
+    "The previous table totals and printed program did not agree because the code summed the storage-token proxy while the table omitted it. The revised model separates stored item count from model input tokens; earlier values are not provider measurements.",
+    "Historical model outputs, task-level paired outcomes, scorer calibration, and original billing records were unavailable and were not reproduced.",
+    "The local checks validate code arithmetic and evidence boundaries only; they do not run a confirmatory paired evaluation or validate statistical power for a production task set."
+  ]
+}

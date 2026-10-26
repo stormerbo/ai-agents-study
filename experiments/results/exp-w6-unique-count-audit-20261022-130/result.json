@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-130",
+  "runId": "w6-unique-count-2026-10-22-130",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reconciled unique W6 lesson IDs in the master list against the tracker and synchronized current progress/status summaries.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "uniqueLessonIds": 130,
+    "remaining": 14,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "This verifier checks count and document consistency only; it does not establish the quality of individual lesson reviews."
+  ]
+}

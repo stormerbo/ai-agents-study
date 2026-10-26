@@ -1,0 +1,33 @@
+{
+  "experimentId": "exp-evaluation-ablation-scorer-w6-20261022",
+  "runId": "w6-evaluation-ablation-scorer-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Compile both lesson Python fences, extract and execute the scorer, and test a valid 15-row fixture plus malformed ID, invalid priority column, missing separator, and non-text complete payload. No provider or network calls. Production build generated 405 pages; Pagefind indexed 405 pages / 15,475 words. Inspected full-page light/dark renders at a 1300px viewport.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "testCount": 5,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 2,
+    "trace": "The former scorer accepted TC-01 extra because it matched a numeric prefix and could count invalid P0 text from the whole line. Exact ID and fourth-column checks now reject both; invalid completed payload types fail as score 0 without raising.",
+    "productionBuildPages": 405,
+    "pagefindIndexedPages": 405,
+    "pagefindWords": 15475,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/evaluation-ablation-w6-20261022/light.png",
+    "darkScreenshot": "output/playwright/evaluation-ablation-w6-20261022/dark.png",
+    "screenshotDimensions": "1300x10358 both themes"
+  },
+  "limitations": [
+    "Synthetic rows verify the implemented grading predicates only; they do not establish that the rubric measures real task quality.",
+    "Historical per-run model responses and original scorer version remain unavailable, so the five-run historical result cannot be recomputed.",
+    "Visual checks establish the rendered page layout only; they do not validate historical model outputs, provider behavior, or production task quality."
+  ]
+}

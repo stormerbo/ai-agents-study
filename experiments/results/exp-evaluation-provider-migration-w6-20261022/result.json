@@ -1,0 +1,25 @@
+{
+  "experimentId": "exp-evaluation-provider-migration-w6-20261022",
+  "runId": "evaluation-provider-migration-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, metadata, local classifier, fixture report and current primary OpenAI, Anthropic, DeepSeek, OWASP and NIST documentation. Added a standalone offline fixture demo because the previously published four-line output was not emitted by the listed unittest command or migration_gate.py module. The demo now calls the classifier and its exact stdout is asserted by the W6 verifier. Reran the existing unittest suite and a new 11-check W6 verifier; no provider or external-service requests were made.",
+  "observations": {
+    "status": "pass",
+    "checks": 11,
+    "checksPassed": 11,
+    "testsPassed": 11,
+    "testsFailed": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "fixtureOnly": true,
+    "officialSourcesReviewed": 8,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The existing provider-migration unittest suite also passes 8/8. All cited protocol, authorization, and experimental-design sources are registered at lesson level, including the dedicated DeepSeek Thinking Mode document. Current-source verification dates were updated for OpenAI Structured Outputs, Anthropic tool-use, and DeepSeek Tool Calls."
+  },
+  "limitations": [
+    "The fixed fixtures exercise the local classifier and do not establish any provider's actual behavior, model quality, cost, latency, or migration readiness.",
+    "The historical provider comparisons and any production endpoint, authorization, and side-effect behavior were not replayed or independently verified.",
+    "The classifier remains a teaching example; its fixture-pass decision is not a production release gate or a substitute for live evidence and application-specific validation."
+  ]
+}

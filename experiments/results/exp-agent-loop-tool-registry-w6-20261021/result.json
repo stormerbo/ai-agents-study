@@ -1,0 +1,44 @@
+{
+  "experimentId": "exp-agent-loop-tool-registry-w6-20261021",
+  "runId": "agent-loop-tool-registry-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the complete lesson against current Anthropic strict tool use / tool definition docs and the OWASP authorization guidance. Ran the Python 3.14.7 offline verifier, which compiles all seven Python fences, executes the two demos, and checks malformed-ID preflight, scheduling barriers, result matching, unknown outcomes, validator behavior and text boundaries. No provider or external network calls. Isolated production build generated 399 pages; Pagefind indexed 399 pages / 15,393 words. Light/dark full-page screenshots were visually inspected at 1300px; document width=1300px, article width=792px, Mermaid rendered, and browser console errors=0.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 1,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 7,
+    "officialSourcesReviewed": 4,
+    "historicalBenchmarksRerun": false,
+    "checks": [
+      "duplicate, missing, empty and non-object tool_use IDs fail before dispatch side effects",
+      "mixed serial/parallel scheduling preserves serial barriers and request-order result association",
+      "tool_result content serialization and unknown-tool error signaling are exercised",
+      "unknown or timed-out side-effect outcomes pause for reconciliation rather than normal model continuation",
+      "JSON boolean does not match numeric enum values, including nested array values",
+      "strict tool-use documentation is scoped to enabled supported schemas; authorization and business checks remain host responsibilities",
+      "historical provider behavior and production authorization are explicitly unverified",
+      "isolated production build and Pagefind pass; light/dark full-page screenshots show centered article, no horizontal overflow, and rendered Mermaid"
+    ],
+    "productionBuildPages": 399,
+    "pagefindIndexedPages": 399,
+    "pagefindWords": 15393,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/agent-loop-tool-registry-w6-20261021-light.png",
+    "darkScreenshot": "output/playwright/agent-loop-tool-registry-w6-20261021-dark.png",
+    "screenshotDimensions": "1300x14354"
+  },
+  "limitations": [
+    "The scheduler and registry examples use local synthetic functions; no provider, live model, external service, real authorization engine, cancellation, or distributed scheduler was exercised.",
+    "Anthropic strict tool use documentation was reviewed, but no API request verified a current model, endpoint, setting, or schema subset in this environment.",
+    "The 2026-10-12 0.81 second timing remains a historical single-run sleep-script observation; the serial comparison is arithmetic, not a measured control.",
+    "Historical model ratios and endpoint outcomes remain unavailable for independent replay; this review does not confirm them."
+  ]
+}

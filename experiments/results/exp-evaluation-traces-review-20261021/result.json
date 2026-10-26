@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-evaluation-traces-review-20261021",
+  "runId": "evaluation-traces-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the lesson against OpenTelemetry GenAI semantic conventions and OpenAI Agents SDK tracing documentation. Executed the local fixture and the trace-to-case helper, compiled all four Python fences, and ran seven offline assertions. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 7,
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 4,
+    "providerCalls": 0,
+    "trace": "The fixture returned numeric eta=1288.5; the declared RFC 3339 profile validator returned false, and the trace showed that value was copied to the final output. The example is deterministic and contains no model call. The helper used the caller-supplied redacted input and stable case ID and left the expected behavior as a human-reviewed draft."
+  },
+  "limitations": [
+    "No production trace pipeline, tail-sampling collector, provider instrumentation, privacy review, or retention policy was tested.",
+    "The constructed example demonstrates provenance and a local contract check; it does not establish a real model/provider root cause or general agent behavior.",
+    "OpenTelemetry semantic conventions describe instrumentation fields and content capture recommendations; they do not replace provider-specific verification or legal review of retention and access policy."
+  ]
+}

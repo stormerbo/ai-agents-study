@@ -1,0 +1,31 @@
+{
+  "experimentId": "exp-context-engineering-system-prompt-altitude-w6-20261022",
+  "runId": "w6-system-prompt-altitude-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Re-run the complete preserved lesson verifier and inspect current Anthropic prompt-guidance, SDK and stop-reason sources. Compile and exercise the full Python sample through fake responses. Render and inspect the production page in light/dark themes. No provider call or historical run replay.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 26,
+    "testsFailed": 0,
+    "testCount": 26,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": 3,
+    "pythonFencesCompiled": 1,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/context-engineering-system-prompt-altitude-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/context-engineering-system-prompt-altitude-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x12035",
+    "trace": "Historical prompt samples stay explicitly unreproducible. The 150-character constraint confounds output-length comparison; keyword candidate labels require manual adjudication, and host logic retains hard policy enforcement."
+  },
+  "limitations": [
+    "Historical per-call prompts/responses, exact endpoint/model fingerprint, sampling parameters, task mapping and scorer are unavailable; historic counts cannot be independently recomputed.",
+    "No live provider request, current model behavior, policy adherence rate, production authorization or historical replay was tested.",
+    "The fake SDK checks client and local control flow only; it does not prove prompt quality or semantic classification."
+  ]
+}

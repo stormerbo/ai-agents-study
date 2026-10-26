@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-mindset-shift-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 13,
+    "passed": 13,
+    "failed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "status": "whole-lesson offline checks passed; historical/model claims remain in-review",
+    "pythonFencesCompiled": true,
+    "pythonDemoExecuted": true,
+    "stdoutMatchesPublishedOutput": true,
+    "checksPassed": 13
+  },
+  "limitations": [
+    "The fixture scorer and raw-text demonstration test local Python only and do not measure model quality.",
+    "Historical DeepSeek requests/responses, exact model snapshot, and scorer are unavailable and were not reproduced.",
+    "No current provider behavior, production task quality, or context-position effect was measured."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Compile all five embedded Python fences; run the raw-string comparison and the complete synthetic scorer; compare stdout and comments to the published descriptions; recompute displayed independent-call probabilities; inspect provider-specific and Lost-in-the-Middle scope statements. No network or provider calls."
+}

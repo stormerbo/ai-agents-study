@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-mcp-why-protocol-w6-20261022",
+  "runId": "mcp-why-protocol-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Review the MCP 2026-07-28 base protocol and tools specification; validate the complete lesson's claims, metadata checkpoints, JSON examples, duplicated server, host adapter, and executable stdio behavior with offline scripts.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 17,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "serverRequestsChecked": 7,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 415,
+    "pagefindIndexedPages": 415,
+    "pagefindWords": 15533,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/mcp-why-protocol-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/mcp-why-protocol-w6-20261022-dark.png"
+  },
+  "limitations": [
+    "No official MCP SDK interoperability, remote HTTP transport, provider model call, production authorization, or real side effect was tested. The only browser console error was the existing /favicon.ico 404.",
+    "The integration-count comparison counts interface boundaries and is not a measured reduction in labor, latency, or operating cost. Historical claims are outside this lesson's reproducible local evidence."
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-structured-output-prompt-only-w6-20261022",
+  "runId": "structured-output-prompt-only-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Performed a W6 whole-lesson pass across the entire lesson, metadata checkpoints, its next lesson, historical evidence limits, endpoint-specific output-token and stop-reason contracts, parser redaction, and probability arithmetic. Re-ran the earlier issue verifier (8/8) and a new whole-lesson verifier (11/11). Checked current DeepSeek tool-use docs, Anthropic stop-reason docs, and OpenAI Chat Completions/Responses references. Rendered the complete lesson in light and dark themes at a 1300px viewport; article width was 768px with equal 266px side margins, document scroll width was 1300px in both, and a fresh navigation had zero console errors. No provider calls or external network calls were made by the verifiers.",
+  "observations": {
+    "checks": 11,
+    "checksPassed": 11,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 768,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/structured-output-prompt-only-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/structured-output-prompt-only-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x12015"
+  },
+  "limitations": [
+    "The 2026-10-08 model requests, per-call responses, exact model revision, complete usage records and scorer remain absent; historical model quality, cost, latency and compatibility claims were not reproduced.",
+    "Official documentation was checked on 2026-10-22; documentation does not certify behavior of a deployed compatibility endpoint or another provider/model combination.",
+    "The verifiers check lesson-specific invariants, local parser behavior and arithmetic; they do not establish production task reliability or model output quality.",
+    "Visual inspection used the local development server. It confirms the reported page rendering and dimensions, not an independent production build or cross-device rendering matrix.",
+    "The lesson remains in-review for historical model evidence and production behavior even though its current wording and local examples pass this scope review."
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-mcp-stateless-wire-review-20261020",
+  "runId": "2026-10-20-stateless-wire-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Ran the lesson's extracted Python server via stdio JSON-RPC and validated the subscriptions/listen JSON examples against deterministic assertions; compiled all Python fences first.",
+  "observations": {
+    "pythonFencesCompiled": 3,
+    "serverRequestsChecked": 7,
+    "discoverAndToolsListCacheHints": "passed",
+    "mrtrInputRequiredAndRetry": "passed",
+    "unsupportedVersionAndMissingMetadata": "passed",
+    "modernOnlyVersionAdvertisement": "passed",
+    "subscriptionMessagesParsed": 3,
+    "subscriptionFilterAckAndIdCorrelation": "passed"
+  },
+  "limitations": [
+    "Does not prove interoperability with an official SDK in this run.",
+    "Does not exercise Streamable HTTP headers, HTTP status codes, or live SSE behavior.",
+    "Does not validate production authorization, cache isolation, or real side effects; the transfer tool is a teaching stub."
+  ]
+}

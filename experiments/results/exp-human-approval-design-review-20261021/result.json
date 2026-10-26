@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-human-approval-design-review-20261021",
+  "runId": "human-approval-design-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the lesson against OWASP Transaction Authorization and OWASP LLM06:2025 Excessive Agency guidance. Compiled all embedded Python blocks, ran the deterministic local approval-policy simulation, and asserted its counts and evidence boundaries. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 14,
+    "testsPassed": 14,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "trace": "The fixture reproduced A 7/0/0, B 2/0/0, C 1/0/1, and D 0/1/2 pre-action approvals/post-reviews/unapproved risk actions; D review occurs after effects and cannot prevent them. These are deterministic counts from author-assigned labels, not evidence about human fatigue, approval quality, risk severity, or universal policy superiority. The lesson now marks pseudo-code limits, authorization, immutable proposal binding, reapproval after edits, atomic lifecycle and unknown external outcomes."
+  },
+  "limitations": [
+    "The policy counts are a deterministic synthetic fixture; they do not measure real user fatigue, review quality, risk severity, or the optimal approval policy.",
+    "The pseudo-code is an architectural sketch, not an implementation proving complete path coverage, concurrency safety, authorization correctness, or exactly-once external effects.",
+    "No production authorization system, identity provider, external action, or human approval workflow was tested."
+  ]
+}

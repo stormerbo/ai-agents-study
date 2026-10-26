@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-agent-security-exfiltration-review-20261020",
+  "runId": "local-review-20261020-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Compile and execute the single Python fence, assert all four Boolean cases, and statically check claim boundaries and absence of network request code.",
+  "observations": {
+    "testCount": 4,
+    "passed": 4,
+    "failed": 0,
+    "pythonFencesCompiled": 1,
+    "status": "no network calls implemented"
+  },
+  "limitations": [
+    "Does not reproduce the historical chapter 2 injection sample or chapter 8 provider image-download observation.",
+    "Does not test a real browser CSP, SSRF proxy, identity provider, network egress policy, log pipeline, or production authorization.",
+    "A deterministic Boolean fixture validates only the toy branch logic and is not evidence of model behavior or real exfiltration."
+  ]
+}

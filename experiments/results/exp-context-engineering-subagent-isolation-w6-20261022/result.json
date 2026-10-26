@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-context-engineering-subagent-isolation-w6-20261022",
+  "runId": "context-engineering-subagent-isolation-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, metadata checkpoints, historical DATA entry, prior ERR-077 verifier and current official Anthropic tool-call documentation. The W6 offline verifier compiles the complete Python sample and exercises malformed tool-use correlation IDs plus Anthropic-style usage validation. No provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 3,
+    "testsPassed": 3,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "toolBatchDispatchesOnMalformedIds": 0,
+    "trace": "Missing and duplicate tool_use IDs stop the whole batch before check_item dispatch; valid token counts sum to 17 in the fixture; booleans and negative required/cache counts are rejected. The prior complete lesson verifier remains 27/27."
+  },
+  "limitations": [
+    "The 2026-10-08 historical token totals, endpoint/model fingerprint, cache usage, task mapping and scorer remain unavailable and were not independently reproduced.",
+    "The synthetic tool and usage fixtures validate local control flow only; no provider, database, production authorization, concurrency or downstream side effect was tested.",
+    "The token helper treats absent or null optional cache fields as zero under the Anthropic-shaped fixture; compatibility endpoints must be checked for field and default semantics before interpreting totals."
+  ]
+}

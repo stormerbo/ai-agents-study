@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-capstone-retrospective-w6-20261022",
+  "runId": "capstone-retrospective-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full retrospective lesson, its historical evidence table, executable record example, and six-step capstone sequence against docs/DATA.md and the current multi-agent cost lesson. Corrected the reintroduced 2.37x claim, added ERR-202, updated the preserved issue-scoped verifier, and ran both offline verifiers. No provider or external network call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 10,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The local data ledger retains two historical summary ratios (1.91x and 1.99x), states that run-level requests/responses were not retained, and withdraws the unregistered 2.37x claim. The lesson now matches that boundary; it does not infer trend or reproducible cost. The example executes and labels its counts as a sample, not project health. Current verification: W6 10/10; issue-scoped 5/5. Production build generated 404 pages; Pagefind indexed 404 pages / 15,462 words. Light/dark full-page renders are 1300x7679, article width 792px, viewport/document scroll width 1300px, Mermaid rendered; the sole browser console error is favicon 404.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/capstone-retrospective-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/capstone-retrospective-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x7679"
+  },
+  "limitations": [
+    "Raw historical provider requests/responses, model snapshots, scorer records, and bills were not recovered; neither historical ratio was independently recalculated.",
+    "The local source trace for LangChain is version-pinned historical evidence and was not rerun in this pass; it does not establish behavior for current versions.",
+    "The lesson remains in-review until the whole-curriculum audit and unresolved source/evidence items are complete."
+  ]
+}

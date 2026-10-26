@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-context-engineering-just-in-time-auth-w6-20261022",
+  "runId": "w6-jit-auth-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Execute the complete lesson sample with a fake Anthropic SDK under API-key-only and auth-token-only environments. Verify constructor arguments, custom base URL, lesson explanation and metadata source-bound checkpoint. No provider or network calls.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "testCount": 7,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 1,
+    "officialSourcesReviewed": 2,
+    "visualViewportWidth": 1300,
+    "articleWidth": 768,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/context-engineering-just-in-time-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/context-engineering-just-in-time-20261022-dark.png",
+    "screenshotDimensions": "1300x12372",
+    "trace": "API key uses api_key; bearer auth token uses auth_token; both preserve configured base_url. The production page is centered with no horizontal overflow in either theme; only missing favicon.ico returns 404. The complete lesson verifier passed 16/16."
+  },
+  "limitations": [
+    "Fake SDK checks local parameter routing only; it does not verify real HTTP headers or compatible endpoint authentication.",
+    "Historical prompts, per-call usage, answer quality, billing, latency and the 4/4 missing-document summary remain unreproduced."
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-evaluation-dataset-w6-20261022",
+  "runId": "evaluation-dataset-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Re-read the complete dataset lesson and historical evidence boundary, checked current OpenAI official evaluation and deprecation documentation, ran the prior six-check dataset review verifier, and executed the complete published Python fence as __main__ while matching its stdout. No provider calls or external network requests were made by the local verifier.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "stdoutMatchesPublishedOutput": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "Executing the full lesson example exposed a percent-formatting bug hidden by compilation and helper-only checks: an unescaped percent in the first output label raised TypeError. The label is escaped and the complete stdout now matches. OpenAI's current documentation confirms Evals becomes read-only on 2026-10-31 and is scheduled to shut down on 2026-11-30; the lesson now separates the reusable data-source guidance from the platform lifecycle and cites the official migration path."
+  },
+  "limitations": [
+    "The 2026-10-09 19/20 aggregate remains unverified because the original per-item model responses, exact model snapshot, and validated scorer are unavailable.",
+    "The example verifies local statistical arithmetic and published output only; it does not validate production sampling, privacy controls, annotation quality, or version-comparison power.",
+    "OpenAI product dates are current as checked on 2026-10-22 and must be rechecked before implementation; no provider requests were made."
+  ]
+}

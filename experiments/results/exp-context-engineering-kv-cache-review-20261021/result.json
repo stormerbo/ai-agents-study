@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-context-engineering-kv-cache-review-20261021",
+  "runId": "review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Run the offline claim-boundary verifier and compare the current DeepSeek Context Caching and Responses API documentation with the lesson and registered resources. No provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "testCount": 6,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "The lesson distinguishes the Responses API's unsupported prompt_cache_key/prompt_cache_retention controls from DeepSeek's documented automatic Context Caching. Current documented prefix units, persistence intervals, usage fields, and best-effort behavior are not projected backward onto the archived 2026-10-08 Anthropic-compatible endpoint observation."
+  },
+  "limitations": [
+    "The original 2026-10-08 request/response bodies and exact model/backend routing are unavailable; the historical cache_read figures cannot be independently replayed.",
+    "Current DeepSeek Context Caching documentation does not establish the exact implementation of the historical Anthropic-compatible endpoint or its cache_read usage field.",
+    "No live provider request, cache hit, billing effect, latency effect, or cache isolation property was tested."
+  ]
+}

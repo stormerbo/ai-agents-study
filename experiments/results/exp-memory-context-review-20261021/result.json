@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-memory-context-review-20261021",
+  "runId": "memory-context-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Extracted and compiled the two Python fences from the reviewed lesson, ran the lexical retriever fixtures and arithmetic assertions, and checked the prose/evidence scope assertions. No provider call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 17,
+    "testsPassed": 17,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 2
+  },
+  "limitations": [
+    "Historical provider request/response records and scorer are unavailable; old 1,040,038-token, 130,074-token and 12-turn observations were not reproduced.",
+    "The lexical overlap fixture is not semantic retrieval evaluation.",
+    "Current API/model documentation review does not validate historical provider behavior or production memory governance."
+  ]
+}

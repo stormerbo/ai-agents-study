@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-evaluation-paired-comparison-review-20261021",
+  "runId": "evaluation-paired-comparison-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the paired-comparison lesson against NIST paired-observation, sign-test and experimental-design references. Recomputed the eight-row historical token summary, executed the embedded Python example on Python 3.14.7, demonstrated that the prior seven-predicate scorer accepts malformed three-field rows with invalid P9 priorities, and ran 11 offline assertions. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 11,
+    "testsPassed": 11,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "trace": "The historical table recomputes to mean token difference +227.25, paired SE about 206.8, independent-sample approximate SE about 248.6, and two-sided exact sign-test p=0.289. The code paired by task ID and rejected both mismatched and duplicate IDs. The reconstructed old scorer returned 7/7 for malformed three-field rows using P9, confirming it does not enforce the full output contract."
+  },
+  "limitations": [
+    "This review did not recover or replay the original prompts, per-call responses, model/endpoint fingerprint, run order, scorer artifact, or complete usage fields.",
+    "The 17% standard-error difference and sign-test result are arithmetic on the historical summary only; they do not establish quality equivalence, billed cost, task-population effects, or statistical significance of model behavior.",
+    "No provider calls, production evaluation, randomized experiment, repeated-run variance study, or human quality review was performed.",
+    "NIST sources support the statistical design concepts; they do not validate the missing historical experiment data."
+  ]
+}

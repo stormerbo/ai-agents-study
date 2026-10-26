@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-multi-agent-cost-review-20261021",
+  "runId": "multi-agent-cost-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Compiled both Python fences, executed normalized usage arithmetic, and mocked the API transport. Regression cases verified that token usage is captured before rejecting non-end_turn and empty-text responses, preserving known incurred usage for partial reconciliation. Reviewed current Anthropic Messages usage fields, Anthropic prompt caching, and DeepSeek compatibility docs. No provider call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 30,
+    "testsPassed": 30,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 2
+  },
+  "limitations": [
+    "The two 2026-10-09 historical cost ratios remain aggregate summaries without recoverable per-call requests/responses, scorer records, exact model snapshot or billing data; they were not reproduced.",
+    "Constructed usage responses verify local aggregation and stop-reason handling only; they do not establish model quality, provider billing or production behavior. Usage capture is process-local, not durable; crashes and responses without valid usage can still leave the final cost unknown.",
+    "The sample provider runner is serialized, does not score answer quality, and does not measure latency or parallel execution.",
+    "Anthropic usage and prompt-cache semantics are endpoint-specific. DeepSeek documents cache_control as ignored for its Anthropic-compatible API; no provider endpoint was queried in this audit."
+  ]
+}

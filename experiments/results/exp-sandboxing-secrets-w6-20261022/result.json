@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-sandboxing-secrets-w6-20261022",
+  "runId": "sandboxing-secrets-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Ran the exact three Python fences and six-assertion W6 verifier. Compared all demo stdout with the published text blocks; exercised forged-tenant, missing-scope, malformed JSON, extra-field, blank-query, and non-object input paths before credential lookup. Reviewed the current OWASP Secrets Management, Logging, Authorization Cheat Sheets and AWS Well-Architected SEC02-BP03. No provider request or external network call.",
+  "observations": {
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "testCount": 6,
+    "pythonFencesCompiled": 3,
+    "pythonDemoExecuted": true,
+    "officialSourcesReviewed": 4,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The local fixtures prove only behavior of constructed objects and the in-memory fake broker/upstream; they do not verify production traces, log sinks, secret managers, sandboxing, or provider retention.",
+    "The first fixture deliberately constructs a tool-call object that already contains a synthetic secret. A schema field name alone does not establish that a credential value was sent to a model.",
+    "The demonstration uses synthetic test strings only; no real credentials were read or used.",
+    "Authorization behavior in a live identity provider, tenant-aware secret broker, and downstream service remains untested."
+  ]
+}

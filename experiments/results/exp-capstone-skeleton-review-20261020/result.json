@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-capstone-skeleton-review-20261020",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 4,
+    "passed": 4,
+    "failed": 0,
+    "pythonFencesCompiled": 3,
+    "status": "teaching model passes; boundaries checked"
+  },
+  "limitations": [
+    "The script runs the local in-memory lesson example, not the durable P5 application.",
+    "It statically checks selected P5 source markers but does not execute PostgreSQL integration drills or make a provider request.",
+    "Raw trace fields remain in the educational code to demonstrate the observability risk; they are explicitly not a production recommendation.",
+    "The lesson remains in-review pending whole-lesson independent source and applicability review."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Run the registered offline audit script; compile all Python fences and execute the complete local sample in a temporary directory; inspect current P5 README, host contract test and tool registry boundaries."
+}

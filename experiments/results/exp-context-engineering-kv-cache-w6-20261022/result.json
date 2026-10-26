@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-context-engineering-kv-cache-w6-20261022",
+  "runId": "context-engineering-kv-cache-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full lesson, checkpoint, registered sources, historical DATA ledger, tool-order anecdote provenance, and previous source-bound review. Opened DeepSeek Context Caching and Responses API guides plus Anthropic Prompt Caching documentation. Ran the 11-check W6 verifier and retained 6-check review; executed the complete lesson Python fence and compared stdout byte-for-byte with the following text fence. Built 408 production pages and a 408-page/15,479-word Pagefind index, then inspected full-page light/dark renders at 1300px. The article is 792px wide, document width is 1300px, and the Mermaid SVG renders. The only browser console error is the local favicon 404. The local verifier made no provider or external calls; official documentation and site links were checked separately over the network.",
+  "observations": {
+    "status": "pass",
+    "testCount": 11,
+    "testsPassed": 11,
+    "testsFailed": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "screenshotDimensions": "1300x8297 each",
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The historical 2026-10-08 request, response, usage object, exact prompt/token count, and model snapshot remain unavailable; the table is not independently reproducible.",
+    "No live provider call was made; local Anthropic-style usage fixtures do not establish DeepSeek behavior or cache-key equivalence.",
+    "Visual inspection found only the existing missing local favicon response; production provider and side-effect behavior were outside this review.",
+    "The historical claim that dictionary ordering caused near-zero cache hit rate is unsupported without request bodies, serialized tool lists, and per-call cache usage; it is retained only as a diagnostic hypothesis."
+  ]
+}

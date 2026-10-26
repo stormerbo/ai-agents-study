@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-cost-model-w6-20261022",
+  "runId": "cost-model-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed current official Anthropic API pricing, DeepSeek Models & Pricing, and OpenAI API pricing; ran the W6 whole-lesson verifier, the prior 44-check audit, lesson boundary tests, and both Python fences. No provider API was called.",
+  "observations": {
+    "status": "pass",
+    "testCount": 24,
+    "testsPassed": 24,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The provider price checkpoint now cites all three providers, including a newly registered official OpenAI pricing resource and the existing DeepSeek pricing resource. Usage/cache fields remain provider-scoped; scenario units are not bills; the local helper stdout and displayed excerpt agree on nearest-rank P50 and schema-scenario output.",
+    "pythonFencesCompiled": 2,
+    "officialSourcesReviewed": 3
+  },
+  "limitations": [
+    "Historical traces, real provider billing, model quality, and real cache behavior remain unreproduced; current prices and usage semantics may change."
+  ]
+}

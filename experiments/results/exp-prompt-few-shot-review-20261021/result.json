@@ -1,0 +1,33 @@
+{
+  "experimentId": "exp-prompt-few-shot-review-20261021",
+  "runId": "few-shot-review-2026-10-22-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran fifteen offline assertions. The verifier checks leakage, compiles and executes the example through 240 fake request slots, injects boolean and malformed cache usage, refusal/truncation/empty/invalid output and timeout cases, confirms every attempted request is archived, tests archive no-overwrite and checks that console output omits prompt and response text. No provider call was made. The production build, search index, and full-page light/dark renders were verified.",
+  "observations": {
+    "status": "pass",
+    "testCount": 15,
+    "testsPassed": 15,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "productionBuildPages": 419,
+    "pagefindIndexedPages": 419,
+    "pagefindWords": 15549,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/prompt-few-shot-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/prompt-few-shot-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x10716 light; 1300x10716 dark"
+  },
+  "limitations": [
+    "The 2026-10-08 result tables have no archived per-call prompts/responses, model snapshot, task-run mapping or scorer; they were not reproduced.",
+    "The old one-pass 10-item comparison and small format/wrong-label summaries cannot establish generalization, causal effects, format sensitivity, or a universal optimal example count.",
+    "The fake SDK verifies local request construction and scoring boundaries only; it does not establish current Anthropic SDK/API/model quality, latency, costs, or semantic label validity.",
+    "The current sample sentiment rubric is illustrative; a real task needs an independently reviewed label policy and representative held-out set.",
+    "The current Anthropic SDK and provider endpoint were not run; live model quality, latency and billing remain unverified.",
+    "Initial visual navigation reports the existing favicon.ico 404; the page itself has no horizontal overflow. Live provider behavior remains unverified."
+  ]
+}

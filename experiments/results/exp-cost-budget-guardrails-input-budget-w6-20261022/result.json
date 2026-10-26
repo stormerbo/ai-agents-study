@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-cost-budget-guardrails-input-budget-w6-20261022",
+  "runId": "cost-budget-guardrails-input-budget-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran the W6 input-budget scope verifier, observed the targeted Vitest regression fail before editing, then reran the focused Vitest suite and executed both Python fences. The output of the historical four-record replay matched the displayed lines exactly. No provider or external network calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 2,
+    "testsPassed": 2,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The code and output now say normalized input budget; output_tokens are expressly excluded, while output usage and spend are assigned separate task-budget accounting. Both example fences run, and the replay stdout exactly matches the lesson.",
+    "pythonFencesCompiled": 2,
+    "historicalFixture": false,
+    "productionBuildPages": 408,
+    "pagefindIndexedPages": 408,
+    "pagefindWords": 15487,
+    "visualViewportWidth": 1920,
+    "articleWidth": 792,
+    "documentScrollWidth": 1920,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/budget-guardrails-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/budget-guardrails-w6-20261022-dark.png",
+    "screenshotDimensions": "1920x10709 both themes"
+  },
+  "limitations": [
+    "This checks wording and local sample behavior only. It does not recover the original provider trace or verify provider usage accounting, current prices, production budget enforcement, or circuit-breaker behavior."
+  ]
+}

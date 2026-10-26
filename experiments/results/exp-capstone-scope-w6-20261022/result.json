@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-capstone-scope-w6-20261022",
+  "runId": "capstone-scope-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete scope lesson against the local historical data ledger, the current P5 runner and RUNBOOK, the project tool registry, and the cost-model scenario. Clarified that the project has one predeclared smoke case, while each task is bounded and the runner advances one wake-up per invocation; the runbook allows sequential wake-ups and a new synthetic task with a fresh idempotency key. Ran both offline lesson verifiers and P5 live-runner/release-candidate unit tests. No provider or external network call was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 9,
+    "testsPassed": 9,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The scope check passes 9/9 and the preserved issue-scoped contract passes 5/5. The example matches the three project tools and detects an added refund_order tool. P5 live-runner and release-candidate tests pass 35 tests plus 13 subtests. Historical totals 678/1326/2623/4945 and the approximately 54.7 input-token difference match docs/DATA.md; the 8/8-per-group tool probe remains an unreproducible summary. The approximately 62% figure is a fixed local scenario, not a provider bill. Production build generated 404 pages; Pagefind indexed 404 pages / 15,462 words. Light/dark full-page renders are 1300x8676, article 792px, viewport/document scroll width 1300px, Mermaid rendered; sole browser console error is favicon 404.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/capstone-scope-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/capstone-scope-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x8676"
+  },
+  "limitations": [
+    "No real provider call, external sink delivery, production authorization, persistence behavior, or global live-run quota was exercised in this review.",
+    "The 2026-10-08 tool-count and 8/8 selection summaries lack raw request/response artifacts, full usage, question mapping, and scorer; they were not reproduced.",
+    "The fixed smoke test case can be resumed through multiple wake-ups and re-created as a new task under the runbook; each task is bounded but the project does not declare a global invocation cap."
+  ]
+}

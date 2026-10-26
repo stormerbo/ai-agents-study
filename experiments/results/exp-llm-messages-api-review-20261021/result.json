@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-llm-messages-api-review-20261021",
+  "runId": "offline-review-20261021-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared the Messages API lesson with Anthropic Messages, streaming, stop reasons, strict tool use and Python SDK documentation. Ran the deterministic offline audit script, parsed all Python fences, and executed only the pure local allowlist validator.",
+  "observations": {
+    "testCount": 16,
+    "testsPassed": 16,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 4,
+    "providerCalls": 0,
+    "trace": "Corrected SDK example boundaries, removed unsupported historical stream and enum claims, clarified complete-message tool handoff and application authorization, and rejected invalid local tool input fixtures."
+  },
+  "limitations": [
+    "No provider credentials were used; Anthropic SDK and current endpoint integration were not live-tested.",
+    "The archived stream is a text-only request; no matching raw tool-use trace or full request snapshot is available to reproduce the withdrawn historical numbers.",
+    "The local validator verifies application allowlist behavior only; it does not verify model schema compliance, identity, authorization, external tools or business outcomes.",
+    "The lesson remains in-review pending provider/SDK integration and reproducible sanitized tool-use evidence."
+  ]
+}

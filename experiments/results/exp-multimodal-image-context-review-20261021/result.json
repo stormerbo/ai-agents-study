@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-multimodal-image-context-review-20261021",
+  "runId": "multimodal-image-context-review-2026-10-22-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran six offline assertions against the image lesson, source-bound metadata checkpoint, and full Python harness. Fake OpenAI/Pillow modules exercised a text-only baseline plus eleven image-size requests using identical prompts; JSONL records, returned model/status/usage fields and incomplete/null usage behavior were checked. Added a line-width invariant for the JSON example and complete Python harness. Reviewed the current DeepSeek Vision and Token Usage documentation. Production light/dark full-page screenshots were inspected at 1300px; document width stayed 1300px, article width was 792px, code overflow was 0, and one Mermaid SVG rendered. No provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 6,
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The 2026-10-08 34/224 and 186–996 token summaries have no per-call raw responses, exact backend model snapshot, or reproducible scorer; their baseline and image prompts were not identical. They were not reproduced.",
+    "The fake SDK/Pillow run validates only local harness behavior and record shape. It does not verify real image generation, SDK/provider compatibility, endpoint processing, current model usage, visual quality, or billing.",
+    "Current DeepSeek resizing, image input, public-URL fetch, and Files API behavior is limited to the current DeepSeek documentation; it does not establish other providers or the historical endpoint behavior."
+  ]
+}

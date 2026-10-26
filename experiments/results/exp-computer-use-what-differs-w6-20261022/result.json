@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-computer-use-what-differs-w6-20261022",
+  "runId": "w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Execute the lesson step() function with a stubbed screenshot renderer against loopback redirect and target servers. Reproduce the previous default urllib behavior, then verify the lesson stops at HTTP 302 and the target never receives x-api-key. Check the documented checkpoint and compile the Python fence. No provider or external network calls.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "testCount": 5,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": true,
+    "pythonFencesCompiled": true,
+    "trace": "The default opener forwards the dummy key to the loopback target after redirect; the lesson opener returns HTTP 302 and the target receives no key.",
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/computer-use-what-differs-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/computer-use-what-differs-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x9499 both themes"
+  },
+  "limitations": [
+    "Loopback verifies this Python urllib client path only; it does not validate real providers, proxies, DNS, TLS, or server-side redirects.",
+    "Historical provider responses and real GUI actions remain unavailable and unverified."
+  ]
+}

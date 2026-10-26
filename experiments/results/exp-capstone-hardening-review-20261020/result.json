@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-capstone-hardening-review-20261020",
+  "runId": "local-review-20261020-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Run experiments/scripts/verify_capstone_hardening_review_20261020.py; extract the full Python fence from capstone/02-skeleton.mdx, pair it with the hardening fence in a temporary directory, and check the expected statuses.",
+  "observations": {
+    "testCount": 9,
+    "passed": 9,
+    "failed": 0,
+    "pythonFencesCompiled": 1,
+    "status": "all local contract checks passed; approval-context and version checks correctly surfaced as gaps"
+  },
+  "limitations": [
+    "Does not test provider behavior, production authorization, cross-user/global quota enforcement, real deployment/versioning, or production log storage and retention.",
+    "The six smoke cases are local synthetic regressions, not a representative evaluation set or release gate.",
+    "The suggested prioritization is a local draft; no comparative repair-effectiveness experiment was run."
+  ]
+}

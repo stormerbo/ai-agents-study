@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-agent-deployment-ops-loop-review-20261021",
+  "runId": "agent-deployment-ops-loop-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed Anthropic Demystifying evals for AI agents and the registered OpenAI Evaluation best-practices resource. Executed the lesson Python fence under Python 3.10. The offline verifier checks metric/documentation boundaries, candidate review branches, terminal-task denominators, zero-denominator and missing-usage handling, synthetic output and exact stdout; no provider or external-network calls.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 23,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "checksPassed": 23
+  },
+  "limitations": [
+    "The 2026-10-08 operational schedule and owner table are constructed examples, not measured team workload or a generally recommended cadence.",
+    "The code fixtures are synthetic and do not validate production trace collection, privacy controls, graders, monitoring, billing, release rollout, or holdout governance.",
+    "Historical production metrics and outcomes cannot be independently reproduced because underlying traces, task definitions, model snapshots and scorers are not retained in this worktree."
+  ]
+}

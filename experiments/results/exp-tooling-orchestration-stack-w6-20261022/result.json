@@ -1,0 +1,23 @@
+{
+  "experimentId": "exp-tooling-orchestration-stack-w6-20261022",
+  "runId": "exp-tooling-orchestration-stack-w6-20261022-run1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, registered checkpoints and sources. Rechecked exact PyPI JSON metadata for langgraph 1.2.14 and langchain 0.3.7, pip dependency-resolution/install-report documentation, PyPA packaging Version docs, and OpenTelemetry semantic convention guidance. Ran the retained verifier and a new W6 boundary/output verifier; extracted and executed the complete Python fence with Python 3.10.9 and packaging 24.2.",
+  "observations": {
+    "checks": 55,
+    "checksPassed": 55,
+    "pythonDemoExecuted": true,
+    "officialSourcesReviewed": 6,
+    "historicalBenchmarksRerun": 0,
+    "providerCalls": 0,
+    "langgraphVersion": "1.2.14"
+  },
+  "limitations": [
+    "Exact release metadata proves declared requirements for the two pinned PyPI releases, not what the historical pip command installed.",
+    "The sample compares direct constraints against a fixed snapshot; it does not resolve transitive requirements, environment markers, extras, platform tags, or pip upgrade behavior.",
+    "No target-project requirements dry run was run because no representative target project input was selected for this check.",
+    "No specific observability platform pricing, retention, access control, integrations, or production telemetry behavior was tested.",
+    "Historical trace experiment data remain unavailable and unreproduced."
+  ]
+}

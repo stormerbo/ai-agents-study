@@ -1,0 +1,35 @@
+{
+  "experimentId": "exp-sandboxing-why-isolate-w6-20261022",
+  "runId": "sandboxing-why-isolate-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Ran the seven-check offline whole-lesson verifier and preserved eight-check ERR-140 verifier. Compiled and executed the full Python demo in a private TMPDIR, compared complete stdout byte-for-byte with the published text fence, and verified the pre-existing sentinel survives while the demo temp directory is cleaned. Reviewed OWASP Authorization and SSRF guidance, Linux pathname lookup/openat2, and Python tempfile.mkdtemp cleanup semantics. Ran full project tests, evidence validation, typecheck, lint, depth checks and baseline verification; built 401 static pages and a 401-page Pagefind index. Captured the whole lesson in light and dark themes; checked final heading rendering, article width, viewport overflow, Mermaid and stylesheet response. No provider or external network calls.",
+  "observations": {
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "testCount": 7,
+    "checksPassed": 7,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 4,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 401,
+    "pagefindIndexedPages": 401,
+    "pagefindWords": 15441,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/sandboxing-why-isolate-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/sandboxing-why-isolate-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x10130"
+  },
+  "limitations": [
+    "Historical model-quality, cost, latency, and provider compatibility summaries remain unreproducible because original requests, responses, exact model snapshot, usage records, and scorer were not archived.",
+    "The local path fixture does not verify a production OS sandbox, race-safe filesystem boundary, deployed identity/object authorization, URL fetcher, or network egress enforcement.",
+    "The browser render confirms this production build at a 1300px viewport; it does not establish behavior on every device or deployment environment."
+  ]
+}

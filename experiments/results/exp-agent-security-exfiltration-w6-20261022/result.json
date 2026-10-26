@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-agent-security-exfiltration-w6-20261022",
+  "runId": "agent-security-exfiltration-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Rechecked the lesson against OWASP SSRF Prevention and Authorization Cheat Sheets, the W3C CSP Level 3 Working Draft, and Anthropic Messages API and data-retention docs. Corrected cross-references and synthetic fixture labels, bound current CSP/SSRF/retention claims to registered sources, then ran the local fixture and asserted its complete stdout against the adjacent published output.",
+  "observations": {
+    "checksPassed": 10,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "pythonDemoExecuted": true,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 5,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The Boolean fixture is a synthetic model of its own branches; it does not access customer data, enforce permissions, or send HTTP requests.",
+    "No live browser CSP, SSRF proxy, DNS policy, production authorization, provider request, retention configuration, or log pipeline was tested.",
+    "The chapter 2 prompt-injection summary and chapter 8 URL-image behavior remain historical observations without archived raw request/response evidence and were not reproduced in this review."
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-agent-paradigms-five-paradigms-w6-20261021",
+  "runId": "agent-paradigms-five-paradigms-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the original ReAct, Reflexion, and Tree of Thoughts papers for the bounded descriptions used in the lesson. Audited the entire MDX and metadata, preserved historical observations as unverified, and executed the offline deterministic control-flow fixture plus the complete Python walkthrough. No provider or network calls were made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 20,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 2,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 3,
+    "historicalBenchmarksRerun": false,
+    "checks": [
+      "taxonomy levels separated",
+      "host execution ownership explicit",
+      "historical false-positive shown",
+      "offline control-flow fixture exact output"
+    ]
+  },
+  "limitations": [
+    "Historical 2026-10-09/12 token summaries, scorer decisions, and per-run provider traces were not archived; they were not independently reproduced.",
+    "The local weather/control-flow fixture is synthetic and does not compare model accuracy, usage, cost, latency, provider behavior, or production authorization.",
+    "The three research papers support only the bounded method descriptions and do not establish universal performance or production suitability.",
+    "Framework/tool migration effort and host-side failure recovery were described as review concerns, not measured in a live deployment."
+  ]
+}

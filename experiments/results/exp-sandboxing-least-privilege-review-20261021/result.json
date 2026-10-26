@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-sandboxing-least-privilege-review-20261021",
+  "runId": "sandboxing-least-privilege-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed filesystem containment and SSRF statements against Linux kernel pathname lookup, Python ipaddress, and OWASP SSRF guidance. Ran the complete local path fixture and fixed-DNS URL-policy fixture, compiled all five Python fences, and asserted the displayed outcomes. The current fixture made no external DNS or HTTP calls. Production-rendered the lesson at 1300x1000 viewport in light/dark themes; both pages have scrollWidth=1300, one Mermaid SVG, and no alert. Production build generated 362 pages, and Pagefind indexed 362 pages / 15,364 words.",
+  "observations": {
+    "status": "pass",
+    "testCount": 10,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The historical 2026-10-09 path demo covers only six fixed inputs and does not exercise concurrent rename/symlink replacement, hard links, large-file limits, or deployed OS sandbox behavior; realpath/isfile/open is not race-safe.",
+    "The historical 2026-10-12 network code called socket.getaddrinfo for names absent from DEMO_DNS despite being described as offline. Per-query DNS answers and actual connection destinations were not archived; its output cannot prove DNS-rebinding resistance.",
+    "The current DNS mapping is synthetic and the URL code only performs policy decisions. It does not establish secure HTTP transport, validated-IP pinning, TLS verification, redirect handling, firewall behavior, or provider fetch behavior.",
+    "The Python ipaddress is_global property follows the IANA special-purpose registry semantics implemented by the installed Python version; production policy must also account for organization-owned ranges and deployment-specific metadata/network routes.",
+    "Visual captures confirm only layout: each full page is 1300x14160 at 1300x1000 viewport, scrollWidth=1300, one Mermaid diagram, and no page alert; they do not prove security behavior."
+  ]
+}

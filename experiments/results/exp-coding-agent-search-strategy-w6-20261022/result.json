@@ -1,0 +1,26 @@
+{
+  "experimentId": "exp-coding-agent-search-strategy-w6-20261022",
+  "runId": "coding-agent-search-strategy-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson and metadata checkpoint against the preserved synthetic fixture and current Python AST, Tree-sitter, and Aider repo-map primary documentation. Ran the issue-specific 16-check audit and the 29-check W6 verifier; all three Python fences compiled and ranking/partial-index fixtures ran. Rebuilt static output and inspected the production lesson in light and dark themes. No provider calls were made.",
+  "observations": {
+    "status": "passed",
+    "checks": 29,
+    "checksPassed": 29,
+    "testsPassed": 29,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "pythonDemoExecuted": true,
+    "officialSourcesReviewed": 3,
+    "fixtureOnly": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "The four-question provider run, its full responses, and the aggregate substring scorer were not recovered; its historical scores do not establish accuracy or causal search benefit.",
+    "The repository-scale scan summaries lack preserved selected-file listings and original scan traces; they do not establish relevance or savings for a target task.",
+    "The lexical index fixture is synthetic and does not evaluate real-repository retrieval quality or complete semantic references.",
+    "No provider, real repository benchmark, or production indexing service was exercised."
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "experimentId": "exp-coding-agent-safety-w6-20261022",
+  "runId": "coding-agent-safety-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed current official pytest plugin discovery, npm scripts/lifecycle, Cargo build scripts, Docker Engine security, pip secure installs, and Python subprocess security documentation. Ran the W6 verifier: it compiles and executes the policy data model, then creates a fresh temporary directory/venv and installs only the hash-pinned pytest 8.4.2 dependency set before running a one-test fixture. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 disables external plugin autoload; the local conftest.py still writes the marker during collection. The earlier direct smoke run confirmed pytest 8.4.2; the verifier rerun passed 25/25. No provider calls; dependency retrieval may use PyPI. Production build generated 404 static pages; Pagefind indexed 404 pages / 15,467 words. Light/dark full-page captures output/playwright/coding-agent-safety-w6-20261022-{light,dark}.png are 1300×6,784; article=792px, document width=1300px, one Mermaid SVG rendered; the only console error is the existing favicon 404.",
+  "observations": {
+    "status": "passed",
+    "checks": 25,
+    "checksPassed": 25,
+    "testsPassed": 25,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "fixtureOnly": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 1,
+    "productionBuildPages": 404,
+    "pagefindIndexedPages": 404,
+    "pagefindWords": 15467
+  },
+  "limitations": [
+    "This reproduces the conftest import side effect under pytest 8.4.2 and Python 3.14.7 only; it does not recover or replay the original 2026-10-10 environment, exact logs, or full historical repo.",
+    "No real sandbox, container escape, host credential exposure, DNS/proxy enforcement, package provenance, production authorization, or human approval service was tested.",
+    "The policy object remains illustrative data; it performs no isolation or command execution."
+  ]
+}

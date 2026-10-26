@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-site-guide-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Checked the lesson against current chapter metadata, tracked first-loop tests and limits, BYOK storage, and the chat route. The offline verifier ran 31 assertions; the first-loop pathway test ran three assertions. Did not call any model provider or execute the API-backed example.",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "testCount": 34,
+    "testsPassed": 34,
+    "firstLoopExecuted": false,
+    "chapterCount": 26
+  },
+  "limitations": [
+    "The provider-backed first-loop program was not run. This review does not verify current provider pricing, billing rules, model availability, production hosting logs, or real endpoint behavior."
+  ]
+}

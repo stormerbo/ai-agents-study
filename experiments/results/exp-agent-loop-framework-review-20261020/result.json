@@ -1,0 +1,24 @@
+{
+  "experimentId": "exp-agent-loop-framework-review-20261020",
+  "runId": "local-agent-loop-framework-review-2026-10-20",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Compile both Python fences, execute the hand-written control-flow demo, and run the LangGraph example in an isolated Python 3.14.7 virtual environment with langgraph==1.2.14. Inspect final graph state, next nodes, metadata step, and final in-memory checkpoint values. Compare persistence and graph semantics against official LangGraph documentation.",
+  "observations": {
+    "pythonFencesCompiled": 2,
+    "testsPassed": 13,
+    "testsFailed": 0,
+    "langgraphVersion": "1.2.14",
+    "trace": ["search", "fetch", "fetch", "summarize"],
+    "next": [],
+    "step": 4,
+    "checkpointChannels": ["trace"],
+    "checkpointValuesMatchFinalState": true
+  },
+  "limitations": [
+    "The LangGraph example is deterministic and makes no model call or external side effect; it validates only the displayed API path and state summary.",
+    "InMemorySaver restart loss is supported by the official documentation; this run did not terminate and restart a separate process to test persistence durability.",
+    "The review covers LangGraph 1.2.14 only, not a cross-framework capability survey. Transitive Python dependencies were resolved during installation and were not captured in a lock file.",
+    "No production database saver, durability mode, external side effect, model/provider, concurrent graph writes, or deployment configuration was exercised."
+  ]
+}

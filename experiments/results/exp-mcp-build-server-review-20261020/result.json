@@ -1,0 +1,15 @@
+{
+  "experimentId": "exp-mcp-build-server-review-20261020",
+  "runId": "local-mcp-build-server-shape-2026-10-20",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-20",
+  "method": "Extract and compile all Python fences, then execute the server fence as a subprocess with seven JSON-RPC requests and assert protocol response shapes.",
+  "observations": {
+    "pythonFencesCompiled": 3,
+    "serverRequestsChecked": 7
+  },
+  "limitations": [
+    "Checks only deterministic stdio example behavior; does not rerun the historical SDK 2.3.0 interoperability run.",
+    "Does not test Streamable HTTP transport, authorization isolation, or real external side effects."
+  ]
+}

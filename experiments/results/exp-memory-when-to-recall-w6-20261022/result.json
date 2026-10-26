@@ -1,0 +1,26 @@
+{
+  "experimentId": "exp-memory-when-to-recall-w6-20261022",
+  "runId": "memory-when-to-recall-w6-2026-10-22",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Execute all lesson Python fences; exercise timezone-aware TTL boundary, None/integer timestamps, invalid TTL fields, lexical candidates, and trace output against their golden fences.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 34,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/memory-when-to-recall-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/memory-when-to-recall-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x1000"
+  },
+  "limitations": [
+    "No provider was called and no historical model output was reproduced.",
+    "Production authorization, semantic retrieval quality, threshold calibration, and durable logging were not tested."
+  ]
+}

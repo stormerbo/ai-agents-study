@@ -1,0 +1,25 @@
+{
+  "experimentId": "exp-reading-source-compare-w6-20261022",
+  "runId": "exp-reading-source-compare-w6-20261022-run1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson, its metadata/source registrations, MCP 2026-07-28 Tools specification, JSON Schema object reference, and official MCP Python SDK v2 tools documentation. Executed the whole local LangChain Core example and its invalid-argument checks; provider credentials were not used.",
+  "observations": {
+    "checks": 47,
+    "checksPassed": 47,
+    "testCount": 47,
+    "testsPassed": 47,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "providerCalls": 0,
+    "officialSourcesReviewed": 3,
+    "trace": "Python 3.10.9; langchain-core 0.3.63; A/B/C schemas matched the lesson (A and B require city/day/passengers; constructed C omits required).",
+    "historicalBenchmarksRerun": 0
+  },
+  "limitations": [
+    "The C MCP schema is constructed fixture data, not a live tools/list response. No deployed server behavior or business validation was tested.",
+    "The official MCP Python SDK docs are on the mutable main branch and describe SDK v2; a target server must be checked against its exact installed release.",
+    "The local test supports schema output and validation behavior for LangChain Core 0.3.63 only; it does not prove provider-side or cross-framework guarantees."
+  ]
+}

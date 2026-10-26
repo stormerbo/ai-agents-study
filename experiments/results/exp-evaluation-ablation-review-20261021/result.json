@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-evaluation-ablation-review-20261021",
+  "runId": "evaluation-ablation-review-2026-10-22-02",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Compared factorial-design guidance with OpenAI Evaluation best practices and the NIST Engineering Statistics Handbook; reran seven offline assertions against both lesson Python fences after correcting exact ID and priority-column grading. No provider call or historical replay was made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 7,
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "trace": "The scorer checks input-field scope, exact TC-01…TC-15 first-field IDs, exact priority values in the fourth field, and host-normalized completion status. Factorial contrasts use identical remaining-factor contexts and reject missing cells or unequal completion counts; the historical summary remains non-causal."
+  },
+  "limitations": [
+    "The archived historical stdout does not contain raw requests, responses, model snapshot, scorer version or per-run usage; its values cannot be independently recomputed.",
+    "Offline fixtures verify example code and hand-computed contrasts only; they do not establish statistical significance, production error probability, model quality, or an online A/B result.",
+    "No provider or production experiment was run.",
+    "The offline scorer uses synthetic fixtures and does not calibrate semantic correctness or estimate the true failure distribution."
+  ]
+}

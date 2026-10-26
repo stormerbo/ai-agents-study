@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-136",
+  "runId": "exp-w6-unique-count-audit-20261022-136-run1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full lesson and current registered sources; reran focused offline validators and content tests. Production browser measurements will be added after the final build.",
+  "observations": {
+    "testCount": 44,
+    "testsPassed": 44,
+    "testsFailed": 0,
+    "uniqueLessonIds": 136,
+    "remaining": 8,
+    "percent": 94.44
+  },
+  "limitations": [
+    "A W6 full-lesson pass does not establish that historical experiments or production integrations were independently reproduced."
+  ]
+}

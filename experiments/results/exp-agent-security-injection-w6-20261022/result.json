@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-agent-security-injection-w6-20261022",
+  "runId": "agent-security-injection-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the complete lesson against OWASP GenAI LLM01:2025, Anthropic Messages tool-call and stop-reason documentation, and DeepSeek Anthropic compatibility docs. Ran a local FakeClient harness against the exact Python fence, validated tool-call envelopes before any fake sink, and asserted incomplete stop states and empty end_turn behavior. No provider request or external network call.",
+  "observations": {
+    "checksPassed": 10,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "pythonFencesCompiled": true,
+    "pythonDemoExecuted": true,
+    "officialSourcesReviewed": 4,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0
+  },
+  "limitations": [
+    "Historical 0/7 model observations lack raw provider responses and a reproducible denominator; no historical model experiment was rerun.",
+    "The FakeClient only validates local control flow and fake sinks; no production authorization, approval, side effects, or endpoint behavior was tested.",
+    "Compatibility of provider stop_reason values and schemas must be verified for each target model and endpoint."
+  ]
+}

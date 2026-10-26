@@ -1,0 +1,26 @@
+{
+  "experimentId": "exp-memory-forgetting-w6-20261022",
+  "runId": "memory-forgetting-w6-2026-10-22",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Execute local resolver/topic-gate examples; compile all Python fences; assert trusted supersession evidence and fail-closed states while reviewing the full lesson text against its stated evidence boundaries.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 27,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/memory-forgetting-conflict-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/memory-forgetting-conflict-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x13070"
+  },
+  "limitations": [
+    "No production database, authorization boundary, vector index, cache, or backup deletion path was exercised.",
+    "Historical model comparison outputs and scoring artifacts are unavailable and were not rerun."
+  ]
+}

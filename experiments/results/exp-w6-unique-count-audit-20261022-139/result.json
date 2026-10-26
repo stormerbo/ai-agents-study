@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-139",
+  "runId": "exp-w6-unique-count-audit-20261022-139-run1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "pnpm test -- tests/curriculum.test.ts; the W6 contract checks the master list cardinality, uniqueness, tracker coverage, current percentage, and the new retrieval lesson inclusion.",
+  "observations": {
+    "checks": 46,
+    "checksPassed": 46,
+    "testsPassed": 46,
+    "testsFailed": 0,
+    "uniqueW6Lessons": 139,
+    "totalLessons": 144,
+    "percent": 96.53,
+    "remaining": 5
+  },
+  "limitations": [
+    "W6 coverage is distinct from the 144-row accuracy tracker status and does not satisfy Stage 4 or Stage 5 acceptance gates."
+  ]
+}

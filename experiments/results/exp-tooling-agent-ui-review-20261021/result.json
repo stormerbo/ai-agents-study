@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-tooling-agent-ui-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compared the lesson with the canonical approval-design lesson, the rendered ApprovalDemo source, and the Next.js 16.3.6 local Server/Client Components and Forms guides. Ran the offline verifier (31/31), compiled and executed the lesson's status-copy fixture, and rendered the component in a focused Vitest check (1/1).",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "testCount": 32,
+    "testsPassed": 32,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "serverRequestsChecked": 0
+  },
+  "limitations": [
+    "The route and database snippets are design sketches, not a deployed approval backend; the test verifies the presentational component and its inert controls only.",
+    "No real authentication, authorization, concurrent database transactions, worker crash recovery, external email delivery, idempotency receiver, or production reconciliation path was exercised.",
+    "Next.js docs were checked locally against the project's installed 16.3.6 package and current official docs; framework guidance does not certify application security or the behavior of a deployment."
+  ]
+}

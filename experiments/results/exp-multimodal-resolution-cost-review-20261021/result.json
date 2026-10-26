@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-multimodal-resolution-cost-review-20261021",
+  "runId": "multimodal-resolution-cost-review-2026-10-22-02",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Rechecked DeepSeek Vision/Token Usage and Claude Vision official documentation; ran eight offline unittest assertions against lesson scope, category-based cost wording, Markdown paragraph breaks, the complete Python fence, synthetic crop geometry, input validation and line width. No provider requests were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 8,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "The 2026-10-08 resolution and compression summaries have no archived per-call raw responses, complete usage semantics, exact model snapshot, repeated runs, or independently reproducible scorer. They were not reproduced and do not establish a quality/cost curve.",
+    "The fake image object validates only local crop geometry and parameter checks. It does not test real Pillow behavior, provider image processing, visual quality, usage, billing, or latency.",
+    "DeepSeek and Claude claims are scoped to the cited documentation checked on 2026-10-22; no other provider, compatibility endpoint, or deployed model behavior is verified."
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-multimodal-vision-loop-review-20261021",
+  "runId": "multimodal-vision-in-loop-review-2026-10-22-02",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the two lesson Python fences and 18 deterministic checks covering historical evidence boundaries, current OpenAI source-bound checkpoint, exact outputs, Decimal totals, boolean/type validation, malformed row handling, finite values, cent precision, and code line width. No provider request was made. Production build generated 419 pages and Pagefind indexed 419 pages / 15,544 words. Light/dark full-page screenshots output/playwright/multimodal-vision-in-the-loop-w6-20261022-{light,dark}.png are 1300x9216; viewport/document width 1300px, article 792px, code overflow 0, Mermaid SVG count 1.",
+  "observations": {
+    "status": "pass",
+    "testCount": 18,
+    "testsPassed": 18,
+    "testsFailed": 0,
+    "providerCalls": 0
+  },
+  "limitations": [
+    "Historical per-call requests/responses, precise model snapshot, scorer artifacts, and aggregate-injection fixture were unavailable for independent replay.",
+    "The offline examples validate only deterministic local checks. They do not establish model visual accuracy, recall, precision, provider billing, or production extraction safety.",
+    "OpenAI conversation-state billing documentation is specific to the cited OpenAI API and does not establish other providers’ state or image accounting."
+  ]
+}

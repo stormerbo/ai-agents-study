@@ -1,0 +1,33 @@
+{
+  "experimentId": "exp-evaluation-confidence-w6-20261022",
+  "runId": "evaluation-confidence-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Reviewed the full lesson, checkpoint, registered evidence sources, historical DATA entry and prior confidence review. Ran the six-check W6 verifier plus the retained seven-check review. Independently calculated the two-sided 95% intervals for 0 successes in 95 trials using the lesson's Clopper-Pearson and Wilson implementations, and opened NIST proportion-interval/sample-size and FDA adaptive-design guidance. Built 407 static pages and a 407-page search index, then inspected full-page light/dark screenshots at a 1300px viewport. No provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 6,
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "officialSourcesReviewed": 3,
+    "productionBuildPages": 407,
+    "pagefindIndexedPages": 407,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/evaluation-confidence-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/evaluation-confidence-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x9878 each",
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "For 0/95 at 95% two-sided confidence, the lesson's Clopper-Pearson implementation returns approximately [0, 0.038086], while Wilson returns approximately [0, 0.038865]; this refutes a universal CP-wider-than-Wilson ordering. The revised prose distinguishes interval coverage properties from interval width and restricts ordinary percentile-bootstrap degeneracy to identical observations. The production render confirms centered layout, no horizontal overflow, Mermaid SVG, and no visible escape marker in both themes. One browser console error is a missing local favicon. All historical 40/40 figures remain clearly conditional on an IID Bernoulli illustration and are not treated as a population estimate."
+  },
+  "limitations": [
+    "The old 40/40 result remains a historical summary without per-run requests, responses, task mapping, or scorer and was not replayed.",
+    "The 0/95 pair is a deterministic counterexample produced by local interval functions, not an observed model evaluation.",
+    "This review did not run a sequential test, a multiplicity-controlled experiment, or any provider call."
+  ]
+}

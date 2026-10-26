@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-context-engineering-context-is-finite-review-20261021",
+  "runId": "review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Run the offline lesson, metadata, DATA and Python scorer checks. Review the Lost in the Middle paper, Chroma's Context Rot report, current Anthropic stop-reason documentation and DeepSeek Anthropic API compatibility documentation. No model or provider request was made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 13,
+    "testsFailed": 0,
+    "testCount": 13,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "The Chapter 0 mechanical-marker result is labeled as a prior baseline; four later designs remain historical summaries with missing raw calls, model pin, scorer and sample mapping. The sample code now classifies max_tokens as incomplete and scores only an exact single ID on end_turn. The old thinking-budget explanation and 3/3 versus 15/15 overlap are explicitly unresolved."
+  },
+  "limitations": [
+    "The original 2026-10-08 per-call request/response bodies, immutable model version, sample mapping, usage fields and scorer are unavailable; historical 15/15 and capacity-scan summaries cannot be independently replayed.",
+    "The old empty-text/max_tokens summary does not retain output usage or content-block details, so it does not establish that thinking tokens caused the missing visible answer.",
+    "The offline scorer fixtures validate only the current teaching helper. They do not reproduce the historical scoring method or demonstrate any model's long-context ability.",
+    "No provider request, billed cost, response latency or production workload was tested."
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-106",
+  "runId": "w6-unique-count-audit-2026-10-22-106-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Parsed the W6 master lesson-ID line, verified uniqueness and tracker resolution, checked synchronized current progress summaries, and confirmed the latest progress record advances from 105/144 to 106/144.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The master line contains 106 distinct lesson IDs, including llm-api-basics/sampling-params exactly once; current summary is 106/144 (73.61%) with 38 remaining."
+  },
+  "limitations": [
+    "This checks accounting and synchronized documentation only; it does not independently establish the technical quality of the lesson audits represented by those IDs."
+  ]
+}

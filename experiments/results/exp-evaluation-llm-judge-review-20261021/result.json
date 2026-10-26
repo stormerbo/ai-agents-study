@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-evaluation-llm-judge-review-20261021",
+  "runId": "evaluation-llm-judge-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed LLM-as-a-judge claims and recommendations against Zheng et al.'s MT-Bench paper. Audited the lesson, metadata checkpoint, historical data ledger and the embedded Python example. Executed the offline synthetic example and 10 content/evidence-boundary assertions. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 10,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 1,
+    "providerCalls": 0,
+    "trace": "The synthetic example kept the same candidate winner across swapped positions for one case, changed winner identity for a same-slot preference case, and rejected the ambiguous label 'A or B'. Historical 0/12, 4/4 and 0/6 figures remain labeled as unverified summaries and are not treated as population bias rates or judge accuracy."
+  },
+  "limitations": [
+    "This was a source and lesson-contract review, not a replication of the historical DeepSeek experiment.",
+    "The old per-call responses, full prompts, model snapshot, decoding configuration, human labels and scorer version were not available for independent replay.",
+    "No human-reference calibration, benchmark evaluation, cross-model comparison or production judge validation was performed.",
+    "The offline example verifies strict label parsing and order comparison only; it says nothing about actual model behavior or correctness."
+  ]
+}

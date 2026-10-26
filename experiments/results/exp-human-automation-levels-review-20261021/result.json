@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-human-automation-levels-review-20261021",
+  "runId": "human-automation-levels-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the automation and approval lessons against OWASP Authorization and OWASP LLM06:2025 guidance; compiled and executed embedded Python examples and asserted policy/simulation boundaries. No provider or external service calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 16,
+    "testsPassed": 16,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "trace": "Synthetic output: A 7/0/0, B 2/0/0, C 1/0/1, D 0/1/2 (pre-action approvals/post-reviews/unapproved risk actions). D's review occurs after effects and cannot prevent them. The lesson no longer asserts a universal production distribution or presents the unreproducible historical sample as proof of model capability; historical model outcomes remain unverified because raw requests/responses and scorer are unavailable."
+  },
+  "limitations": [
+    "The policy fixture uses author-assigned labels and does not measure real risk, user fatigue, review quality, or an optimal policy.",
+    "The examples do not prove production authorization, path coverage, concurrency behavior, or external side-effect guarantees.",
+    "Historical provider observations could not be reproduced from raw requests/responses and scorer; no provider was called."
+  ]
+}

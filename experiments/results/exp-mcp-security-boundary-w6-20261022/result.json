@@ -1,0 +1,31 @@
+{
+  "experimentId": "exp-mcp-security-boundary-w6-20261022",
+  "runId": "mcp-security-boundary-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Review the MCP Security Best Practices SSRF section and execute source-bound local verifiers for the lesson text and runnable Python examples.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 5,
+    "serverRequestsChecked": 11,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "productionBuildPages": 415,
+    "pagefindIndexedPages": 415,
+    "pagefindWords": 15531,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/mcp-security-boundary-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/mcp-security-boundary-w6-20261022-dark.png"
+  },
+  "limitations": [
+    "This pass clarifies trust boundaries but is not a security certification.",
+    "Historical prompt-injection results, real OAuth/HTTP behavior, production egress policy, and sandbox isolation were not tested.",
+    "The first-load browser console reported only the existing /favicon.ico 404; the page had no horizontal overflow and the Mermaid chart rendered in both theme screenshots."
+  ]
+}

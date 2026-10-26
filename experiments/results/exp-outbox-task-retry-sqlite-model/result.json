@@ -1,9 +1,26 @@
 {
   "experimentId": "exp-outbox-task-retry-sqlite-model",
-  "runId": "2026-10-19-python314-sqlite-1",
+  "runId": "2026-10-21-python314-sqlite-idempotency-payload-1",
   "evidenceType": "deterministic-local",
-  "observedAt": "2026-10-19",
-  "method": "Ran stdlib unittest with separate SQLite databases for the application and mock delivery receiver, injecting crashes before send and after receiver commit, plus eight concurrent same-key submissions and competing worker claims.",
-  "observations": {"testsPassed": 3, "sameKeyTaskCount": 1, "claimsForOneTask": 1, "deliveriesAfterLostReceipt": 1, "preSendRecoveryDeliveries": 1},
-  "limitations": ["SQLite and threads model local transactional boundaries; they do not validate PostgreSQL isolation, multi-process deployment, lease expiry, network partitions, or a real receiver's idempotency contract.", "The exactly-once effect observed depends on receiver-side unique-key deduplication."]
+  "observedAt": "2026-10-21",
+  "method": "Ran stdlib unittest with separate SQLite databases for the application and mock receiver, injecting pre-send and post-receiver-commit crashes, concurrent same-key submissions, competing claims, same-key/different-payload conflicts, and reconciliation against a conflicting receiver record.",
+  "observations": {
+    "testsPassed": 7,
+    "sameKeyTaskCount": 1,
+    "claimsForOneTask": 1,
+    "deliveriesAfterLostReceipt": 1,
+    "preSendRecoveryDeliveries": 1,
+    "testsFailed": 0,
+    "testCount": 7,
+    "checks": [
+      "same tenant and idempotency key with a different request payload is rejected",
+      "same receiver operation key with a different payload is rejected rather than silently reusing a receipt",
+      "reconciliation does not mark a receiver record sent when the operation key points to different payload content"
+    ]
+  },
+  "limitations": [
+    "SQLite and threads model local transactional boundaries; they do not validate PostgreSQL isolation, multi-process deployment, lease expiry, network partitions, or a real receiver's idempotency contract.",
+    "The exactly-once effect observed depends on receiver-side unique-key deduplication.",
+    "The teaching fixture compares payload strings exactly. It does not define production canonicalization of business request fields, and does not establish a real receiver idempotency contract."
+  ]
 }

@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-provider-migration-empty-suite-20261020",
+  "runId": "2026-10-20-empty-required-suite-red-green",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Added an assertion that an empty required case set is incomplete; observed the pre-fix failure (fixture-pass), then reran the revised standard-library unittest suite. No provider endpoint was called.",
+  "observations": {
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "providerRequests": 0,
+    "emptyRequiredSetDecision": "incomplete",
+    "completeFixtureDecision": "fixture-pass"
+  },
+  "limitations": [
+    "This validates only the local classifier and report gate",
+    "It is not evidence of any provider capability, model quality, cost, or latency"
+  ]
+}

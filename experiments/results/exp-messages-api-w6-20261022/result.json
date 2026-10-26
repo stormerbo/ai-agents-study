@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-messages-api-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 4,
+    "status": "whole-lesson offline checks passed; provider behavior remains in-review"
+  },
+  "limitations": [
+    "The check verifies selected lesson boundaries, syntax and a local allowlist validator; it does not execute Anthropic SDK requests.",
+    "Historical stream/tool-use traces and current provider behavior were not reproduced.",
+    "Current official documentation was checked on 2026-10-22 and can change."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Compile all four Python fences; inspect current stop-reason/streaming/tool-use statements and the associated checkpoint; validate existing local allowlist positive/negative fixtures through the preserved issue verifier. No provider or external network calls."
+}

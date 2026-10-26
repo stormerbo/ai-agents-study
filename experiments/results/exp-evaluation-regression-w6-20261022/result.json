@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-evaluation-regression-w6-20261022",
+  "runId": "evaluation-regression-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Rechecked the complete regression lesson, executed its deterministic example, and ran seven offline assertions for exact transcript output, workflow event wiring, job conditions, documented action pinning, source registration, and metadata linkage. Reviewed current GitHub Actions trigger and secure-use documentation. No provider or external service calls were made by the verifier.",
+  "observations": {
+    "status": "pass",
+    "testCount": 7,
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The workflow explicitly triggers on push, pull_request, and release.published; smoke runs for push and pull_request, while the complete regression suite runs only when a release is published. The example labels checkout@v4 as a readable tag and directs production workflows to a full commit SHA or reviewed dependency lockfile."
+  },
+  "limitations": [
+    "The GitHub Actions snippet is illustrative and was not run in an actual repository workflow.",
+    "The change verifies event and job-condition text; it does not validate branch protections, fork permissions, secret exposure, runner isolation, or organization policy.",
+    "The existing deterministic fixture does not establish model performance or production release quality."
+  ]
+}

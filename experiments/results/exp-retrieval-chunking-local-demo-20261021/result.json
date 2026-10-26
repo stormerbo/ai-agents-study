@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-retrieval-chunking-local-demo-20261021",
+  "runId": "2026-10-21-review-2",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Executed the hash-pinned MDX Python fence via experiments/scripts/verify_retrieval_chunking_local_20261021.py against the hash-pinned local Markdown fixture; compared stdout exactly with the published output and tested fixed-size tails/overlap, structural soft limits, heading attachment, invalid inputs, and punctuation-rate boundaries.",
+  "observations": {
+    "testCount": 6,
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "status": "pass",
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "fixtureSha256": "cb51774d41a31745a15521be033cf971c3e061112c8739b22dfc9de3a56a9b1a",
+    "stdoutMatchesPublishedOutput": true,
+    "headingAttachedToFirstParagraph": true
+  },
+  "limitations": [
+    "The fixture is one hash-pinned local Markdown file, not a representative corpus.",
+    "Character counts and sentence-end punctuation are didactic proxies; the run does not measure retrieval quality, semantic completeness, provider tokens, or production costs."
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "experimentId": "exp-agent-loop-minimal-w6-20261021",
+  "runId": "agent-loop-minimal-w6-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared Anthropic stop-reason and tool-call documentation with the complete lesson. Executed the complete Python FakeModel fence and ran 9 offline assertions, including empty end_turn and no dispatch for a tool proposal on the last model turn. No provider or external network call. Isolated production build generated 399 pages and Pagefind indexed 399 pages / 15,393 words. Light/dark full-page screenshots were visually inspected at 1300px: viewport/document width=1300px, article width=792px, Mermaid rendered; the only console error was favicon 404.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 9,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 1,
+    "stdoutMatchesPublishedOutput": true,
+    "officialSourcesReviewed": 3,
+    "historicalBenchmarksRerun": false,
+    "checks": [
+      "empty end_turn is rejected instead of being returned as an answer",
+      "task acceptance remains distinct from model-turn termination",
+      "max_steps counts model responses rather than tool calls",
+      "final-turn tool proposals are not dispatched without a remaining model turn",
+      "historical DeepSeek response and error excerpts remain unverified",
+      "isolated production build and search index rendered the revised lesson in light and dark modes"
+    ],
+    "productionBuildPages": 399,
+    "pagefindIndexedPages": 399,
+    "pagefindWords": 15393,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/agent-loop-minimal-w6-20261021-light.png",
+    "darkScreenshot": "output/playwright/agent-loop-minimal-w6-20261021-dark.png",
+    "screenshotDimensions": "1300x14818"
+  },
+  "limitations": [
+    "The full FakeModel fence is deterministic teaching code and does not establish provider behavior or production safety.",
+    "The 2026-10-12 DeepSeek raw requests/responses and exact endpoint snapshot were not archived; the displayed transcript and 400 messages were not independently reproduced.",
+    "No real provider, live API, or external network request was made.",
+    "The only browser console error was the missing favicon (404); no lesson rendering or layout errors were observed."
+  ]
+}

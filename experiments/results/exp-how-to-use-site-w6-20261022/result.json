@@ -1,0 +1,25 @@
+{
+  "experimentId": "exp-how-to-use-site-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 44,
+    "passed": 44,
+    "failed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "firstLoopExecuted": true,
+    "pythonDemoExecuted": true,
+    "checksPassed": 44,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "status": "whole-lesson and first-loop offline checks passed; historical/provider behavior remains in-review"
+  },
+  "limitations": [
+    "The verifier imports the actual local example, exercises scripted model responses, and checks a loopback redirect using a dummy credential; it does not call an external provider.",
+    "The local fixtures verify host control flow and credential redirect handling only; they do not establish production authorization, endpoint behavior, or business task quality.",
+    "Historical provider observations and live API compatibility remain unreproduced."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Run the whole-lesson verifier against current chapter metadata, UI/API-key storage and route code, then import and execute the local read-only example with scripted tool-use/end-turn responses. Check missing and duplicate tool IDs, final-round no-dispatch, empty final text, successful two-round completion, and a loopback 302 response proving the API key is not forwarded. No external network or provider calls."
+}

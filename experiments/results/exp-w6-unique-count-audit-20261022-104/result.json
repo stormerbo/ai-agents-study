@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-104",
+  "runId": "w6-unique-count-audit-2026-10-22-104-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Parsed the W6 master lesson-ID line, verified uniqueness and tracker resolution, checked synchronized current progress summaries, and confirmed that the latest progress record advances from 103/144 to 104/144.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "The master line contains 104 distinct lesson IDs, including evaluation/regression exactly once; the current summary is 104/144 (72.22%) with 40 remaining."
+  },
+  "limitations": [
+    "This checks accounting and synchronized documentation only; it does not independently establish the technical quality of the lesson audits represented by those IDs."
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-102",
+  "runId": "w6-unique-count-2026-10-22-102",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran the registered four-check verifier against the W6 master ID list, current lesson tracker, design/spec status documents, and latest progress entry. No provider or network calls.",
+  "observations": {
+    "checks": 4,
+    "checksPassed": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerRequests": 0,
+    "status": "pass",
+    "trace": "The master W6 list contains 102 unique lesson IDs (102/144, 70.83%), with 42 remaining; evaluation/provider-migration appears once and every listed ID resolves in the tracker."
+  },
+  "limitations": [
+    "This verifier checks count and document consistency only; it does not independently establish the quality of any lesson review."
+  ]
+}

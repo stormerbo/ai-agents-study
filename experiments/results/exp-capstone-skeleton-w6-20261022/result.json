@@ -1,0 +1,30 @@
+{
+  "experimentId": "exp-capstone-skeleton-w6-20261022",
+  "evidenceType": "deterministic-local",
+  "observations": {
+    "testCount": 12,
+    "passed": 12,
+    "failed": 0,
+    "testsPassed": 14,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 0,
+    "lightScreenshot": "output/playwright/capstone-skeleton-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/capstone-skeleton-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x15420",
+    "status": "scenario ratio corrected; P5 and local-demo boundaries checked"
+  },
+  "limitations": [
+    "The verifier executes only the local in-memory teaching sample and statically compares selected current P5 source contracts.",
+    "No historical provider requests, responses, usage, or bill were recovered or reproduced.",
+    "This review does not validate production authorization, deployment, or external side effects."
+  ],
+  "runId": "local-review-20261022-01",
+  "observedAt": "2026-10-22",
+  "method": "Run the registered offline verifier; compile all three Python fences; execute the complete sample in a temporary directory; compare current P5 runner, provider, host, action registry and README with the lesson; cross-check the 405x arithmetic against the source cost lesson and DATA.md."
+}

@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-agent-loop-execution-ownership-review-20261020",
+  "runId": "execution-ownership-review-2026-10-20-1",
+  "evidenceType": "postgres-integration",
+  "observedAt": "2026-10-20",
+  "method": "Ran the documented P4 worker ownership pytest command from examples/p4-durable-support, then ran the standalone SQLite teaching model suite from the repository root. Read the implementation of fence(), renew(), claim(), and all assertions in test_worker_ownership.py; compared the lesson's checkpoint tuples with the exact SQLite unit test setup. Reviewed the linked PostgreSQL 18 SELECT locking and date/time documentation.",
+  "observations": {
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "sqliteTestsPassed": 4,
+    "sqliteTestsFailed": 0
+  },
+  "limitations": [
+    "The P4 takeover test force-kills owner A before worker B claims; it does not simulate a live worker recovering after network isolation.",
+    "No test holds a fenced transaction past lease expiry; wording about row-lock serialization is based on inspected implementation and PostgreSQL locking semantics.",
+    "No cross-machine clock skew, long GC pause, remote side effect, provider call, or exactly-once effect was tested.",
+    "The SQLite model uses injected integer time and does not prove PostgreSQL multiprocess scheduling behavior."
+  ]
+}

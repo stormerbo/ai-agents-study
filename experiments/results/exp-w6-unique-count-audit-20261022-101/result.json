@@ -1,0 +1,19 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-101",
+  "runId": "w6-unique-count-2026-10-22-101",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran the 101-ID W6 count verifier against the explicit master pass list, restored tracker, plan, specification, audit summary, and latest progress note. No network or provider calls.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "101 distinct lesson IDs resolve in the tracker, including evaluation/eval-env exactly once. The published percentage is 70.14%; plan, spec, tracker, and audit summaries agree on 101/144 with 43 remaining; the latest progress note records 100/144 to 101/144."
+  },
+  "limitations": [
+    "This check validates recorded unique-pass bookkeeping and does not itself establish the lesson review quality; that is supported by the separate full-scope review evidence."
+  ]
+}

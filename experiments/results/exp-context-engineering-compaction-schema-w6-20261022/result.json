@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-context-engineering-compaction-schema-w6-20261022",
+  "runId": "w6-compaction-schema-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Compile both full lesson Python fences and run typed schema fixtures against the extracted validator and merge helper. Exercise missing fields, wrong types, bool-as-number, source requirements, and valid/invalid merge candidates. No provider or network calls.",
+  "observations": {
+    "status": "passed",
+    "testsPassed": 11,
+    "testsFailed": 0,
+    "testCount": 11,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "pythonFencesCompiled": 2,
+    "trace": "The previous validator accepted string amounts, boolean amounts/turns and omitted category fields. New validation and post-merge revalidation reject these cases while accepting the lesson-shaped fixture."
+  },
+  "limitations": [
+    "Fixtures verify the explicitly modeled field/type contract only; they do not prove extracted facts are true, complete, current or authorized.",
+    "Historical token, retention and answer-quality summaries remain unreproducible."
+  ]
+}

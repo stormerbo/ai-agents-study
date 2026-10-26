@@ -1,0 +1,27 @@
+{
+  "experimentId": "exp-memory-what-to-write-w6-20261022",
+  "runId": "memory-write-policy-w6-2026-10-22",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Execute all standalone lesson Python fences; exercise invalid list-valued source on should_write and to_record, blank text on to_record, and compare policy stdout byte-for-byte with the output fence.",
+  "observations": {
+    "status": "pass",
+    "pythonFencesCompiled": 2,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/memory-what-to-write-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/memory-what-to-write-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x1000",
+    "checksPassed": 3,
+    "testsFailed": 0,
+    "stdoutMatchesPublishedOutput": true
+  },
+  "limitations": [
+    "No live provider or external network call was made.",
+    "Historical model outputs, scoring artifacts, production persistence, privacy policy, and retention/deletion behavior were not verified."
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-llm-model-selection-review-20261021",
+  "runId": "llm-model-selection-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Compared the lesson with official OpenAI model selection and Anthropic model selection, cost-intelligence and pricing documentation; ran 36 offline checks and executed both lesson Python examples with a mocked SDK. No provider request or model-quality benchmark was run.",
+  "observations": {
+    "status": "pass",
+    "testCount": 36,
+    "testsPassed": 36,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "trace": "The cost example produced the declared 2,190-token / 1,095,000-token synthetic scenario for 75 base input, 32 growth, 10 turns and 500 conversations. Router rules selected configured tiers; valid mock labels were accepted; exceptions, truncation and invalid labels returned manual_review_required. No provider calls occurred."
+  },
+  "limitations": [
+    "No model/provider request, candidate-quality benchmark, production billing comparison, or approval workflow was tested.",
+    "Historical 2026-09-24 usage and request/response snapshots are incomplete; only arithmetic over the preserved input column is shown.",
+    "Route cost scenarios use constructed assumptions and cannot predict production savings."
+  ]
+}

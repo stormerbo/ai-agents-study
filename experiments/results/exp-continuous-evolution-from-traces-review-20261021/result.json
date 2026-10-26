@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-continuous-evolution-from-traces-review-20261021",
+  "runId": "continuous-evolution-from-traces-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Review the lesson's taxonomy, memory example, lifecycle, candidate-signal claims, metadata checkpoints, and registered security sources. Run the inline Python classifier and offline boundary assertions. No provider request or historical model run was made.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 35,
+    "testsFailed": 0,
+    "testCount": 35,
+    "providerCalls": 0,
+    "model": "static-and-documentation-review",
+    "trace": "Replaced unsupported autonomous-learning, large-corpus, cost/adoption/timing, and ROI claims; separated descriptive memory from authorization policy; added tenant-scoped provenance and lifecycle controls; treated retrieved text as untrusted; stated that prompt wording is not security isolation; and corrected Pass^k instability interpretation. The complete illustrative Python classifier runs as shown."
+  },
+  "limitations": [
+    "No live retrieval store, identity provider, authorization middleware, prompt-injection defense, or production side-effect path was tested.",
+    "No historical model run or trace-learning outcome was reproduced; offline assertions validate the revised lesson's boundaries and the sample classifier only.",
+    "The OWASP references establish general authorization and prompt-injection guidance, not a guarantee that any specific host implementation is secure.",
+    "The four implementation forms can overlap; the table is a teaching taxonomy and does not rank every architecture's engineering cost."
+  ]
+}

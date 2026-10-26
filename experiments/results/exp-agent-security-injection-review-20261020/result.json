@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-agent-security-injection-review-20261020",
+  "runId": "agent-security-injection-review-2026-10-20-1",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Ran the dependency-free audit script against the lesson. It compiled every Python fence, inspected the first-round scenario list, executed only the local mock sink functions, and asserted historical-result and injection-scope qualifications plus the linked OWASP source.",
+  "observations": {
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "testCount": 4,
+    "pythonFencesCompiled": 4
+  },
+  "limitations": [
+    "No historical provider request/response or complete three-round script was available; the 0/7 summary and its denominator were not reproduced.",
+    "The script checks lesson statements and local mock behavior, not model resistance, production authorization, approval flows, parameter allowlists, or tool execution.",
+    "OWASP guidance supports impact mitigation; the explanation that indirect injection also affects ordinary RAG/document LLM applications is an application of the threat definition, not an exclusive formal taxonomy."
+  ]
+}

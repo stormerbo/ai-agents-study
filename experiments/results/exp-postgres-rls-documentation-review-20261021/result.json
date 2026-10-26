@@ -1,0 +1,13 @@
+{
+  "experimentId": "exp-postgres-rls-documentation-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Opened the version-pinned PostgreSQL 18 Row Security Policies documentation on 2026-10-21; checked the documented default-deny behavior, owner/superuser/BYPASSRLS rules, FORCE ROW LEVEL SECURITY, and the subquery concurrency-race example. The companion offline verifier checks that the lesson and resource registry point to the same versioned source.",
+  "observations": {
+    "providerCalls": 0
+  },
+  "limitations": [
+    "Documentation review does not test the reader's schema, roles, connection pool, policies, or production database configuration."
+  ]
+}

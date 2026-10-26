@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-tooling-local-models-review-20261021",
+  "runId": "2026-10-21-review-1",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Reviewed the current lesson and checkpoint against Microsoft Foundry data privacy, OpenAI enterprise privacy, and Anthropic model deprecation documentation. Ran the offline lesson boundary verifier and built the production site. Playwright at 1300px inspected both theme screenshots and measured document scrollWidth=1300px. No provider requests or historical benchmark reruns were made.",
+  "observations": {
+    "checks": 18,
+    "checksPassed": 18,
+    "providerCalls": 0,
+    "historicalBenchmarksRerun": 0,
+    "officialSourcesReviewed": 3
+  },
+  "limitations": [
+    "The privacy guarantees cited apply only to the named provider products, features, contracts, regions, and configurations; the documentation review does not establish that a particular deployment satisfies the user's compliance requirements.",
+    "The historical local embedding throughput and vector-size measurements were not rerun; they remain a dated observation limited to the original machine, model, batch size, and corpus.",
+    "No local inference service, target hardware, production concurrency, cold-start, GPU requirement, or end-to-end quality comparison was exercised.",
+    "Provider model identifiers and lifecycle policies can change; this review does not prove a specific request's underlying weights or full inference stack are reproducible."
+  ]
+}

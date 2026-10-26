@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-w6-unique-count-audit-20261022-92",
+  "runId": "w6-unique-count-audit-2026-10-22-92-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Ran experiments/scripts/verify_w6_unique_count_20261022_92.py against the current W6 pass list and status documents. The local verifier checks unique lesson IDs, tracker resolution and synchronized 92/144 totals; no network or provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 4,
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "checks": 4,
+    "checksPassed": 4,
+    "trace": "The master set lists 92 unique lesson IDs including context-engineering/subagent-isolation; all resolve in the tracker. Plan, specification, tracker, audit and latest progress entry agree on 92/144 with 52 pending."
+  },
+  "limitations": [
+    "This verifier checks documentation consistency and lesson-ID coverage only; it does not establish the completeness or correctness of any lesson review.",
+    "Stage 4 and Stage 5 acceptance gates remain open."
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-agent-deployment-shape-w6-20261021",
+  "runId": "local-agent-deployment-shape-w6-2026-10-21",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Review the full deployment-shape lesson and its metadata against the current project DATA.md and current official provider cache documentation. Compile both Python fences, execute the scenario estimator, compare its published values to the prose table, and run offline boundary assertions for task persistence, repeat attempts, scoped idempotency, event cursor versus partial result, deadlines, cancellation, and provider-specific cache semantics.",
+  "observations": {
+    "pythonFencesCompiled": 2,
+    "pythonDemoExecuted": true,
+    "checksPassed": 6,
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": 4,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": true,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/deployment-shape-w6-20261021-light.png",
+    "darkScreenshot": "output/playwright/deployment-shape-w6-20261021-dark.png",
+    "screenshotDimensions": "1300x9542"
+  },
+  "limitations": [
+    "The 0.8-second fixed component and 180-token-per-second generation assumption are synthetic scenario parameters, not measured latency or an ETA model.",
+    "The historical four-row latency observations and branch-planning score remain unreproduced; no raw provider traces or scorer were available.",
+    "The lesson's task record and HTTP handler remain design examples. This run did not test a database, outbox, queue delivery, worker lease/fencing, cross-tenant idempotency, cancellation propagation, or external side effects.",
+    "Provider cache documentation establishes provider-specific contracts, not cache hit rates or billing/latency outcomes for this project's endpoint configuration."
+  ]
+}

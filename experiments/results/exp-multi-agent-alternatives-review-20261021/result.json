@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-multi-agent-alternatives-review-20261021",
+  "runId": "multi-agent-alternatives-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Compiled all four Python fences, executed only the fixed workflow example and the constructed paired-metrics fixture, and stubbed the legacy response parser with an empty end_turn payload to verify fail-closed behavior. No provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 34,
+    "testsPassed": 34,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 4
+  },
+  "limitations": [
+    "The paired task outcomes and latency values are constructed examples; they do not estimate model quality, architecture benefit, scheduling behavior, uncertainty or sample size.",
+    "The legacy DeepSeek-compatible script was not run. Its old aggregate output cannot be independently reproduced because per-call requests, responses, exact model identity, scoring records and billing data are unavailable.",
+    "The legacy script runs workers sequentially, so it does not measure parallel latency. The revised sample code does not score answer quality or compliance. The empty end_turn check is a local contract test, not evidence that every provider returns this shape.",
+    "The 14.4x API/UI comparison has different execution boundaries and success criteria; it does not establish a deterministic-tool versus agent-subtask cost ratio.",
+    "No provider, current endpoint, production workflow, real tool, latency path or bill was tested."
+  ]
+}

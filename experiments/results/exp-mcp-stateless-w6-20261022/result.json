@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-mcp-stateless-w6-20261022",
+  "runId": "mcp-stateless-w6-2026-10-22",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Compare lesson claims and examples with official MCP 2026-07-28 specification and run the local fail-closed verifier plus preserved request-path checks.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 6,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "serverRequestsChecked": 7
+  },
+  "limitations": [
+    "No official SDK or real Streamable HTTP interoperability test was run.",
+    "No production authorization or external side-effect test was run.",
+    "Visual screenshots were not recaptured in this review."
+  ]
+}

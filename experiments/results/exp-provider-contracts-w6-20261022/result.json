@@ -1,0 +1,20 @@
+{
+  "experimentId": "exp-provider-contracts-w6-20261022",
+  "runId": "provider-contracts-w6-2026-10-22-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the complete embedded provider classifier unittest suite and a W6 verifier that extracts and runs the same Python fence offline.",
+  "observations": {
+    "status": "pass",
+    "testCount": 18,
+    "testsPassed": 18,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "trace": "Embedded provider contract fixtures 15/15 and W6 extraction/documentation verifier 3/3 passed. Partial tool calls are retained in raw but hidden from the dispatchable tool_calls field except for consistent tool_calls states."
+  },
+  "limitations": [
+    "Fixtures validate a local classifier only; no provider SDK, live endpoint, authentication, model capability, or production host authorization was exercised.",
+    "Provider status vocabularies can evolve; re-check official endpoint documentation and SDK behavior when upgrading."
+  ]
+}

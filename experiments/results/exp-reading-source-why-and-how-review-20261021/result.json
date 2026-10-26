@@ -1,0 +1,17 @@
+{
+  "experimentId": "exp-reading-source-why-and-how-review-20261021",
+  "runId": "2026-10-22-review-2",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-22",
+  "method": "Executed the complete lesson Python fence in the pinned Python 3.14.7 / langchain-core 0.3.63 environment; asserted schemas for default parsing, parse_docstring=True, Literal, and explicit Pydantic args_schema; traced the pinned source path from StructuredTool.from_function through tool_call_schema and model_json_schema; ran 37 prose, source-path, and evidence checks.",
+  "observations": {
+    "providerCalls": 0,
+    "fixtureOnly": true,
+    "testCount": 37,
+    "testsPassed": 37,
+    "pythonFencesCompiled": 1
+  },
+  "limitations": [
+    "Validates only the lesson fixture and pinned package version. It does not test provider-side constrained decoding, live model behavior, production input validation, or later LangChain versions."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-memory-what-to-write-review-20261021",
+  "runId": "memory-what-to-write-review-2026-10-21-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-21",
+  "method": "Ran the offline review script; parsed and executed the local write-policy fence; checked generated IDs, source normalization, disabled/restricted/inferred candidates, TTL validation, exact rendered output, and historical evidence wording. No provider calls were made.",
+  "observations": {
+    "status": "pass",
+    "testCount": 23,
+    "testsPassed": 23,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "pythonFencesCompiled": 2
+  },
+  "limitations": [
+    "Historical provider requests, responses, exact route/model and scorer were unavailable; the old comparison was not reproduced.",
+    "Keyword matching does not evaluate semantic correctness, authorization, retention, deletion or task utility.",
+    "The local script does not test production databases, concurrency, identity isolation, privacy compliance or actual provider billing.",
+    "The optional API example was not called; stop-reason behavior was checked against provider documentation, not against a live endpoint."
+  ]
+}

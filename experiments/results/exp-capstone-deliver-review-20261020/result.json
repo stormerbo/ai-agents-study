@@ -1,0 +1,18 @@
+{
+  "experimentId": "exp-capstone-deliver-review-20261020",
+  "runId": "local-review-20261020-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Run experiments/scripts/verify_capstone_deliver_review_20261020.py; compile all Python fences, verify evidence-scope wording and execute the static handoff template.",
+  "observations": {
+    "testCount": 7,
+    "passed": 7,
+    "failed": 0,
+    "pythonFencesCompiled": 1,
+    "status": "all local assertions passed"
+  },
+  "limitations": [
+    "Does not perform an independent clean-checkout handoff or validate production telemetry, authorization policy, or release readiness.",
+    "The approval comparison remains a historical observation from one synthetic seven-step task and is not a production policy result."
+  ]
+}

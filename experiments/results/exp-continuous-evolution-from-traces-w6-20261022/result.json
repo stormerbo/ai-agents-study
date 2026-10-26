@@ -1,0 +1,32 @@
+{
+  "experimentId": "exp-continuous-evolution-from-traces-w6-20261022",
+  "runId": "from-traces-w6-2026-10-22-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Ran the new three-case Vitest boundary suite and existing 35-assertion lesson/source audit. Reviewed current OWASP Authorization Cheat Sheet and OWASP GenAI LLM01:2025. Built and visually inspected the production lesson page in light and dark themes. No model provider was called and historical model experiments were not replayed.",
+  "observations": {
+    "status": "pass",
+    "testCount": 38,
+    "testsPassed": 38,
+    "testsFailed": 0,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "officialSourcesReviewed": true,
+    "trace": "The lesson now states that retained model versions permit version rollback without precisely undoing one behavior class; low hit_count is only a retrieval diagnostic, not automatic evidence of no value; code may avoid repeated inference while implementation cost remains architecture/risk-dependent. Existing source review still passes 35/35. Production build generated 408 pages and Pagefind indexed 408 pages / 15,486 words. Light/dark full-page screenshots are each 1300x7941; viewport/document width=1300px, article=792px, one Mermaid SVG rendered. The only browser console error was the existing favicon.ico 404.",
+    "productionBuildPages": 408,
+    "pagefindIndexedPages": 408,
+    "pagefindWords": 15486,
+    "visualViewportWidth": 1300,
+    "articleWidth": 792,
+    "documentScrollWidth": 1300,
+    "mermaidRendered": 1,
+    "browserConsoleErrors": 1,
+    "lightScreenshot": "output/playwright/continuous-evolution-from-traces-w6-20261022-light.png",
+    "darkScreenshot": "output/playwright/continuous-evolution-from-traces-w6-20261022-dark.png",
+    "screenshotDimensions": "1300x7941 both themes"
+  },
+  "limitations": [
+    "Checks verify lesson wording, the existing local examples, and cited source mappings; they do not validate production retrieval telemetry, retention, model quality, parameter training, or real rollback behavior.",
+    "No historical provider runs were reproduced."
+  ]
+}

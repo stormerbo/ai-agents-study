@@ -1,0 +1,26 @@
+{
+  "experimentId": "exp-agent-deployment-versioning-w6-20261022",
+  "runId": "local-agent-deployment-versioning-w6-2026-10-22",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-22",
+  "method": "Review the whole versioning lesson and metadata for sample-size arithmetic, rollout guidance, model version contracts, release provenance, evaluation lineage, rollback semantics, and runnable examples. Compile and execute the published Python fence, compare its complete stdout with the adjacent text fence, and run offline boundary assertions. Review current NIST and official Anthropic/OpenAI documentation.",
+  "observations": {
+    "pythonFencesCompiled": 1,
+    "pythonDemoExecuted": true,
+    "checksPassed": 8,
+    "testsPassed": 8,
+    "testsFailed": 0,
+    "stdoutMatchesPublishedOutput": true,
+    "providerCalls": 0,
+    "externalNetworkCalls": 0,
+    "interval": [85, 531, 2122, 8486],
+    "intervalWidthPp": [5, 2, 1, 0.5],
+    "singleSuccessRatePercent": 2
+  },
+  "limitations": [
+    "Wald arithmetic is a planning approximation; it is not a confidence interval computed from observed data, and small event counts may make the normal approximation inaccurate.",
+    "The simulated group rates are synthetic fixed-seed descriptions, not real traffic, provider behavior, inferential results, or rollout recommendations.",
+    "No live provider call, production deployment, traffic allocation, rollback, persistent-state migration, or external side effect was tested.",
+    "Model ID stability, response metadata, aliases, and retirement behavior must still be verified for the selected provider/API at deployment time."
+  ]
+}

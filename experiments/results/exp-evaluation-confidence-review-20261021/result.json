@@ -1,0 +1,22 @@
+{
+  "experimentId": "exp-evaluation-confidence-review-20261021",
+  "runId": "evaluation-confidence-review-2026-10-21-01",
+  "evidenceType": "official-documentation-review",
+  "observedAt": "2026-10-21",
+  "method": "Compared proportion-interval and repeated-look claims with the NIST Engineering Statistics Handbook and FDA adaptive-design guidance, and the zero-event interpretation with Hanley & Lippman-Hand; ran six offline assertions against all lesson Python fences and claims. No provider calls or historical experiment replay were performed.",
+  "observations": {
+    "status": "pass",
+    "testCount": 7,
+    "testsPassed": 7,
+    "testsFailed": 0,
+    "pythonFencesCompiled": 3,
+    "providerCalls": 0,
+    "trace": "Input validation rejects empty and invalid counts; Wilson and Clopper-Pearson reproduce boundary behavior; the p=.9 planning table matches; all-success IID one-sided lower-bound planning yields 59 trials; zero observed events are distinguished from zero risk; fixed-horizon decisions differ from pre-specified sequential monitoring; all Python fences run independently."
+  },
+  "limitations": [
+    "The 40/40 historical observation is preserved as a reported result; task-level dependence across eight tasks means the binomial interval is illustrative under an IID assumption and does not establish population success rate.",
+    "The arithmetic checks do not rerun the original provider/model calls, recover raw responses, or validate the historical task scoring.",
+    "The sample-size formula is a Wald normal approximation for a single proportion; it is neither a Wilson-width guarantee nor a power calculation for comparing versions.",
+    "No sequential experiment, multiplicity-controlled evaluation, provider call, or production-risk measurement was run."
+  ]
+}

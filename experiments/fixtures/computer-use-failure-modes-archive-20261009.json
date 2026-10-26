@@ -1,0 +1,105 @@
+{
+  "fixtureVersion": "computer-use-failure-modes-archive-summary-v1",
+  "observedAt": "2026-10-20",
+  "sourceReferences": [
+    {
+      "path": "verify-output/cu-failures.py",
+      "sha256": "aa7c84d0baf108f57c3e0be14299e34a3fa9038466ae8d6d6ca91ccc899abb09",
+      "note": "ignored historical harness source; inspected statically, never executed during this review"
+    },
+    {
+      "path": "verify-output/insert-cu3.mjs",
+      "sha256": "ba6d880c6caf566088495444e52f4ef7b97b7956d8c7c4ff035c9f93607e8516",
+      "note": "ignored historical insertion script containing archived output summary"
+    }
+  ],
+  "limitations": [
+    "No original per-turn provider requests/responses, model routing trace, click coordinates, or final stored field values are present.",
+    "The archived output labels are scorer outputs, not verified task-success observations."
+  ],
+  "runs": [
+    {
+      "variant": "tiny",
+      "configuredRuns": 4,
+      "stepCap": 12,
+      "archivedLabels": [
+        "pass",
+        "fail",
+        "fail",
+        "pass"
+      ],
+      "tokenTotals": [
+        5015,
+        19209,
+        26568,
+        5027
+      ],
+      "missDistances": [
+        [
+          39,
+          40,
+          39,
+          39,
+          39
+        ],
+        [
+          41,
+          41,
+          43,
+          42,
+          43,
+          45,
+          323
+        ]
+      ],
+      "missMetric": "distance from click coordinate to nearest registered element center; click coordinates not retained"
+    },
+    {
+      "variant": "decoy",
+      "configuredRuns": 2,
+      "stepCap": 12,
+      "archivedLabels": [
+        "pass",
+        "pass"
+      ],
+      "tokenTotals": [
+        5024,
+        5041
+      ],
+      "actionSequencesRetained": false
+    },
+    {
+      "variant": "noop",
+      "configuredRuns": 1,
+      "stepCap": 8,
+      "archivedLabels": [
+        "fail"
+      ],
+      "tokenTotals": [
+        11827
+      ],
+      "actionSequence": "click:name -> type -> click:email -> type -> click:submit x4"
+    }
+  ],
+  "harnessFacts": {
+    "scoreExpression": "st[\"done\"] and st[\"v\"][\"name\"] == \"Zhang San\"",
+    "completionPredicate": "done is set when name and email are truthy; exact expected email is not checked",
+    "emptyClickFeedback": "Clicked empty space.",
+    "noopSubmitEffect": "no state change; no error rendered",
+    "variants": [
+      "normal",
+      "tiny",
+      "decoy",
+      "noop"
+    ],
+    "swapVariantPresent": false,
+    "environmentPrerequisites": [
+      "Pillow",
+      "font file at configured path",
+      "network",
+      "VERIFY_MODEL",
+      "ANTHROPIC_BASE_URL",
+      "ANTHROPIC_AUTH_TOKEN"
+    ]
+  }
+}

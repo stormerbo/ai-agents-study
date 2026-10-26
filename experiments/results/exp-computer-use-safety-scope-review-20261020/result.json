@@ -1,0 +1,21 @@
+{
+  "experimentId": "exp-computer-use-safety-scope-review-20261020",
+  "runId": "review-2026-10-20-01",
+  "evidenceType": "deterministic-local",
+  "observedAt": "2026-10-20",
+  "method": "Run the tracked offline safety-scope verifier. It compiles and executes the complete Guard fence without provider or desktop calls, tests budget preflight/usage overrun, the observation threshold, default-deny action shape and one-time task/action-bound approval references, and checks lesson/metadata claim wording.",
+  "observations": {
+    "status": "pass",
+    "testsPassed": 13,
+    "testsFailed": 0,
+    "testCount": 13,
+    "providerCalls": 0,
+    "model": "static lesson and local policy model audit",
+    "trace": "Budget gate runs before provider call; actual overrun blocks the returned action; three adjacent equal comparisons stop on observation four; unknown action is denied; approval is task/action-bound and single-use."
+  },
+  "limitations": [
+    "The verifier exercises only the local teaching model. It does not call a provider, control a browser/desktop, verify screenshots/coordinates against a real UI, or execute business side effects.",
+    "Approval references are trusted-host inputs in the example; the code does not authenticate approvers, enforce expiry/revocation, or provide atomic consumption across processes.",
+    "No production IdP, app authorization, sandbox isolation, provider usage accounting, concurrent budget reservation, logging pipeline, or recovery path was tested."
+  ]
+}
