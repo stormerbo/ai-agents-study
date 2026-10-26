@@ -14,11 +14,11 @@ status: drafting
 
 | 层次 | 内容 | 能不能序列化 |
 |---|---|---|
-| **消息历史** | 模型看到的所有消息 | 能，就是一个 JSON 数组 |
-| **进度位置** | 走到第几步、完成到哪 | 能，一个整数或状态名 |
-| **外部副作用** | 已经写进数据库/文件/支付系统的东西 | **不能回滚**，这才是麻烦的来源 |
+| **消息历史** | 模型看到的请求/响应与工具往返 | 规范化后通常可序列化；多模态内容可能要存对象引用，且格式受 provider/schema 版本影响 |
+| **进度位置** | 走到第几步、完成到哪 | 通常可存为步骤、状态和版本化检查点 |
+| **外部副作用** | 已经写进数据库/文件/支付系统的东西 | 外部效果不会随本地 checkpoint 自动回滚；可否补偿或查询要看下游能力 |
 
-前两个是「你的状态」，第三个是「世界的状态」。断点恢复的难点全部来自第三个 —— 因为**你的状态可以恢复到任意时间点，世界的状态不能。**
+前两项描述的是宿主已记录的状态，第三项是外部系统已经发生的事实。恢复可以重放本地数据，却不能自动把数据库、支付服务或邮件收件箱回到旧时刻；具体操作可能有补偿、查询或幂等重放接口，必须按下游契约处理。
 
 ## 实测：状态落盘和副作用之间的缝
 
@@ -37,7 +37,7 @@ status: drafting
 
 **朴素版把 u2 写了两遍。** 原因很直白：崩溃时副作用已经发生了（u2 已写入），但进度还停在「第 1 步完成」，所以恢复后循环重做了第 2 步 —— 而重做意味着再写一次。
 
-这就是分布式系统里那个老问题（「至少一次」语义）在 agent 循环里的形态。它和消息队列、定时任务里的重复投递是同一件事，只是换了个场景。
+在这个特定崩溃点，恢复逻辑会再次尝试第 2 步，所以这次操作呈现 at-least-once 重放。它不证明所有 agent 执行都有相同投递语义；关键取决于副作用与 checkpoint 的提交顺序。若改成先推进 checkpoint 再做副作用，则可能漏做操作。
 
 ## 这里有一个我差点报错的测量陷阱
 
@@ -51,21 +51,21 @@ status: drafting
 
 教训可以写得很具体：**当你测的是「有没有重复」时，计数方式必须能表达重复。** 集合、去重、distinct count —— 这些默认行为都会把重复吃掉。
 
-## 三种解法，按代价排序
+## 三类恢复策略与适用边界
 
 知道了问题的形状，解法就清楚了。
 
-**一、让副作用幂等（推荐）。** 工具内部先查再做：如果这个 id 已经存在，直接返回成功，不做第二次写入。实测里幂等版就是 3 条，一次重复都没有。
+**一、让接收方按稳定操作键幂等处理。** 本地教学脚本在单进程顺序执行下先查 id 再写；生产环境不能把“先查再插入”当作并发安全保证。若副作用与业务记录在同一数据库，可用唯一约束/原子 upsert，并在同一事务保存首次结果；若副作用发生在外部 API，必须确认该接收方支持幂等键或提供可查询的操作状态。重试要复用同一个操作键与相同参数，不能每次生成新键。
 
-这是首选方案，因为它的复杂度在工具内部，不在循环里 —— 循环可以放心重试。代价是**每个有副作用的工具都要单独处理**，而且需要一个稳定的业务键（比如订单号），不能依赖自增 id。
+这是常用的首选路线，但它不等于跨系统 exactly-once。幂等键需绑定到业务操作并保存足够长时间；模型返回的 `tool_use.id` 只用于协议结果配对，不应默认充当持久的业务幂等键。
 
-**二、先记意图，再执行（两阶段）。** 执行前先把「我打算做 X」落盘，执行后再标「已完成」。恢复时如果看到「意图存在但未完成」，就知道这一步的状态**未知** —— 这时不要盲目重试。
+**二、先持久化意图，再做对账。** 发出副作用前记录操作键、不可变参数摘要和 `pending` 状态；得到可确认结果后再记录 `succeeded` 或确定失败。若进程在两者之间崩溃，状态应是 `outcome_unknown`，先查询下游或用同一幂等键对账，不要把“记录了意图”误当成已执行，也不要盲目换键重试。
 
-这个方案更严谨，但要多写一个状态字段，而且要处理「未知」状态。第 4 章实测过这个场景：当工具返回「状态未知」时，模型会主动不重试并说明理由 —— 因为重复执行有副作用。这是模型在这一点上做对了的一个例子。
+意图记录并不会自动与外部系统形成两阶段提交；除非两边共享原子事务或协议，否则仍有“外部效果已发生、回执未落盘”的窗口。无法确认时应暂停任务、报告结果未知并交由对账流程处理。第 4 章一次模型响应选择了不重试，但这只是该样本的行为观察，不能作为防重复的控制措施。
 
-**三、用去重表。** 每次执行前查一张「已处理过的操作 id」表。它本质上是把幂等性抽出来做成通用的，好处是工具本身不用改。代价是你多了一个需要维护的基础设施。
+**三、使用操作账本/去重表。** 它可以保存 operation key、参数 hash、状态和首次结果，供重试与恢复查询。但如果账本与外部副作用不在同一原子边界、下游也不识别该 key，单有一张本地表仍解决不了跨系统崩溃窗口。
 
-三种方案里，**方案一的性价比最高**，因为它的成本落在「写工具的时候顺手做掉」，而不是运行时的额外依赖。
+方案选择取决于副作用在哪个系统、接收方是否支持幂等键、能否查询/补偿，以及不可判定时由谁处理；不存在对所有工具都最省的单一方案。幂等键还必须绑定不可变参数：同一 key、同一参数才可返回首次结果；同一 key 携带不同参数应明确冲突，不能静默当作成功。
 
 <Mermaid
   chart={`
@@ -92,9 +92,9 @@ flowchart TB
 - 工具调用的记录（调了什么、结果是什么）
 - 进度位置
 
-而不是「当前的 Python 对象」「当前的栈」。理由是前者跨版本兼容（你明天改了代码，还能恢复昨天的任务），后者只要代码一变就失效。
+而不是「当前的 Python 对象」「当前的栈」。序列化数据更容易迁移，但并不自动获得跨版本兼容；恢复时仍要检查 schema、工具定义、提示版本、provider/model 与执行策略是否兼容。
 
-具体一点：**消息历史本身就是一个很好的持久化格式** —— 它是 JSON、是协议层的结构、不依赖你的代码。恢复时把它读回来继续即可。这也是为什么第 10 章说「工具定义跨范式复用」：消息格式是稳定的那一层。
+消息历史可以作为持久化的一部分，但不能独立代表完整执行状态，也不是永远稳定的通用格式。多模态 payload 可能要保存不可变对象引用，provider 的 tool-use block 受 API 版本约束；应给 checkpoint 标记 schema/version，并保存模型、工具 schema、prompt/policy 版本和 operation ledger。部署升级时先迁移或拒绝恢复不兼容任务，再继续执行。
 
 ## 恢复之后，模型会知道发生了什么吗
 
@@ -102,72 +102,49 @@ flowchart TB
 
 最差的做法是只恢复进度位置，让模型从「第 N 步」重新开始 —— 它会发现自己在没有前文的情况下被要求继续，于是要么重做前面的步骤，要么困惑。
 
-正确的做法是**把完整消息历史一起恢复**。这样模型看到的是「前面已经查过北京和上海，现在轮到第三步」，它不会重复前面的工作。
+恢复兼容的消息历史能让模型理解之前的对话，但不保证它不会再次提出相同动作，更不保证外部副作用不重复。宿主还要恢复 operation ledger，并在重新 dispatch 前对账或校验幂等键。
 
 但这里有一个例外情况需要处理：**崩溃那一刻的那一轮，可能已经执行了工具但没回填结果。** 这时消息历史里有一个 `tool_use` 块，却没有对应的 `tool_result`。
 
-这个状态在协议层是非法的 —— 直接发出去会得到 400（第 4 章实测过「漏 tool_result」的报错）。所以恢复逻辑必须处理它，两种做法：
+对 Anthropic Messages API 而言，`tool_result` 必须在紧随 `tool_use` assistant 消息的下一条 user 消息中按 `tool_use_id` 配对；缺失时请求会因 transcript 不完整而返回 400。这个协议错误说明“不能直接续传该 transcript”，但不代表应伪造成功/失败结果，或把恢复选择交给模型。应先查操作账本和下游状态：确认成功后回填真实结果；确认未执行后才可以用相同的持久操作键重试；若仍不可判定，就暂停模型续跑并报告 `outcome_unknown`。只有工具是只读，或接收方确认支持同一操作键的幂等重试时，才考虑重放未完成动作；截断 assistant turn 本身不能防止模型再次发出动作。
 
-- **补一条 tool_result**，内容说明「这一步的状态未知，请勿重复执行有副作用的操作」
-- **把那一轮整段截掉**，从上一个完整的往返继续
+### 恢复时遇到悬空 tool_use：先对账，别伪造结果
 
-第一种更诚实，也更安全 —— 它把「未知」这个事实交给了模型，而第 4 章实测过模型面对「状态未知」时的判断是正确的（它会主动不重试）。第二种更简单，但有风险：如果那个操作其实已经生效了，截掉之后模型会重新做一遍。
+Anthropic Messages API 要求每个 client-side `tool_use` 都由紧随其后的 user message 中对应 `tool_result` 回答；存在多项时，结果块必须排在这条 user message 的其他文本之前。漏结果可能得到 400。`tool_result.is_error=true` 表示工具结果被标记为错误；它本身不证明副作用一定没有发生。比如请求超时或连接中断时，下游可能已提交操作，但宿主没收到确认。应按下游契约查询或用相同业务键对账；不能为了让 transcript 通过校验，就伪造一条“状态未知”的结果并把它交给模型：模型可能继续调用，提示词也不能阻止宿主执行副作用。
 
-选哪一种，取决于你能不能接受重复。如果能（操作幂等），选简单的那种；如果不能，选诚实的那种。
+恢复时要先检查持久化的 operation key 和下游状态。确认已成功，就回填持久化的真实结果；确认未执行，才可按相同操作键和参数重试；若结果无法查明，就暂停 provider 对话并向调用方报告 `outcome_unknown`，进入人工或后台对账。删除未完成的 assistant turn 也不能单独解决风险：重新问模型可能再次产生动作，宿主仍须用稳定操作键阻止重复效果。
 
-### 把「补一条 tool_result」写成代码
-
-下面这段是自包含的（示例：构造数据，未实跑 —— 崩溃现场是脚本构造的；脚本本身本次已跑通）。它读回一份「工具执行完、结果还没写回就崩了」的消息历史，扫描出孤立的 `tool_use`，再补一条说清状态未知的 `tool_result`：
+下面的本地 helper 只检查对话末尾是否有尚未配对的 client tool calls；它不执行副作用、不生成假的 `tool_result`，也不保证此前整段 history 都合法：
 
 ```python
-"""崩溃恢复：读回完整消息历史，修补孤立的 tool_use。
-
-场景：assistant 发出了 tool_use，工具也执行了，但 tool_result 还没写回就崩了。
-自包含，不需要凭据。
-实跑状态：2026-10-12。
-"""
-import json
-
-STATE = "al-messages.json"
+"""识别对话末尾未配对的 client-side tool_use；不伪造工具结果。"""
 
 
-def save(messages):
-    with open(STATE, "w") as f:
-        json.dump(messages, f, ensure_ascii=False)
+def content_blocks(message):
+    content = message.get("content")
+    return content if isinstance(content, list) else []
 
 
-def load():
-    return json.load(open(STATE))
-
-
-def orphan_tool_uses(messages):
-    """哪些 tool_use.id 在后续消息里找不到对应的 tool_result？"""
-    answered = set()
-    for m in messages:
-        c = m.get("content")
-        if isinstance(c, list):
-            for b in c:
-                if isinstance(b, dict) and b.get("type") == "tool_result":
-                    answered.add(b["tool_use_id"])
-    orphans = []
-    for m in messages:
-        c = m.get("content")
-        if m.get("role") == "assistant" and isinstance(c, list):
-            for b in c:
-                if isinstance(b, dict) and b.get("type") == "tool_use" and b["id"] not in answered:
-                    orphans.append(b)
-    return orphans
-
-
-def repair(messages):
-    """给孤立的 tool_use 补一条 tool_result，内容说明状态未知。"""
-    orphans = orphan_tool_uses(messages)
-    if not orphans:
-        return messages, []
-    patch = [{"type": "tool_result", "tool_use_id": b["id"],
-              "content": "上一步的状态未知：工具可能已经执行，请勿重复执行有副作用的操作。"}
-             for b in orphans]
-    return messages + [{"role": "user", "content": patch}], patch
+def trailing_unanswered_tool_uses(messages):
+    """返回 transcript 尾部 assistant turn 中尚未配对的 tool_use blocks。"""
+    if not messages:
+        return []
+    last = messages[-1]
+    if last.get("role") == "assistant":
+        uses = [b for b in content_blocks(last)
+                if isinstance(b, dict) and b.get("type") == "tool_use"]
+        answered_ids = set()
+    elif (last.get("role") == "user" and len(messages) >= 2
+          and messages[-2].get("role") == "assistant"):
+        uses = [b for b in content_blocks(messages[-2])
+                if isinstance(b, dict) and b.get("type") == "tool_use"]
+        answered_ids = {
+            b.get("tool_use_id") for b in content_blocks(last)
+            if isinstance(b, dict) and b.get("type") == "tool_result"
+        }
+    else:
+        return []
+    return [b for b in uses if b.get("id") not in answered_ids]
 
 
 if __name__ == "__main__":
@@ -175,42 +152,28 @@ if __name__ == "__main__":
         {"role": "user", "content": "创建订单 ORD-1"},
         {"role": "assistant", "content": [
             {"type": "tool_use", "id": "call_00_ORD1", "name": "create_order",
-             "input": {"id": "ORD-1"}}]},
+             "input": {"id": "ORD-1"}}
+        ]},
     ]
-    save(crashed)
-    msgs = load()
-    print("恢复时读回的消息条数：%d" % len(msgs))
-    print("孤立 tool_use：%s" % [b["id"] for b in orphan_tool_uses(msgs)])
-    msgs, patch = repair(msgs)
-    print("补完后共 %d 条消息，最后一条：" % len(msgs))
-    print(json.dumps(msgs[-1], ensure_ascii=False, indent=2))
+    pending = trailing_unanswered_tool_uses(crashed)
+    print("未配对 tool_use：%s" % [b["id"] for b in pending])
+    print("恢复动作：先按持久化 operation key 对账；未确认前不继续请求模型")
 ```
 
-实跑输出（2026-10-12）：
+示例输出：
 
 ```text
-恢复时读回的消息条数：2
-孤立 tool_use：['call_00_ORD1']
-补完后共 3 条消息，最后一条：
-{
-  "role": "user",
-  "content": [
-    {
-      "type": "tool_result",
-      "tool_use_id": "call_00_ORD1",
-      "content": "上一步的状态未知：工具可能已经执行，请勿重复执行有副作用的操作。"
-    }
-  ]
-}
+未配对 tool_use：['call_00_ORD1']
+恢复动作：先按持久化 operation key 对账；未确认前不继续请求模型
 ```
 
-补完之后这份历史就合法了：每个 `tool_use.id` 都有对应的 `tool_result.tool_use_id`（判据见第 1 节那条 400）。**注意补进去的是「状态未知」，不是「成功」或「失败」** —— 因为你确实不知道。
+对话格式合法只是继续请求的必要条件，不是副作用安全保证。安全判据来自宿主的持久 operation ledger、接收方幂等能力和对账结果；`tool_use.id` 只用于把结果配回模型协议。
 
 ## 完整可运行代码
 
-> 说明：下面这个实验为了把变量隔离干净，**只把 `step` 落盘** —— 那是为了暴露「副作用 vs 进度」这条缝，不是推荐的持久化格式。真实系统要按上一节存完整消息历史，恢复逻辑见上一小节的代码。
+> 说明：下面这个实验为了把变量隔离干净，**只把 `step` 落盘** —— 那是为了暴露「副作用 vs 进度」这条缝，不是推荐的持久化格式。真实系统需要版本化 checkpoint、消息/策略快照和 operation ledger。恢复数据还要与当前工具定义和 provider schema 做兼容检查。
 
-下面这个脚本就是上面那张表的来源。它跑两次：一次朴素版、一次幂等版，都在同一个位置注入崩溃。
+下面这个脚本就是上面那张表的来源。它用脚本化策略跑两次：一次朴素版、一次用本地文件查重的幂等演示，都在同一个位置注入崩溃。两个文件都创建在脚本自己的临时目录中，运行结束自动清理，不会覆盖当前目录里同名文件。教学版按 id 读取首次记录：相同 id 和相同 JSON payload 去重；同 id 携带不同 payload 时返回冲突。比较时用排序键后的 JSON 表示，避免 Python 把 `True` 与 `1` 当作相等。第二种实现仍是单进程、顺序运行的教学代码；文件扫描再追加不是并发安全的生产幂等方案。
 
 ```python
 """断点恢复实验：副作用发生了，但状态还没落盘 —— 恢复之后会重复吗？
@@ -218,12 +181,13 @@ if __name__ == "__main__":
 这个实验用**脚本化的动作策略**（不是真模型），因为要测的是循环骨架的行为，
 而不是模型的行为。策略固定，结果完全可复现。
 
-实跑状态：2026-10-09。
+本版本于 2026-10-21 在 Python 3.14.7 本地复跑；它验证当前确定性夹具，不是复现 2026-10-09 历史环境。
 """
-import json, os
+import json, os, tempfile
 
-RECORDS = "al-records.jsonl"
-STATE = "al-state.json"
+# The demo assigns both paths inside a private temporary directory in main().
+RECORDS = None
+STATE = None
 
 PLAN = [("create_record", {"id": "u1", "name": "张三"}),
         ("create_record", {"id": "u2", "name": "李四"}),
@@ -242,10 +206,12 @@ def append_record(rec_id, name):
         f.write(json.dumps({"id": rec_id, "name": name}, ensure_ascii=False) + "\n")
 
 
-def existing_ids():
+def existing_records():
     if not os.path.exists(RECORDS):
-        return set()
-    return {json.loads(l)["id"] for l in open(RECORDS) if l.strip()}
+        return {}
+    with open(RECORDS, encoding="utf-8") as f:
+        return {record["id"]: record for line in f if line.strip()
+                for record in [json.loads(line)]}
 
 
 def line_count():
@@ -255,11 +221,20 @@ def line_count():
     return sum(1 for l in open(RECORDS) if l.strip())
 
 
+def canonical_json(value):
+    """比较 JSON payload 时区分 true 与 1，并忽略对象键顺序。"""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
 def tool_create_record(args, idempotent):
-    """幂等版：同一个 id 只写一次。朴素版：每次都写。"""
+    """幂等版：同一个 id 和相同参数只写一次；参数冲突时明确拒绝。"""
     if idempotent:
-        if args["id"] in existing_ids():
-            return {"ok": True, "deduped": True}
+        payload = {"id": args["id"], "name": args["name"]}
+        existing = existing_records().get(payload["id"])
+        if existing is not None:
+            if canonical_json(existing) == canonical_json(payload):
+                return {"ok": True, "deduped": True}
+            return {"ok": False, "error": "idempotency key reused with different payload"}
     append_record(args["id"], args["name"])
     return {"ok": True, "deduped": False}
 
@@ -285,6 +260,8 @@ def run(crash_at=None, idempotent=False, label=""):
             save_state(step + 1, step + 1)
             break
         res = tool_create_record(args, idempotent)
+        if not res["ok"]:
+            raise RuntimeError(res["error"])
         # ⚠️ 副作用已经发生，但状态还没落盘 —— 此刻崩溃
         if crash_at is not None and step == crash_at:
             print("    💥 在工具执行后、状态落盘前崩溃（第 %d 步）" % (step + 1))
@@ -294,28 +271,44 @@ def run(crash_at=None, idempotent=False, label=""):
     return "done"
 
 
-if __name__ == "__main__":
-    print("任务：创建 3 条记录（u1/u2/u3），工具在第 2 步执行后、状态落盘前崩溃")
-    print()
-    for idem in (False, True):
-        reset()
-        tag = "幂等版" if idem else "朴素版"
-        print("=== %s ===" % tag)
-        r1 = run(crash_at=1, idempotent=idem)
-        after_crash = line_count()
-        print("    崩溃后盘面记录数：%d，已落盘的进度：第 %d 步" % (after_crash, load_state()))
-        r2 = run(idempotent=idem)
-        final = line_count()
-        print("    恢复并跑完：%s，最终记录数：%d" % (r2, final))
-        lines = [json.loads(l) for l in open(RECORDS) if l.strip()]
-        print("    实际写入序列：%s" % [x["id"] for x in lines])
-        print("    期望 3 条 → %s" % ("✅ 没有重复" if final == 3 else "❌ 重复了 %d 条" % (final - 3)))
+def main():
+    global RECORDS, STATE
+    # 碰撞安全：脚本只在自己创建的临时目录中写入，并在退出时清理。
+    with tempfile.TemporaryDirectory(prefix="agent-state-resume-") as temp_dir:
+        RECORDS = os.path.join(temp_dir, "records.jsonl")
+        STATE = os.path.join(temp_dir, "state.json")
+        print("任务：创建 3 条记录（u1/u2/u3），工具在第 2 步执行后、状态落盘前崩溃")
         print()
+        for idem in (False, True):
+            reset()
+            tag = "幂等版" if idem else "朴素版"
+            print("=== %s ===" % tag)
+            r1 = run(crash_at=1, idempotent=idem)
+            after_crash = line_count()
+            print("    崩溃后盘面记录数：%d，已落盘的进度：第 %d 步" % (after_crash, load_state()))
+            r2 = run(idempotent=idem)
+            final = line_count()
+            print("    恢复并跑完：%s，最终记录数：%d" % (r2, final))
+            with open(RECORDS, encoding="utf-8") as f:
+                lines = [json.loads(line) for line in f if line.strip()]
+            print("    实际写入序列：%s" % [x["id"] for x in lines])
+            print("    期望 3 条 → %s" % ("✅ 没有重复" if final == 3 else "❌ 重复了 %d 条" % (final - 3)))
+            print()
+        conflict = tool_create_record({"id": "u1", "name": "不同参数"}, idempotent=True)
+        print("同 id + 不同参数：%s" % conflict)
+
+
+if __name__ == "__main__":
+    main()
+
+
 ```
 
-实跑输出（2026-10-09）：
+本地复跑输出（2026-10-21，Python 3.14.7）：
 
 ```text
+任务：创建 3 条记录（u1/u2/u3），工具在第 2 步执行后、状态落盘前崩溃
+
 === 朴素版 ===
     💥 在工具执行后、状态落盘前崩溃（第 2 步）
     崩溃后盘面记录数：2，已落盘的进度：第 1 步
@@ -324,10 +317,13 @@ if __name__ == "__main__":
     期望 3 条 → ❌ 重复了 1 条
 
 === 幂等版 ===
+    💥 在工具执行后、状态落盘前崩溃（第 2 步）
     崩溃后盘面记录数：2，已落盘的进度：第 1 步
     恢复并跑完：done，最终记录数：3
     实际写入序列：['u1', 'u2', 'u3']
     期望 3 条 → ✅ 没有重复
+
+同 id + 不同参数：{'ok': False, 'error': 'idempotency key reused with different payload'}
 ```
 
 ## 常见坑
@@ -336,5 +332,6 @@ if __name__ == "__main__":
 - **用去重计数验证「有没有重复」。** 实测里我因此把「重复写入 u2」看成了「3 条正常」。测重复就要用能表达重复的计数方式。
 - **在循环里做幂等，而不是在工具里。** 幂等的复杂度属于工具，放在循环里会让循环开始知道业务。
 - **依赖自增 id 做业务键。** 重试时你会拿到一个新的自增 id，去重立刻失效。业务键必须是任务本身稳定的东西。
-- **把内存快照当状态持久化。** 代码一改就失效。存消息历史这种协议层结构才能跨版本恢复。
-- **崩溃恢复后盲目重放。** 如果工具有副作用且状态未知，正确的动作是暂停并报告，而不是重试 —— 第 4 章实测过模型在这种情况下的判断是对的。
+- **把内存快照当状态持久化。** 代码一改就可能失效；可序列化不等于跨版本兼容，要带 schema、prompt、工具与 provider 版本并执行恢复迁移。
+- **把消息历史当作副作用账本。** transcript 说明模型提出了什么和宿主回填了什么，不证明下游是否已经提交效果。
+- **崩溃恢复后盲目重放。** 如果副作用状态未知，应由宿主查询、按同一持久操作键幂等重放，或暂停报告；模型曾有一次不重试的观察不能充当防重复控制。

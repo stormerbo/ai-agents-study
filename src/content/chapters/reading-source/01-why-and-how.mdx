@@ -1,52 +1,54 @@
 ---
 lesson: reading-source/why-and-how
-title: 为什么读到一定阶段必须读源码
+title: 什么时候该读源码，以及怎样核实实现边界
 status: drafting
 ---
 
-前面二十章讲的都是「怎么用」。这一章讲一个不同的技能：**怎么读它的实现。**
+前面的章节讲的是「怎么用」。这一章讲一个不同的技能：**什么时候需要读实现，以及怎样把问题查清楚。**
 
 ## 一个具体的例子
 
-先说一个真实发生的修正。
+本节用 LangChain Core 0.3.63 的固定示例说明：文档说明、字段 schema 与运行时校验是不同层次。相关源码与完整复现见本节代码和第 3 节的追踪。
 
 先说四个词，因为这一节的结论全部建立在它们的区别上：
 
-- **JSON schema**（本节简称 schema）：一份随请求发给模型的**工具说明书** —— 参数叫什么、是什么类型、有哪些合法取值、哪些必填。后端类比：接口的 IDL / OpenAPI 定义，区别是它在每次请求时作为一等公民发给模型。
+- **JSON Schema**（本节简称 schema）：描述工具参数形状的一份机器可读定义。某个 provider/endpoint 是否接受相应的 schema 子集、是否在生成阶段约束输出，要以该接口契约为准。后端类比：接口的 IDL / OpenAPI 定义；应用侧仍需在执行工具前校验参数。
 - **文档字符串（docstring）**：写在 Python 函数下面的那段说明文字（三引号包起来），运行时能用 `func.__doc__` 读到。
-- **description**：schema 里那段自然语言说明，来源通常是文档字符串。它是**建议** —— 进的是模型看到的提示，模型可以不听。
-- **enum**：schema 里列出的**取值集合**，比如 `"enum": ["明天", "后天"]`。它和 description 的区别不在语气，在**校验位置**：description 只能靠模型自觉；enum 是一个可以被上层当成约束执行的东西（支持约束解码的端点会在采样阶段直接屏蔽非法取值，见第 5 章第 2 节）。
+- **字段 description**：参数 schema 里的自然语言说明，常由函数文档字符串解析得到。工具自身也可以有单独的工具级 description；两者都能帮助模型理解意图，但不等于模型或宿主已经执行了校验。
+- **enum**：schema 里声明的**取值集合**，例如 `"enum": ["明天", "后天"]`。它比自然语言更便于机器读取；只有在目标端点支持并执行对应约束时，才会影响生成。宿主仍应在工具执行前按业务规则校验。
 
-落到本节：模型想输出「大后天」时会怎样？只有 description 时它可能照写 —— 而且**请求不会报错**，那个非法值会被当成普通字符串传下去，直到你的代码在运行时才炸，或者更糟：静默错。有 enum 时，非法取值在生成阶段就被挡掉。**这就是失败形态：约束缺失不报错，只是把校验推迟到了你身上。**
+落到本节：如果字段只有 description、没有可执行约束，模型仍可能返回「大后天」。若接口没有其它规则，模型输出不会因这条业务要求自动报错；工具宿主必须在副作用发生前校验并拒绝非法值。声明 enum 能让接口以机器可读方式表达范围，但生成期执行与否取决于 endpoint；应用校验仍是本地安全边界。**失败形态是约束遗漏时，问题可能延迟到工具执行才暴露，也可能变成静默业务错误。**
 
 一条边界要记住：**enum 只约束取值，不约束必填** —— 必填由 `required` 表达（第 3、4 节会用到这条）。
 
 第 13 章我测过一件事：用 LangChain 的 `@tool` 装饰器定义一个函数，参数类型是 `str`、文档字符串里写着「只能支持明天或后天」。结果生成的 schema 里，那个参数**只有 `{"type": "string"}`，没有 enum**。
 
-当时的解释是「抽象泄漏」—— 框架丢掉了我写在文档里的约束。这个解释听起来合理，而且和流传的说法一致。
+当时的解释是「抽象泄漏」—— 框架丢掉了我写在文档里的约束。这个解释听起来合理，但它把“没有成为字段 schema”与“文本彻底消失”混成一件事。
 
 这一章我去读了源码，结论要改：
 
 ```text
-@tool 默认 parse_docstring=False（convert.py 里五处重载都是这个默认值）
-  → 写在 Args: 段里的参数说明**根本没被读**
-  → 更糟的是，那段原文还漏进了工具级 description
+@tool 默认 parse_docstring=False
+  → 该固定示例里，参数说明没有进入字段 schema 的 description
+  → 完整 docstring（包括 Args: 段）出现在工具级 description
 
-打开 parse_docstring=True 之后，说明被读到了，进了 description
-  → 但它**仍然没有变成 enum**
-  → 因为 schema 来自 pydantic 的 model_json_schema()（base.py:103）
-     而 pydantic 只能从**类型标注**生成 enum，无法从散文里推断约束
+打开 parse_docstring=True 之后，参数说明进入字段 description
+  → 但它**不会自动变成 enum**
+  → Literal 等类型标注或显式 args_schema 可构造字段约束
+  → model_json_schema() 导出已构造的 Pydantic schema，不是约束的来源
 ```
+
+这里的实现细节固定在 `langchain-core==0.3.63`：[convert.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/convert.py)、[structured.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/structured.py) 与 [base.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/base.py)。`StructuredTool.from_function` 将默认推断分支交给 `create_schema_from_function`，显式 `args_schema` 则复用调用方模型；`tool_call_schema` 形成模型可见字段，`model_json_schema()` 导出已有 schema。固定示例的源码定位由完整复现打印，不能将 `_get_filtered_args` 的定义误当作此处的调用节点。本地四组断言只验证该版本下构造出的 schema 与 description，不测试 endpoint 如何生成或执行约束。
 
 所以真实情况比「抽象泄漏」更具体、也更有用：
 
-- **框架没有丢信息** —— 它提供了解析文档字符串的开关，只是**默认关着**
+- **这个示例并非文本完全消失**：默认路径没有把 Args 参数说明解析为字段 description；这段文本仍出现在本例的工具级 description 中。
 
-- **散文和类型承载的东西不同**：description 来自文档字符串，enum 来自类型标注
+- **说明与约束承担不同职责**：description 传达意图；类型推断或显式 schema 可表达结构化字段约束。
 
-- **把约束写进散文，等于把它从「机器可校验」降级成了「模型可以忽略的提示」**
+- **自然语言说明本身不等于机器校验**：是否在生成阶段执行 enum 约束由目标 endpoint 决定，工具宿主应按业务规则校验最终参数。
 
-三种说法里，只有第三种能指导你改代码：**把约束从散文搬进类型标注。** 前两种都停在"框架不好"这个层面。
+可执行做法是：用 `Literal` 等类型或显式 `args_schema` 表达机器约束，按需要配置 `parse_docstring` 提取参数说明，对最终 schema 写断言，并在工具执行前验证业务条件。
 
 ## 什么时候该读源码
 
@@ -62,7 +64,7 @@ status: drafting
 | **为什么是这样** | "为什么要这样设计？有没有别的选择？" |
 | **能不能改** | "我想让它支持 X，从哪里入手？" |
 
-第一类最常见，而且最容易验证 —— 本节开头那个例子就属于这一类。
+第一类最常见，而且通常能通过固定版本的签名、源码和针对性测试缩小问题范围 —— 本节开头的例子就属于这一类。
 
 ## 三个可以立刻用的方法
 
@@ -74,11 +76,11 @@ inspect.getsourcefile(func)     # 文件路径
 inspect.getsourcelines(func)[1]  # 起始行号
 ```
 
-这个习惯很重要，因为**我上面那些行号（convert.py:23/38/52/66/80、base.py:103）全是用它取出来的，不是背的**。凭记忆写行号一定会错，而错了之后读者去翻会发现对不上，整段论述的可信度就没了。
+这个习惯很重要，因为源码行号会随版本变化。应在目标环境中用 `inspect` 定位，随后阅读相邻上下文并验证调用路径；单独一个 file:line 不能证明结论正确。本节固定版本的行号和对应调用链见第 3 节。
 
 **方法二：从入口往下追，别从目录开始读。** 沿着一次真实的调用往下走（第 3 节会完整演示），每一步只读你需要的那个函数。
 
-**方法三：读之前先写下一个可验证的预测。** 比如「我猜它默认会解析文档字符串」。然后跑一次看结果 —— **预测错了的地方，就是你真正学到东西的地方。** 本节开头那个 `parse_docstring=False` 就是这么发现的：我预测「说明会进 description」，结果它连读都没读。
+**方法三：读之前先写下一个可验证的预测。** 比如「我猜它默认会解析文档字符串」。然后跑一次看结果 —— **预测错了的地方，就是你真正学到东西的地方。** 本节开头那个 `parse_docstring=False` 就是这么发现的：我预测「说明会进 description」，结果它没有把参数说明解析成字段 description；在这个固定示例里，原文仍出现在工具级 description。
 
 <Mermaid
   chart={`
@@ -104,9 +106,9 @@ flowchart TB
 
 读源码还有一个不常被提到的收益：**它让你能判断"哪些说法不可信"。**
 
-第 2 章那个提示注入的实验里，我测出脚本式注入 0/6、内容操纵 6/6 —— 而流传的说法往往是"加个 XML 标签就安全了"。两者的差别不在细节，在**有没有实测**。
+第 2 章曾记录一个小规模提示注入对照。它至多说明该 fixture 下的观察，不能证明某种标签普遍安全；读源码与做实验都要把结论限定在它们实际覆盖的范围。
 
-读源码提供的正是同一类东西：**一手证据**。一段被广泛转载的"某某框架内部会做 X"，读一遍源码通常只要十几分钟，而它的结论可能和你看到的完全不同（就像本节开头那个例子）。
+源码能提供关于特定版本实现的**一手材料**，但读到代码本身不等于运行时行为已验证。对关键路径，应结合固定依赖、断言和目标环境测试；被广泛转载的“框架内部会做 X”仍需按具体版本核实。
 
 ## 一个诚实的提醒
 
@@ -129,13 +131,13 @@ flowchart TB
 
 | 问题 | 为什么文档答不了 | 读源码花多久 |
 |---|---|---|
-| `parse_docstring` 的默认值是啥 | 它在签名里，而文档通常只讲"怎么用" | 1 分钟 |
-| 出错时抛什么异常 | 文档常写"可能抛异常"而不列全 | 5 到 10 分钟 |
-| 这个参数能不能传负数 | 取决于实现里的校验逻辑 | 5 分钟 |
-| 缓存是怎么失效的 | 属于内部机制 | 半小时 |
+| `parse_docstring` 的默认值是啥 | 源码签名与目标版本测试可核对 | 几分钟（视环境而定） |
+| 出错时抛什么异常 | 文档常写“可能抛异常”；需追调用路径或运行测试 | 依赖具体代码路径 |
+| 这个参数能不能传负数 | 查找实现中的输入校验并覆盖边界值 | 依赖验证路径 |
+| 缓存是怎么失效的 | 属于内部机制，需追踪写入/读取/失效路径 | 通常需要更多上下文 |
 | 我该从哪里改 | 文档不写扩展点 | 视情况 |
 
-前三行是**低成本高回报**的一类 —— 通常几分钟就能确认，而不确认就只能靠猜。第四、五行成本高一些，但它们回答的是"为什么"和"怎么改"，价值也更高。
+前三行通常比追完整架构便宜，但具体耗时取决于依赖安装、入口定位和测试条件；第四、五行需要更多上下文。不要把表里的时间当作验收承诺。
 
 **一个实用的起步方式：把你最近一次"猜错"的地方记下来。** 那些地方就是该去读源码的点 —— 因为猜错说明文档没覆盖，而你已经付过一次代价了。
 
@@ -153,46 +155,37 @@ def f(x: str) -> str:
     """
 ```
 
-**这段代码里的 `Args:` 段，在默认配置下是被丢掉的。** 而写它的人以为自己在给模型提供参数说明 —— 因为他读到的大部分示例都这么写。
+**在 `langchain-core==0.3.63` 的这个默认示例中，`Args:` 没有解析到字段 schema。** 由于没有显式提供工具级 description，原文仍可出现在工具 description 中；这不等于字段约束或参数 description 已建立。
 
-这个例子说明一件事：**广泛流传的写法不一定是有效的写法。** 而验证它只要十几分钟（读一眼签名，或者跑一次看 schema）。
+这个例子说明一件事：**广泛流传的写法不一定满足它看上去要表达的契约。** 应检查最终字段 schema 和工具级 description，并验证工具执行前的业务校验。
 
-这也解释了为什么这一章放在最后 —— 它不是新知识，而是一个**验证前面二十章所有说法的方法**。前二十章我尽量标了实测数据，但总有一些地方是引用二手资料的；读源码是补最后那一层的方法。
+这也是把源码阅读安排在已有工程经验之后的原因 —— 它不是新知识，而是一个**按需核实实现细节的方法**。它不能替代运行测试、官方契约、线上可观测数据或独立复核。
 
 ## 一句可以带走的判据
 
 前面讲了「什么时候该读源码」的三类问题。如果只记一句，记这句：
 
-**当你发现自己在猜某个行为的确切表现时，去读源码。**
+**当你发现自己在猜某个行为的确切表现时，先明确问题，再选择文档、源码、测试或运行观测来核实。**
 
-「猜」的信号很具体：你写了「应该」「大概」「一般来说」这类词；或者你去搜了别人的博客、论坛、issue。这些都不算证据 —— 而读一次签名或跑一次实验，通常只要几分钟。
+「猜」的信号很具体：你写了「应该」「大概」「一般来说」这类词；或者你去搜了别人的博客、论坛、issue。这些都只是线索 —— 接下来要按问题选择证据：查版本文档、读关联实现、写固定断言，或在目标环境跑实验。它们通常比无边界地读完整代码目录更聚焦。
 
-**反过来，如果你没有在猜（文档已经说清楚了），那就不必读。** 这一章讲的是按需使用的技能，不是必须完成的美德。## 完整可运行代码
+**反过来，如果你没有在猜（文档已经说清楚了），那就不必读。** 这一章讲的是按需使用的技能，不是必须完成的美德。
 
-下面这段代码演示三个方法里的第一个：用 inspect 从任意函数取真实文件与行号，并沿着 LangChain 的 `@tool` 追出三层调用链。
+## 完整可运行代码
 
-代码里那行 `split("site-packages/")[-1]` 是为了把冗长的安装路径截短：第三方包都装在 `site-packages` 目录下，所以只保留它后面的相对路径；**如果被检查的函数来自你自己的项目（路径里没有 `site-packages`），`split` 找不到分隔符就原样返回完整路径**，不会报错。这块第 5 节会再遇到一次。
+下面脚本复核四种 schema 构造方式，并用 `inspect` 定位当前安装版本的入口。它固定检查 `langchain-core==0.3.63`；换版本时应先更新断言，再重新审阅相应源码。**实跑状态：** 2026-10-22，在固定 Python 3.14.7 环境执行通过。
 
 ```python
-"""沿一次任务读到底：@tool 是怎么把函数变成 JSON schema 的。
-
-第 13 章测出一个现象：@tool 生成的 schema 里 day 只有 {"type": "string"}，没有 enum ——
-尽管文档字符串写了「只支持明天或后天」。当时我把它记成了「抽象泄漏」。
-
-读了源码之后，结论要**修正**，而且比原来更具体。下面这组对照是这次读源码的产出。
-
-环境：langchain_core 0.3.63 / langchain 0.3.7。实跑状态：2026-10-09。
-"""
-import inspect, json
+"""Compare LangChain tool descriptions and JSON Schema fields."""
+import inspect
+import json
+from importlib.metadata import version
 from typing import Literal
 
+from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
-DOC = """查天气。
-
-Args:
-    day: 只能是「明天」或「后天」
-"""
+assert version("langchain-core") == "0.3.63", version("langchain-core")
 
 
 @tool
@@ -225,49 +218,49 @@ def c_literal(day: Literal["明天", "后天"]) -> str:
     return day
 
 
-def summary(t):
-    return t.args_schema.model_json_schema()["properties"]["day"]
+class ExplicitDay(BaseModel):
+    day: Literal["明天", "后天"] = Field(description="显式 schema 的日期")
 
 
-if __name__ == "__main__":
-    print("=== 一、调用链（file:line 由 inspect 取真实位置）===")
-    from langchain_core.tools import base as base_mod, convert as convert_mod
-    for label, fn in [("装饰器入口", convert_mod.tool),
-                      ("建 schema", base_mod.create_schema_from_function),
-                      ("取 properties", base_mod._get_filtered_args)]:
-        src = inspect.getsourcefile(fn).split("site-packages/")[-1]
-        print("  %-14s %s:%d" % (label, src, inspect.getsourcelines(fn)[1]))
-    print()
+@tool(args_schema=ExplicitDay)
+def d_explicit(day: str) -> str:
+    """查天气。"""
+    return day
 
-    print("=== 二、参数 schema 对照 ===")
-    rows = [
-        ("A day: str，默认", a_default),
-        ("B day: str，parse_docstring=True", b_parsed),
-        ("C day: Literal[...]，True", c_literal),
-    ]
-    for label, t in rows:
-        print("  %-32s %s" % (label, json.dumps(summary(t), ensure_ascii=False)))
-    print()
 
-    print("=== 三、工具级 description（前 30 字）===")
-    for label, t in rows:
-        d = (t.description or "（空）").replace(chr(10), " / ")[:34]
-        print("  %-32s %s" % (label, d))
-    print()
+def field_schema(tool_):
+    return tool_.tool_call_schema.model_json_schema()["properties"]["day"]
 
-    print("=== 结论 ===")
-    print("  1. parse_docstring 默认是 False（convert.py:23/38/52/66/80 五处重载）")
-    print("     → 写在 Args: 段里的参数说明**被静默丢弃**，而且原文还漏进了工具级 description。")
-    print("  2. 打开 parse_docstring 之后，那句「只能是明天或后天」进了 description ——")
-    print("     但**仍然没有变成 enum**。散文只能生成 description，生成不了约束。")
-    print("  3. 只有类型标注（Literal）能生成 enum。LangChain 在 base.py:103 用")
-    print("     pydantic 的 model_json_schema() 取 schema，约束完全由类型决定。")
-    print()
-    print("  所以第 13 章那个现象更准确的解释是：")
-    print("    **约束写在散文里，就等于把它从「机器可校验」降级成了「模型可以忽略的提示」。**")
-    print("    这不是框架丢了信息 —— 是 prose 和 type 承载的东西不同：")
-    print("      description ← 文档字符串    enum/range/pattern ← 类型标注")
+
+assert "description" not in field_schema(a_default)
+assert "Args:" in (a_default.description or "")
+assert "只能是「明天」或「后天」" in (a_default.description or "")
+assert field_schema(b_parsed).get("description") == "只能是「明天」或「后天」"
+assert "enum" not in field_schema(b_parsed)
+assert field_schema(c_literal)["enum"] == ["明天", "后天"]
+assert field_schema(d_explicit)["enum"] == ["明天", "后天"]
+assert field_schema(d_explicit)["description"] == "显式 schema 的日期"
+
+from langchain_core.tools import base as base_mod, convert as convert_mod
+from langchain_core.tools import structured as structured_mod
+for label, fn in [
+    ("@tool", convert_mod.tool),
+    ("StructuredTool.from_function", structured_mod.StructuredTool.from_function),
+    ("create_schema_from_function", base_mod.create_schema_from_function),
+    ("get_input_schema", base_mod.BaseTool.get_input_schema),
+    ("tool_call_schema", base_mod.BaseTool.tool_call_schema.fget),
+]:
+    print(label, inspect.getsourcefile(fn), inspect.getsourcelines(fn)[1])
+for label, registered_tool in [("A default", a_default), ("B parsed", b_parsed),
+                               ("C Literal", c_literal), ("D args_schema", d_explicit)]:
+    print(label, json.dumps(field_schema(registered_tool), ensure_ascii=False))
+print(
+    "default tool description contains Args:",
+    "Args:" in (a_default.description or ""),
+)
 ```
+
+固定版本源码：[convert.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/convert.py) 说明 `parse_docstring` 默认值和入口；[structured.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/structured.py) 与 [base.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/base.py) 展示默认推断、显式 schema、`tool_call_schema` 路径；[Pydantic 文档](https://docs.pydantic.dev/latest/concepts/json_schema/) 说明 `model_json_schema()` 用于导出模型 schema。四组实测的跟踪记录和依赖锁见 `experiments/scripts/verify_reading_source_trace_one_task_review_20261021.py` 与 `experiments/locks/reading-source-compare-py314-macos-arm64-20261021.txt`。
 
 ## 常见坑
 

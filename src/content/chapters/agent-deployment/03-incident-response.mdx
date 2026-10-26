@@ -4,11 +4,9 @@ title: 故障与降级
 status: drafting
 ---
 
-agent 服务出故障时，有一个和普通服务不同的地方：**它往往是"部分坏"，而不是"全坏"。**
+Agent 服务除了进程、网络和上游不可用，还可能出现任务级的部分失败：请求返回成功，但任务没完成、结果不合格，或走了未披露的 fallback。HTTP 200 与健康检查只说明各自定义的协议/存活状态，不等于任务成功；这些情况只有在系统单独记录并监控任务终态、质量信号和降级路径时才会被发现。
 
-一个普通服务的故障形态很干脆：500、超时、连接拒绝。而 agent 的故障更像是：**它还在返回 200，但结果不对、或者慢得离谱、或者偷偷降级了。**
-
-这一节讲怎么识别这些形态，以及怎么降级。
+这一节用一个构造的监控样例说明如何分层诊断和选择降级动作；字段、阈值与告警策略都需要按目标 provider/API、任务风险和服务 SLO 校准。
 
 ## 四类故障形态
 
@@ -17,49 +15,45 @@ agent 服务出故障时，有一个和普通服务不同的地方：**它往往
 | **完全不可用** | 报错、超时 | 最容易——监控能直接看到 |
 | **质量退化** | 200 但结果变差 | 需要评测才能发现（第 15 章） |
 | **静默降级** | 换了模型/工具，但用户不知道 | 系统"正常工作" |
-| **成本或延迟异常** | 能跑通但贵了 10 倍、慢了很多 | 需要专门的指标 |
+| **成本或延迟异常** | 单次或单位任务成本、端到端延迟明显变化 | 按任务类型、版本和实际 usage 对照 |
 
-**第二行和第三行是最危险的。** 因为它们不会触发任何传统的可用性告警 —— 服务健康检查全绿，错误率没变，而实际效果已经变差了。
+质量退化和未上报的静默降级可能不会触发仅检查存活、HTTP 状态或传输错误的告警；如果服务已有任务质量与 fallback 监控，就可能及时发现。不要把“不会触发告警”当成 agent 的固有属性。
 
-## 五个必须监控的指标
+## 六类常用的诊断指标
 
-**先定义两个会在整节出现的字段，它们都来自模型响应体：**
+**先区分 API 协议终态与业务任务终态。** 字段名随 provider/API 变化：[Anthropic Messages](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons) 返回 `stop_reason`，[OpenAI Chat Completions](https://platform.openai.com/docs/api-reference/chat/object) 使用 `finish_reason`；[OpenAI Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create) 用 `status` 与 `incomplete_details` 表达响应状态。输出上限字段也不统一：Anthropic Messages 的 `max_tokens`、Chat Completions 的 `max_completion_tokens`、Responses 的 `max_output_tokens` 只在各自契约内解释；某些模型还会把不可见 reasoning tokens 计入上限。
 
-**`stop_reason` 指的是模型这一次生成"为什么停下"** —— 它是响应里的一个字段，不是你的业务状态。最常见的两个取值是 `end_turn`（正常说完了）与 `max_tokens`（**输出预算用完，回答被截断**）。而 **`max_tokens` 指的是你在请求里设的输出预算上限** —— 那次调用允许生成的最大 token 数，不是模型的能力上限。**这两个字段必须成对看**：只看"回答是空的"会得出"模型不行"，加上 `stop_reason` 才知道是预算设小了。
+这些终态说明一次模型响应如何结束，不证明 agent 任务已满足业务验收。DeepSeek 的 Anthropic 兼容 endpoint 也应按该 endpoint 当前文档和目标模型确认字段语义，不能仅凭兼容报文形状推断它与 Anthropic 完全一致。一个具体差异是 DeepSeek 兼容表将 `tool_result.is_error` 列为忽略；所以不能依赖该字段向这类 endpoint 传递工具失败，而 Anthropic Messages 对 `is_error` 有自己的契约。即便字段有效，它也只描述工具结果状态，不证明副作用未提交。监控时分别记录响应级终态和任务级结果；不要用空文本、HTTP 200 或某一个 provider 的枚举代替任务状态。参见 [DeepSeek Anthropic API 说明](https://api-docs.deepseek.com/guides/anthropic_api/)。
 
-前四章记录过很多具体的失败形态，它们各自指向一个可监控的指标：
+用这些维度定位问题，但把字段、时间窗和分母写进监控定义：
 
-| 指标 | 它揭示什么 | 来自 |
+| 指标 | 它揭示什么 | 注意 |
 |---|---|---|
-| **`stop_reason` 分布** | `max_tokens` 比例上升 = 输出预算不够（第 18 章） | 第 3、7 章踩过 |
-| **单次任务 token 的 P99** | 成本失控、循环没停 | 第 1、18 章 |
-| **连续失败次数** | 卡住了（第 9 章实测过连点 4 次） | 第 11 章 |
-| **工具调用被拒率** | 权限太严，或正在被注入试探（第 16 章） | 第 16 章 |
-| **缓存命中率** | 有人往前缀里加了动态内容（第 18 章） | 第 18 章 |
+| **响应终态分布** | 截断、拒绝、工具交接或正常响应的变化 | API 字段不同；响应终态不等于任务终态 |
+| **逻辑任务 token P99** | 高消耗任务、循环或输入构成变化 | 用对应 API 的 usage，按任务汇总并按任务类型切片 |
+| **任务连续失败** | 某类任务反复未通过 | 用业务验收终态；把重试尝试关联回逻辑任务 |
+| **策略拒绝率** | 授权策略拒绝是否变化 | 单独看 deny reason；不能凭比例判定正在遭受注入 |
+| **缓存 token 复用比例** | 可复用前缀是否产生读取 | 依 provider/API 分别计算读写 usage，避免将缓存读写误当普通输入 |
+| **传输/服务错误率** | 客户端、网关或 provider 请求是否失败 | 与任务质量、业务验收失败分开；显式报告时间窗与请求分母 |
 
-**第一个指标最容易被忽略，而它直接对应一个反复踩过的坑。** 第 3、7、18 章都记录过：模型先思考再回答，输出预算不够时返回**空文本 + `stop_reason` 为 `max_tokens`** —— 看起来像"模型做不到"。如果这个比例在上升，说明上下文变长了或者任务变复杂了，而不是模型变笨了。
+响应终态的价值在于把“传输成功、响应完成、业务任务通过”分开。比如 Anthropic Messages 返回 `stop_reason=max_tokens`，表示该响应触及请求的输出上限；OpenAI Responses 则应按 `status` 与 `incomplete_details` 判断。空文本本身不能说明原因，预算触顶也不能单独证明上下文变长或任务变复杂：要同时比较模型/API、任务类别、请求预算、完成状态和版本。
 
-第五条也值得说：缓存命中率长期为 0 意味着缓存根本没生效，而它不会报错，只会让账单慢慢变高。
+缓存读数也只是诊断信号。只有目标 API 暴露了缓存 usage 且工作负载具备可复用前缀时，才按该 API 的定义计算读取比例；观察值为零不自动说明系统错误，更不能单凭它推出成本上升。成本要按该版本的 usage 分项和定价另算。
 
-## 这五个指标各自从哪采集
+## 每类指标各自从哪采集
 
-上面那张表说了"看什么"，但**每个值的采集口径必须写清楚**，否则两个人会数出两个不同的数。全部来自**响应体的 `usage` 对象**与你自己的计时：
+为了让两个班次算出同一个值，先固定**对象、时间窗、分母、过滤条件和 API 版本**。以下是按常见接口映射的例子；切换 endpoint 后要重新核对：
 
-| 指标 | 从哪个字段算 | 口径陷阱 |
+| 指标 | 一个可复核的口径 | 不能混用的字段 |
 |---|---|---|
-| `stop_reason` 分布 | 每次响应体的 `stop_reason`，按取值分组计数 | 只统计**最终那次**响应，不要把中间的 `tool_use` 也算进分母 |
-| 单次任务 token 的 P99 | 任务内每一轮 `usage` 的输入加输出之和，按任务求和后取分位 | 输入 token 必须用三项之和（见下），否则缓存命中会让它虚低 |
-| 连续失败次数 | 你自己计数：同一个任务连续失败多少次 | 判定"失败"要用工具结果，不是 HTTP 状态码 |
-| 工具调用被拒率 | 工具返回值里被策略层标记拒绝的次数除以工具调用总次数 | 分母是"被尝试调用"的次数，不是"成功执行"的次数 |
-| 缓存命中率 | `usage.cache_read_input_tokens` 除以三项输入之和 | **分子分母的口径要对齐**，否则算出来必然偏小 |
+| 响应终态分布 | 每个模型响应各记一次；分别统计终态类别。另建逻辑任务完成率 | Anthropic `stop_reason`、Chat Completions `finish_reason`、Responses `status/incomplete_details` |
+| 任务 token P99 | 一个逻辑任务内所有响应的输入/输出 usage 按 API 归一并求和，再按任务分组取 P99；标出样本数和窗口 | 缓存读写、不可见推理 token 和缺失 usage 应保留分项或显式标记，不能默默当零 |
+| 连续失败 | 用业务验收定义逻辑任务的通过/失败，按任务完成时间顺序计数；写清重试是一个任务还是多个尝试 | 不以 HTTP 状态码或单个工具错误代替任务终态 |
+| 策略拒绝率 | policy deny 数 / 该 policy 实际评估的调用数，并按 deny reason 分层 | 如果只从工具返回值统计，会漏掉工具执行前就拒绝的决策 |
+| Anthropic cache-read token share | `cache_read_input_tokens / (input_tokens + cache_read_input_tokens + cache_creation_input_tokens)`，只适用于 Anthropic Messages 的这些 usage 字段 | 不把这个字段公式套到 OpenAI 或 DeepSeek；OpenAI Responses 例如用 `input_tokens_details.cached_tokens` 对照其 `input_tokens`，并单列写入 tokens |
+| 服务错误率 | 指定 endpoint 与时间窗内的失败请求 / 总请求；重试前后分别报告 | 把 client validation、provider 429/5xx、timeout、task failure 分开
 
-**第二行和第五行都指向同一个坑，而它是本站踩过的：** 输入 token 不能只读 `input_tokens`。**那个字段的语义是"未命中缓存的输入"** —— 缓存命中时它会变小。第 4 章那次测"工具定义成本"就是因为这个，出现了"工具越多越便宜"的自相矛盾结果。正确口径是三项相加：
-
-```text
-总输入 = input_tokens + cache_read_input_tokens + cache_creation_input_tokens
-```
-
-**这一条值得贴在你的看板旁边。** 只要有人用单读 `input_tokens` 的方式做成本监控，缓存生效的那一天起，看板就会开始骗人 —— 而且它会往"成本在下降"这个乐观方向骗。
+上面的三项加总只对应 Anthropic Messages 当前的输入 usage 定义：[官方 Messages API](https://platform.claude.com/docs/en/api/messages) 明确将总输入定义为普通输入、缓存读取和缓存创建 token 之和。其他 API 的 `input_tokens` 语义和缓存字段不同；例如 OpenAI Responses 将 `input_tokens` 与 `input_tokens_details.cached_tokens`、`cache_write_tokens` 分开返回，具体复用率口径参见 [OpenAI Prompt Caching 文档](https://developers.openai.com/api/docs/guides/prompt-caching)；Anthropic 缓存规则见其 [Prompt Caching 文档](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)。做成本面板时，应按所选 API 的 usage 与价格分别计算普通输入、缓存读写、输出和推理 token；不要把“总 token 数”直接当作账单，或把另一家 API 的公式复制过去。
 
 ## 降级的四个层次
 
@@ -67,20 +61,18 @@ agent 服务出故障时，有一个和普通服务不同的地方：**它往往
 
 | 层次 | 做法 | 用户感受 |
 |---|---|---|
-| **换模型** | 切换到更便宜/更快的模型 | 质量下降但可用 |
+| **换模型或 endpoint** | 按已验证的兼容性和备用顺序切换 | 行为、质量、成本和可用性都可能变化，应披露并评估 |
 | **缩功能** | 关掉部分工具或能力 | 任务可能做不完 |
 | **转人工** | 转给人工流程 | 慢但可靠 |
 | **拒绝** | 明确说"暂时不可用" | 最差，但最诚实 |
 
-**关键是要提前决定用哪一层，而不是故障时临时想。** 故障发生时系统已经在异常状态，那时做决策容易做出更糟的选择（第 18 章讲过同一点）。
-
-一个实用的做法是**按任务类型预设**：关键任务（涉及钱、对外）宁可拒绝也不降级；非关键任务（生成草稿、摘要）可以降到便宜模型。
+**关键是提前定义可执行的策略和不变量。** 按任务风险、备用端点兼容性、预算与用户影响预设允许的 fallback；例如涉及付款或外部承诺的操作可以要求人工审批或拒绝，而草稿类任务可选择经过评估的备用模型。不要把“更便宜”自动等同于“可接受”，也不要在失败后重试到队列堆积。
 
 ## 一个反过来的要求：降级要可见
 
 降级之后，用户和运维都应该知道。两种可见性：
 
-**对用户**：明确告知"当前使用了简化处理"（第 19 章那条：用户有权知道他在用哪个版本）。
+**对用户**：按产品承诺和影响披露正在使用的降级能力及其限制；不要把版本透明表述成不分场景的法律结论。
 
 **对运维**：降级触发要计入监控，而且**降级状态本身是一个指标** —— 如果系统长期处于降级状态，那说明根因没修。
 
@@ -93,13 +85,14 @@ flowchart TB
     A --> A2["质量退化：需要评测（第 15 章）"]
     A --> A3["静默降级：系统「正常工作」"]
     A --> A4["成本/延迟异常：需要专门指标"]
-    A2 -.-> B["最危险：不触发传统可用性告警"]
+    A2 -.-> B["可能漏报：增加任务级观测"]
     A3 -.-> B
-    C["五个必看指标"] --> C1["stop_reason 分布（max_tokens 比例）"]
+    C["六类常用指标"] --> C1["stop_reason 分布（max_tokens 比例）"]
     C --> C2["单次任务 token 的 P99"]
     C --> C3["连续失败次数"]
     C --> C4["工具调用被拒率"]
-    C --> C5["缓存命中率"]
+    C --> C5["缓存 token 复用"]
+    C --> C6["服务错误率"]
     D["降级四层"] --> D1["换模型"]
     D --> D2["缩功能"]
     D --> D3["转人工"]
@@ -111,17 +104,18 @@ flowchart TB
 
 ## 一个具体的排查顺序
 
-出事时按什么顺序查？一个实用的顺序，从"最可能且最容易验证"开始：
+出事时可按一个可审计的诊断顺序开始；它是排查模板，不表示各原因的先验概率：
 
 ```text
-1. 看 stop_reason 分布 —— 是不是大量 max_tokens（预算问题，不是能力问题）
-2. 看单次任务 token 的 P99 —— 是不是有循环没停（第 11 章）
-3. 看失败的轨迹（第 15 章）—— 失败在哪一步，那一步看到了什么
-4. 看工具调用被拒率 —— 是不是策略配置错了
-5. 最后才怀疑模型 —— 因为前四项都是你能控制的，而模型不是
+1. 确认逻辑任务终态、用户影响、当前 release 与已验证的备用路径
+2. 按 provider/API 检查每次响应状态、usage 缺失与 budget/truncation 事件
+3. 聚合任务 token、轮次、工具调用及重试，并按请求类型/版本切片
+4. 核对 policy deny reason、网关/上游错误、超时与限流
+5. 与最近的模型/API/提示/工具变更做受控对照，并结合独立评测和人工反馈
+6. 选择经过验证的降级、人工处理或拒绝；记录触发原因与恢复条件
 ```
 
-第五行是本节最想强调的：**绝大多数"模型变笨了"其实是前四项里的一项。** 这个项目自己的经历是一个例证 —— 第 3 章那次看起来像"模型在长上下文里失能"的结果，真相是 `max_tokens` 被思考吃光了。
+这只是排查顺序的一个起点，不支持“绝大多数问题都在应用侧”或“模型总是最后才可疑”。模型/API 变化、请求组成变化、评测器偏差、缓存/用量口径变化和应用缺陷都可能造成相似信号；需要用 trace、版本信息和适当对照区分。
 
 
 ## 一个具体的例子：同一个现象，两种归因
@@ -129,36 +123,36 @@ flowchart TB
 上面那张指标表里，有两个指标的异常都会表现为「成本上升」，但根因和修法完全不同。这个例子值得单独走一遍。
 
 ```text
-现象：单次任务的 token 从平均 8,000 涨到 20,000
+合成样例（数字仅用于演示，不是本站实测或告警默认值）：某类任务的 token 中位数从 8,000 增至 20,000
 
-归因 A：输出预算不够
-  指标：stop_reason 里 max_tokens 的比例从 1% 涨到 12%
+候选归因 A：输出预算触顶
+  指标：所选 API 的截断/不完整响应占比从 1% 变为 12%
   机制：输出被截断 → 任务没完成 → 用户重试或 agent 重跑
-  修法：提高 max_tokens
+  修法：核对目标 API 的输出上限字段、配置与模型限制，再决定是否增加预算、拆分任务或压缩上下文
 
-归因 B：循环没有停
-  指标：token_p99 / token_p50 的比值从 2.5 涨到 11
+候选归因 B：循环/重试增多
+  指标：该合成任务分组的 token_p99 / token_p50 从 2.5 变为 11
   机制：某类输入让 agent 反复尝试，步数失控
   修法：加最大步数闸门
 ```
 
 **两个归因的修法互不通用。** 提高 max_tokens 对 B 无效（循环照样跑）；加步数闸门对 A 无效（任务本来就只需要一次调用）。
 
-而如果两个都不看，最常见的反应是「换一个更便宜的模型」—— 那会让 A 更严重（预算更少），也可能让 B 更严重（弱模型更容易绕圈）。
+仅凭这两个信号不能确定因果；切换更便宜或更小的模型也可能改变质量、截断风险、循环行为和可用性。先按相同任务构成检查版本、请求预算、provider 状态和端到端验收，再选择受控缓解措施。
 
 **这就是为什么排查顺序要写在文档里**：不是因为顺序本身有什么魔法，而是因为**在压力下人会跳到最熟悉的那个解释**（「模型不行」），而顺序是抵抗这个倾向的东西。
 
 ## 一个反过来的检查：告警太灵敏也是故障
 
-上面讲了四个故障形态，最后补一个方向相反的：**告警疲劳。**
+补一个方向相反的风险：**告警疲劳。**
 
-如果一个指标每天告警 20 次，那它实际上不构成告警 —— 团队会在第三天开始忽略它。三种常见形态：
+告警噪声会增加漏看风险；具体触发频率取决于团队容量和事件聚合策略。常见问题有：
 
-- **阈值太紧。** 比如把「错误率大于 1%」设成告警，而正常情况下就有 0.5% 的波动。
-- **没有分级。** 所有告警都发到同一个渠道，P0 和 P3 混在一起。
+- **阈值没有基线。** 应用服务目标、请求量、窗口、严重度与可接受误报率决定阈值；不要直接复制别处的百分比。
+- **没有分级。** 不区分用户影响、恢复时限和责任人，所有事件挤在同一渠道。
 - **告警不带上下文。** 只说「错误率升高」，不说「哪个版本、哪类请求、从什么时候开始」。
 
-第二条最影响实际响应速度。一个实用的分级是：**P0（完全不可用）走电话；P1（质量退化）走即时消息；P2（成本、缓存异常）走每日汇总。** 而那个「每日汇总」恰恰是本文前面那些指标该去的地方 —— 它们重要，但不紧急。
+分级和通知渠道应按团队值班制度、用户影响和恢复时限设计。对外部副作用风险、数据泄露或关键任务错误，响应时限可能高于一般成本告警；成本和缓存读数也可能需要即时止损，而不是默认等日报。
 
 ## 一个具体的演练：降级路径要定期跑
 
@@ -167,81 +161,145 @@ flowchart TB
 **做法：在测试环境把触发条件调到必然触发，然后走一遍完整流程。**
 
 ```text
-1. 把熔断阈值调成 1（任何失败都触发）
-2. 跑一个正常任务，确认熔断真的打开
-3. 确认降级路径生效：用户看到了什么？运维收到了什么？
-4. 把阈值调回去，确认系统恢复
+1. 在隔离的测试环境使用 stub/fault injection，并将触发条件设为一次连续失败
+2. 发送会被注入确定性失败的测试请求，确认计数、熔断状态和 fallback 路径
+3. 检查用户响应、运维告警、任务终态，以及是否产生部分副作用
+4. 移除故障注入，确认恢复条件满足、熔断关闭；恢复后再运行成功请求
+5. 恢复测试配置并保存演练记录
 ```
 
-第二步到第三步之间最容易发现问题：**降级路径本身可能有 bug**，而它平时跑不到。常见的三个：
+失败注入到恢复验证之间最容易发现问题：**降级路径本身可能有 bug**，而它平时跑不到。常见的三个：
 
 - 降级逻辑依赖一个在故障时也失效的组件（比如降级后的模型也从同一个挂掉的网关走）
 - 降级后的界面没处理「部分结果」，显示成空白
 - 降级触发没有告警，所以演练之外没人知道它触发过
 
-第三个最常见。它的后果是：**降级状态可能已经持续了很久，而没人知道** —— 这正是本节前面说的「降级变成常态」。
+这类问题的后果是：**降级状态可能已经持续了很久，而没人知道** —— 这正是本节前面说的「降级变成常态」。
 
-**这个演练一次花不到半小时，而它验证的是一条平时永远不会被执行的代码路径。** 按性价比算，它是运维里最值得做的一项。
+演练耗时取决于依赖和恢复步骤；保留运行记录、触发器、用户可见结果、告警、回切和数据/副作用检查，才能让下次重复验证。
 ## 完整可运行代码
 
-下面这段代码实现一套故障判定：给定各项指标，输出故障类型与建议的降级层次。
+下面代码展示一个故障信号分类 fixture：给定归一后的指标，返回需要调查的信号。所有样本和阈值都是合成演示阈值，不是生产默认值；落地时必须定义时间窗、分母、任务分组、数据缺失处理和 SLO，再用目标 API 的真实 usage 映射。
 
 ```python
-"""故障判定：给定指标，输出故障类型与建议的降级层次。纯本地。实跑状态：2026-10-09。"""
-RULES = [
-    # (序号, 判据描述, 判据函数, 故障类型, 建议动作)
-    ("stop_reason", "max_tokens 比例 > 5%", lambda m: m["max_tokens_ratio"] > 0.05,
-     "输出预算不足", "提高 max_tokens，或检查上下文是否变长"),
-    ("token_p99", "单次任务 token 的 P99 > 5 倍中位数", lambda m: m["token_p99"] / m["token_p50"] > 5,
-     "循环未停", "加最大步数闸门（第 11 章）"),
-    ("fail_streak", "连续失败 > 3 次", lambda m: m["fail_streak"] > 3,
-     "任务卡住", "熔断并返回已有结果（第 11、18 章）"),
-    ("deny_rate", "工具被拒率 > 10%", lambda m: m["deny_rate"] > 0.10,
-     "策略太严（或正在被试探）", "review 策略表（第 16 章）"),
-    ("cache_hit", "缓存命中率 < 5%", lambda m: m["cache_hit"] < 0.05,
-     "缓存没生效", "检查前缀里是否混了动态内容（第 18 章）"),
-    ("err_rate", "错误率 > 5%", lambda m: m["err_rate"] > 0.05,
-     "完全不可用", "降级或回滚（第 2 节）"),
-]
+"""故障信号分类的本地 fixture。阈值只为演示分支，绝非生产默认值。"""
+from math import isfinite
 
-SCENARIOS = [
-    ("正常", {"max_tokens_ratio": 0.01, "token_p50": 8000, "token_p99": 20000,
-              "fail_streak": 0, "deny_rate": 0.01, "cache_hit": 0.8, "err_rate": 0.005}),
-    ("预算不够", {"max_tokens_ratio": 0.12, "token_p50": 8000, "token_p99": 20000,
-                  "fail_streak": 0, "deny_rate": 0.01, "cache_hit": 0.8, "err_rate": 0.005}),
-    ("循环没停", {"max_tokens_ratio": 0.01, "token_p50": 8000, "token_p99": 90000,
-                  "fail_streak": 2, "deny_rate": 0.01, "cache_hit": 0.8, "err_rate": 0.01}),
-    ("缓存失效", {"max_tokens_ratio": 0.01, "token_p50": 8000, "token_p99": 20000,
-                  "fail_streak": 0, "deny_rate": 0.01, "cache_hit": 0.0, "err_rate": 0.005}),
-]
+# 这些阈值只驱动下方的固定合成场景；生产阈值需按 SLO、流量和错误预算制定。
+DEMO_THRESHOLDS = {
+    "output_cap_ratio": 0.05,
+    "task_token_p99_over_p50": 5.0,
+    "failure_streak": 3,
+    "policy_deny_rate": 0.10,
+    "cache_read_token_share": 0.05,
+    "service_error_rate": 0.05,
+}
+RATIO_FIELDS = (
+    "output_cap_ratio",
+    "policy_deny_rate",
+    "cache_read_token_share",
+    "service_error_rate",
+)
+REQUIRED_FIELDS = (
+    *RATIO_FIELDS,
+    "task_token_p50",
+    "task_token_p99",
+    "failure_streak",
+)
+
+
+def validate_metrics(m):
+    missing = set(REQUIRED_FIELDS) - set(m)
+    if missing:
+        raise ValueError("missing metric fields: " + ", ".join(sorted(missing)))
+    for field in REQUIRED_FIELDS:
+        value = m[field]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+            raise ValueError(f"{field} must be a finite number")
+    if any(not 0 <= m[field] <= 1 for field in RATIO_FIELDS):
+        raise ValueError("ratio fields must be between 0 and 1")
+    if not isinstance(m["failure_streak"], int) or m["failure_streak"] < 0:
+        raise ValueError("failure_streak must be a non-negative integer")
+    if m["task_token_p50"] <= 0 or m["task_token_p99"] < m["task_token_p50"]:
+        raise ValueError("task token percentiles are invalid")
 
 
 def triage(m):
-    hits = [(name, kind, action) for name, _, test, kind, action in RULES if test(m)]
-    return hits
+    """Return signals to investigate; a hit is not a root-cause diagnosis."""
+    validate_metrics(m)
+    t = DEMO_THRESHOLDS
+    checks = [
+        (m["output_cap_ratio"] > t["output_cap_ratio"],
+         "output_cap", "响应上限触发比例较高", "核对 API 预算、截断状态与任务完成率"),
+        (m["task_token_p99"] / m["task_token_p50"] > t["task_token_p99_over_p50"],
+         "task_tokens", "任务 token 长尾较高", "按任务类别检查重试、工具轮次和输入变化"),
+        (m["failure_streak"] > t["failure_streak"],
+         "failure_streak", "连续任务失败", "检查业务验收、重试策略与上游状态"),
+        (m["policy_deny_rate"] > t["policy_deny_rate"],
+         "policy_deny", "策略拒绝比例变化", "检查 deny reason 与调用构成，不据此推断攻击"),
+        (m["cache_read_token_share"] < t["cache_read_token_share"],
+         "cache_read", "缓存读取 token 比例较低", "先核对所选 API 的 usage 字段与可复用工作负载"),
+        (m["service_error_rate"] > t["service_error_rate"],
+         "service_error", "服务请求错误比例较高", "区分客户端、网关、provider 与超时错误"),
+    ]
+    return [(name, signal, action) for hit, name, signal, action in checks if hit]
+
+
+SCENARIOS = [
+    ("基线 fixture", {
+        "output_cap_ratio": 0.01, "task_token_p50": 8000, "task_token_p99": 20000,
+        "failure_streak": 0, "policy_deny_rate": 0.01,
+        "cache_read_token_share": 0.8, "service_error_rate": 0.005,
+    }),
+    ("预算触顶信号", {
+        "output_cap_ratio": 0.12, "task_token_p50": 8000, "task_token_p99": 20000,
+        "failure_streak": 0, "policy_deny_rate": 0.01,
+        "cache_read_token_share": 0.8, "service_error_rate": 0.005,
+    }),
+    ("任务 token 长尾", {
+        "output_cap_ratio": 0.01, "task_token_p50": 8000, "task_token_p99": 90000,
+        "failure_streak": 2, "policy_deny_rate": 0.01,
+        "cache_read_token_share": 0.8, "service_error_rate": 0.01,
+    }),
+    ("没有观察到缓存读取", {
+        "output_cap_ratio": 0.01, "task_token_p50": 8000, "task_token_p99": 20000,
+        "failure_streak": 0, "policy_deny_rate": 0.01,
+        "cache_read_token_share": 0.0, "service_error_rate": 0.005,
+    }),
+]
 
 
 if __name__ == "__main__":
-    for label, m in SCENARIOS:
-        hits = triage(m)
-        print("  【%s】" % label)
-        if not hits:
-            print("      无异常")
-        for name, kind, action in hits:
-            print("      %-14s → %-22s %s" % (name, kind, action))
+    for label, metrics in SCENARIOS:
+        signals = triage(metrics)
+        print(f"【{label}】")
+        if not signals:
+            print("  没有超过本 fixture 的诊断阈值")
+        for name, signal, action in signals:
+            print(f"  {name}: {signal}；下一步：{action}")
         print()
-    print("=== 排查顺序为什么重要 ===")
-    print("  注意「预算不够」和「循环没停」都会让成本上升，但修法完全不同：")
-    print("    预算不够 → 提高 max_tokens")
-    print("    循环没停 → 加最大步数闸门")
-    print("  如果先怀疑模型（换一个更强的），两个问题都不会被修掉。")
+```
+
+```text
+【基线 fixture】
+  没有超过本 fixture 的诊断阈值
+
+【预算触顶信号】
+  output_cap: 响应上限触发比例较高；下一步：核对 API 预算、截断状态与任务完成率
+
+【任务 token 长尾】
+  task_tokens: 任务 token 长尾较高；下一步：按任务类别检查重试、工具轮次和输入变化
+
+【没有观察到缓存读取】
+  cache_read: 缓存读取 token 比例较低；下一步：先核对所选 API 的 usage 字段与可复用工作负载
+
 ```
 
 ## 常见坑
 
-- **只监控可用性。** 质量退化和静默降级都不触发传统告警 —— 服务健康检查全绿而效果已经变差。
-- **不看 `stop_reason` 分布。** 第 3、7、18 章都踩过：`max_tokens` 截断看起来像"模型做不到"。
+- **只监控可用性。** 存活、HTTP 状态和传输错误监控不能证明任务质量或 fallback 状态；按任务风险补相应观测。
+- **把 provider 字段当通用协议。** 按目标 API 区分 stop/status、输出预算与 usage 字段；响应终态还要映射到业务任务验收。
 - **降级时临时决定。** 要提前按任务类型预设：关键任务宁拒绝不降级。
 - **降级不可见。** 用户和运维都该知道 —— 尤其是运维，因为长期降级意味着根因没修。
-- **先怀疑模型。** 排查顺序应该是：预算 → 循环 → 轨迹 → 策略 → 最后才是模型。
-- **不监控缓存命中率。** 长期为 0 意味着缓存没生效，而它只让账单变高，不报错。
+- **从一个指标直接归因。** 预算触顶、重试、provider 变化、输入构成、测量口径和应用缺陷可能出现相似信号；通过版本化 trace 与对照缩小原因。
+- **把缓存读取率当成质量或成本结论。** 缓存是否可用、如何计量与定价取决于 API；把读取/写入 usage 与实际成本分开观察。

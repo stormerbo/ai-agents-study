@@ -24,7 +24,7 @@ export const chapter = {
       chapterId: 'multimodal',
       slug: 'how-images-enter-context',
       title: '图像是怎么进入上下文的',
-      summary: '它不是附件，是内容块 —— 和文本走同一条通道，按同一套规则计费。',
+      summary: '图像按 provider-specific 协议进入消息；request bytes、视觉 token、上下文与账单要分别核对。',
       estimatedMinutes: 18,
       difficulty: 'beginner',
       hasBody: true,
@@ -36,25 +36,33 @@ export const chapter = {
           basis: 'documented',
           question: '图像在消息里是以什么形式传递的？',
           answer:
-            '它和文本一样，是消息 content 数组里的一个**内容块**（类型为 image），而不是一个附带的文件引用。这一点决定了三件事：它可以和文本交错排列（图片前后的文字会影响理解）、它参与对话历史（传过之后每轮都还在）、以及它按内容计费。本站 Playground 的适配层就是按这个模型统一的 —— 内容块是 Anthropic 与 OpenAI 的最小公共上界，图像只是其中一种。',
-          sourceIds: ['claude-messages-api'],
+            '多个 API 都支持图像输入，但 block 形状与传输模式由 provider/API 决定。DeepSeek Anthropic-compatible /messages 使用 image block；OpenAI-compatible Chat Completions 使用 image_url，Responses API 使用 input_image。客户端提交完整历史时，保留在历史中的图像会影响上下文；Files API file_id 与服务端会话可能改变重传字节的方式。不要把 token volume、请求字节与账单混为一谈。',
+          sourceIds: ['deepseek-vision', 'deepseek-anthropic-api'],
+        },
+        {
+          id: 'deepseek-vision-token-boundary',
+          basis: 'documented',
+          sourceIds: ['deepseek-vision', 'deepseek-image-token-usage'],
+          question: 'DeepSeek 当前文档如何估算单图 token，实际用量以什么为准？',
+          answer:
+            '当前 Vision 文档称图像会按像素缩放：总像素低于约 544×544 时放大，较大时缩放到约 1300×1300 的总像素规模，每张图上限 1024 tokens；Token Usage 文档说明这是估算，实际处理量可能略有差异，应以 API 响应的 usage 为准。该边界仅适用于当前文档所述 DeepSeek API，不可外推到其他 provider 或历史端点。',
         },
         {
           id: 'vision-not-free',
           basis: 'inferred',
           question: '为什么说「多模态几乎免费」是一种误解？',
           answer:
-            '因为图像与文本走的是同一套上下文预算。一张高分辨率截图可能比一段很长的文本占得更多，而**它一旦进入历史，之后每一轮都要重新计费一次** —— 第 1 章那条 O(N²) 的算式对图片同样成立。所以在 agent 循环里反复截图，是一个成本模型完全不同的问题：每一轮都在往历史里追加一张图。结论是：视觉输入不是「加个功能」，它改变的是成本结构。设计时先算清楚一张图值多少 token，再决定分辨率与截图频率。',
+            '图像会影响模型上下文与请求用量，但实际请求体、token volume 和费用取决于会话如何传递历史、是否使用 file_id/缓存，以及目标 API 的计量规则。客户端每轮附带完整历史时，新增消息会使输入量随轮次增加；旧图片是否重复传输及如何计费需按 API 验证。先从目标 provider 获取估算与 usage，再用任务质量决定截图分辨率和频率。',
         },
       ],
-      resourceIds: ['claude-messages-api'],
+      resourceIds: ['deepseek-vision', 'deepseek-anthropic-api', 'deepseek-image-token-usage', 'deepseek-context-caching', 'owasp-ssrf-prevention'],
     },
     {
       id: 'multimodal/document-routes',
       chapterId: 'multimodal',
       slug: 'document-routes',
       title: 'PDF 与表格的三条路线',
-      summary: '先抽文本、直接交给视觉、或者两者结合 —— 差别不只在效果，更在可验证性。',
+      summary: '围绕 endpoint 能力、目标字段与可验证性选择 PDF 输入路线；不把单次历史摘要外推为通用成本或准确率。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
       hasBody: true,
@@ -62,28 +70,36 @@ export const chapter = {
       keywords: ['pdf', 'ocr', 'parsing'],
       checkpoints: [
         {
+          id: 'anthropic-pdf-input-methods',
+          basis: 'documented',
+          sourceIds: ['anthropic-pdf-support'],
+          question: 'Anthropic Messages API 官方文档列出了哪些 PDF 输入方式？',
+          answer:
+            '当前文档列出 URL 引用、base64 编码的 document block 与 Files API file_id 三种方式；这只描述 Anthropic API 的文档契约，不代表兼容 endpoint 或其他 provider 支持相同能力。',
+        },
+        {
           id: 'three-routes',
           basis: 'inferred',
           question: '处理一份 PDF 时，有哪几条路？各自适合什么？',
           answer:
-            '三条。一是**纯文本抽取**：PDF 自带文本层就直接取，扫描件则先做 OCR。它便宜、可检索、可 diff，适合以文字为主的合同与报告。二是**整页交给视觉**：能保留版面信息（表格结构、栏位、勾选框、印章），适合版式本身承载语义的文档，比如发票、保单、表单。三是**混合**：先用文本层定位，再对关键页做视觉理解。选择的关键不是「哪个更准」，而是**你的下游需要什么** —— 如果只要几段文字，路线一就够；如果要还原一张表，路线一会丢掉行列关系。',
+            '常见表示包括：目标 API 支持的 PDF document block、由 PDF 页面渲染出的图像、以及从同一 PDF 抽取的文本；还可组合文本定位与关键页视觉处理。支持情况要按 provider、模型和 endpoint 文档核实。选择取决于下游字段、版面依赖与可验证性；文本抽取可能改变阅读顺序，图像处理也可能漏读，须用结构化字段、业务不变量和来源片段评估。历史 59/337/123 token 摘要及旧评分没有完整请求、响应和 scorer，不能据此推出通用成本或准确率。',
         },
         {
           id: 'verifiability',
           basis: 'inferred',
           question: '为什么说这三条路的差别「不只在效果，更在可验证性」？',
           answer:
-            '因为纯文本路线的中间产物**肉眼可查**：抽出来的文本你能直接读、能 diff、能 grep。而视觉路线的中间产物是模型的内部理解，你只能看最终答案 —— 一旦错了，你没有中间层可以定位。这个区别在工程上很实际：文本路线出错时你能说「是 OCR 把 8 认成了 3」；视觉路线出错时你只能说「它读错了」。所以一条务实的做法是：**能用文本层就先抽文本，把视觉留给你无法用文本表达的那部分** —— 版面、印章、手写。这样至少大部分字段是可核对的。',
+            '两类路线都应保留可检查的中间证据：文本路线可归档抽取文本、页码与 parser 版本；视觉路线可保留原始页面、渲染参数、模型响应和引用片段。它们让排查更具体，但不自动证明抽取完整或答案正确。应用应检查终态、必需字段与结构化校验，再用可信来源或人工审批核对高风险值；具体选择需按文档族与目标 endpoint 实测。'
         },
       ],
-      resourceIds: ['claude-messages-api'],
+      resourceIds: ['claude-messages-api', 'anthropic-pdf-support']
     },
     {
       id: 'multimodal/resolution-and-cost',
       chapterId: 'multimodal',
       slug: 'resolution-and-cost',
       title: '分辨率、分块与成本',
-      summary: '图像 token 是可以估算的，而估算能力直接决定你的取舍。',
+      summary: '用目标 API 的实际 usage 与任务质量门槛，决定是否缩放、压缩或裁块。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
       hasBody: true,
@@ -92,20 +108,21 @@ export const chapter = {
       checkpoints: [
         {
           id: 'estimate-image-tokens',
-          basis: 'inferred',
-          question: '怎么估算一张图会占多少 token？不要背数字，说方法。',
+          basis: 'documented',
+          sourceIds: ['deepseek-vision', 'deepseek-image-token-usage', 'claude-vision'],
+          question: '怎么估算图像成本，为什么不能使用跨 provider 通用阈值？',
           answer:
-            '方法是：**看图像被切成多少块**。视觉模型通常先把图像缩放到一个上限尺寸，再按固定大小的块切分，每块折算成固定 token 数，最后加一个固定开销。所以估算的关键变量是**缩放后的面积**，而不是原始文件大小 —— 一张 4000×3000 的图如果被缩到上限，成本和一张刚好等于上限的图是一样的。工程含义有三条：先缩放到必要尺寸再传，多数场景下原图分辨率是浪费；但缩太多会丢掉小字，这是一条真实的取舍线，不是「越小越好」；具体倍数与上限各家不同且会变，**以官方文档的当前口径为准**，不要背教程里的数字。',
+            '先确认具体 endpoint、API 模式与 model id，再采用对应官方图像文档/估算器做预算；记录响应 usage 并与账单校准。DeepSeek 当前 Vision 文档描述其按像素缩放、单图估算上限；Claude Vision 文档按 28×28 patch 估算 visual tokens 并按模型档位设置限制。两者规则不同，不能互相外推，也不能用请求字节大小代替视觉 token。历史 186/996 摘要没有完整原始响应和重复测量，不作为当前阈值。',
         },
         {
           id: 'resolution-tradeoff',
           basis: 'inferred',
-          question: '降低分辨率省了成本，代价是什么？该怎么权衡？',
+          question: '降低分辨率的代价是什么，如何决定何时裁块？',
           answer:
-            '代价是**密集文本与细节的识别率下降**：小字号、表格线、勾选框、印章这些靠像素区分的内容最先受影响。权衡办法是把它变成一个可测的问题，而不是凭感觉调：拿一份**有标准答案的样本**（比如 20 页有明确字段的发票），在几档分辨率下各跑一遍，看字段级准确率在哪一档开始掉。这个实验通常半小时能做完，比任何经验数字都可靠。另一个容易被忽略的不对称是：**缩放对「找信息」的影响远大于对「判断整体」的影响**。让模型回答「这一页是不是发票」，低分辨率下几乎不受影响；让它读出金额，就必须给足像素。同一份文档的不同任务可以有完全不同的分辨率策略。',
+            '低分辨率可能损害小字、密集表格和坐标任务，但质量下降点取决于图像、任务、模型和预处理，不能仅由一次实验断言。先预设字段级质量门槛，用固定提示词和同一批标注图像做配对测试；每次只改变尺寸或压缩参数，并记录重复结果、响应 model、finish_reason、usage、延迟及错误样例。若关键区域因整图缩放不可读，再测试带页码/坐标标签的裁块。裁块增加请求和图像输入成本；只有达到质量门槛且其增益抵得过成本时才采用。',
         },
       ],
-      resourceIds: ['claude-messages-api', 'claude-pricing'],
+      resourceIds: ['deepseek-vision', 'deepseek-image-token-usage', 'claude-vision', 'claude-pricing'],
     },
     {
       id: 'multimodal/when-vision-fails',
@@ -122,16 +139,16 @@ export const chapter = {
         {
           id: 'vision-failure-modes',
           basis: 'inferred',
-          question: '视觉抽取有哪几类典型错误？',
+          question: '视觉抽取出现错误时，哪些校验可以发现，哪些不能？',
           answer:
-            '四类，按可检测程度从高到低。一是**漏读**：表里某一行没被读出来，用「行数对不对」这类结构校验就能发现。二是**串行或串列**：把 A 行的数值读到了 B 行，它比漏读更隐蔽，但用**合计校验**能抓住 —— 各列求和应当与总额一致。三是**幻觉**：读出图里根本不存在的内容，比如声称有盖章而实际没有；这类错误在图像模糊、或模板里有但当前样本缺失该字段时最常出现。四是**单位与精度丢失**：小数点、千分位、货币符号读错。关键在于：**这几类都能用交叉校验发现，而不是靠再看一眼。** 表格用行列合计，金额用「明细之和等于总额」，日期用格式与区间校验。',
+            '常见失败包括漏项、行列错位、单字符替换、单位/精度错误和无依据补全。按层验证：schema/行数能发现部分缺项与格式错误；范围、总额等业务不变量能发现部分矛盾；与独立原始信源核对可发现更多合法但错误的值。每层都有盲点：总额也由同一视觉结果提取时，误读可能相互抵消；合法数字替换可同时通过 JSON、类型和范围检查。把失败状态、精确字段误差和独立核验结果分别记录，高风险字段再加入人工复核。',
         },
         {
           id: 'vision-needs-grounding',
           basis: 'inferred',
-          question: '为什么让模型顺便说出「它在图里的哪个位置看到的」能提高可靠性？',
+          question: '要求视觉结果附页码、区域或证据片段有什么作用，边界是什么？',
           answer:
-            '因为要求给出位置（页码、区域、原文片段）会**迫使它把结论锚定到具体的像素证据上**，而不是从「这看起来像一张发票」直接跳到「金额是某个值」。这和结构化输出那一章是同一个思路：让模型先产出可核对的东西，再由你校验。它也给了你一条排查路径 —— 结果不对时，你可以回到它指的位置看一眼：是它看错了，还是那块区域本身就不清楚。没有这个锚点，你只能重跑一遍然后祈祷。但要诚实：这个方法降低错误率，**不能消除幻觉**，模型完全可能同时编造结论和「证据」。所以它要和交叉校验一起用，不能替代。',
+            '位置、页码或短片段能帮助人和下游程序定位原图中的待检查区域，便于审阅和错误分类；它们不会迫使模型真正依据该区域作答，也不能证明答案正确。模型可能同时编造字段与看似合理的位置。把定位信息当作导航线索，与原始像素或可信文档文本独立核对；用标注样本评估定位准确率和字段准确率，而不是假定提供理由就能降低错误率。',
         },
       ],
       resourceIds: ['ai-engineering-huyen', 'claude-messages-api'],
@@ -149,21 +166,29 @@ export const chapter = {
       keywords: ['agent-loop', 'context'],
       checkpoints: [
         {
+          id: 'openai-response-chain-input-billing',
+          basis: 'documented',
+          sourceIds: ['openai-conversation-state'],
+          question: '使用 OpenAI Responses API 的 previous_response_id 是否免除历史输入 token 计量？',
+          answer:
+            'OpenAI 当前对话状态文档明确说明，即使使用 previous_response_id，响应链中先前的 input tokens 仍按 input tokens 计费。这是 OpenAI Responses API 的计量边界，不证明其他 provider 或图像块采用相同的状态、计量或计费方式。',
+        },
+        {
           id: 'images-accumulate',
           basis: 'inferred',
           question: '在 agent 循环里反复产生图像（比如每一步截一张图），最大的工程风险是什么？',
           answer:
-            '是**历史累积**。每一步的截图都会留在对话历史里，之后每一轮请求都要把它们全部重新发一遍，于是成本随轮次近似按平方增长，而不是线性。这和子智能体那一节是同一个规律：**成本 = 内容 × 装载次数**。三种缓解手段按代价排序：只保留最近若干张截图；把较早的截图替换成文字摘要；以及把「看图」这一步隔离到子智能体里，它看完只回传结论，原始图像随它的上下文一起消失。第三种最彻底，也最符合第 3 章得出的那条规律。',
+            '风险之一是**历史累积**：如果客户端每轮都重发完整对话，先前图像可能再次进入请求上下文；请求/服务端状态、文件引用、缓存策略会改变重传内容、延迟和账单，需按目标 provider 实测。可按任务保留必要图像、摘要旧观察或把视觉步骤隔离；这些是需评估的设计选项，不保证降低特定 endpoint 的实际费用。',
         },
         {
           id: 'image-vs-text-tool-result',
           basis: 'inferred',
           question: '工具返回一张图，与返回一段描述它的文本，各自适合什么？',
           answer:
-            '**返回图**适合「细节不确定、需要模型自己判断」的场景 —— 比如让它在页面里找一个按钮、判断布局是否异常。你无法预知它要看什么，所以不能提前把图转成文字；代价是 token 与累积成本。**返回文本描述**适合「你明确知道需要哪些信息」的场景 —— 比如只需要页面上某个字段的值。这时先用确定性代码或一次小的视觉抽取调用把图变成结构化文本，再交给主循环，成本低一个量级，而且中间产物可核对。判断依据可以简化成一句：**如果你想不出「让它自己看图能得到什么额外信息」，就不要把图交给它。**',
+            '**返回图像**适合需要保留原始视觉证据、且模型需判断版面或视觉状态的任务；**返回文本或结构化结果**适合字段明确、可通过规则校验的任务。两者质量、延迟和成本取决于图像预处理、上下文设计、provider 与 usage，不能预设固定倍数。文本抽取也会丢失未表达的版面信息；保留可追溯的原图引用和抽取证据，按代表性任务配对评估。',
         },
       ],
-      resourceIds: ['anthropic-context-engineering', 'claude-messages-api'],
+      resourceIds: ['anthropic-context-engineering', 'claude-messages-api', 'openai-conversation-state'],
     },
   ],
   resourceIds: ['claude-messages-api', 'claude-pricing', 'anthropic-context-engineering'],
@@ -177,7 +202,7 @@ export const chapter = {
       '用交叉校验发现数据错误：合计、格式、区间',
     ],
     pitfalls: [
-      '把图像当成「免费附件」：它进入历史后每轮都要重新计费',
+      '把图像当成「免费附件」：客户端若每轮重发完整历史，图像可能再次计入输入；具体按目标 API 核对 usage 与账单',
       '一上来就整页交给视觉，放弃了可读、可 diff、可 grep 的文本层',
       '以为降低分辨率只有好处，忽略了小字与表格线最先受损',
       '不做交叉校验：视觉错误里最危险的一类（串行串列）肉眼看不出来',

@@ -14,15 +14,15 @@ status: drafting
 
 **二、一个方法分发。** 按 `method` 字段路由到处理函数。最少要实现 `tools/list`、`tools/call`，以及 `server/discover`。
 
-**三、每请求的版本校验。** 从 `params._meta.protocolVersion` 取版本，不支持就返回 `UnsupportedProtocolVersionError`。**没有握手，所以这是每个请求都要做的事。**
+**三、每请求的版本校验。** 从 `params._meta["io.modelcontextprotocol/protocolVersion"]` 取版本；每个请求还必须带 `io.modelcontextprotocol/clientCapabilities`。必需字段缺失返回 `-32602`，版本不支持返回 `-32022`。**没有握手，所以这是每个请求都要做的事。**
 
 **四、一个错误映射。** JSON-RPC 的错误码（`-32601` 方法不存在、`-32602` 参数错误）+ 协议自定义的错误（版本不支持）。
 
-四样之外都是可选的。我的实现一共一百行左右 —— 这也是本节想传达的一个事实：**协议层本身并不复杂，复杂的是它背后要接的东西。**
+这四项概括的是本节这个现代 stdio 工具 server 的最小请求路径，不是所有 MCP server 的完整生产要求。协议还规定缓存提示、安全和 transport 等要求；实际 server 还需结合授权、输入/输出验证和副作用设计。完整行为不等于“百行代码即可合规”。
 
 ## 本地 server 与远程 server
 
-两者的协议消息格式一样，差别在传输和信任模型：
+两者的 JSON-RPC 方法与业务结果复用同一套协议语义，但传输封装并不一样；下面的可运行实现**仅实现 stdio**，不是远程 HTTP server。信任模型也不同：
 
 | | 本地（stdio） | 远程（HTTP） |
 |---|---|---|
@@ -36,6 +36,8 @@ status: drafting
 
 所以选择时该问的不是「哪个更安全」，而是：**这个 server 是谁写的、跑在谁的机器上、用谁的权限？** 第 5 节会把这两个风险来源分开讲。
 
+远程 transport 还有独立的协议要求：2026-07-28 Streamable HTTP 每个 JSON-RPC 请求都通过 POST 发送，客户端须带 `Accept: application/json, text/event-stream`、`MCP-Protocol-Version` 与 `Mcp-Method`；`tools/call` 还须带 `Mcp-Name`。服务端须校验 `Origin`，并处理 JSON 或 SSE 响应。上面的 stdio 代码没有实现这些 HTTP 行为、认证或授权，不能直接当成远程 server 部署。
+
 ## 一个容易忽略的工程细节：stdout 是协议通道
 
 本地 server 用 stdout 传协议消息，这意味着一件事：**你不能在 server 里随便 print。**
@@ -48,13 +50,13 @@ status: drafting
 
 ## 实测：一个最小实现的完整往返
 
-我的实现跑通了七个场景，包括无状态校验和 MRTR：
+手写 server/client 的本地回归跑通了七个场景，包括无状态校验和 MRTR。官方 Python SDK 2.3.0 的双向 stdio 互操作记录来自 2026-10-19 的旧版本代码：SDK client 调用当时的教学 server 的 `tools/list` 与 `tools/call` 成功；教学 client 调用当时的 SDK server 的 `tools/list` 与 `tools/call` 也成功。该历史结果不验证本轮修改后的实现；这份手写代码也不是当前官方 SDK 的替代品。
 
 ```text
-不带 _meta 直接调 tools/list  → error  UnsupportedProtocolVersionError (-32001)
-带错误的协议版本              → error  UnsupportedProtocolVersionError (-32001)
+不带必需的 _meta 字段          → error  Invalid params (-32602)
+带错误的协议版本              → error  UnsupportedProtocolVersion (-32022)
 带正确版本                    → result {"tools": [...]}
-server/discover               → result {"protocolVersions": [...], "capabilities": {...}}
+server/discover               → result {"supportedVersions": [...], "capabilities": {...}}
 get_weather(北京,明天)         → result {"resultType": "complete", "content": [...]}
 未知工具                      → error  Unknown tool: nope (-32602)
 未知方法                      → error  Method not found (-32601)
@@ -64,7 +66,7 @@ MRTR：
 补上确认后重调                 → result {"resultType": "complete", ...}
 ```
 
-（实跑数据，2026-10-09。这是按规范描述的形态自己实现的，不是对官方 SDK 的测试。）
+（本地代码场景为实跑数据，2026-10-09；SDK 双向互操作为实跑数据，2026-10-19。官方 SDK 测试只覆盖 `tools/list` 和 `tools/call`，不等于整套协议兼容性认证；本节 MRTR 仍由手写实现回归。）
 
 注意第六行和第七行的区别：**未知工具是 `-32602`（参数错误），未知方法是 `-32601`（方法不存在）**。这不是随意的 —— 工具是 `tools/call` 的参数，所以「工具不存在」属于参数问题；而 `resources/subscribe` 不存在是方法层面的问题。分清楚这两类，客户端才能给出有意义的提示。
 
@@ -74,8 +76,9 @@ flowchart TB
     A["host 拉起本地 server<br/>（stdio 子进程）"] --> B["写一行 JSON 到 stdin"]
     B --> C["server 读一行"]
     C --> D{"method 分发"}
-    D --> E{"_meta.protocolVersion 支持吗？"}
-    E -->|否| F["UnsupportedProtocolVersionError<br/>-32001"]
+    D --> E{"_meta 中版本与能力字段有效吗？"}
+    E -->|字段缺失| F["Invalid params<br/>-32602"]
+    E -->|版本不支持| F2["UnsupportedProtocolVersion<br/>-32022"]
     E -->|是| G["执行方法"]
     G --> H{"需要补充输入吗？"}
     H -->|是| I["返回 input_required<br/>（MRTR）"]
@@ -90,23 +93,22 @@ flowchart TB
 
 ## 完整可运行代码
 
-下面是一个一百行左右的 server 和一个驱动它的 client。两者都是独立的 Python 文件，通过真正的子进程管道通信 —— 这就是 stdio 传输的实际形态。
+下面是一个教学 server 和驱动它的 client。把第一个代码块存为 `mcp_server.py`，第二个存为 `mcp_client.py`，在同一目录运行 `python3 mcp_client.py`。两者通过真正的子进程管道通信。
 
 ```python
 """一个最小 MCP server（stdio + 换行分隔的 JSON-RPC 2.0）。
 
-按 2026-07-28 那版的**无状态**形态实现：
-  - 没有 initialize 握手，每个请求自己在 _meta 里带协议版本与客户端能力
-  - 版本不匹配 → UnsupportedProtocolVersionError
-  - server/discover 让 server 主动声明支持的版本
-  - 需要补充输入时不主动发请求，而是返回 InputRequiredResult（MRTR）
+按 2026-07-28 的**无状态**路径实现：
+  - 不执行 initialize 握手；每个请求在 _meta 中带协议版本与客户端能力
+  - 不支持的版本返回 JSON-RPC error code -32022
+  - server/discover 与 tools/list 返回规范要求的缓存元数据
+  - 需要 client 输入时返回 input_required，client 用新 request id 携带 inputResponses 与原 requestState 重试
 
-它只在**形态**上照做，没有对接官方 SDK —— 所以它验证的是协议机制本身，
-而不是「官方实现是否如此」。实跑状态：2026-10-09。
+教学实现不是官方 SDK 的兼容性认证；当前代码仅覆盖声明的无状态 stdio 工具路径。
 """
-import json, sys
+import json, math, sys
 
-SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25"]
+SUPPORTED_VERSIONS = ["2026-07-28"]
 
 TOOLS = [
     {"name": "get_weather",
@@ -116,7 +118,7 @@ TOOLS = [
                                     "day": {"type": "string", "enum": ["明天", "后天"]}},
                      "required": ["city", "day"]}},
     {"name": "transfer_money",
-     "description": "给指定账户转账（不可逆）。",
+     "description": "演示转账确认流程；本示例不会执行真实转账。",
      "inputSchema": {"type": "object",
                      "properties": {"to": {"type": "string"}, "amount": {"type": "number"}},
                      "required": ["to", "amount"]}},
@@ -133,50 +135,107 @@ def error(req_id, code, message, data=None):
 
 
 def result(req_id, payload):
+    # serverInfo 放在每个成功响应 result 的 _meta 中；它用于识别/诊断，不是安全凭据。
+    payload = dict(payload)
+    meta = dict(payload.get("_meta", {}))
+    meta["io.modelcontextprotocol/serverInfo"] = {"name": "demo-server", "version": "1.0.0"}
+    payload["_meta"] = meta
     return {"jsonrpc": "2.0", "id": req_id, "result": payload}
+
+
+def tool_failure(req_id, message):
+    """把可供调用方修正的输入/业务错误作为 tool result 返回。"""
+    return result(req_id, {"resultType": "complete", "isError": True,
+                           "content": [{"type": "text", "text": message}]})
 
 
 def handle(req):
     """处理一个请求。注意：这里是**无状态**的 —— 没有 session 对象可查。"""
+    if not isinstance(req, dict) or req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
+        return error(None, -32600, "Invalid Request")
     method = req.get("method")
     req_id = req.get("id")
+    if isinstance(req_id, bool) or not isinstance(req_id, (str, int)):
+        return error(None, -32600, "Invalid Request id")
     params = req.get("params", {})
+    if not isinstance(params, dict):
+        return error(req_id, -32602, "params must be an object")
     meta = params.get("_meta", {})
-    version = meta.get("protocolVersion")
+    if not isinstance(meta, dict):
+        return error(req_id, -32602, "params._meta must be an object")
+    version = meta.get("io.modelcontextprotocol/protocolVersion")
+    client_caps = meta.get("io.modelcontextprotocol/clientCapabilities")
 
     # --- 无状态化的核心：版本校验发生在**每个请求**上，而不是握手时 ---
+    if not isinstance(version, str) or not version or not isinstance(client_caps, dict):
+        return error(req_id, -32602, "Missing required per-request _meta fields")
     if version not in SUPPORTED_VERSIONS:
-        return error(req_id, -32001, "UnsupportedProtocolVersionError",
+        return error(req_id, -32022, "Unsupported protocol version",
                      {"requested": version, "supported": SUPPORTED_VERSIONS})
 
     if method == "server/discover":
-        return result(req_id, {"protocolVersions": SUPPORTED_VERSIONS,
-                               "capabilities": {"tools": {"listChanged": True}},
-                               "serverInfo": {"name": "demo-server", "version": "1.0.0"}})
+        return result(req_id, {"resultType": "complete",
+                               "supportedVersions": SUPPORTED_VERSIONS,
+                               "capabilities": {"tools": {}},
+                               "ttlMs": 300000, "cacheScope": "public"})
 
     if method == "tools/list":
-        return result(req_id, {"tools": TOOLS})
+        # 缓存元数据是 ListToolsResult 的规范字段；public 表示结果不随用户身份变化。
+        return result(req_id, {"resultType": "complete", "tools": TOOLS,
+                               "ttlMs": 300000, "cacheScope": "public"})
 
     if method == "tools/call":
         name = params.get("name")
         args = params.get("arguments", {})
+        if not isinstance(name, str) or not isinstance(args, dict):
+            return error(req_id, -32602, "tools/call requires a string name and object arguments")
 
         if name == "get_weather":
-            out = TEMP.get((args.get("city"), args.get("day")), {"error": "没有数据"})
-            return result(req_id, {"resultType": "complete",
-                                   "content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
+            city, day = args.get("city"), args.get("day")
+            if not isinstance(city, str) or not city.strip() or day not in ("明天", "后天"):
+                return tool_failure(req_id, "get_weather 输入无效：city 不能为空，day 只能是明天或后天")
+            out = TEMP.get((city, day))
+            if out is None:
+                # 业务执行失败仍是一个 tool result；用 isError 告诉调用方不要把它当成功数据。
+                return result(req_id, {"resultType": "complete", "isError": True,
+                                       "content": [{"type": "text", "text": "没有该城市/日期的天气数据"}]})
+            return result(req_id, {"resultType": "complete", "isError": False,
+                                   "content": [{"type": "text", "text": json.dumps({"temperature": out}, ensure_ascii=False)}]})
 
         if name == "transfer_money":
-            # MRTR：金额超过阈值时不主动发 elicitation，而是让客户端补输入后重调
-            if not params.get("_confirmed"):
+            amount, recipient = args.get("amount"), args.get("to")
+            if (not isinstance(recipient, str) or not recipient.strip()
+                    or isinstance(amount, bool) or not isinstance(amount, (int, float))
+                    or not math.isfinite(amount) or amount <= 0):
+                return tool_failure(req_id, "transfer_money 输入无效：收款方不能为空，amount 必须是正数")
+            # MRTR：结果通过 InputResponses map 回来；这只是教学交互，不是真实转账授权。
+            input_responses = params.get("inputResponses", {})
+            if not isinstance(input_responses, dict):
+                return error(req_id, -32602, "inputResponses must be an object")
+            response = input_responses.get("confirm")
+            expected_state = json.dumps({"to": recipient, "amount": amount},
+                                        sort_keys=True, ensure_ascii=False)
+            if response is None:
                 return result(req_id, {
                     "resultType": "input_required",
-                    "inputRequests": [{"id": "confirm",
-                                       "prompt": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
-                                       "schema": {"type": "boolean"}}]})
+                    "inputRequests": {"confirm": {
+                        "method": "elicitation/create",
+                        "params": {"mode": "form",
+                                   "message": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
+                                   "requestedSchema": {"type": "object",
+                                                       "properties": {"confirmed": {"type": "boolean"}},
+                                                       "required": ["confirmed"]}}}},
+                    "requestState": expected_state})
+            # 生产系统应对有安全意义的状态做签名/MAC；这里仅演示逐字回传与绑定参数。
+            if params.get("requestState") != expected_state:
+                return error(req_id, -32602, "requestState missing or does not match this action")
+            if response.get("action") != "accept" or not response.get("content", {}).get("confirmed"):
+                return result(req_id, {"resultType": "complete",
+                                       "content": [{"type": "text", "text": "用户未确认；未执行"}]})
             return result(req_id, {"resultType": "complete",
-                                   "content": [{"type": "text", "text": "已转账 %s 元给 %s"
-                                                % (args.get("amount"), args.get("to"))}]})
+                                   "isError": False,
+                                   "content": [{"type": "text", "text": "教学模拟：确认已通过；本示例未连接转账系统，不会发生真实转账（%s 元给 %s）"
+                                                % (amount, recipient)}]})
 
         return error(req_id, -32602, "Unknown tool: %s" % name)
 
@@ -200,6 +259,9 @@ if __name__ == "__main__":
     main()
 
 
+```
+
+```python
 """一个最小的 MCP client：用真正的子进程 + 管道驱动 server。
 
 它验证的是 stdio 传输 + 无状态协议的几个机制点。实跑状态：2026-10-09。
@@ -220,8 +282,8 @@ class Client:
         self.n += 1
         p = dict(params or {})
         if with_meta:
-            p["_meta"] = {"protocolVersion": version,
-                          "clientCapabilities": {"elicitation": {}}}
+            p["_meta"] = {"io.modelcontextprotocol/protocolVersion": version,
+                          "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}}
         req = {"jsonrpc": "2.0", "id": self.n, "method": method, "params": p}
         self.proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
         self.proc.stdin.flush()
@@ -262,9 +324,9 @@ if __name__ == "__main__":
     show("get_weather(北京,明天)",
          c.send("tools/call", {"name": "get_weather",
                                "arguments": {"city": "北京", "day": "明天"}}), "result")
-    show("get_weather(北京,下周)",
+    show("get_weather(广州,明天)：无数据但调用正常返回",
          c.send("tools/call", {"name": "get_weather",
-                               "arguments": {"city": "北京", "day": "下周"}}), "result")
+                               "arguments": {"city": "广州", "day": "明天"}}), "result")
     show("未知工具", c.send("tools/call", {"name": "nope", "arguments": {}}), "error")
     show("未知方法", c.send("resources/subscribe"), "error")
     print()
@@ -280,7 +342,9 @@ if __name__ == "__main__":
         show("补上确认后重调", c.send("tools/call",
                                      {"name": "transfer_money",
                                       "arguments": {"to": "张三", "amount": 5000},
-                                      "_confirmed": True}), "result")
+                                      "requestState": r["requestState"],
+                                      "inputResponses": {"confirm": {
+                                          "action": "accept", "content": {"confirmed": True}}}}), "result")
     c.close()
 
 
@@ -291,7 +355,7 @@ def security_probe():
     tools = resp["result"]["tools"]
     print()
     print("=== 5. 接入第三方 server：host 能看到什么 ===")
-    print("  tools/list 返回了 %d 个工具。host 能看到的全部信息：" % len(tools))
+    print("  tools/list 返回了 %d 个工具。host 能看到的核心字段：" % len(tools))
     for t in tools:
         print("    · name=%s" % t["name"])
         print("      description=%s" % t["description"])
@@ -335,6 +399,8 @@ server 写好了，host 要能发现并拉起它。多数 host 用一份配置�
 
 这是本章和第 4 章之间的接缝，也是本节的最后一个缺口 —— 上面那个 client 是**测试驱动**，不是 host 的适配代码。真实 host 里它长这样：
 
+MCP 要区分两种失败：畸形请求、未知工具等协议/参数问题用 JSON-RPC `error`；工具已经执行但遇到输入、外部 API 或业务错误时，仍返回 `result`，并把 `isError` 设为 `true`。下面的 host shim 会把这两种状态分别映射到模型 API 的错误结果。MCP 的 `content` 可以是文本、图片、音频、资源链接或结构化内容；示例只连接文本块，生产适配器必须按目标模型 API 保留或映射其他类型。
+
 ```python
 def handle_tool_use(tool_use, client):
     """模型返回的 tool_use → JSON-RPC tools/call → 回填 tool_result。
@@ -354,22 +420,32 @@ def handle_tool_use(tool_use, client):
                 "content": json.dumps(resp["error"], ensure_ascii=False)}
     out = resp["result"]
     if out.get("resultType") == "input_required":
-        # MRTR：不是错误。把「需要补什么输入」交回上层去问用户（第 3 节）
-        return {"type": "tool_result", "tool_use_id": tool_use["id"],
-                "content": "需要用户补充输入：" + json.dumps(out["inputRequests"], ensure_ascii=False)}
-    return {"type": "tool_result", "tool_use_id": tool_use["id"],
-            "content": out["content"][0]["text"]}
+        # 这是 MCP 协议层的待处理结果，不是模型工具的最终结果。
+        # 交给 host/SDK 的交互策略；获得输入后，用新 JSON-RPC id 重试原请求。
+        return {"kind": "mcp_input_required", "tool_use_id": tool_use["id"],
+                "request": {"name": tool_use["name"],
+                            "arguments": tool_use["input"],
+                            "requestState": out["requestState"],
+                            "inputRequests": out["inputRequests"]}}
+    # 教学桥接器只把文本块传给模型；生产 host 应按模型 API 支持的内容类型映射
+    # image/audio/resource_link/embedded resource/structuredContent，不能静默丢失。
+    text_blocks = [item["text"] for item in out.get("content", [])
+                   if item.get("type") == "text" and isinstance(item.get("text"), str)]
+    return {"kind": "tool_result",
+            "tool_result": {"type": "tool_result", "tool_use_id": tool_use["id"],
+                            "is_error": bool(out.get("isError", False)),
+                            "content": "\n".join(text_blocks)}}
 ```
 
-两个判据值得记住：`tool_use_id` 必须回填成模型那次调用的 id（否则模型对不上是哪一问）；``input_required` 要走「补输入」而不是「报错」这条路（第 3 节讲的理由）。
+两个判据值得记住：`tool_use_id` 必须回填成模型那次调用的 id（否则模型对不上是哪一问）；`input_required` 应留在 host 的 MCP 交互层处理，不能伪装成已完成的模型 `tool_result`。拿到输入后，host/SDK 才用新的 JSON-RPC id 重试原 MCP 请求，并在 MCP 完成后把最终结果回填给模型。具体是否请求人工输入、如何呈现或自动提供输入，由 host 与 SDK 的策略决定；MRTR 本身不保证人工审批。
 
 ## 为什么要手写一遍
 
 第 13 章给过理由，这里更具体：**因为你要能判断 server 出问题时报的错是什么意思。**
 
-接一个第三方 server，你迟早会看到 `UnsupportedProtocolVersionError`。如果没写过一遍，你不知道这是「你的客户端太老」还是「对方的实现有问题」—— 而这两种情况的处理方式完全不同。
+接一个第三方 server，现代路径可能返回 JSON-RPC error code `-32022`（Unsupported protocol version）。它表示请求声明的版本不被接受；接着可用 `server/discover` 查看 server 声明支持的版本，再判断 client 与 server 的兼容范围。
 
-写过之后你会知道：这个错误来自**每个请求**上的 `_meta.protocolVersion` 校验，所以它意味着「你发的版本和对方支持的版本没有交集」。修法也很明确：调 `server/discover` 看对方的 `protocolVersions`，然后改你发的版本。整个过程不需要读对方源码。
+写过之后你会知道：这个错误来自**每个请求**上的 `_meta.protocolVersion` 校验，所以它意味着「你发的版本和对方支持的版本没有交集」。修法也很明确：调 `server/discover` 看对方的 `supportedVersions`，然后改你发的版本。整个过程不需要读对方源码。
 
 **手写一遍的收益不是「以后都自己写」，而是「出问题时你知道该看哪个字段」。** 这与第 11 章手写循环的收益是同一类。
 
@@ -379,7 +455,7 @@ stdio 传输有个很好的性质：**它可以直接手工测。**
 
 ```bash
 # 一条消息一行，直接喂给 server
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"protocolVersion":"2026-07-28"}}}' \
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
   | python3 mcp_server.py
 ```
 
@@ -395,7 +471,7 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_me
 ## 常见坑
 
 - **在 server 里用 print 打日志。** stdout 是协议通道，一行多余的输出就会导致解析失败，而报错信息不会告诉你原因。日志写 stderr。
-- **以为需要 SDK 才能写 server。** 消息就是 JSON-RPC，一百行足够。
+- **以为需要 SDK 才能写 server。** JSON-RPC envelope 易读不代表生产实现简单；使用 SDK 可以减少手写协议细节，但仍要校验 SDK 版本、transport 与应用安全策略。
 - **只在启动时校验版本。** 无状态之后每个请求都要校验，因为没有握手可以做这件事。
 - **把「未知工具」和「未知方法」用同一个错误码。** 前者是 -32602（参数问题），后者是 -32601（方法不存在），客户端需要区分。
 - **以为本地 server 更安全。** 它跑在你的机器上用你的权限 —— 风险来源不同，不是更安全。

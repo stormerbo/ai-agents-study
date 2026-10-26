@@ -8,4 +8,5 @@ export const bodies = {
   'supply-chain': () => import('./03-supply-chain.mdx'),
   exfiltration: () => import('./04-exfiltration.mdx'),
   'defense-in-depth': () => import('./05-defense-in-depth.mdx'),
+  'identity-and-tenancy': () => import('./06-identity-and-tenancy.mdx'),
 } as const;

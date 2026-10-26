@@ -4,223 +4,274 @@ title: 清晰直接：把「暗示」换成「明说」
 status: drafting
 ---
 
-先看一组实测数据。同一个任务，**只改约束的写法**，各跑 8 次：
+先看一组历史摘要。记录声称：同一个公司介绍任务，三种约束写法各跑 8 次：
 
 > 任务：写一段 200 字左右的公司介绍。这是一家做企业级数据分析的公司，目标客户是中型制造企业。
 
-| 约束写法 | 越界次数 | 字数达标 | 平均字数 |
+| 约束写法 | 记录中的关键词越界次数 | 达到 ≥150 字次数 | 平均中文字数 |
 |---|---:|---:|---:|
-| ① **纯否定**：「不要提到价格、费用或任何具体数字」 | 0/8 | 3/8 | **74 字** |
-| ② **纯正面**：「内容限定在技术能力与适用场景两个方面」 | 3/8 | 5/8 | **108 字** |
-| ③ **组合式**：否定划边界 + 正面给方向 | 0/8 | 4/8 | **113 字** |
+| ① 纯否定 | 0/8 | 3/8 | 74 |
+| ② 纯正面 | 3/8 | 5/8 | 108 |
+| ③ 组合式 | 0/8 | 4/8 | 113 |
 
-（实测数据，`deepseek-flash`，2026-10-08。要求 200 字，这里把「≥150 字」算作达标。）
+（旧记录标注 `deepseek-flash`、2026-10-08。原始请求/响应、精确模型快照、逐次评分和可复现运行记录没有归档，以下数字只能作为**未独立验证的历史摘要**，不能由本节脚本复现，也不能据此声称某种写法普遍更好。）
 
-看这张表之前先交代我的预判：**我以为正面指令会更稳**。很多教程也这么说 —— 「告诉模型你要什么，而不是你不要什么」。
+这组摘要有教学价值，但用途是提出待测假设，不是证明因果。三种 prompt 并非只改一个因素：组合式同时加了否定边界、正面方向和多个例子；正面式也改变了允许范围。调用顺序、模型版本、温度与每次原始答案都没有可查记录。因而，即使数字准确，也无法把长度或越界差异单独归因于“否定”“正面”或“例子”。
 
-**实测结果是：两种写法各有代价，但代价的形式和我想的不一样。**
+评分本身也是代理指标。`价格|费用|成本` 等词命中不等于语义上违规：例如“成本数据不在本次范围内”会被误报；没有命中也不代表答案没有暗示价格。中文字数门槛只能检查篇幅，不代表信息完整或质量达标。因此应把表里的“越界”读成“旧脚本的词项命中”，而不是人工确认的语义违规；74/108/113 也只是摘要中的长度，不是写作质量分数。
 
-## 否定式的代价不是「失效」，是「过度保守」
+## 否定式、正面式与例子：把结论改写成可检验假设
 
-先看第 ① 行。纯否定式 —— 「不要提到价格」—— **越界 0 次**。它完美地达成了目标。
+这组摘要可以支持一个很窄的问题：“在那次未归档的任务与评分口径下，三组输出的词项命中数和长度摘要分别是多少？”它不能支持“否定式会让模型过度保守”“正面式更不稳定”或“组合式最好”等一般因果结论。
 
-但它同时**平均只写了 74 字**，而要求是 200 字。8 次里只有 3 次达到 150 字。
+更可靠的工程做法不是选择一种句式，而是把需求拆成可验收的契约：
 
-对比第 ② 行：纯正面式平均写 108 字，但越界 3 次（提到了「成本」）。
+- **边界**：列出必须满足与禁止满足的条件，并写成可由程序或人工判定的检查。
+- **允许空间**：说明可以写哪些信息，给真实、相关的示例；示例应覆盖边界，而不只是理想样本。
+- **输出契约**：约束结构、长度单位和失败时的处理方式；结构可用 schema 校验，语义要求则需要经过校准的规则或人工 rubric。
+- **评测设计**：同一批代表性输入、固定模型快照与请求参数、随机交错条件顺序、保存每次请求和响应；先定义评分器，再盲评样本并估计不确定性。
 
-所以否定式的问题**不是「模型不听」** —— 它听了，而且听得很彻底。问题是它在阻止目标行为的同时，**把大量合法内容也一起抑制了**。模型不确定哪些内容「可能沾边」，于是选择少说。
+负向约束仍然有用，例如禁止披露敏感字段；正向约束也有用，例如规定答案必须包含适用场景。它们不是互斥策略。明确边界、给出允许内容、再验证结果，通常比只争论句式更可操作。示例能表达风格与边界，但它也可能引入无意的模式；因此要检查示例是否与文字规则一致，并覆盖例外。把“专业一点”改成“面向运维工程师，先给结论，再列两项依据”会更容易评测，但任何提示仍需针对目标任务和模型验证。
 
-这个现象值得单独记住：
+## 这组旧摘要不能证明“system 稳定压过 user”
 
-> **否定式指令的实际效果，往往不是「精准排除某个东西」，而是「整体收缩输出空间」。**
+旧正文另有小样本冲突表：每个 system/user 条件只有 3 次，两个同层顺序条件也只有 3 次。记录未保存原始对话、模型快照和判分过程，因此它们只能作为旧摘要，不能证明稳定优先级、覆盖规律或“后出现的规则覆盖先出现的规则”。3 次全部同向也很容易受抽样波动影响。
 
-## 那为什么不能只用正面？
+角色权限应依据具体 API 契约，而不是从这几次输出推断。以 OpenAI API 的 prompt 指南为例，`developer` 指令优先于 `user` 指令；这描述的是该 API 的角色权限语义，不等于模型在所有冲突场景都能无错执行，也不能直接套到其他厂商。Anthropic Messages API 的常见请求形态使用顶层 `system` 参数，`messages` 数组则使用 `user`/`assistant` 角色；但这不是永远只有这一种形态。当前官方文档还记载，Claude Fable 5 与 Opus 4.8 支持在特定位置插入对话中途的 `system` 消息，其他模型不一定支持。应按目标模型和 endpoint 的当前契约构造请求。本文历史冲突表没有足够材料判断请求如何编码，不能作为任何厂商的权限规则证据。
 
-第 ② 行给出了答案：正面式确实展开了（108 字），但越界 3 次。
+工程上，把应用方必须维持的规则与终端用户提供的任务数据分开，有助于表达边界；但安全策略不能只靠 prompt。涉及授权、数据访问或副作用时，仍要在服务端做权限检查、输入验证和输出校验。角色优先级表达的是指令层级，不是安全控制的替代品。若两个同权要求互相矛盾，最好在调用前消解冲突，或明确条件与优先级；不要把“后一条一定覆盖前一条”当成通用协议。
 
-原因不难理解。「内容限定在技术能力与适用场景」这句话划的范围**不够紧**。什么是「技术能力」？写「降低了客户的**成本**」算不算在讲技术能力带来的价值？在模型看来算 —— 所以它写了，然后越界了。
+## 完整代码示例：在自己的模型上复测
 
-**正面式的问题在于：你给出的正向描述，未必能覆盖你想排除的情况。**
-
-## 组合式为什么最好
-
-第 ③ 行是我把两者拼起来：
-
-```text
-不要提到价格、费用或任何具体数字。
-内容聚焦在技术能力（如数据处理规模、集成方式）与适用场景（如产线质检、设备预测性维护）上。
-```
-
-结果：**越界 0 次，平均 113 字**。
-
-两句话各司其职：
-
-- **否定句划出禁区** —— 精确定义「不能做什么」。这是正面描述难以替代的
-- **正面句给出方向** —— 告诉模型「该往哪走」，避免它因为不确定而过度收缩
-
-注意我在正面句里加了**具体的例子**（数据处理规模、集成方式、产线质检、设备预测性维护）。这不是修饰 —— 它把「技术能力」这个抽象概念落成了具体方向，模型因此知道自己**能**写什么。
-
-## 约束的三层结构
-
-把三组实验的结论合并成一张图：
-
-<Mermaid
-  chart={`
-flowchart LR
-    A["你的约束"] --> B["① 否定句<br/>划禁区"]
-    A --> C["② 正面句<br/>给方向"]
-    A --> D["③ 具体例子<br/>把方向落地"]
-    B --> E["防止越界"]
-    C --> F["防止过度保守"]
-    D --> G["让模型知道<br/>「能写什么」"]
-    E --> H["稳定的输出"]
-    F --> H
-    G --> H
-`}
-/>
-
-三层缺一层都会出问题：
-
-| 缺哪层 | 后果 | 对应实测 |
-|---|---|---|
-| 缺否定句 | 越界，夹带不该有的内容 | 第 ② 行，越界 3/8 |
-| 缺正面句 | 过度保守，输出单薄 | 第 ① 行，平均 74 字 |
-| 缺具体例子 | 正面句太抽象，模型自行解释，结果不可预测 | —— |
-
-## 完整可运行代码：复现这组实验
-
-下面这段脚本可以直接运行。把 `TASK` 与 `VIOLATION_RE` 换成你自己的场景，就能测你自己的 prompt：
+先运行 `python -m pip install anthropic`，设置 `ANTHROPIC_API_KEY` 与你有权限调用的 `ANTHROPIC_MODEL`，再执行 `python compare_instruction_styles.py`。脚本默认发出 24 次请求，实际调用可能产生费用；把任务与判据替换成你的业务案例。默认归档到 `instruction-clarity-results.jsonl`，可用 `INSTRUCTION_OUTPUT` 改路径；已有文件时拒绝覆盖：
 
 ```python
 # compare_instruction_styles.py
-"""对比三种约束写法的效果。
-
-改 TASK 与 VIOLATION_RE 就能套到你自己的场景上 —— 这是本节的真正交付物：
-不是「应该这样写」的结论，而是一个能验证你自己写法的工具。
+"""Online example: measure this prompt on your own fixed model and inputs.
+This does not reproduce the unarchived 2026-10-08 table.
 """
-
+import json
 import os
+import random
 import re
+from pathlib import Path
+from statistics import mean
 
 import anthropic
 
-client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY")
-    or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
-    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-)
-MODEL = os.environ["VERIFY_MODEL"]
+MODEL = os.environ["ANTHROPIC_MODEL"]
+RUNS = int(os.environ.get("RUNS", "8"))
+OUTPUT = Path(os.environ.get("INSTRUCTION_OUTPUT", "instruction-clarity-results.jsonl"))
+SEED = 20261021
+MIN_CHINESE = 150
 
 TASK = (
     "写一段 200 字左右的公司介绍。"
     "这是一家做企业级数据分析的公司，目标客户是中型制造企业。"
 )
-
 VARIANTS = {
-    "纯否定": TASK + "\n\n不要提到价格、费用或任何具体数字。",
-    "纯正面": TASK + "\n\n内容限定在技术能力与适用场景这两个方面。",
-    "组合式": (
+    "negative": TASK + "\n\n不要提到价格、费用或任何具体数字。",
+    "positive": TASK + "\n\n内容限定在技术能力与适用场景这两个方面。",
+    "combined": (
         TASK
         + "\n\n不要提到价格、费用或任何具体数字。"
         + "内容聚焦在技术能力（如数据处理规模、集成方式）"
         + "与适用场景（如产线质检、设备预测性维护）上。"
     ),
 }
-
-# 判据一：越界（出现价格类词或具体数字）
-VIOLATION_RE = re.compile(r"价格|费用|成本|定价|收费|\d+\s*(元|万|美元|%)")
-# 判据二：达标（中文字数下限）
-MIN_CHARS = 150
-RUNS = 8
+# This intentionally weak lexical proxy is not semantic policy evaluation.
+FORBIDDEN_TERMS = re.compile(r"价格|费用|成本|定价|收费")
+DIGITS = re.compile(r"\d")
 
 
-def once(system: str) -> tuple[bool, int]:
-    """跑一次，返回（是否越界, 中文字数）。"""
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1500,
-        messages=[{"role": "user", "content": system}],
-    )
-    text = "".join(b.text for b in response.content if b.type == "text").strip()
-    violated = bool(VIOLATION_RE.search(text))
-    chars = len(re.findall(r"[一-龥]", text))
-    return violated, chars
+def chinese_chars(text: str) -> int:
+    return sum("一" <= char <= "鿿" for char in text)
 
+
+def response_text(response) -> str:
+    return "".join(
+        getattr(block, "text", "")
+        for block in response.content
+        if getattr(block, "type", None) == "text"
+    ).strip()
+
+
+def extract_text(response) -> str:
+    if response.stop_reason != "end_turn":
+        raise RuntimeError(f"incomplete response: {response.stop_reason!r}")
+    text = response_text(response)
+    if not text:
+        raise RuntimeError("response has no text")
+    return text
+
+
+def read_usage(response) -> dict[str, int]:
+    usage = response.usage
+    values = {
+        "input_tokens": getattr(usage, "input_tokens", None),
+        "output_tokens": getattr(usage, "output_tokens", None),
+    }
+    for field in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+        value = getattr(usage, field, None)
+        values[field] = 0 if value is None else value
+    if any(type(value) is not int or value < 0 for value in values.values()):
+        raise RuntimeError(f"invalid or missing usage fields: {values!r}")
+    return values
+
+
+def main() -> None:
+    if RUNS < 1:
+        raise ValueError("RUNS must be at least 1")
+    client = anthropic.Anthropic()  # Uses ANTHROPIC_API_KEY; do not print credentials.
+    rng = random.Random(SEED)
+    rows = []
+    with OUTPUT.open("x", encoding="utf-8") as archive:
+        for run in range(1, RUNS + 1):
+            labels = list(VARIANTS)
+            rng.shuffle(labels)
+            for label in labels:
+                try:
+                    response = client.messages.create(
+                        model=MODEL,
+                        max_tokens=1200,
+                        messages=[{"role": "user", "content": VARIANTS[label]}],
+                    )
+                except Exception as error:
+                    row = {
+                        "requested_model": MODEL,
+                        "response_model": None,
+                        "run": run,
+                        "role": "user",
+                        "max_tokens": 1200,
+                        "prompt": VARIANTS[label],
+                        "variant": label,
+                        "stop_reason": None,
+                        "text": "",
+                        "chinese_chars": None,
+                        "keyword_hits": None,
+                        "contains_digits": None,
+                        "usage": None,
+                        "status": "request_error",
+                        "error_type": type(error).__name__,
+                    }
+                else:
+                    text = response_text(response)
+                    try:
+                        usage = read_usage(response)
+                        usage_error = False
+                    except RuntimeError:
+                        usage = None
+                        usage_error = True
+                    stop_reason = getattr(response, "stop_reason", None)
+                    if stop_reason == "refusal":
+                        status = "refusal"
+                    elif stop_reason != "end_turn":
+                        status = "incomplete"
+                    elif not text:
+                        status = "missing_text"
+                    elif usage_error:
+                        status = "invalid_usage"
+                    else:
+                        status = "scored"
+                    row = {
+                        "requested_model": MODEL,
+                        "response_model": getattr(response, "model", None),
+                        "run": run,
+                        "role": "user",
+                        "max_tokens": 1200,
+                        "prompt": VARIANTS[label],
+                        "variant": label,
+                        "stop_reason": stop_reason,
+                        "text": text,
+                        "chinese_chars": chinese_chars(text) if text else None,
+                        "keyword_hits": (
+                            sorted(set(FORBIDDEN_TERMS.findall(text))) if text else None
+                        ),
+                        "contains_digits": (
+                            bool(DIGITS.search(text)) if text else None
+                        ),
+                        "usage": usage,
+                        "status": status,
+                    }
+                rows.append(row)
+                archive.write(json.dumps(row, ensure_ascii=False) + "\n")
+                archive.flush()
+                print(
+                    f"archived run={run} variant={label} status={row['status']}"
+                )
+    print("\n按 variant 汇总；词项/数字均是代理，不代表语义违规")
+    for label in VARIANTS:
+        group = [row for row in rows if row["variant"] == label]
+        analyzable = [row for row in group if row["status"] == "scored"]
+        if not analyzable:
+            print(f"{label}: analyzable=0/{len(group)}; proxy summary unavailable")
+            continue
+        hits = sum(bool(row["keyword_hits"]) for row in analyzable)
+        digits = sum(row["contains_digits"] for row in analyzable)
+        long_enough = sum(
+            row["chinese_chars"] >= MIN_CHINESE for row in analyzable
+        )
+        mean_han = mean(row["chinese_chars"] for row in analyzable)
+        print(
+            f"{label}: analyzable={len(analyzable)}/{len(group)}, "
+            f"keyword_flags={hits}, digit_flags={digits}, "
+            f">={MIN_CHINESE}_han={long_enough}, mean_han={mean_han:.1f}"
+        )
 
 if __name__ == "__main__":
-    print(f"{'写法':<10} 越界   达标(≥{MIN_CHARS}字)  平均字数")
-    print("-" * 46)
-
-    for label, system in VARIANTS.items():
-        bad = good = total = 0
-        for _ in range(RUNS):
-            violated, chars = once(system)
-            bad += violated
-            good += chars >= MIN_CHARS
-            total += chars
-        print(f"{label:<10} {bad}/{RUNS}   {good}/{RUNS}          {total // RUNS}")
+    main()
 ```
 
-> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）。上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+> **实跑状态**：2026-10-22 离线 mock 9/9；正文代码通过假 SDK 完成 24 次构造调用，覆盖乱序交错、cache usage 类型拒绝、refusal/截断/空文本/非法 usage/请求超时归档、旧文件不覆盖与 stdout 不打印原文；无 provider 请求。当前 Anthropic SDK、endpoint 与模型行为未实跑。
+>
+> **运行边界**：这是一个面向用户自行复测的 Anthropic Messages API 示例，不是历史 DeepSeek 调用的复现。它把三组提示都作为 `user` 内容发送，因此**不能**验证 system/developer 与 user 的角色优先级。词项/数字命中只是粗糙代理，使用前应按业务规则替换并测量误报与漏报；长度统计只数汉字。每条请求尝试都会写入 JSONL；refusal、截断、缺文本、非法 usage 与请求异常作为失败记录进入尝试数，不计入可分析输出。终端只输出 run/variant/status，不打印 prompt 或回答。JSONL 会保存输入与输出，正式使用时须按数据治理要求保护文件；此处仅用 mock 验证代码路径，没有使用真实凭据调用 provider。
 
-**为什么这个脚本比结论更重要**：约束写法的最优解**依赖你的具体任务**。我做出来的结论（组合式最好）只在这个任务上成立。你该做的是把这套脚本套到自己的场景上，得到你自己的数字。
+**为什么这段脚本比“组合式最好”的结论更有用**：它让你保存逐次提示、请求/响应模型名、调用顺序与完整 usage 记录，再在自己的任务上设计人工/程序评分。若厂商提供版本快照，应固定快照；别名可能随时间变化。8 次只适合调试流程，不能据此推断稳定率；正式比较要按目标总体、差异阈值和预算规划样本量。改动 prompt 时一次只改变一个因素，否则结果无法归因。
 
-## 所以「清晰直接」的真正含义
+## 从清晰指令到可验收契约
 
-回到本节标题。多数人理解的「清晰」是**把话说得漂亮、完整**。但实测显示，真正起作用的是另外三件事：
+「清晰」不是把句子写得更长，而是让执行者能区分目标、约束、输入资料与完成条件。OpenAI 与 Anthropic 的当前提示指南都建议写明具体目标、输出要求，并通过代表性输入评测；这些文档提供的是写作建议，不证明某个句式在所有任务上效果更好。不同模型快照和任务类型可能需要不同做法。
 
-**第一，正反两面都要说。** 只说不该做什么，模型会过度收缩；只说该做什么，边界又会松。
+可以按四步把模糊要求转成可检查的任务契约：
 
-**第二，把抽象概念落到具体。** 「技术能力」不如「数据处理规模、集成方式」；「简洁回答」不如「控制在三句话以内」。抽象描述留下解释空间，而模型的解释未必是你想的那种。
+1. **写目标**：说清楚要完成的任务与读者是谁，而非只给一个角色标签。
+2. **列约束**：分别写必须满足、禁止满足的规则；说明冲突时的优先级，避免规则互相矛盾。
+3. **界定输入和输出**：用清晰分隔符标出不可信资料；明示字段、长度单位、格式及缺少信息时的行为。能由 schema 检查的结构不要交给自然语言约束。
+4. **定义验收**：为每条要求写可观察判据，并用代表性案例覆盖正常、边界和失败输入。关键词命中、长度与格式只是代理，需要对照人工判断检查误报和漏报。
 
-**第三，约束要可判断。** 「写得专业一点」不可判断；「不使用第一人称」可判断。可判断的约束才能被稳定执行 —— 这也是第 5 节要讲的「让输出稳定」的基础。
+<Mermaid
+  chart={`
+flowchart LR
+    A["任务目标"] --> B["输入与边界"]
+    B --> C["输出契约"]
+    C --> D["可观察检查"]
+    D --> E{"验收通过？"}
+    E -- "是" --> F["交付"]
+    E -- "否" --> G["定位失败并调整"]
+    G --> D
+    H["不可信资料"] -. "明确标记" .-> B
+  `}
+/>
 
-## 冲突发生时，模型听谁的
+例如，“专业地介绍产品”没有对象、范围或验收条件。更可检查的任务可以是：“面向制造业运维负责人，用 3 个要点说明数据接入、告警和部署方式；只使用给定资料，不推断价格或客户成效；资料缺失时标记‘未提供’。输出 JSON，字段为 `capabilities`、`scenarios`、`unknowns`。”接着仍要校验 JSON schema，并抽样检查语义是否满足目标。这种写法提高了可测性，但不保证模型每次都正确。
 
-写 prompt 时最常撞上的不是「怎么写清楚」，而是**两条规则打架时怎么办** —— 用户在对话里说「用中文回答」，而你的 system 写着「一律用英文」。
+负向规则适合明确禁止事项，正向描述适合指出允许范围，示例适合展示期望形态；三者可以同时使用。要逐个检查它们是否一致，例如文字说“不要输出数字”而示例含数字，会给模型相互冲突的信号。对高影响要求，应将自动校验、权限控制或人工审核放在模型之外，不能把提示语当作执行保证。
 
-我做了对称测试来排除语种偏好（两边都不用英文，用中文对法文）：
+## 角色权限依赖 API 契约
 
-| 规则摆放 | 3 次的结果 |
-|---|---|
-| system 要法文 / user 要中文 | 法文 ×3 |
-| system 要中文 / user 要法文 | 中文 ×3 |
+应用应把长期不变的业务规则与每次请求的任务数据分开，角色字段则按目标 API 的规范使用。OpenAI API 文档明确其 `developer` 指令优先于 `user` 指令；这是 API 的权限规则，不表示输出一定服从。Anthropic 的 `system` 参数与消息角色也有各自定义。不要把本节未归档的 3 次小样本冲突摘要当作任何当前模型/接口的行为测量，也不要推广成所有厂商通用的“system 一定赢”。
 
-**system 层稳定压过 user 层** —— 两个方向都赢在 system，所以不是碰巧偏向某个语种。
-
-那两条规则都在 user 里呢？
-
-| 规则摆放 | 3 次的结果 |
-|---|---|
-| 先法文、后中文 | 中文 ×3（听了后一条） |
-| 先中文、后法文 | 法文 ×1、中文 ×2（**不稳定**） |
-
-**同层冲突时行为不稳定。** 两次的方向都不一致，所以别把「后出现的指令会覆盖先出现的」当成规则来用。
-
-> **这组数据的置信度边界，必须说清**：上面两张表每个条件**只跑了 3 次**。按本章第 2 节的判据（想可靠地分辨 10 个百分点的差异，至少上百次），3 次样本**只够当示意，够不上结论**。所以正确的读法是：
-> - 「system 层压过 user 层」在两个方向上都成立 → **值得当假设**，但仍应在你自己的 prompt 上重测；
-> - 「先法文后中文 → 中文 ×3」与「先中文后法文 → 法文 1 / 中文 2」的方向**互相矛盾**，这恰恰说明它是噪声，**不能读成「后出现的覆盖先出现的」**。
-> 更强的证据来自第 3 章第 2 节那组对照：同一份含矛盾规则的 prompt 跑 **12 次**，结果是 **8 承诺 / 4 不承诺** —— 这才是「冲突导致分裂」的可靠形态（12 次仍不足以估计精确比例，但足以看到分裂本身）。样本量怎么定、噪声底线怎么算，第 15 章会给出完整方法。
-
-工程含义三条：
-
-1. **不可协商的约束放 system**，它压得住 user 层。
-2. **别指望在 user 层写「不要做 X」去挡住另一条指令** —— 同层之间没有可靠优先级。
-3. **同层冲突应该被消除，而不是被排序。** 出现两条互相拉扯的指令时，正确做法是删掉一条、或合并成带条件的一条。第 3 章那组实测可以佐证：矛盾规则会让同一份 prompt 跑出 8/12 的分裂。
-
-还有一个附带发现值得记：这个测试里最长的一次用了 **3153 个 output token**，而它最终只输出了一句「你好！」。规则冲突会让模型反复权衡 —— **冲突的代价不只是行为不稳定，还有实打实的 token。**
-
-最后补一条操作建议：**把 system 与 user 的职责分开。** system 放不可协商的约束（语言、格式、安全边界、角色）；user 放这一次任务的参数（对象、范围、语气）。当你在 user 里写下「不要……」时，先问一句：这难道不是一条该上移到 system 的约束？同理，凡是「必须始终成立」的规则都属于 system，而不是某一轮任务的描述。
+同一层内出现互相矛盾的要求时，先在调用端消解冲突：由应用参数确定优先级，或拒绝含糊任务并请求补充条件。不要依赖消息出现顺序来构成业务规则。涉及安全边界时，服务端仍须检查权限、校验输入和输出，并限制可执行工具；提示词的角色层级不是授权机制。
 
 ## 一个诊断清单
 
-prompt 效果不好时，先判断症状属于哪一类，**因为修法方向是相反的**：
+遇到下列症状时，把“原因”当作待检验假设，而不是从单条输出直接诊断：
 
-| 现象 | 大概率原因 | 怎么改 |
+| 观察到的现象 | 可检查的假设 | 下一步验证 |
 |---|---|---|
-| 输出太短、内容单薄 | **否定式用多了**，模型不确定能说什么 | 补正面描述 + 具体例子 |
-| 输出越界、夹带不该有的内容 | 只有正面描述，范围划得不够紧 | 补一句否定式划边界 |
-| 时好时坏、不稳定 | 约束本身模糊，不可判断 | 把抽象要求落成可判断的条件 |
-| 输出很长但没重点 | 没给长度或结构约束 | 明确字数、段数或输出格式 |
+| 输出太短或信息缺项 | 长度、资料充分性、任务目标或截断共同影响 | 检查 stop reason、输入是否提供所需事实，并明确长度/字段；用同一批案例比较 |
+| 出现不允许的内容 | 禁止规则不明确、输入含冲突内容，或评分器没覆盖语义变体 | 保存原始输出；用人工 rubric 与代理规则对照，补充误报/漏报案例 |
+| 输出时好时坏 | 输入差异、模型版本、采样、顺序、工具或评分噪声 | 固定并记录变量，随机交错条件，检查逐例失败而非只看平均数 |
+| 输出很长但没重点 | 目标、读者或结构要求缺失，也可能是资料过多 | 明确优先级、输出结构与长度，比较完整性和遗漏情况 |
 
-**别在没判断清楚症状前就盲目加长 prompt。** 「输出太短」和「输出越界」需要的是相反的修改 —— 加错方向只会让问题更严重。
+不要因为一次越界就机械地增加否定句，也不要因为一次答案过短就推断是“模型过度保守”。先定位可观察的失败条件，再单变量调整并用保存的案例回归。对语义质量，长度和关键词只是低成本信号，必须验证它们与人工目标的一致程度。

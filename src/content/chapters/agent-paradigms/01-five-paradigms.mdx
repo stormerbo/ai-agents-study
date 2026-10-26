@@ -4,139 +4,135 @@ title: 五类范式：一张对照表
 status: drafting
 ---
 
-"范式"这个词在这本书里指一件很具体的事：**模型与工具之间的调用关系长什么样。**
+本节用「范式」讨论任务如何被拆成模型请求、代码步骤、工具执行与结果复核。入门时列出的几种模式**不是同一层级、互斥的分类**：单次调用、显式 workflow、ReAct 和 Plan-Execute 是四种控制流骨架；Reflection 是可叠加的复核策略。多智能体描述多个模型实例间的协作拓扑，下一章单独讨论。
 
-同一个任务，用不同的范式做，模型看到的上下文不同、你和模型之间的往返次数不同、出错的形态也不同。这一节先把五类摆出来，后面四节逐个拆。
+这里关心两个不同的问题：**谁提出下一步**，以及**谁有权执行和判定完成**。模型可以提出工具调用、计划或终止信号；宿主（运行模型请求、校验动作、调用工具和保存状态的应用代码）仍需执行授权、验证参数、控制预算、处理结果并决定能否结束。ReAct 原论文描述的是推理轨迹和行动提议交替，不意味着模型直接掌管宿主或副作用。[ReAct 原论文](https://arxiv.org/abs/2210.03629)
 
-## 五类范式
+## 五种常见实现模式（并非同层级分类）
 
-**一、单次调用。** 一次请求，一个答案。没有工具，没有循环。绝大多数任务其实到这一层就够了 —— 这是最容易被跳过、也最该先试的一层。
+**一、单次调用。** 对模型发起一次请求并处理这一轮响应；若需调用外部工具并拿回结果继续生成，那已经包含额外的宿主步骤或模型往返。它适合作为无工具任务的基线，但是否满足质量、安全与反馈要求仍需评估。
 
-**二、链式（workflow）。** 你把任务拆成固定的几步，串起来跑。每一步是一次调用，但**顺序是你定的，不是模型定的**。第 0 章讲过它和 agent 的分界：控制流在谁手里。
+**二、显式 workflow。** 应用代码决定下一步执行哪个节点。节点可以是代码、模型请求或工具操作；workflow 可以包含条件边、并行或失败分支，不等于固定的一串模型调用。
 
-**三、ReAct。** 模型每一步自己决定：调工具，还是给答案。工具结果回填后它再决定下一步。控制流交给了模型，但**每一步只决定下一步**。
+**三、ReAct。** 模型基于当前观察，逐轮提出行动或结束建议；宿主解析建议、验证权限与参数、执行工具，再把结果交回模型。模型输出不直接执行副作用，宿主也不能只凭模型的结束建议就认定任务成功。
 
-**四、Plan-Execute。** 先让模型把整件事拆成一个完整的计划，再由代码依次执行，最后综合。控制流还是模型定的，但**它在看到任何数据之前就要把计划定下来**。
+**四、Plan-Execute。** 模型根据任务和已提供上下文提出一份计划；宿主先验证计划与当前状态、权限及预算，再执行并处理结果。计划可能过期，需要条件路由或重新规划；“计划在执行前生成”不等于“模型在没有任何输入数据时规划”。
 
-**五、Reflection。** 在上面任何一种之上加一个自我批判的回合：拿到答案 → 让模型检查 → 修订。
+**五、Reflection（复核策略）。** 在上述任一骨架上增加批评、检查或修订环节。它可以使用外部反馈，也可以只让模型重读同一答案；这两者的证据强度不同。反思文本本身不等于独立验证。论文中的 **Reflexion** 是一个更具体的方法：将任务反馈转成语言化反思，保存在 episodic memory，供后续尝试使用，并不只是“同一答案再读一遍”。[Reflexion 原论文](https://arxiv.org/abs/2303.11366)
 
-（第六类是多智能体 —— 多个模型实例互相通信。它是一整章的内容，见第 12 章。）
+Tree-of-Thoughts（ToT）让模型探索多个连贯的中间推理路径，并评估路径以决定扩展方向；它描述搜索/推理策略，不是宿主工具执行边界。[ToT 原论文](https://arxiv.org/abs/2305.10601) 多智能体则描述多个模型实例之间的协作拓扑，见第 12 章。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["任务"] --> B{"控制流在谁手里？"}
-    B -->|"全在我手里"| C["链式 workflow<br/>固定几步，串起来"]
-    B -->|"交给模型"| D{"计划什么时候定？"}
-    D -->|"每一步定下一步"| E["ReAct<br/>边看边决定"]
-    D -->|"开工前一次定完"| F["Plan-Execute<br/>计划即契约"]
-    C --> G{"要不要自我批判？"}
-    E --> G
-    F --> G
-    G -->|要| H["Reflection<br/>答案 → 批判 → 修订"]
-    G -->|不要| I["结束"]
-    H --> I
-    A -.-> J["单次调用：连工具都不用<br/>先试这一层"]
+    A[任务] --> P{请求与控制流骨架}
+    P --> S[单次调用]
+    P --> W[显式 workflow<br/>代码编排，可含条件与并行]
+    P --> R[ReAct<br/>模型逐步提出动作]
+    P --> X[Plan-Execute<br/>模型提出计划]
+    S --> H[宿主授权、校验、执行和终止策略]
+    W --> H
+    R --> H
+    X --> H
+    V[Reflection 复核策略] -.-> S
+    V -.-> W
+    V -.-> R
+    V -.-> X
+    M[多智能体协作拓扑] -.-> P
 `}
 />
 
-## 实测：同一个正确答案，成本差 5 倍
+## 历史 token 摘要：不能作为范式排名
 
-我用三种范式跑**同一个线性任务**（查三个城市的天气，报告最高、最低和差值）。工具是确定性的 mock，所以每个数字都可复现：
+历史日志摘要记录了三种实现跑同一线性天气任务时的 token 总量。工具数据使用本地 mock，不代表 provider/model 响应可重放；当时程序实际通过网络请求 DeepSeek 兼容端点。**mock 工具的确定性不等于模型调用、评分或历史测量可复现。**
 
-| 范式 | 结果 | token | 模型往返 |
-|---|---|---:|---:|
-| ReAct | ✅ | 1,203 | 2 |
-| Plan-Execute | ✅ | **506** | 4（计划 + 执行 + 综合） |
-| Reflection | ✅ | **2,568** | 3 |
+| 范式 | 旧检查器摘要 | 历史 token 摘要 | 旧记录中的步骤/往返字段 |
+|---|---|---:|---|
+| ReAct | 通过 | 1,203 | 2（字段口径未留档） |
+| Plan-Execute | 通过 | **506** | 4（不能确认是步骤数还是模型往返） |
+| Reflection | 通过 | **2,568** | 3（字段口径未留档） |
 
-（实跑数据，2026-10-09，`deepseek-flash`。）
+（历史摘要：2026-10-09，记录的模型标识为 `deepseek-flash`。评分器只做字符串包含检查；逐次请求、响应、完整 trace 与评分过程未归档，故无法独立复算或确认答案正确。）
 
-**三个都对，但最贵的比最便宜的贵了 5.1 倍。** 这是本节最重要的一行。
+**真实误判例子：** 旧 T1 检查器只检查文本是否出现「广州、上海、34、27、7」。因此「广州不是最高，上海最高；温差 7」也会通过，尽管最高/最低城市角色写反。这个例子复现了评分器的假阳性，不代表本轮重跑模型。
 
-为什么 Plan-Execute 反而最省？因为它**把钱花在了刀刃上**：一次请求就把三个查询排好，三个工具调用在前两轮里全部执行完，最后只需要一次综合。而 ReAct 要走「调一次 → 看结果 → 再决定」的节奏，每个往返都重发一次上下文。
+**旧检查器把三种结果都标为通过，token 记录最高约为最低的 5.1 倍。** 这只描述未复核的历史摘要，不支持正确率结论或跨任务成本排序。其用途是提醒读者：比较之前，先固定任务、评分器、模型配置、运行边界与用量口径，并保存逐次轨迹。
 
-那 Reflection 为什么最贵？它**把刚才那些往返全做了一遍之后，又完整地做了一遍批判**。多出来的 2,568 减 1,203 ≈ 1,365 token，买到的是一句「以上答案正确」。
+Plan-Execute 的控制流可以先表示多个待执行动作，再由宿主逐项验证与执行；ReAct 则允许模型在看到新观察后重新提出下一步。它们的模型往返、工具调用、校验和执行延迟取决于具体实现。由于历史逐次响应与 trace 缺失，不能把 506 与 1,203 的差异归因于某个单一机制。
 
-这里要说清楚一件事：**范式不改变「能不能做对」，它改变的是代价和弹性。** 在线性任务上三者都对，差别只在钱；而当任务形状变了，差别就会出现在正确率上 —— 下一节开始拆。
+Reflection 增加复核步骤，成本可能来自额外模型请求、检索、工具或校验；具体代价取决于实现。历史 2,568 token 摘要既不能证明答案等价，也不能证明反思提高了正确率。
 
-## 三种范式的成本差从哪来
+## 请求结构如何影响成本（机制说明，不是本节的测量结论）
 
-把上面那三个数字拆开看，差别的来源其实很清楚。
+模型请求通常伴随输入输出、网络往返和 provider 计量；workflow 还可能有代码执行、工具 I/O、并行等待与失败处理。讨论成本时要分别记录模型往返、token/账单、工具调用与墙钟延迟，不能仅凭范式标签推算。
 
-**Plan-Execute 省在「一次往返干多件事」。** 它的第一轮请求里，模型一次性排出了三个查询；代码把三个都执行完，再把三份结果一起回填。整件事只用了两次「模型看到上下文」的机会。
+**Plan-Execute** 可以把一组拟议动作放入一个计划对象，但计划生成、宿主校验、工具执行和最终综合是不同步骤；工具数不等于模型往返数，多个动作也不必然并行。
 
-**ReAct 花在「每一步都要重新看一眼」。** 它和第 9 章界面 agent 的循环是同一个形状 —— 每一步都必须把当前状态完整地发给模型。线性任务上它只需要 2 步，所以还不算贵；任务一长，这个成本就会按步数累积。
+**ReAct** 通常在工具结果或其他新观察之后再请求模型决策。宿主可能裁剪或摘要上下文，所以每轮输入既不必完整重发，也不保证只增加固定成本。
 
-**Reflection 花在「把同一件事做了两遍」。** 它先在基础范式上拿到一个答案，然后再起一轮完整的批判。多出来的那部分 token 买到的是一句「以上答案正确」—— 在答案本来就对的时候，这是纯支出。
+**Reflection** 可以是另一次模型评审，也可以是程序校验、外部 evaluator、检索或测试。它是否增加模型请求、能否发现错误，取决于具体信号与实现；“再让同一个模型读一遍”不构成独立证据。
 
-所以三者不是「能力递增」的关系，而是**成本结构不同**：批量执行、逐步适应、事后复核。你要按任务的形状去挑，而不是按「哪个更高级」。
+因此，几种模式不是能力或成本的固定等级。选型应看目标任务、质量与安全门槛，并对照可复算的同任务测量。
 
 ## 别把这张表当成结论
 
-有一个必须说清的限制：**上面那组数字来自一个线性任务**。换一个形状的任务，排序会变 —— 第 3 节就会看到 Plan-Execute 在条件分支任务上**同时输掉正确率和成本**。
+有一个必须说清的限制：**上面那组数字来自一个线性任务与弱字符串评分器**，原始逐次响应没有归档。换一个任务形状可能改变控制流与成本，但第 3 节旧判分结果不能用来比较准确率，也不能证明普遍的成本排序。
 
-这也是本书反复出现的那个提醒（见第 3 章第 5 节）：写「A 比 B 好」之前，先问清楚**你在什么任务上比的**。范式没有全局最优，只有针对某类任务的最优。
+这也是本书反复出现的那个提醒（见第 3 章第 5 节）：写「A 比 B 好」之前，先问清楚**你在什么任务上比的**。这些名称本身不保证全局最优方案；需要把候选放进目标任务、质量与安全门槛、运行预算和恢复要求中评估。
 
-## 这张表还缺两个维度
+## 控制流之外还要交代什么
 
-上面五类是按**控制流在谁手里**分的。但真实系统里还有两个正交的维度，忽略了它们会把不同范式混为一谈。
+上面的几种模式只描述了请求如何推进。真实系统还必须说明上下文如何构建与共享、任务状态存在哪里、宿主按什么验收条件结束、遇到拒绝/超时/工具失败时如何处理。多智能体会引入多个上下文与通信关系，但这不自动带来隔离、安全或质量提升；并发与协调成本须按实现测量。
 
-**维度一：上下文怎么共享。** 单次调用只有一个上下文；链式每一步可以带不同的上下文（这正是第 3 章讲的隔离）；多智能体则有好几份各自独立的上下文。**上下文边界在哪里，决定了哪类错误会发生** —— 第 12 章会看到，多智能体最主要的收益和最主要的失败都来自这个维度。
-
-**维度二：谁来决定「做完了」。** 有的是模型说完成（ReAct），有的是计划执行完（Plan-Execute），有的是代码校验通过（第 5 章的结构化输出）。这个维度决定了循环能不能自己停下来 —— 第 9 章实测过一个场景：模型察觉到卡住了，但它的动作空间里没有「报告卡住」这个选项，只能一直重试。
-
-所以当你听到「我们用 ReAct」这句话时，它其实只回答了三分之一的问题。另外两个维度（上下文边界、停止判据）同样要在设计时说清楚，而它们往往比范式的名字更影响成败。
+“谁决定做完”也不能只按模式名回答：模型可输出一个终止提议，计划也可以执行完，但应用仍要根据验收条件、剩余预算、权限和副作用状态决定返回成功、拒绝、升级还是继续。
 
 ## 换范式的迁移成本
 
 最后补一个很实际的判断：**从一种范式换到另一种，哪些东西要重写。**
 
-| 资产 | 换范式时要改吗 |
+| 资产 | 迁移时检查什么 |
 |---|---|
-| 工具定义与 schema | **不用** —— 它是第 4 章的东西，与范式无关 |
-| 工具的错误回填规则 | **不用** —— 同上 |
-| 上下文策略（放什么、什么时候清） | **要重设计** —— 这恰恰是范式之间差别最大的地方 |
-| 停止条件 | **要重写** —— 每类范式的「做完了」判据不同 |
+| 工具定义与 schema | 概念或 schema 可能复用；核验目标 runtime 的参数表示、验证规则、身份上下文和副作用语义 |
+| 工具结果与错误 | 保持错误语义与结果来源；确认新的流程能区分拒绝、业务错误、可重试错误与结果未知 |
+| 上下文策略 | 按新流程重新验证哪些状态/证据会进入下一轮，裁剪后是否仍满足判据 |
+| 停止与恢复 | 统一验收、预算、取消、超时、重规划、幂等与对账边界；不把模型结束信号单独当成功 |
 
-这张表解释了一个常见现象：**换范式的成本主要不在代码量，而在重新想清楚上下文和停止条件。** 工具那一层是稳定的，可以放心先在它上面投入。
+表格给的是迁移审查清单，不是“工具层永远不改”的承诺。成本应通过代表性的改动演练估算，覆盖代码、配置、数据状态、权限、日志、测试和运维，而非只比较行数。
 
-换个角度说：如果你把工具层做得足够干净，那么「换个范式试试」就是一次成本可控的实验，而不是一次重写。这也是后面第 11 章要手写一遍循环的实际理由 —— 你需要知道哪些部分是可以替换的，哪些部分是必须一起改的。
+## 同一个任务，不同模式的产物
 
-## 同一件事，五类范式各自产出什么
+前面的概念可落到具体产物上。下面天气数据是**本地构造的 fixture**，用于说明代码和轨迹结构，不是真实天气，也不是模型输出或范式 benchmark。模型不可用时，单次调用应说明缺少数据源，而不是编造温度。
 
-前面都是判断，这一节把它落到**看得见的东西**上。同一个任务（查北京、上海、广州明天的最高温，报告最高/最低/差值）用五类范式做，产物长得完全不同：
-
-**单次调用** —— 产物就是一次请求，没有工具：
+**单次调用** —— 一次请求；没有工具结果时，正确行为可能是说明证据不足：
 
 ```json
-{"model": "...", "messages": [{"role": "user",
-  "content": "查北京、上海、广州明天的最高温，报告最高/最低/差值。"}]}
+{"messages": [{"role": "user", "content": "查三个城市的明日最高温；若没有可用数据源，请说明缺少数据。"}]}
 ```
 
-（示例：构造数据，未实跑。模型没有工具，只能凭记忆答 —— 这类任务它大概率答不出准确温度。）
+（示例：构造数据，未实跑；只展示消息片段，不是完整 provider 请求。）
 
-**链式 workflow** —— 产物是一张**你写死**的步骤表：
+**显式 workflow** —— 应用代码安排节点；节点可以是代码、工具或模型调用，并可按状态走条件分支：
 
 ```python
-steps = [("get_weather", {"city": c, "day": "明天"}) for c in ["北京", "上海", "广州"]]
-answers = [run(*s) for s in steps]        # 顺序在代码里，模型改不了
+steps = [("get_weather", {"city": city, "day": "明天"})
+         for city in ["北京", "上海", "广州"]]
 ```
 
 （示例：构造数据，未实跑。）
 
-**ReAct** —— 产物是一条**逐轮决定**的轨迹。每一轮末尾都有一个 `stop_reason`，它指的是模型这一轮为什么停下（`tool_use` = 要接工具，`end_turn` = 给了最终答案）：
+**ReAct** —— 模型输出动作提议、宿主执行并回填观察；下面轨迹是结构示意，不表示模型可直接调用工具：
 
 ```text
-轮 1  模型：并发调用 get_weather(北京,明天) / get_weather(上海,明天) / get_weather(广州,明天)
-      stop_reason = tool_use
-轮 2  模型：看到 31 / 27 / 34 → 给出最终答案
-      stop_reason = end_turn
+轮 1  模型提议查询北京；宿主校验并执行
+      observation = {city: "北京", day: "明天", temp_c: 31}
+轮 2  模型根据观察提议查询上海与广州；宿主再次校验并执行
+      observation = [...]
+轮 3  模型提出最终 JSON；宿主按验收条件检查
 ```
 
-（本次真跑，2026-10-12：轮 1 in=378 out=154，轮 2 in=614 out=150，合计 1,296 token。2026-10-09 那次的实测值是 1,203 —— 运行间有正常波动。）
+（示例：构造数据，未实跑。）
 
-**Plan-Execute** —— 产物是一份**开工前定好**的计划 JSON：
+**Plan-Execute** —— 模型提出计划，宿主先校验，再执行；计划在代码执行前存在，不意味着没有初始任务数据：
 
 ```json
 [{"tool":"get_weather","city":"北京","day":"明天"},
@@ -144,189 +140,154 @@ answers = [run(*s) for s in steps]        # 顺序在代码里，模型改不了
  {"tool":"get_weather","city":"广州","day":"明天"}]
 ```
 
-（本次真跑，2026-10-12：生成计划这一轮 in=103 out=142 = 245 token；本节上表的 506 是含执行与综合的整件事。）
+（示例：构造数据，未实跑。）
 
-**Reflection** —— 产物是基础范式的答案 + 一段**批判文本**：
+**Reflection** —— 复核是叠加步骤。若只有原答案，模型的批评未必获得新信息；把工具证据、判定器反馈或明确 rubric 一并提供，才可检验它能否发现具体错误：
 
 ```text
-第一位助手的答案：…最高 34（广州）、最低 27（上海），差 7 度。
-核查：三个温度与差值均与工具返回一致，无需修改。
+待复核答案：广州最高 34℃，上海最低 27℃，温差 7℃。
+可用证据：北京 31℃；上海 27℃；广州 34℃。
+复核任务：逐字段比对证据与答案；若信息不足，指出缺失，不补造事实。
 ```
 
 （示例：构造数据，未实跑。）
 
-把五份产物并排看，「控制流在谁手里」就落地了：
+本节保存的 **2026-10-12 provider 用量记录**仍是历史摘要：轮 1 in=378/out=154、轮 2 in=614/out=150、合计 1,296 token；2026-10-09 的历史摘要为 1,203。逐次请求/响应和评分轨迹未归档，故未在本轮重跑或独立验证。这些数字只保留为历史观察，不用于校准下方离线示例。
 
-| 范式 | 产物里能看到什么 | 控制流 |
-|---|---|---|
-| 单次调用 | 一次请求，一段回答 | 你（没有循环） |
-| 链式 | 一张你写死的步骤表 | **你** |
-| ReAct | 每一轮的停/走决策 | **模型**（每步一决定） |
-| Plan-Execute | 一份开工前的计划；执行阶段没有模型 | **模型**（一次性） |
-| Reflection | 基础产物 + 一段批判 | 模型（多一轮） |
-
-这里出现了两个后面反复要用的字段，先把它们解释清楚：`stop_reason` 指的是 API 响应里的一个字段，说明模型这一轮**为什么停下** —— `tool_use` 表示它要调工具，`end_turn` 表示它给了最终答案，`max_tokens` 表示输出被预算截断了（这时文本可能是空的）。`max_tokens` 指的是**输出**上限：它是请求参数，决定这次最多能生成多少 token，与输入计费无关。本节的成本表就是靠核对这两个字段与 usage 得到的。
+这些产物分别展示请求、代码编排、逐步动作提议、计划对象和复核输入。模式名本身不说明授权、上下文共享、验收器或恢复行为；需要在实现中另行定义。
 
 ## 完整可运行代码
 
-下面这段代码把三种范式实现出来，跑同一个任务，并打印成本。工具是本地 mock，不需要任何凭据就能理解结构。
+下面用一个确定性的本地 fixture 展示五种模式产生的控制流产物。它不会运行语言模型，也不比较准确率、token、成本或延迟；`fixture_proposal` 只是固定策略，用来模拟 ReAct 的逐步提议位置。实际系统需要把它替换成模型输出，并继续保留宿主校验。
+
+**实跑状态：2026-10-21，Python 3.10+，仅标准库；无凭据、provider 或网络调用。** 温度字典是构造数据，不是真实天气：
 
 ```python
-"""三种 Agent 范式跑同一个任务：ReAct / Plan-Execute / Reflection。
+import json
 
-工具是确定性的 mock（不联网），所以每一步都可复现、可精确判分。
-关键设计：任务 T2 有**条件分支** —— 下一步查哪个城市取决于上一步的结果。
-静态计划在它面前必然失效，这正是「计划即契约」的边界。
-
-实跑状态：2026-10-09，deepseek-flash。
-"""
-import os
-import json, os, urllib.request
-
-TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34,
-        ("深圳", "明天"): 29, ("北京", "后天"): 24, ("上海", "后天"): 26,
-        ("广州", "后天"): 33, ("深圳", "后天"): 30}
-
-TOOLS = [
-    {"name": "get_weather", "description": "查询某个城市某一天的最高气温（摄氏度）。",
-     "input_schema": {"type": "object",
-                      "properties": {"city": {"type": "string"},
-                                     "day": {"type": "string", "enum": ["明天", "后天"]}},
-                      "required": ["city", "day"]}},
-]
+TEMP = {
+    ("北京", "明天"): 31,
+    ("上海", "明天"): 27,
+    ("广州", "明天"): 34,
+}
+ALLOWED_CITIES = {"北京", "上海", "广州"}
 
 
 def get_weather(city, day):
-    k = (city, day)
-    if k not in TEMP:
-        return {"error": "没有 %s%s 的数据" % (city, day)}
-    return {"city": city, "day": day, "temp_c": TEMP[k]}
+    if city not in ALLOWED_CITIES or day != "明天":
+        raise ValueError("工具参数不在本示例允许范围内")
+    return {"city": city, "day": day, "temp_c": TEMP[(city, day)]}
 
 
-def call(messages, system, tools=None, max_tokens=1200):
-    body = {"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
-            "system": system, "messages": messages}
-    if tools:
-        body["tools"] = tools
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
-        data=json.dumps(body).encode(),
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        d = json.loads(resp.read())
-    u = d.get("usage", {})
-    tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-           + u.get("cache_creation_input_tokens", 0))
-    return d, tin + u.get("output_tokens", 0)
+def build_answer(observations):
+    by_city = {item["city"]: item["temp_c"] for item in observations}
+    if set(by_city) != ALLOWED_CITIES:
+        raise ValueError("证据不完整，不能生成答案")
+    high = max(by_city, key=by_city.get)
+    low = min(by_city, key=by_city.get)
+    return {
+        "highest_city": high,
+        "highest_temp_c": by_city[high],
+        "lowest_city": low,
+        "lowest_temp_c": by_city[low],
+        "difference_c": by_city[high] - by_city[low],
+    }
 
 
-T1 = "查北京、上海、广州明天的最高温，报告最高的是哪个城市、最低的是哪个，以及两者差多少度。"
-T2 = ("查北京和上海明天的最高温。哪个城市更高，就再查那个城市后天的最高温。"
-      "最后报告：北京明天的温度、上海明天的温度、以及你额外查的那个城市后天的温度。")
+def single_call():
+    # 只有任务文本、没有天气工具结果；不猜温度，明确需要证据。
+    return {"status": "needs_evidence", "tool_calls": []}
 
 
-def react(task, tools=TOOLS, cap=10):
-    """ReAct：模型每一步自己决定调工具还是给答案。"""
-    sys = "你是一个会使用工具的助手。需要数据就调用工具，拿到足够信息后直接给出最终答案。"
-    msgs = [{"role": "user", "content": task}]
-    used, tok, steps = [], 0, 0
-    while steps < cap:
-        steps += 1
-        d, t = call(msgs, sys, tools)
-        tok += t
-        blocks = d.get("content", [])
-        if d.get("stop_reason") != "tool_use":
-            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-            return text, tok, steps, used
-        msgs.append({"role": "assistant", "content": blocks})
-        results = []
-        for b in blocks:
-            if b.get("type") == "tool_use":
-                args = b.get("input", {})
-                used.append(args.get("city"))
-                out = get_weather(args.get("city"), args.get("day"))
-                results.append({"type": "tool_result", "tool_use_id": b["id"],
-                                "content": json.dumps(out, ensure_ascii=False)})
-        msgs.append({"role": "user", "content": results})
-    return "（达到步数上限）", tok, steps, used
+def workflow():
+    # 固定顺序由应用代码决定；这里的节点是本地工具函数。
+    observations = [get_weather(city, "明天") for city in ("北京", "上海", "广州")]
+    return {"answer": build_answer(observations), "observations": observations}
 
 
-def plan_execute(task, cap_plan=8):
-    """Plan-Execute：先一次性给出完整工具调用计划，再由代码执行，最后综合。"""
-    msgs = [{"role": "user", "content":
-             task + "\n\n请先给出完整的执行计划：一个 JSON 数组，每项形如 "
-             '{"tool":"get_weather","city":"...","day":"..."}。只输出 JSON 数组。'}]
-    d, tok = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
-    text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    if not text.strip() and d.get("stop_reason") == "max_tokens":
-        raise RuntimeError("测量故障：空输出 + stop_reason=max_tokens，需要调大预算，不是模型失败")
-    i = text.find("[")
-    try:
-        plan, _ = json.JSONDecoder().raw_decode(text[i:])
-    except Exception:
-        plan = []
-    results, used = [], []
-    for step in plan[:cap_plan]:
-        if step.get("tool") == "get_weather":
-            used.append(step.get("city"))
-            results.append(get_weather(step.get("city"), step.get("day")))
-    msgs.append({"role": "assistant", "content": text})
-    msgs.append({"role": "user", "content": "计划已执行完毕，结果如下：\n"
-                 + json.dumps(results, ensure_ascii=False) + "\n\n请给出最终答案。"})
-    d2, tok2 = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
-    tok += tok2
-    final = "".join(b.get("text", "") for b in d2.get("content", []) if b.get("type") == "text")
-    return final, tok, 1 + len(plan), used
+def fixture_proposal(observations):
+    # 确定性策略替代模型，仅用于演示逐步提出下一动作的控制流。
+    seen = {item["city"] for item in observations}
+    return next((city for city in ("北京", "上海", "广州") if city not in seen), None)
 
 
-def reflection(task):
-    """Reflection：ReAct 拿到答案后，再让模型自查并修订一次。"""
-    first, tok1, steps1, used = react(task)
-    msgs = [{"role": "user", "content": task + "\n\n第一位助手的答案：\n" + first
-             + "\n\n请检查这个答案是否有错。如果正确，原样输出；如果有错，给出修正后的答案。"}]
-    d, tok2 = call(msgs, "你是一个严格的事实核查者。")
-    tok = tok1 + tok2
-    final = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    return final, tok, steps1 + 1, used
+def react_fixture():
+    observations = []
+    proposals = []
+    while True:
+        city = fixture_proposal(observations)
+        if city is None:
+            break
+        proposals.append({"tool": "get_weather", "city": city, "day": "明天"})
+        # 宿主在执行前检查动作范围；模型提议本身没有执行权限。
+        if city not in ALLOWED_CITIES:
+            raise PermissionError("宿主拒绝越界动作")
+        observations.append(get_weather(city, "明天"))
+    return {"answer": build_answer(observations), "proposals": proposals}
 
 
-def check1(text):
-    """T1 判分：必须点出广州（34）、上海（27）、差 7 度。"""
-    ok = ("广州" in text and "上海" in text and ("7" in text))
-    return ok
+def plan_execute_fixture():
+    # 计划是构造的 JSON 数据；宿主先校验完整结构和每项参数，再执行。
+    plan_json = json.dumps([
+        {"tool": "get_weather", "city": city, "day": "明天"}
+        for city in ("北京", "上海", "广州")
+    ], ensure_ascii=False)
+    plan = json.loads(plan_json)
+    if not isinstance(plan, list) or len(plan) != 3:
+        raise ValueError("计划结构无效")
+    for step in plan:
+        if set(step) != {"tool", "city", "day"} or step["tool"] != "get_weather":
+            raise ValueError("计划字段或工具无效")
+        if step["city"] not in ALLOWED_CITIES or step["day"] != "明天":
+            raise ValueError("计划参数越界")
+    observations = [get_weather(step["city"], step["day"]) for step in plan]
+    return {"answer": build_answer(observations), "validated_plan": plan}
 
 
-def check2(text, used):
-    """T2 判分：北京 31、上海 27；因为北京更高，所以额外查的必须是北京（后天 24）。"""
-    ok = ("31" in text and "27" in text and "24" in text)
-    branch_ok = "北京" in used
-    return ok, branch_ok
+def reflection_overlay(base_result):
+    # 只构造复核输入，不伪装成已调用模型或已验证答案。
+    return {
+        "draft": base_result["answer"],
+        "evidence": base_result["observations"],
+        "review_request": "逐字段检查答案是否受证据支持；证据不足时报告未知。",
+        "reviewer_invoked": False,
+    }
 
 
 if __name__ == "__main__":
-    print("=== T1（线性任务）：三种范式 ===")
-    print("任务：%s" % T1)
-    for name, fn in [("ReAct", lambda: react(T1)), ("Plan-Execute", lambda: plan_execute(T1)),
-                     ("Reflection", lambda: reflection(T1))]:
-        text, tok, steps, used = fn()
-        print("  %-13s %s  token %-6d 步数 %-2d 查了 %s" % (name, "✅" if check1(text) else "❌",
-                                                            tok, steps, used))
-    print()
-    print("=== T2（条件分支任务）===")
-    print("任务：%s" % T2)
-    for name, fn in [("ReAct", lambda: react(T2)), ("Plan-Execute", lambda: plan_execute(T2))]:
-        text, tok, steps, used = fn()
-        ok, branch = check2(text, used)
-        print("  %-13s 答案 %s  分支 %s  token %-6d 步数 %-2d 查了 %s"
-              % (name, "✅" if ok else "❌", "✅" if branch else "❌（查错城市）", tok, steps, used))
-        print("      最终答案：%s" % text.strip().replace("\n", " ")[:150])
+    one = single_call()
+    fixed = workflow()
+    reactive = react_fixture()
+    planned = plan_execute_fixture()
+    review_input = reflection_overlay(fixed)
+    assert one["status"] == "needs_evidence" and one["tool_calls"] == []
+    assert fixed["answer"] == reactive["answer"] == planned["answer"]
+    assert len(reactive["proposals"]) == len(planned["validated_plan"]) == 3
+    assert review_input["reviewer_invoked"] is False
+    print("数据性质：本地合成控制流演示；不是模型运行或性能比较")
+    print("single_call: status=%s; tool_calls=%d" % (one["status"], len(one["tool_calls"])))
+    print("workflow: status=completed; tool_calls=%d; answer=%s" % (len(fixed["observations"]), json.dumps(fixed["answer"], ensure_ascii=False, sort_keys=True)))
+    print("react_fixture: proposals=%d; host_executed=%d; answer_matches_workflow=%s" % (len(reactive["proposals"]), len(reactive["proposals"]), reactive["answer"] == fixed["answer"]))
+    print("plan_execute_fixture: validated_items=%d; host_executed=%d; answer_matches_workflow=%s" % (len(planned["validated_plan"]), len(planned["validated_plan"]), planned["answer"] == fixed["answer"]))
+    print("reflection_overlay: evidence_items=%d; reviewer_invoked=%s" % (len(review_input["evidence"]), review_input["reviewer_invoked"]))
+```
+
+示例输出用于验证 fixture 代码路径，不表示模型能够按该轨迹运行。尤其是 Reflection 行只展示复核输入，真实复核者是否发现错误必须另行评估。
+
+```text
+数据性质：本地合成控制流演示；不是模型运行或性能比较
+single_call: status=needs_evidence; tool_calls=0
+workflow: status=completed; tool_calls=3; answer={"difference_c": 7, "highest_city": "广州", "highest_temp_c": 34, "lowest_city": "上海", "lowest_temp_c": 27}
+react_fixture: proposals=3; host_executed=3; answer_matches_workflow=True
+plan_execute_fixture: validated_items=3; host_executed=3; answer_matches_workflow=True
+reflection_overlay: evidence_items=3; reviewer_invoked=False
 ```
 
 ## 常见坑
 
-- **一上来就用最复杂的范式。** 先试单次调用，再试链式，最后才考虑 agent 循环。绝大多数任务在前两层就结束了。
-- **以为「更复杂」等于「更准」。** 实测里三种范式在同一个线性任务上结果完全相同，差别是 5 倍成本。
-- **把范式和框架绑在一起。** 范式是控制流的形状，框架只是实现它的工具 —— 同一个范式可以用十几行手写出来（第 11 章）。
-- **在没测过代价的情况下选范式。** 上面那张表里，最直觉的 ReAct 比 Plan-Execute 贵一倍多，而这一点猜不出来。
+- **把模型提议当成宿主权限。** ReAct 动作、Plan-Execute 计划和结束信号都只是输入；宿主必须在副作用发生前验证身份、对象范围、参数与预算。
+- **把 workflow 想成固定的一串模型调用。** 节点可能是代码、工具或模型；条件边、并行、重试和失败路径要显式设计。
+- **把 Reflection 当正确性证明。** 重读同一答案不能提供独立证据；需要明确 rubric、任务反馈、计算器、测试或可信来源，并测量其错误覆盖。
+- **把某次 token 摘要解释成某范式普遍更贵或更准。** 本节历史调用缺逐次 trace 和评分器，不能归因，也不能外推。
+- **把迁移成本等同于代码行数。** 调整控制流时，还要核验状态、权限、工具语义、失败恢复、观测与运行支持。
+- **只看一种实现就定义范式。** 同一控制流可以由不同宿主、模型请求策略和工具执行器实现；记录具体职责与契约，而不只记模式名。

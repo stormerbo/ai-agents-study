@@ -1,265 +1,221 @@
 ---
 lesson: agent-paradigms/reflection
-title: 自我批评什么时候真的有用
+title: 自我复核何时有用，何时只是多一次调用
 status: drafting
 ---
 
-Reflection（自我反思）是这几类范式里最容易被高估的一个。它的说法听起来无懈可击：让模型检查自己的输出，发现错误就改。
+Reflection（自我复核）是在初稿之后，再让模型检查或修订结果。它和 Java 服务里“再跑一次同一个方法”不一样：模型会重新采样文本，但仍可能沿用同一份错误事实、同一段缺失上下文和同一种偏见。第二次回答不同，既不证明第一次错，也不证明第二次更可靠。
 
-问题在于：**同一个模型，用同一套知识，检查它自己刚给出的答案** —— 它能发现什么？
+所以“反思有用吗”不是模型性格问题，而是验证设计问题。你给复核者什么输入、它要产出什么、谁判断修订正确、错误结果会不会被交付，这些要在系统里明确。增加证据可以帮助比较答案与来源，但**更多证据不等于独立验证**：同一模型可能误读证据，证据本身也可能错误或不可信。
 
-## 实测：在同一份答案上做批判
+## 先区分三种常被叫作“反思”的东西
 
-让 ReAct 先跑一遍 T1（查三城天气并比较），拿到一个**当时正确的答案**，然后把它交给模型批判：
+1. **同答案自评**：把答案再给模型，问“对吗”。如果没有新的标准、证据或计算，它可能只是重复原判断；是否能发现某类错误要靠任务评测，不能先假设无用或有效。
+2. **基于反馈的修订**：提供测试失败、校验器错误或真实环境结果，再请模型修订。错误信息能缩小搜索范围，但最终结果仍需重新通过验收。
+3. **Reflexion 方法**：原论文讨论让语言模型根据环境反馈形成文字化反思，并用于后续尝试；关键是反馈信号进入后续决策，不等于任意“请检查”提示。它也不意味着反思文本一定正确或长期记忆一定安全。
 
-| 组合 | 结果 | token |
-|---|---|---:|
-| ReAct 单独 | ✅ | 1,203 |
-| ReAct + Reflection | ✅ | **2,568** |
+这三种操作成本和可验证性都不同。多采样取一致答案（self-consistency）又是另一种方法：它生成多个候选再聚合，不能与对先前答案做反馈修订合并成一种“反思”。
 
-（实跑数据，2026-10-09，`deepseek-flash`。）
+## 历史观察：保留数字，不替它们补证据
 
-**答案是同一个，账单翻了一倍多（+113%）。** 多出来的那些 token 买到的是一句「以上答案正确」。
+旧记录（2026-10-09，`deepseek-flash`）称：ReAct 单独的旧检查器“通过”、token 摘要为 1,203；加入 Reflection 后“通过”、token 摘要为 2,568；另称 7 次里有 2 次改坏答案、另一组三次中两种输入都被旧检查器评为 3/3。逐次原始请求/响应、精确模型快照、完整 usage 和可复算的评分记录没有归档，因此这些只能当作历史摘要，不能换算成错误率、证明修订等价或推导普遍成本。
 
-## 但它确实改错过 —— 而且失败形态很有信息量
+原先的检查器以字符串包含判分，不能保证城市和温度的字段映射正确。“2 次改坏”对应的修订文本曾记录为“无法核实第一位助手的答案”，原因是批判者缺少实时天气数据；但没有原始 transcript，无法独立确认当时传入的完整证据和上下文。应保留这个实现诊断作为线索，不将它写成已验证的模型行为。
 
-在带 Reflection 的运行里，有 **2 次把一个本来正确的答案改坏了**。其中一次的修订输出是：
+旧稿把 +113% token 摘要解释为线性任务约 2 倍成本，并据此认为更长轨迹会让成本倍数继续上升。这些推论不成立：缺少逐次 usage 无法复算基线；而反思回合的边际开销取决于实际重发的上下文、输入/输出计量、缓存与目标 endpoint。保留原始摘要有助追溯，但不应用它比较范式。
 
-```text
-无法核实第一位助手的答案。
-原因：我没有联网或实时天气数据，无法查询 2026-05-08 …
+## 设计一条真正可验收的复核路径
+
+先选一个有明确判据的任务。例如将三城温度汇总成最高/最低城市和温差。原始观测可以由程序保留成结构化字段；答案先由确定性校验器检查。如果检查通过，任务目标已满足，就不必自动增加一个模型回合。如果检查失败，再根据失败类型决定补算、重新取数、让模型根据具体错误修订，或暂停交由人工确认。
+
+复核请求应只包含当前错误所需的最小上下文：任务目标、候选答案、相关证据和明确的错误，不要默认复制整条会话。原始工具结果、用户材料都应视为待验证数据；转交前按数据分类做脱敏、访问控制和长度限制。把工具错误原文直接拼进 prompt 既可能泄露敏感内容，也会把不可信输入混入指令上下文。
+
+复核响应需要像其他外部输入一样处理：确认 provider 响应完整且不是拒绝或截断，解析精确字段和允许的决策，再将修订答案交给原验收器重新检查。格式正确只证明结构；独立验收通过也只支持其检查范围内的结论。若质量目标是语气、覆盖度或法律解释这类难以代码判定的标准，应定义人工标注指南、盲评方式和分歧裁决流程，而不是把同一模型的“通过”当作 ground truth。
+
+下面的完整 Python 例子用合成的天气观测验证宿主流程（**实跑状态：Python 3.14.7，本地离线执行，2026-10-21**）。它展示：确定性错误先被校验器发现；模拟的复核响应给出候选修订；候选必须再次通过校验才交付；不完整、拒绝或畸形响应都不能交付。FakeReviewer 是固定测试夹具，不是模型，也不证明真实模型会找到错误。
+
+```python
+"""Offline reflection gate fixture. Synthetic data; no model/provider calls."""
+import json
+
+OBSERVATIONS = [
+    {"city": "北京", "day": "明天", "temp_c": 31},
+    {"city": "上海", "day": "明天", "temp_c": 27},
+    {"city": "广州", "day": "明天", "temp_c": 34},
+]
+TASK = "报告最高、最低城市与温差。"
+REQUIRED = {
+    "highest_city", "highest_temp_c", "lowest_city", "lowest_temp_c", "difference_c"
+}
+
+
+def expected_answer(observations):
+    if not observations or any(not isinstance(row.get("temp_c"), int) for row in observations):
+        raise ValueError("observations are incomplete")
+    high = max(observations, key=lambda row: row["temp_c"])
+    low = min(observations, key=lambda row: row["temp_c"])
+    return {
+        "highest_city": high["city"],
+        "highest_temp_c": high["temp_c"],
+        "lowest_city": low["city"],
+        "lowest_temp_c": low["temp_c"],
+        "difference_c": high["temp_c"] - low["temp_c"],
+    }
+
+
+def independent_validate(candidate, observations):
+    if not isinstance(candidate, dict) or set(candidate) != REQUIRED:
+        return ["answer schema mismatch"]
+    expected = expected_answer(observations)
+    return [key for key, value in expected.items() if candidate.get(key) != value]
+
+
+def should_request_review(errors):
+    # A deterministic discrepancy is a trigger; this policy is only a fixture.
+    return bool(errors)
+
+
+def build_review_input(task, candidate, observations, errors):
+    # Pass relevant structured evidence, not the whole conversation/tool trace.
+    return {
+        "task": task,
+        "candidate": candidate,
+        "evidence": observations,
+        "validation_errors": errors,
+        "instruction": "Return JSON with decision, reason, revised_answer; do not invent missing evidence.",
+    }
+
+
+def parse_review(reply):
+    """Provider adapter must map its API states into complete/truncated/refused."""
+    if not isinstance(reply, dict) or reply.get("status") != "complete":
+        return None
+    text = reply.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(parsed, dict) or set(parsed) != {"decision", "reason", "revised_answer"}:
+        return None
+    if parsed["decision"] not in {"accept", "revise", "abstain"}:
+        return None
+    if not isinstance(parsed["reason"], str) or not parsed["reason"].strip():
+        return None
+    if parsed["decision"] == "revise" and not isinstance(parsed["revised_answer"], dict):
+        return None
+    if parsed["decision"] != "revise" and parsed["revised_answer"] is not None:
+        return None
+    return parsed
+
+
+def resolve_review(original, reply, observations):
+    review = parse_review(reply)
+    if review is None or review["decision"] == "abstain":
+        return None, False
+    candidate = original if review["decision"] == "accept" else review["revised_answer"]
+    errors = independent_validate(candidate, observations)
+    return (candidate, True) if not errors else (None, False)
+
+
+def main():
+    wrong = {
+        "highest_city": "北京", "highest_temp_c": 31,
+        "lowest_city": "上海", "lowest_temp_c": 27, "difference_c": 4,
+    }
+    errors = independent_validate(wrong, OBSERVATIONS)
+    assert should_request_review(errors)
+    request = build_review_input(TASK, wrong, OBSERVATIONS, errors)
+    assert set(request) == {"task", "candidate", "evidence", "validation_errors", "instruction"}
+
+    # Fixed fixture reply, not a model completion.
+    corrected = expected_answer(OBSERVATIONS)
+    fake_reply = {
+        "status": "complete",
+        "text": json.dumps({
+            "decision": "revise", "reason": "recompute from supplied observations",
+            "revised_answer": corrected,
+        }, ensure_ascii=False),
+    }
+    delivered, accepted = resolve_review(wrong, fake_reply, OBSERVATIONS)
+    assert accepted and delivered == corrected
+    print("initial_check=failed; review_triggered=True")
+    print("revised_candidate=independently_checked; deliverable=%s" % accepted)
+
+    for incomplete in (
+        {"status": "truncated", "text": ""},
+        {"status": "refused", "text": ""},
+        {"status": "complete", "text": "not JSON"},
+        {"status": "complete", "text": '{"decision":"revise"}'},
+    ):
+        candidate, can_deliver = resolve_review(wrong, incomplete, OBSERVATIONS)
+        assert candidate is None and not can_deliver
+    print("truncated/refused/malformed=held; providerCalls=0; externalNetworkCalls=0")
+
+
+if __name__ == "__main__":
+    main()
 ```
 
-它给出的理由是「我没有天气数据」。**可那份数据刚刚才拿到过** —— 只是我在实现里没有把它一起交给批判者。
+```text
+initial_check=failed; review_triggered=True
+revised_candidate=independently_checked; deliverable=True
+truncated/refused/malformed=held; providerCalls=0; externalNetworkCalls=0
+```
 
-这暴露了一个真实的实现问题：**批判者看到的输入，决定了它能批什么。** 只给它一份结论，它会转而质疑「这个结论从哪来的」；把证据一起给它，它才能核对结论与证据是否一致。
-
-后来我又做了 3 次对照 —— 同一个基础答案，分别用「只给答案」和「答案 + 工具原始结果」去批判：**两臂都是 3/3 通过，那次改错没有复现。** 所以如实记下：它是一个偶发现象（7 次里 2 次），不是稳定结论。
-
-## 什么时候它有用，什么时候是纯支出
-
-把上面的现象和第 2 章 self-eval 的实测放在一起，能提炼出一条判据。第 2 章测过：喂入构造的错答，模型 8/8 都抓住了、0/8 误报 —— 看起来很强。但那次有效的真实原因是：**正确答案可以由模型自己独立算出来**（「37 × 43」它可以重算一遍）。它做的不是「审阅」，是「重算」。
-
-由此得到判据：
-
-**Reflection 有用的前提，是「复核」这件事比「原答」多用了某些信息。** 具体有三种情况：
-
-**一、有新的信息进入。** 比如批判者拿到了工具原始数据、拿到了 schema、拿到了外部校验结果。这时它不是在自言自语，而是在核对证据。
-
-**二、原答案是在信息不足时给出的。** 比如模型没调工具就答了，那么「回头再检查一次，这次给你工具」是有效的 —— 但这其实更像 ReAct，不是反思。
-
-**三、任务有可独立验证的结构。** 比如算术可以重算、JSON 可以校验、代码可以跑测试。这时复核是「用另一个通道再算一次」，能发现错误。
-
-反过来说，如果三点都不成立 —— 只是把「一段创作」或「一个判断题」的答案原样交给同一个模型再看一遍 —— 那它大概率会点个赞，而你付了两倍的钱。
+`independent_validate` 在本例里是独立于 FakeReviewer 的确定性计算，所以能判出城市和温差是否对应证据；在真实系统中，它的输入来源仍需可信、校验规则也要覆盖目标字段。对于开放式任务没有这样的 oracle 时，代码不该假装有精确答案；可以选择盲评、多个独立评审、抽样人工复核或上线后监控，但这些方法各自有偏差，需用目标任务验证。
 
 <Mermaid
   chart={`
-flowchart TB
-    A["想加一个反思回合"] --> B{"复核时能拿到<br/>原答没有的信息吗？"}
-    B -->|"能"| C["✅ 值得<br/>它在核对，不是自言自语"]
-    B -->|"不能"| D{"答案能被独立验证吗？<br/>算术 / schema / 测试"}
-    D -->|"能"| C
-    D -->|"不能"| E["⚠️ 大概率是纯支出<br/>实测成本 +113%"]
-    E --> F["它会点赞<br/>或者转向质疑「数据从哪来」"]
-    C -.-> G["注意：只给结论不给证据<br/>它会去质疑证据是否存在"]
+flowchart TD
+    A[初始候选] --> B[确定性或任务级初验]
+    B -->|已通过目标验收| G[按策略交付]
+    B -->|发现可定位的问题| C[构造最小脱敏复核输入]
+    B -->|风险过高或无法判定| H[暂停或人工处理]
+    C --> D[模型提出评语或修订候选]
+    D --> E{响应完整且结构有效?}
+    E -->|否 / 拒绝 / 截断| H
+    E -->|是| F[对候选重新执行验收]
+    F -->|验收通过| G
+    F -->|仍失败| I{预算和策略允许再试?}
+    I -->|否| H
+    I -->|是| C
 `}
 />
 
-## 一个更省钱的做法
+## 把复核接入执行循环
 
-如果目的是「减少错误」，比追加一个反思回合更省钱的做法是：**把校验移出模型。**
+不要默认每个模型回合后都再调用一次模型。先记录失败类型，再决定谁最适合处理：JSON 不合法由解析器拒绝；数字范围或字段关系由业务代码验证；缺少外部事实要重新查询可信来源；只有需要语义判断且任务风险允许自动处理时，才考虑模型复核。出现安全、权限或无法确认的副作用时，应走拒绝、暂停或人工路径，不能指望模型反思替代授权与恢复。
 
-能写成代码的检查就不要交给模型 —— JSON 的 schema、数值范围、字段间的一致性、引用的 id 是否存在，这些是确定性判断，代价接近零。只有当错误**结构上无法用代码判定**时（比如「这段话的语气是否符合品牌调性」），才值得交给模型复核。
+触发器要对应验收目标。确定性校验不通过可以触发修订，但“模型自称不确定”不是可靠的唯一门槛；它可能漏报不确定性。为可抽样审计的语义复核，应保留脱敏后的输入版本、rubric 版本、评审输出、独立 grader/人工结果和交付决定。把全部 trace 默认送入第二次 prompt 会扩大隐私暴露与 token 用量，且并不增加证据独立性。
 
-这也和第 5 章的结论一致：**校验应该在代码里，模型只负责生成。** 反思之所以容易变成纯支出，根子上就是因为它被当成了一个「万能校验器」—— 而校验这件事，能写成代码的部分本就不该交给模型。
+若模型修改候选答案，不能只检查它是否复述了错误信息；必须用相同或更强的验收标准重新检查修订稿。若失败仍然存在，应限制重试次数和总预算，记录停止原因，并将未通过结果保持为未完成。重试上限按时延、成本、失败恢复和副作用风险设定，没有适用于所有任务的固定轮数。
 
-## 完整可运行代码
+## 成本要从实际请求计算
 
-下面这段代码在同一个基础答案上做对照批判，只改变批判者的输入（只给答案 vs 答案 + 证据）。
+加一次模型复核至少会增加一次调用，但 token、费用和时延不是一个固定倍数。输入可能包含任务、候选答案、证据或历史；输出长短由模型和任务决定；缓存计量和不同 API 的 usage 字段也会影响账单。比较方案时要记录每次请求的模型快照、终止状态、输入/输出及缓存 usage、延迟、grader 结果和完整 trace，再按相同任务与验收标准计算。没有这些数据时，只能说“会多一次模型调用”，不能引用本节旧摘要推导 +113%、两倍或更长任务的成本曲线。
 
-```python
-"""反思的输入该包含什么：只给答案 vs 答案 + 证据。
+## 与 Self-Consistency 和 Reflexion 的边界
 
-自包含：工具定义、ReAct 循环、判分都内联在这个文件里，不依赖外部脚本。
-环境变量：ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / VERIFY_MODEL（写在 .env.local）。
-实跑状态：2026-10-09 的结论由等价脚本产出；下面的内联版可独立运行。
-"""
-import json
-import os
-import urllib.request
+self-consistency 是从多个样本聚合答案；Reflection 常指基于已有结果与反馈再评估或修订；Reflexion 原论文则将文字化反馈带入后续尝试。它们的输出关系与评测目标不同。多个样本之间可能共享相同系统性错误；一个复核器也可能将错误答案包装得更有说服力。因此，“意见一致”不能代替证据核验，“修改成功”必须由任务级 grader 或人来判。
 
-TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34, ("深圳", "明天"): 29}
-TOOLS = [{"name": "get_weather", "description": "查询某个城市某一天的最高气温（摄氏度）。",
-          "input_schema": {"type": "object",
-                           "properties": {"city": {"type": "string"},
-                                          "day": {"type": "string", "enum": ["明天", "后天"]}},
-                           "required": ["city", "day"]}}]
-T1 = "查北京、上海、广州明天的最高温，报告最高的是哪个城市、最低的是哪个，以及两者差多少度。"
-
-
-def get_weather(city, day):
-    k = (city, day)
-    if k not in TEMP:
-        return {"error": "没有 %s%s 的数据" % (city, day)}
-    return {"city": city, "day": day, "temp_c": TEMP[k]}
-
-
-def call(messages, system, tools=None, max_tokens=1200):
-    body = {"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
-            "system": system, "messages": messages}
-    if tools:
-        body["tools"] = tools
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
-        data=json.dumps(body).encode(),
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        d = json.loads(resp.read())
-    u = d.get("usage", {})
-    tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-           + u.get("cache_creation_input_tokens", 0))
-    return d, tin + u.get("output_tokens", 0)
-
-
-def check1(text):
-    """T1 判分：必须点出广州（34）、上海（27）、差 7 度。"""
-    return ("广州" in text and "上海" in text and ("7" in text))
-
-
-def react_with_evidence(task):
-    """ReAct，但把工具结果一并留下，供批判者查看。"""
-    sys = "你是一个会使用工具的助手。需要数据就调用工具，拿到足够信息后直接给出最终答案。"
-    msgs = [{"role": "user", "content": task}]
-    evidence = []
-    for _ in range(10):
-        d, t = call(msgs, sys, TOOLS)
-        blocks = d.get("content", [])
-        if d.get("stop_reason") != "tool_use":
-            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-            return text, evidence
-        msgs.append({"role": "assistant", "content": blocks})
-        results = []
-        for b in blocks:
-            if b.get("type") == "tool_use":
-                a = b.get("input", {})
-                out = get_weather(a.get("city"), a.get("day"))
-                evidence.append(out)
-                results.append({"type": "tool_result", "tool_use_id": b["id"],
-                                "content": json.dumps(out, ensure_ascii=False)})
-        msgs.append({"role": "user", "content": results})
-    return "（超步数）", evidence
-
-
-N = 3
-print("=== T1：对同一个 ReAct 答案做两次批判，只有输入不同 ===")
-a_ok = b_ok = 0
-for i in range(N):
-    ans, ev = react_with_evidence(T1)
-    base = check1(ans)
-    # A 臂：只给答案
-    d, _ = call([{"role": "user", "content": T1 + "\n\n第一位助手的答案：\n" + ans
-                    + "\n\n请检查这个答案是否有错。如果正确，原样输出；如果有错，给出修正后的答案。"}],
-                   "你是一个严格的事实核查者。", max_tokens=2000)
-    fa = "".join(x.get("text", "") for x in d.get("content", []) if x.get("type") == "text")
-    # B 臂：答案 + 证据
-    d2, _ = call([{"role": "user", "content": T1 + "\n\n第一位助手查到的原始数据：\n"
-                      + json.dumps(ev, ensure_ascii=False) + "\n\n它的答案：\n" + ans
-                      + "\n\n请检查这个答案是否有错。如果正确，原样输出；如果有错，给出修正后的答案。"}],
-                     "你是一个严格的事实核查者。", max_tokens=2000)
-    fb = "".join(x.get("text", "") for x in d2.get("content", []) if x.get("type") == "text")
-    oa, ob = check1(fa), check1(fb)
-    a_ok += oa; b_ok += ob
-    print("  第%d次：基础答案 %s | 只给答案 %s | 答案+证据 %s"
-          % (i + 1, "✅" if base else "❌", "✅" if oa else "❌", "✅" if ob else "❌"))
-    if base and not oa:
-        print("      ⚠️ 只给答案时改成：%s" % fa.strip().replace("\n", " ")[:110])
-print("  → 只给答案 %d/%d，答案+证据 %d/%d" % (a_ok, N, b_ok, N))
-```
-
-## 反思该放在循环的哪个位置
-
-「加一个反思回合」这句话太粗了 —— **放在哪里，代价差好几倍。** 三种常见放法：
-
-**一、每一步都反思。** 每次工具调用之后都让模型检查一次。这是最贵的放法，而且几乎总是过度 —— 你已经为这一步付过钱了，再付一次只为确认「刚才那步没问题」。
-
-**二、结束时反思。** 拿到最终答案后检查一次。也就是本节实测的那种，附加成本 +113%。
-
-**三、只在检测到异常时反思。** 由代码判断出了状况（校验不通过、工具返回错误、答案格式不对），才触发一次反思。**这是最省的，也最可能有用。**
-
-第三条为什么更可能有用？因为它的判据不是「流程走完了」，而是「**有证据表明出错了**」。而当代码能判断出错时，它多半也能说出错在哪 —— 把那个具体原因交给模型，比让它自己去找错有效得多。第 5 章第 3 节实测过这个差别：空洞重试 0/6，把错误原因拼回去 6/6。
-
-**触发条件就三类，全部由代码判断**（示例：构造数据，未实跑）：
-
-```python
-import json
-
-def looks_parseable(text):
-    try:
-        json.loads(text)
-        return True
-    except Exception:
-        return False
-
-def needs_reflection(state, result, text):
-    """只在检测到异常时反思：返回 (是否触发, 给模型的理由)。代价接近零。"""
-    if state["validation_errors"]:                     # 1) 校验不通过
-        return True, "校验失败：" + "；".join(state["validation_errors"])
-    if result.get("is_error"):                          # 2) 工具返回错误
-        return True, "工具 %s 报错：%s" % (state["last_tool"], str(result.get("content"))[:200])
-    if not looks_parseable(text):                       # 3) 格式不对
-        return True, "输出不是合法 JSON，前 80 字符：%s" % text[:80]
-    return False, ""
-```
-
-触发之后只需要把第二个返回值拼进提示：
-
-```python
-trigger, reason = needs_reflection(state, result, text)
-if trigger:
-    messages.append({"role": "user", "content":
-        "这一次的结果没有通过检查。具体原因：\n" + reason +
-        "\n请只针对这个原因修正，输出完整的修正结果。"})
-    # 再调一次模型；没触发就完全不反思
-```
-
-这段代码的关键在于：**没触发就不反思**。三条判据任何一条不成立，那 113% 的附加成本就直接省掉；一旦触发，交出去的不是「你再看看」，而是一条具体的错误原因 —— 第 5 章第 3 节实测过这个差别：空洞重试 0/6，把错误原因拼回去 6/6。
-
-## 它和 self-consistency 是同一个问题
-
-self-consistency（多次采样取多数）是另一种复核方式，第 2 章实测过它的边界：唯一答案题 5 次采样零分歧，创作题 6 次各不相同 —— 投票无事可做，成本 5.4 倍。
-
-（这里说的采样由 `temperature` 控制：它指的是「采样随机性」这个参数 —— temperature=0 时模型每步都挑概率最高的词（近似确定），越高越发散。上文「temperature 1 和 0 采样结果一样」的意思就是：把随机性开到最大，这套题也没有产生第二个答案。）
-
-它和 reflection 的共同假设是：**多算一次能带来新信息。** 而当答案由同一套知识、同一份输入得出时，多算一次只是多花一次钱。两者的失效机制是同一个。
-
-区别在于 self-consistency 还多了一层「多样性能带来独立性」的希望 —— 实测里那个希望也没有兑现（temperature 1 和 0 采样结果一样）。两者的共同代价是**让同一套知识把同一件事再算一遍**，而独立性从来不是靠重算获得的，是靠换信源获得的。
-
-## 反思的成本从哪来
-
-「多花 113%」这个数字可以拆开。一次反思回合的开销有两部分：
-
-**输入**是任务 + 原答案（有时还有整条轨迹）。在长任务里这部分才是大头 —— 轨迹越长，批判者要读的越多。
-
-**输出**只是那段批判文字，通常几百 token。
-
-所以在同一个任务上，反思的相对成本会**随着轨迹变长而上升**。线性任务上它是 2 倍；如果基础范式跑了十几步，反思的输入里就要重新装进那十几步的全部内容，倍数会更大。
-
-这也给出一个实践上的提醒：**如果一定要加反思，尽量只给它需要的那部分，而不是整条轨迹。** 把工具原始结果抽出来给它（就像本节对照实验的 B 臂那样），比把整个对话历史倒进去便宜得多，而且更有针对性。
+第 2 章记录的 self-eval 8/8 和温度/投票结果同样属于原始响应未归档的历史摘要。算术题能独立重算是一个可测试的设计方向，不是此前摘要已经证明 Reflection 有效的证据。要比较它与规则校验、重新检索或多样化候选，必须在同一数据集、同一 grader 下评测准确性、拒答、改坏率、成本和延迟。
 
 ## 本节小结
 
-1. **反思的判据只有一条**：复核时能不能拿到原答没有的信息。拿不到，它就是在自言自语。
-2. **实测成本 +113%，而结果与不加反思相同**；线性任务上它是最贵的一档。
-3. **只给结论不给证据，它会去质疑证据是否存在**（7 次里 2 次）；这个现象后来没有复现，如实记为偶发。
-4. **触发条件应该是「有证据表明出错了」，而不是「流程走完了」** —— 把具体错误交给模型，比让它自己找错有效得多。
-5. **能写成代码的校验就别交给模型**：schema、范围、一致性检查，这些的成本接近零。
+1. Reflection、基于反馈的修订、Reflexion 与 self-consistency 是不同操作，先说清楚要测哪一种。
+2. 新证据可能帮助复核，但不能自动建立证据独立性；对可机械判定的要求使用独立程序校验。
+3. 模型修订不是交付结果。响应需完整、结构符合约定，候选修改后还要通过验收。
+4. 复核输入限于任务相关且经过授权的数据；不要默认转发完整对话、秘密或原始工具错误。
+5. 记录实际 usage 和端到端结果。历史 1,203、2,568、2/7 与 3/3 摘要不能证明质量或普遍成本。
 
 ## 常见坑
 
-- **把反思当成免费的准确性提升。** 实测成本 +113%，而结果与不加反思相同。
-- **只把结论交给批判者。** 实测里批判者会转而质疑「数据从哪来」，把正确答案改成「无法核实」。证据要和结论一起给。
-- **在概率性任务上加反思。** 没有可独立验证的答案时，复核者能做的只有「再判断一次」，而它与第一次用的是同一套知识。
-- **忘了反思也消耗上下文。** 它要把原答案（有时还有轨迹）连同任务一起重发，这部分开销往往比批判本身的输出更大。
-- **忽略第 2 章那个结论的边界。** self-eval 8/8 抓住错答，是因为那些错答可以被独立重算 —— 不是因为它擅长审阅。
+- **把“再看一遍”当作独立验证。** 使用不同证据、算法或人能降低部分同源风险，但只有经过校准的任务级检查才能支持结论。
+- **把证据加进 prompt 就认为足够。** 模型仍可能误读、证据可能过期或恶意；检查来源、版本、字段映射和规则覆盖范围。
+- **把评审输出直接覆盖原答案。** 将其视为候选值；重新校验，不完整、拒绝或模糊响应要暂停交付。
+- **把所有工具结果原文拼进评审提示。** 先做最小化、脱敏和可信边界处理，限制保留与访问。
+- **按历史摘要声称 Reflection 成本翻倍。** 原始 usage 缺失，不能复算；只可确认每次实际调用都应纳入端到端用量统计。
+
+[Reflexion 原论文](https://arxiv.org/abs/2303.11366)展示的是由环境反馈驱动、可供后续尝试利用的语言化反思，而不是保证模型自评正确的通用接口。[Anthropic 的 Agent 评测文章](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)强调针对完整任务轨迹和成功条件设计评测；它支持“检查端到端行为”的方法建议，不证明某种 Reflection 实现普遍更有效。

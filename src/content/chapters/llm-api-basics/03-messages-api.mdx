@@ -6,17 +6,20 @@ status: drafting
 
 前两节你学会了数 token、避开了采样参数的坑。现在把注意力转向接口本身的形状。
 
-这一节会拆开一次真实请求的完整生命周期 —— 包括那个很多人写错的地方：**流式响应里，工具调用的参数是一个字符一个字符到达的。**
+这一节会拆开 Anthropic Messages API 的请求与流式响应生命周期，重点看两件事：历史消息如何由应用维护，以及流式工具调用如何在完整响应后安全处理。
 
 ## 一次请求长什么样
 
 ```python
+import os
+
 import anthropic
 
 client = anthropic.Anthropic()
+MODEL = os.environ["VERIFY_MODEL"]  # 使用目标 Anthropic endpoint 当前支持的 model ID
 
 response = client.messages.create(
-    model="claude-sonnet-5",          # 必填
+    model=MODEL,                       # 必填
     max_tokens=1024,                  # 必填
     system="你是一个帮后端工程师解释概念的助手。",   # 顶层字段，不在 messages 里
     messages=[
@@ -24,8 +27,12 @@ response = client.messages.create(
     ],
 )
 
-print(response.content[0].text)
+text = "".join(block.text for block in response.content if block.type == "text")
+print("stop_reason:", response.stop_reason)
+print(text)
 ```
+
+> **实跑状态**：请求示例语法可检查；本轮没有使用 provider 凭据发出请求。运行前需设置 `VERIFY_MODEL` 为当前账号和 endpoint 支持的 model ID。
 
 ### 三个必填参数
 
@@ -33,7 +40,7 @@ print(response.content[0].text)
 
 其中 `max_tokens` 最容易漏。判据很直接：[Messages API 参考](https://platform.claude.com/docs/en/api/messages)把每个可选参数都标了 `optional`，而这三个没有标记。
 
-**注意 `max_tokens` 的含义**：它不是「最多输出这么长」的软提示，而是**硬截断**。达到上限就停，不会给你一个完整结构。第 2 章讲过的截断问题就来自这里。
+**注意 `max_tokens` 的含义**：它是生成 token 的上限；达到上限时响应可能不完整。应检查 `stop_reason`，并按业务需要校验结果，不能假设截断后必然是某种特定错误。
 
 ### system 的位置：一个必须知道的差异
 
@@ -43,7 +50,7 @@ print(response.content[0].text)
 
 > there is no `system` role for input messages in the Messages API
 
-而 OpenAI 的做法是把它作为 `messages` 数组里第一条 `role: "system"` 的消息。
+而 OpenAI Chat Completions API 可以把它作为 `messages` 数组里第一条 `role: "system"` 的消息；OpenAI 的其他 API 形状可能不同。
 
 这个差别看起来琐碎，但它是后面要写的**多厂商适配层**存在的直接原因 —— 上层业务代码不应该知道这件事。现在你只需要记住：**把 system 当成独立参数，不要试图塞进 messages**。
 
@@ -52,414 +59,245 @@ print(response.content[0].text)
 API 是**无状态**的。每次请求你都要把完整对话历史发过去：
 
 ```python
-messages = []
-
-def chat(user_input: str) -> str:
-    messages.append({"role": "user", "content": user_input})
-
-    response = client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=1024,
-        messages=messages,
-    )
-
-    reply = response.content[0].text
-    # 关键：把模型的回复也追加进去，否则下一轮它不记得自己说过什么
-    messages.append({"role": "assistant", "content": reply})
-    return reply
-```
-
-这一点和 session 很像，但有一个关键差别：**这份历史每次请求都要重新发送、重新计费。**
-
-而且成本是**平方级**增长的 —— 第 N 轮要发 N 条消息，累计成本是 O(N²)。一个 50 轮的对话，输入 token 总量是单轮的 1275 倍。这条在第 4 章会展开。
-
-## 流式：不只是为了体验
-
-设置 `stream=True`，响应会以 [Server-Sent Events](https://platform.claude.com/docs/en/build-with-claude/streaming) 逐块返回。
-
-> **Server-Sent Events（SSE）是什么**：一种**服务端单向推送**的 HTTP 长连接协议，每一条消息是一个 `event: 类型` 行加一个 `data: JSON` 行、以空行结尾。它不是 websocket —— 只有服务端往你这边推，你不能在同一条连接上回话（要回话就发下一个请求）。你熟悉的 `curl -N` 或 gRPC streaming 在这里的角色是一样的：**连接不关，消息陆续到。**
-
-流式的价值不只是「让用户更快看到字」，还有两个工程意义：
-
-1. **首字节延迟成为主要指标。** 生成 30 秒的内容，第一秒开始显示 vs 等 30 秒后一次性显示，是两个产品。
-2. **可以中途放弃。** 用户改主意、或检测到输出跑偏时可以中断，不必为未生成的部分付费。
-
-## 完整的流式事件序列
-
-下面是**一次真实请求的完整事件流**。请求内容：带一个 `get_weather` 工具，问「北京今天天气怎么样？用摄氏度。」
-
-```text
-（实测数据，deepseek-flash，2026-09-24。共 63 个事件，8268 字符原始流。）
-
-message_start
-  usage: {input_tokens: 333, output_tokens: 0}
-content_block_start   index=0  type=thinking
-  thinking_delta     × 36
-  signature_delta    × 1
-content_block_stop    index=0
-content_block_start   index=1  type=tool_use  name=get_weather
-  input_json_delta   × 18
-content_block_stop    index=1
-message_delta
-  delta: {stop_reason: "tool_use"}
-  usage: {input_tokens: 333, output_tokens: 92}
-message_stop
-```
-
-上面那段是**语义层**的摘要。协议层真实收到的字节长这样 —— 每条消息是 `event:` 行 + `data:` 行，**用一个空行分隔**：
-
-```text
-event: message_start
-data: {"type":"message_start","message":{"id":"89d1...","model":"deepseek-flash",
-       "content":[],"stop_reason":null,"usage":{"input_tokens":330,"output_tokens":0,...}}}
-                                              ← 空行结尾
-event: content_block_start
-data: {"type":"content_block_start","index":0,
-       "content_block":{"type":"thinking","thinking":"","signature":""}}
-
-event: ping
-data: {"type":"ping"}
-
-…（thinking_delta × N）…
-
-event: content_block_start
-data: {"type":"content_block_start","index":1,
-       "content_block":{"type":"tool_use","id":"call_00_SbbDALNLfkta6c1ZghLj1334",
-                         "name":"get_weather","input":{}}}
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":1,
-       "delta":{"type":"input_json_delta","partial_json":"{"}}
-
-…（input_json_delta 共 18 条）…
-
-event: content_block_stop
-data: {"type":"content_block_stop","index":1}
-
-event: message_delta
-data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},
-       "usage":{"input_tokens":330,"output_tokens":72,...}}
-
-event: message_stop
-data: {"type":"message_stop"}
-```
-
-（**本次实跑，2026-10-12**，`deepseek-flash`，`stream=True` + `get_weather` 工具。原始流 129 行 / 5720 字符，事件计数：content_block_delta ×35、content_block_start ×2、content_block_stop ×2、message_start / ping / message_delta / message_stop 各 ×1。）
-
-**两个只有看原始行才能发现的细节：**
-
-1. **`tool_use` 的 `content_block_start` 里 `input` 是空对象 `{}}`。** 参数从来不在这里，只在后面的 `input_json_delta` 里；这也解释了为什么 `content_block_stop` 之前那次解析必然失败。
-2. **`content_block_start` 里 `thinking` 与 `signature` 都是空串**，内容靠后续的 delta 填进来。你如果拿 `start` 事件当「这个块的内容」，会得到一个空块。
-
-这张图信息量很大，逐段看：
-
-<Mermaid
-  chart={`
-flowchart TB
-    MS["message_start<br/>usage: 输入 token 已可知"]
-    CBS1["content_block_start<br/>index=0 type=thinking"]
-    D1["thinking_delta × 36<br/>signature_delta × 1"]
-    CBS2["content_block_start<br/>index=1 type=tool_use"]
-    D2["input_json_delta × 18<br/>← 参数分片"]
-    MD["message_delta<br/>stop_reason + 累积 usage"]
-    ME["message_stop"]
-
-    MS --> CBS1 --> D1 --> CBS2 --> D2 --> MD --> ME
-`}
-/>
-
-### 三种 delta 类型
-
-| delta 类型 | 承载字段 | 用于 |
-|---|---|---|
-| `text_delta` | `text` | 普通文本输出 |
-| `thinking_delta` | `thinking` | 模型的思考内容 |
-| `input_json_delta` | `partial_json` | **工具调用的参数** |
-| `signature_delta` | `signature` | 思考块的完整性签名 |
-
-注意 `signature_delta` 的位置：**它紧挨在 `content_block_stop` 之前**。这是文档明确说明的行为，用来校验思考块没有被篡改。
-
-另外还有两种事件不承载内容：`ping`（保活，可能穿插任意多个）和 `error`（例如高负载时的 `overloaded_error`，对应非流式下的 HTTP 529）。
-
-### 一个容易忽略的细节：usage 是累积值
-
-看上面 `message_delta` 里的 usage：`output_tokens: 92`。
-
-**这是累积值，不是增量。** 文档专门用警告框标出了这一点。如果你把它当增量去累加，会得到一个虚高的成本数字。
-
-## 工具调用的参数是一个字符一个字符来的
-
-这是本节最实用的一条，也是最容易写错的地方。
-
-上面那 18 个 `input_json_delta` 事件，逐个展开是这样的：
-
-```text
-#1   partial_json="{"          #10  partial_json="\""
-#2   partial_json="\""         #11  partial_json="unit"
-#3   partial_json="city"       #12  partial_json="\""
-#4   partial_json="\""         #13  partial_json=": "
-#5   partial_json=": "         #14  partial_json="\""
-#6   partial_json="\""         #15  partial_json="c"
-#7   partial_json="北京"        #16  partial_json="elsius"
-#8   partial_json="\""         #17  partial_json="\""
-#9   partial_json=", "         #18  partial_json="}"
-```
-
-**拼起来才是完整的 `{"city": "北京", "unit": "celsius"}`。**
-
-注意粒度：**连一个 `{`、一个 `"` 都是独立的事件**。官方文档对此的说明是：
-
-> the deltas are *partial JSON strings*, whereas the final `tool_use.input` is always an *object*
-
-### 三个必须知道的坑
-
-**坑一：`input_json_delta` 只带 `index`，不带 `id`。**
-
-上面 18 个分片，每一个都只有 `index=1`。而调用 `id`（`call_00_9TFhKbWafLOvSIvO2X3N6123`）只在 `content_block_start` 里出现过一次。
-
-如果你想在流式过程中按调用 id 归集参数 —— **拿不到 id**。必须自己维护 `index → id` 的映射。
-
-**坑二：不要在流式过程中解析半截 JSON。**
-
-收到 `{"city": "北京` 就去 `JSON.parse`，必然失败。正确做法是累积字符串，**在 `content_block_stop` 时再解析**。
-
-**坑三：事件之间有明显间隔。**
-
-当前模型一次只发送一个完整的键值对，所以工具调用的事件之间**会有停顿**，看起来像卡住了。那不是故障。
-
-### 正确的解析姿势
-
-```python
-# 按 index 累积工具调用，直到 content_block_stop 才能解析
-pending = {}   # index -> {"id": ..., "name": ..., "args": ""}
-
-for event in stream:
-    if event.type == "content_block_start":
-        block = event.content_block
-        if block.type == "tool_use":
-            # id 与 name 只在这里出现一次
-            pending[event.index] = {"id": block.id, "name": block.name, "args": ""}
-
-    elif event.type == "content_block_delta":
-        delta = event.delta
-        if delta.type == "input_json_delta":
-            # 只累积，不解析
-            if event.index in pending:
-                pending[event.index]["args"] += delta.partial_json
-
-    elif event.type == "content_block_stop":
-        if event.index in pending:
-            entry = pending.pop(event.index)
-            entry["input"] = json.loads(entry["args"])   # 现在才解析
-            handle_tool_call(entry["id"], entry["name"], entry["input"])
-```
-
-> 写流式解析时不要自己拼字符串。官方 SDK 提供了现成的累积与解析辅助，第 9 章手写适配层时我们会把这套逻辑自己实现一遍 —— 那时你就会明白 SDK 帮你省掉了什么。
-
-### 完整可跑版本：带归集、断言与主动中断
-
-上面那段只演示了归集逻辑，缺了三样上生产必须有的东西：**入口（怎么发起这个流）、出口（什么时候认为一次调用完成）、以及中断（用户改主意了怎么办）**。下面是一个可以直接运行的完整版本。
-
-```python
-# stream_consumer.py
-"""消费一次流式工具调用：按 index 归集参数、在 content_block_stop 时解析、失败时主动中断。"""
-
-import json
 import os
 
 import anthropic
 
-client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY")
-    or os.environ.get("ANTHROPIC_AUTH_TOKEN"),
-    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-)
+client = anthropic.Anthropic()
 MODEL = os.environ["VERIFY_MODEL"]
 
-TOOLS = [{
-    "name": "get_weather",
-    "description": "查询指定城市当前的天气",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "city": {"type": "string", "description": "城市名"},
-            "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-        },
-        "required": ["city"],
-    },
-}]
-
-
-def consume(prompt: str, *, abort_if: str | None = None) -> dict:
-    """跑一次流式调用。abort_if 非空时，一旦累积文本包含它就主动掐断。
-
-    返回 {'text': ..., 'tool_uses': [...], 'stop_reason': ..., 'usage': ...}
-    """
-    started = client.messages.stream(
+def chat(messages: list[dict], user_input: str) -> tuple[str, list[dict]]:
+    # 每段会话持有自己的 history；不要把所有用户共用的可变全局列表传进来。
+    next_messages = [*messages, {"role": "user", "content": user_input}]
+    response = client.messages.create(
         model=MODEL,
-        max_tokens=2000,          # 流式不改截断语义：max_tokens 仍是硬上界
-        tools=TOOLS,
-        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1024,
+        messages=next_messages,
     )
 
-    text_parts: list[str] = []
-    pending: dict[int, dict] = {}     # index -> {'id','name','args'}
-    tool_uses: list[dict] = []
-    stop_reason = None
-    aborted = False
+    # 保留完整 assistant content blocks；不要只保存第一个 text block。
+    next_messages.append({"role": "assistant", "content": response.content})
+    reply = "".join(block.text for block in response.content if block.type == "text")
+    return reply, next_messages
+```
 
-    with started as stream:
-        for event in stream:
-            if event.type == "content_block_start" and event.content_block.type == "tool_use":
-                # 坑一：id 与 name 只在这一个事件里出现
-                pending[event.index] = {
-                    "id": event.content_block.id,
-                    "name": event.content_block.name,
-                    "args": "",
-                }
+> **实跑状态**：代码片段展示 Anthropic Messages 的历史结构；本轮没有对 provider 发请求。非文本 block、工具结果和拒绝等分支应按应用协议处理。
 
-            elif event.type == "content_block_delta":
-                d = event.delta
-                if d.type == "text_delta":
-                    text_parts.append(d.text)
-                    if abort_if and abort_if in "".join(text_parts):
-                        # 主动中断：不再为未生成的部分付费
-                        stream.close()
-                        aborted = True
-                        break
-                elif d.type == "input_json_delta":
-                    # 坑二：只累积，不解析
-                    if event.index in pending:
-                        pending[event.index]["args"] += d.partial_json
+对 Anthropic Messages API 这种无状态调用，后续请求要把所需历史重新放进 `messages`。这和所有 provider 都必须采用同一会话方案不是一回事；其他 API 可能提供服务端会话或 previous-response 引用。请求输入如何计量、缓存是否改变 billable usage，也应按对应 provider 的文档核算。
 
-            elif event.type == "content_block_stop":
-                entry = pending.pop(event.index, None)
-                if entry is not None:
-                    # 坑三：现在才解析。解析失败说明这个分片流本身坏了
-                    entry["input"] = json.loads(entry["args"])
-                    tool_uses.append(entry)
+若每轮都重发完整历史，且假设每轮新增的用户与助手内容大小近似固定，则第 `n` 次请求的输入量会随轮数线性增长，累计输入量近似 `1 + 2 + … + n = n(n+1)/2`，因而呈二次增长。真实对话长度不等，缓存计费也会改变账单；这个公式只描述该简化假设下的 token 体积，不是通用成本倍数。
 
-        if not aborted:
-            final = stream.get_final_message()
-            stop_reason = final.stop_reason
-            usage = final.usage
-        else:
-            usage = None
+## 流式：不只是为了体验
 
-    return {
-        "text": "".join(text_parts),
-        "tool_uses": tool_uses,
-        "stop_reason": stop_reason,
-        "usage": usage,
-        "aborted": aborted,
+直接调用 HTTP API 时设置 `stream=true`，响应会以 [Server-Sent Events](https://platform.claude.com/docs/en/build-with-claude/streaming) 逐块返回；Python SDK 也提供 `client.messages.stream(...)` accumulator。
+
+> **Server-Sent Events（SSE）是什么**：一种在 HTTP 响应中传递事件的文本格式。事件可以包含 `event:` 与一个或多个 `data:` 字段，以空行分隔；注释行可用于保活。它是服务端到客户端的单向传输，不能把它和 WebSocket 或 gRPC streaming 当作同一协议。
+
+流式的价值不只是「让用户更快看到字」，还有两个工程意义：
+
+1. **首 token 时间（TTFT）是一个有用指标。** 对交互产品，首 token 时间、总耗时、输出质量与成本要结合目标任务一起评估。
+2. **应用可以尝试取消不再需要的请求。** 客户端关闭或 SDK 取消不自动证明 provider 已停止生成，也不决定最终如何计费；必须按 provider/SDK 的取消语义和 usage 验证。
+
+## Messages API 的流式事件
+
+下面是**按 Anthropic 官方流式协议整理的示意**，不是本项目留存的 live trace。项目目录里能找到的旧 raw stream 是另一条纯文本请求，没有触发工具；原文中声称的 63/129 个事件、具体 usage、分片数和工具调用组合缺少对应原始记录，现撤回为实测结论。
+
+```text
+message_start
+  message.content = []
+content_block_start
+  index = 0, block.type = tool_use, input = {}
+content_block_delta
+  index = 0, delta.type = input_json_delta, partial_json = <片段>
+content_block_stop
+  index = 0
+message_delta
+  delta.stop_reason = tool_use, usage = <累计值>
+message_stop
+```
+
+这是形状示意，具体 block、delta、保活事件与结束原因会随响应而变。Anthropic 的外层 SSE 事件是 `content_block_delta`，文本、思考或工具 JSON 的细分类型在其 `delta.type` 内；不要把 `input_json_delta` 误写成独立的 SSE event 名。
+
+<Mermaid
+  chart={`
+flowchart TB
+    MS["message_start"] --> C["0 个或多个 content block"]
+    C --> S["content_block_start"] --> D["0 个或多个 content_block_delta<br/>delta.type 标识内容"] --> E["content_block_stop"]
+    E --> C
+    E --> MD["message_delta<br/>stop_reason 与 usage"] --> ME["message_stop"]
+    P["ping / error"] -.可能出现.-> C
+`}
+/>
+
+### delta 的分层
+
+| 外层 SSE 事件 | `delta.type` | 说明 |
+|---|---|---|
+| `content_block_delta` | `text_delta` | 文本片段 |
+| `content_block_delta` | `input_json_delta` | 工具输入的部分 JSON 字符串；片段边界不保证对应一个字符或键值对 |
+| `content_block_delta` | `thinking_delta` / `signature_delta` | 仅在支持相应 thinking 形态时出现；不要把内部 reasoning 原样展示为普通答案 |
+
+流中还可能出现 `ping`；直接处理 SSE 时要为 `error` 和未知事件保留处理路径。使用 SDK 时优先使用其 stream accumulator，不要复制私有解析逻辑。Anthropic [streaming 文档](https://platform.claude.com/docs/en/build-with-claude/streaming)说明 `message_delta.usage.output_tokens` 是到该事件为止的累计量；对多个 usage 更新不可逐次相加，完成后使用最终响应的 usage。
+
+### `message_delta` 与 usage
+
+在 Anthropic Messages API 流中，`message_delta` 可以携带 `stop_reason` 和更新后的 usage。`usage.output_tokens` 表示截至该事件累计生成的输出量，不是每个事件可直接相加的增量；处理多次更新时保留最终值。不同 provider 的流事件与 usage 口径不能照搬。
+
+## 工具参数以部分 JSON 片段到达
+
+`input_json_delta` 的 `partial_json` 是一段 JSON 字符串片段。它可能在任意位置切开，边界不保证对应一个字符、完整键值对或合法 JSON 文档。比如完整输入 `{"city":"北京"}` 可以被切成 `{"city":` 和 `"北京"}`；这只是帮助理解的合成切分，不是本项目的模型输出记录。
+
+Anthropic 的流协议把这些片段放在 `content_block_delta` 事件中，且 `index` 用来关联当前 content block。工具的 `id`、`name` 在 `content_block_start` 里出现；增量事件提供 block index 和 delta，不重复携带 `tool_use_id`。若手动处理事件，需要维护 index 到工具调用的映射，并在块结束后完成累积解析。
+
+### 需要守住的边界
+
+1. **不要解析未完成的 JSON。** 先累积 `partial_json`；只有收齐工具 block 并成功解析后，才得到参数对象。
+2. **不要在 block 结束时就执行工具。** 还要等完整消息结束，并确认最终 `stop_reason == "tool_use"`；截断、流错误或其他停止原因都不应触发副作用。
+3. **不要把 provider 的 tool-use ID 当业务幂等键。** 它用于将 API 请求中的工具提案与结果配对；跨重试去重需要由应用为业务动作生成稳定幂等键。
+
+以下代码使用 Anthropic Python SDK 的 stream accumulator，避免自行拼接 SSE。先读取完整 Message，再按停止原因收取工具提案；它不会执行任何外部副作用。
+
+### SDK 流式消费与工具提案
+
+下面使用 Anthropic Python SDK 的 accumulator 读流。示例先等待完整 Message，再按 `stop_reason` 处理工具提案；它只校验并打印参数，不执行外部动作。生产代码还要在宿主侧完成权限检查、业务校验、幂等和审计。
+
+```python
+# stream_tool_proposal.py
+"""流式读取 Anthropic Message，并安全展示工具提案；不执行外部动作。"""
+
+import os
+
+import anthropic
+
+client = anthropic.Anthropic()
+MODEL = os.environ["VERIFY_MODEL"]
+TOOLS = [
+    {
+        "name": "get_weather",
+        "description": "查询北京或上海的天气",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "enum": ["北京", "上海"]},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+            },
+            "required": ["city"],
+        },
     }
+]
+
+
+def main() -> None:
+    with client.messages.stream(
+        model=MODEL,
+        max_tokens=1200,
+        tools=TOOLS,
+        messages=[{"role": "user", "content": "北京今天天气怎么样？"}],
+    ) as stream:
+        for text in stream.text_stream:
+            print(text, end="", flush=True)
+        message = stream.get_final_message()
+
+    print("stop_reason:", message.stop_reason)
+    if message.stop_reason != "tool_use":
+        return
+
+    for block in message.content:
+        if block.type != "tool_use":
+            continue
+        if block.name != "get_weather" or not isinstance(block.input, dict):
+            raise ValueError("unexpected tool proposal")
+        city = block.input.get("city")
+        if not isinstance(city, str) or city not in {"北京", "上海"}:
+            raise ValueError("city is outside the application allowlist")
+        unit = block.input.get("unit", "celsius")
+        if not isinstance(unit, str) or unit not in {"celsius", "fahrenheit"}:
+            raise ValueError("unsupported unit")
+        print("tool proposal:", block.name, block.input)
+        # 在这里做服务端授权、配额、审计及幂等检查，再决定是否执行。
+        # 执行后用匹配 block.id 的 tool_result 继续对话；不要把模型提案当授权。
 
 
 if __name__ == "__main__":
-    result = consume("北京今天天气怎么样？用摄氏度。")
-    print(json.dumps(result["tool_uses"], ensure_ascii=False, indent=2))
-    print("stop_reason:", result["stop_reason"])     # 期望 tool_use
-
-    # 断言：参数必须是一个完整对象，而不是半截分片
-    for call in result["tool_uses"]:
-        assert isinstance(call["input"], dict) and "city" in call["input"]
-
-    # 使用者中途关页面：掐断，不付未生成部分的钱
-    cancelled = consume("写一篇 2000 字的行业分析", abort_if="##")
-    print("aborted:", cancelled["aborted"])
+    main()
 ```
 
-> **实跑状态**：**未实跑。** 归集规则（id 只在 `content_block_start`、只累积不解析、解析放在 `content_block_stop`）与上面那段原始报文一致，原始报文是本次实跑的；但**这份完整脚本我没在这台机器上跑过** —— 它的价值是把写法补全，跑之前请先确认你这版 SDK 的 `stream()` 上下文管理器与 `stream.close()` 签名。
+> **实跑状态**：示例在本轮没有对 provider 请求。语法检查不证明目标 SDK/model 的集成行为；接入前应按当前 SDK 文档在隔离环境执行。手动处理 SSE 时还要处理 `error`、未知事件、连接中断和不完整 block；优先使用 SDK accumulator。
 
-### 断线与重放：三条必须自己做的事
+### 断线、重放与副作用
 
-SSE 连接会断（网络抖动、网关超时、你的进程重启）。SDK 不会替你重连，因为「重连后怎么办」是业务决策：
+SDK 对特定连接错误、429 和 5xx 的自动重试策略随版本而定；流开始后出现错误或连接中断时，不要假设客户端会无缝恢复到同一事件位置。重放前先确认尚未执行工具副作用，并决定如何处理已经展示给用户的部分文本。
 
-| 情况 | 正确做法 | 为什么不能盲目重试 |
-|---|---|---|
-| 断在 **文本生成中**，还没出工具调用 | 直接重发这**一个**请求 | 重发会重新生成，可能措辞与已显示的部分不同 —— 前端要做「覆盖」而不是「追加」 |
-| 断在 **工具调用已解析、工具已执行之后** | **不要重发**，改为把已有的 `tool_result` 续下去 | 重发会让模型再调一次工具 → 副作用执行两次（第 11 章会用崩溃注入实测这个重复） |
-| 断在 **工具参数分片中途** | 丢弃这个 `pending[index]`，重发请求 | 半截 JSON 没有语义，`json.loads` 也一定失败 |
+| 观察到的状态 | 安全处理 |
+|---|---|
+| 文本流中断，尚无完整 Message | 不执行工具；将已展示文本标为未完成。重试会生成新响应，UI 应覆盖或明确标成重试内容，不能盲目追加 |
+| 已收到完整 `tool_use` Message，工具尚未执行 | 持久化原 assistant content blocks 与工具提案；校验 stop reason、参数、用户授权和业务策略后再执行 |
+| 工具执行成功，续传 `tool_result` 前进程崩溃 | 从持久化的原 assistant Message 和动作记录恢复，提交与原 `tool_use.id` 匹配的结果；跨重试副作用以应用级幂等键去重 |
+| 输入 JSON block 未完整到达，或流以错误/截断结束 | 丢弃未完成提案；不要解析或执行。只有确认副作用尚未发生后，才可按策略重新请求 |
 
-**去重的关键字段是工具调用的 `id`（如 `call_00_Sbb...`）。** 它由服务端生成、在重试中会变，所以它不能用来跨重试去重 —— 能用来去重的是**你自己生成的幂等键**（比如「本次任务 + 工具名 + 参数哈希」）。这一点第 11 章有一组完整的崩溃注入实测。
+`tool_use.id` 用于 API 的工具结果配对，不是业务幂等键。若工具已执行且结果状态未知，先查询或对账；不要只因客户端没收到后续事件就再次执行。
 
 ## 一个结构性的观察
 
-回头看那张事件序列图，注意 `thinking` 块和 `tool_use` 块是**并列的两个 content block**，各有自己的 index。
+一次 assistant Message 可以有多个 content block，顺序与类型都由响应决定。每个 block 都有自己的 `index`；解析器应按 block 类型与 index 处理，不要假设响应只有一个文本块，也不要假设每次 `tool_use` 都和文本同时出现。
 
-这意味着一次响应可以包含多个不同类型的内容块：
+## 工具 schema 能约束形状，不能代替授权
 
-```text
-content[0] = thinking 块（模型的推理过程）
-content[1] = tool_use 块（要调用的工具）
-```
+工具的 `input_schema` 告诉模型期望的参数形状。Anthropic 的 [strict tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use) 能在支持的模型/API 配置下约束工具输入符合 schema；普通兼容端点的行为可能不同。即便 provider 强制了 JSON Schema，schema 也只解决结构或允许值范围，不能证明用户有权执行某动作、资源属于当前租户，或参数在业务上安全。
 
-如果模型同时输出文本和工具调用，就会是三个块。**你的解析逻辑必须按 index 归位，不能假设只有一种块。**
+之前列出的 DeepSeek “深圳天气”响应包含 provider 的内部 reasoning 字段，并且对应的完整请求、模型快照和可复核评分没有归档。现删除原始 reasoning 与“enum 导致模型拒绝”的因果结论，保留为不可复核的历史摘要，不作为 strict schema 的效果证据。
 
-## 工具定义如何影响模型行为
+工程上要把 provider schema 和服务端校验分开：schema 让模型更容易提出符合格式的参数；宿主仍须校验字段、枚举、对象权限、租户范围、金额/数量上限、审批与幂等键。遇到未知字段或校验失败，应拒绝或走显式恢复路径，不能因为 JSON 可解析就执行。
 
-上面讲的是「结构」。但工具定义里的内容也会**直接改变模型的行为**，这一点值得用一个真实案例说明。
-
-实验：给模型一个 `get_weather` 工具，但把 `city` 参数限定成只能取两个值：
+例如，面向天气工具的枚举校验还应在应用中再次执行：
 
 ```python
-"input_schema": {
-    "type": "object",
-    "properties": {
-        "city": {
-            "type": "string",
-            "enum": ["北京", "上海"],        # 只允许这两个
-            "description": "只支持这两个城市",
-        },
-    },
-    "required": ["city"],
-}
+ALLOWED_CITIES = {"北京", "上海"}
+ALLOWED_UNITS = {"celsius", "fahrenheit"}
+
+
+def validate_weather_input(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise ValueError("tool input must be an object")
+    if not isinstance(value.get("city"), str) or not isinstance(value.get("unit", "celsius"), str):
+        raise ValueError("city and unit must be strings")
+    if set(value) - {"city", "unit"}:
+        raise ValueError("unexpected tool input field")
+    city = value.get("city")
+    unit = value.get("unit", "celsius")
+    if city not in ALLOWED_CITIES or unit not in ALLOWED_UNITS:
+        raise ValueError("weather input is outside the application allowlist")
+    return {"city": city, "unit": unit}
 ```
 
-然后问它一个**不在枚举范围**的问题：「深圳今天天气怎么样？」
+> **实跑状态**：该校验函数是纯本地确定性示例；本轮将对它做离线正反例检查。它证明的是应用 allowlist 的行为，不证明模型会遵从 schema。
 
-模型的完整响应：
+## stop_reason 与工具交接
 
-```text
-（实测数据，deepseek-flash，2026-09-24。）
+`stop_reason` 是 Anthropic Messages API 的协议状态，必须在完整响应后按[官方 stop reasons 文档](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)解释。它不证明答案正确，也不代表外部工具已执行成功。
 
-stop_reason: end_turn
+| `stop_reason` | Anthropic Messages API 中的含义 | 应用需要做什么 |
+|---|---|---|
+| `end_turn` | assistant 本轮正常结束 | 按任务判据检查结果 |
+| `tool_use` | 响应包含待宿主处理的 client tool use | 校验并授权工具提案，再决定是否执行 |
+| `max_tokens` | 达到请求的生成上限 | 将结果视为可能不完整；不要执行不完整的工具参数 |
+| `stop_sequence` | 命中请求提供的停止序列 | 检查 `stop_sequence` 并按应用约定处理 |
+| `pause_turn` | Anthropic server-side tool loop 暂停 | 按文档保留 assistant 内容并继续该轮 |
+| `refusal` | 模型拒绝响应 | 按产品拒绝流程处理 |
+| `model_context_window_exceeded` | 请求/生成达到模型上下文限制 | 记录并调整上下文或任务；不要当成普通完成 |
 
-[thinking]
-  The user asks about Shenzhen weather. The tool only supports Beijing
-  and Shanghai. I should inform the user that I can't query Shenzhen.
-  I shouldn't call the tool with an unsupported city since the enum
-  only allows 北京 and 上海.
+该集合是 Anthropic 文档当前列出的值，不能移植成跨 provider 枚举；未知值应进入显式兼容分支。
 
-[text]
-  抱歉，我目前只能查询北京和上海这两座城市的天气，无法查询深圳的天气。
-  如果你想了解这两个城市中任意一个的天气，我可以帮你查询～
-```
-
-**关键点：它没有编造一个城市名。**
-
-如果我当时把 `city` 写成一个自由字符串、再在代码里校验，模型很可能生成 `"深圳"` 然后被我拒绝，或者更糟 —— 生成一个看起来合理的值蒙混过去。
-
-**`enum` 的作用是让非法值从一开始就无法被表达。** 这是第 4 章会展开的「poka-yoke 式工具设计」的第一个例子。
-
-> **poka-yoke** 是制造业术语，日文「ポカヨケ」，直译是「防呆」：**通过约束形状，让错误操作在物理上无法发生** —— 比如三孔插座插不进两孔插头。放到工具设计上就是：与其在代码里校验参数对不对，不如把 schema 定义成「错的参数根本表达不出来」（`enum`、必填、类型约束）。第 4 章第 3 节有一组实测：两个普通可选字段 3/3 会被同时传；改成「描述写明二选一」后 0/3；拆成两个结构上互斥的工具后，**结构上不可能同时传**。
-
-注意思考块里的那句话：模型明确说「我不应该用一个不支持的城市去调用工具」。**它读懂了约束，并且主动放弃了调用。** 这比事后校验更可靠 —— 因为它连一次无效的往返都省下了。
+收到完整 `tool_use` Message 并经应用校验后，工具结果应作为新的 `user` 消息中的 `tool_result` block 返回，并用 `tool_use_id` 配对原响应里的 `tool_use.id`。续传需要保留原 assistant content blocks 与相同工具定义；如果真实动作已经发生，恢复时先读取持久化动作状态，不能重新执行一次。
 
 ## 常见坑
 
-**把 system 塞进 messages。** 这个 API 没有 system 角色。
+- **只看 HTTP 200 或文本内容。** 检查 `stop_reason`、内容块类型和业务判据；HTTP 成功不等于任务成功。
+- **只保存第一个 `.text` block。** 一条 Message 可以有多个不同类型的 content block；按类型遍历并保存需要续传的完整 assistant 内容。
+- **把 provider 对话状态一概而论。** 本节的完整历史说明针对无状态 Anthropic Messages API；其他 provider 的会话机制、保留语义和 usage 另查文档。
+- **流中断后直接重发。** 重试会产生新的生成；先处理已展示的部分文本、SDK retry 范围与潜在副作用，再决定是否重试。
+- **解析 JSON delta 后立刻执行工具。** 等完整响应、检查 `stop_reason == "tool_use"`，再做服务端验证、授权、审计与幂等控制。
+- **把 schema 或工具调用 ID 当作授权与幂等。** Schema 管形状，`tool_use.id` 管 API 结果配对；授权和跨重试去重属于应用。
+- **把 `usage` 更新逐次累加。** Anthropic 流式 usage 更新是截至该事件的累计值；以最终响应为准，并按当前价格文档计算成本。
 
-**忘记 `max_tokens`。** 它是必填项。
-
-**忘记把模型回复追加进历史。** 下一轮它就不记得自己说过什么了。这是自己维护对话历史时最常见的错误。
-
-**按到达顺序拼接内容块。** 要用 `index`。上面例子里有两个块，靠到达顺序猜类型一定出错。
-
-**试图在流式过程中解析半截 JSON。** 累积到 `content_block_stop` 再解析。
-
-**把 `message_delta` 的 usage 当增量累加。** 它是累积值。
-
-**以为工具调用的 id 在每个事件里都有。** 只有 `content_block_start` 有，其余只有 index。
-
-**把事件之间的间隔误判为卡死。** 工具参数的键值对是逐个发送的，间隔是正常的。
+上面的常见坑已经按请求、流、工具交接与应用安全归类。不要再把下面几种说法当成普遍规则：内容块必须按到达顺序拼接、工具 JSON 每次只增一个键值对、客户端取消必然停止上游生成，或重试能从原事件位置续传。实际行为要按完整的 Anthropic Messages 响应与当前 SDK 文档处理；本节示例只展示工具提案，不执行工具。

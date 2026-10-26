@@ -7,4 +7,5 @@ export const bodies = {
   versioning: () => import('./02-versioning.mdx'),
   'incident-response': () => import('./03-incident-response.mdx'),
   'ops-loop': () => import('./04-ops-loop.mdx'),
+  'recovery-drills': () => import('./05-recovery-drills.mdx'),
 } as const;

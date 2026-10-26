@@ -4,30 +4,30 @@ title: KV Cache 与 Prompt Cache：机制和适用边界
 status: drafting
 ---
 
-第 1 章第 5 节讲过 prompt caching 怎么用。这一节先用一个 **2026-10-08 的 DeepSeek Anthropic 兼容端点观测**说明前缀变化与缓存命中之间的关系，再区分模型推理时的 KV cache 与厂商提供的跨请求 prompt/context cache。缓存键、前缀匹配、断点、TTL、最小长度和自动/显式缓存策略都是服务实现的一部分，不能从 KV 数学性质直接推成所有 API 的统一规则。Anthropic 的[官方文档](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)就是一个具有显式断点和 TTL 语义的具体例子。
+第 1 章第 5 节讲过 prompt caching 怎么用。这一节先说明一组 **2026-10-08 的 DeepSeek Anthropic 兼容端点历史摘要**能支持什么、不能支持什么，再区分模型推理时的 KV cache 与厂商提供的跨请求 prompt/context cache。缓存键、前缀匹配、断点、TTL、最小长度和自动/显式缓存策略都是服务实现的一部分，不能从 KV 数学性质直接推成所有 API 的统一规则。Anthropic 的[官方文档](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)就是一个具有显式断点和 TTL 语义的具体例子。
 
-## 一、先看一组实测数据
+## 一、先看一组历史 usage 摘要
 
-这组记录来自 `deepseek-flash` 在 `https://api.deepseek.com/anthropic` 的 Anthropic Messages 兼容端点。实验使用约 2400 字符的 system 提示（约 1800 token），连续问同一个问题四次，第五次只改动前缀里的一个词。用量来自当时保存的表格记录，原始逐次响应未归档，故仅作为历史端点观察：
+旧表格将这组记录标为 `deepseek-flash`、`https://api.deepseek.com/anthropic`，并称使用约 2400 字符（约 1800 token）的 system 提示。原始逐次响应未归档，当前没有原始请求、token 计数结果或模型快照可供核验；表中首个请求的 `cache_creation=0`，与“冷启动”的解释不相符或至少不足以支持它，且 `input_tokens=1205` 无法与约 1800 token 的估算相互校验。因此下表只转录旧摘要，不把它视为已验证的 provider 行为：
 
 ```text
 调用                              input_tokens   cache_read   cache_creation
-第 1 次（首次，冷启动）                  1205            0              0
+第 1 次（旧记录中的首个请求）             1205            0              0
 第 2 次（同样前缀）                       181         1024              0
 第 3 次（同样前缀，带 cache_control）      181         1024              0
 第 4 次（同样前缀，带 cache_control）      181         1024              0
 第 5 次（前缀改了一个词）                 1205            0              0
 ```
 
-以下四点**只描述上述日期、模型标识与端点的观测**，不能直接推广到其他厂商或端点：
+这组摘要最多支持以下有限描述；由于逐次原始响应缺失，表内 `cache_read` 字段是否对应真实缓存读取、字段口径和请求间关联都无法独立核验：
 
-**一、这组请求中观察到了自动命中。** 第 2 次没有带 `cache_control`，`cache_read` 为 1024。它只能说明这个端点当时在这组请求中自动返回了缓存命中；其他接口可能要求显式开启缓存，也可能有阈值或其他启用条件。
+**一、旧摘要将第二至第四次记录为 `cache_read=1024`。** 这只是表格里的字段值；由于响应正文和 usage 原始对象未保存，不能据此确认发生了真实缓存命中、命中由哪次请求建立，或端点是否自动缓存。它也不能作为其他接口需要显式开启缓存或存在特定阈值的证据。
 
-**二、这次加入的 `cache_control` 没改变返回用量。** 它是 Anthropic Messages API 的缓存控制语义之一，但兼容端点可以忽略、部分实现或采用不同协议。此实验只证明第 2、3、4 次返回的三个用量数字相同，不足以断言该端点普遍忽略 `cache_control`，也不证明所有请求都自动缓存。
+**二、旧摘要中带与不带 `cache_control` 的三项数字相同。** 这不能证明兼容端点忽略了 `cache_control`，因为我们没有可核验的请求/响应，也不能排除请求构造、记录或字段映射问题。Anthropic Messages API 的 `cache_control` 是其自身 API 的缓存控制语义；兼容端点是否支持需另行确认。
 
-**三、改变这组请求的前缀后，本次观测的 `cache_read` 回到 0。** `input` 从 181 回到 1205，约 6.7 倍。这个结果表明被改动的这个请求没有复用原缓存，不足以证明服务没有在更早位置命中其他缓存，也不能得出任何改动都会让整个缓存全部失效。
+**三、旧摘要把改词请求记为 `cache_read=0`。** 如果记录准确，这仅表示该行没有报告缓存读取；它不能证明此前缓存被清除，也不能说明改词导致缓存失效。`input_tokens` 从 181 变为 1205（约 6.7 倍）同样是未经原始 usage 核验的历史字段差异。
 
-**四、要按该端点的 usage 定义解释字段。** 本次命中时 `input_tokens` 为 181、`cache_read` 为 1024；没命中时分别为 1205 和 0。要计算这类接口的输入用量需同时检查缓存读/写字段。不同供应商的字段定义可能不同，应以当前 API 文档与实际响应为准。
+**四、不能用这组数字推导 token 总量、命中率、成本或性能。** 缓存读写字段的定义、`input_tokens` 是否排除缓存 token、计费规则都依具体 API 而定，应从当前文档和保存下来的实际响应确认。下文的 Python helper 明确采用 Anthropic Messages 风格字段，仅是本地构造的演示。
 
 ## 二、为什么是「前缀」而不是「内容」
 
@@ -49,7 +49,7 @@ status: drafting
 | **Prompt / Context Cache** | 服务端或推理平台 | 厂商/API 合约 | 可能跨请求复用前缀或相关状态；语义因接口而异 |
 | **客户端缓存** | 你的代码 | 你 | 不重复发同样的内容 |
 
-**有些 prompt cache 会跨请求复用模型计算状态或相关表示，但不能把所有产品的 prompt cache 简化成“持久化 KV cache”。** 例如 Anthropic 文档描述了按 `tools → system → messages` 形成前缀、在指定 `cache_control` 断点写入、向前查找已有断点以及默认 5 分钟 TTL；这些是 Anthropic API 的具体合约。DeepSeek 的[Responses API 文档](https://api-docs.deepseek.com/guides/responses_api/)则将 `prompt_cache_key` / `prompt_cache_retention` 标为不支持，并说明缓存由服务自动管理。即使同属前缀缓存，是否要求字节/Token 精确一致、采用什么断点、是否自动缓存、缓存多久和哪些请求参数参与缓存键，都应按对应 provider / endpoint 文档核对。
+**有些 prompt cache 会跨请求复用模型计算状态或相关表示，但不能把所有产品的 prompt cache 简化成“持久化 KV cache”。** 例如 Anthropic 文档描述了按 `tools → system → messages` 形成前缀、在指定 `cache_control` 断点写入、向前查找已有断点以及默认 5 分钟 TTL；这些是 Anthropic API 的具体合约。DeepSeek 的[Responses API 文档](https://api-docs.deepseek.com/guides/responses_api/)将 `prompt_cache_key` / `prompt_cache_retention` 标为不支持，并指向服务端自动管理的上下文缓存；这表示该接口不接受这两个客户端控制参数，不表示没有缓存能力。DeepSeek 当前的[Context Caching 文档](https://api-docs.deepseek.com/guides/kv_cache/)进一步描述：缓存前缀按完整持久化单元匹配，系统按固定 token 间隔持久化前缀单元（该规则与其滑动窗口注意力实现有关），usage 暴露 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`，且命中属于尽力而为，不保证每次都命中。这个当前文档不能据此反推 2026-10-08 那组 `deepseek-flash` Anthropic 兼容端点请求使用相同模型版本、缓存单位、键或 usage 口径；当时逐次原始响应未归档，历史的 `cache_read` 字段仍只保留为端点观察。即使同属前缀缓存，是否要求字节/Token 精确一致、采用什么断点、是否自动缓存、缓存多久和哪些请求参数参与缓存键，都应按对应 provider / endpoint 文档核对。
 
 <Mermaid
   chart={`
@@ -95,7 +95,7 @@ flowchart TB
 若该 API 的 usage 把缓存命中也计入输入总量，两种情况下处理的总输入量可相近；但**计费口径可能不同** —— 命中缓存的部分可能使用单独单价或其他计费规则。具体低多少**因厂商与模型而异，而且会变**，本站不写死这个数字。要知道你自己的比例，去账单里把 `cache_read` 的用量与 `input` 的用量分别拉出来，乘各自的单价算占比（第 1 章第 5 节给过读 usage 的代码）。
 因此「20 轮会话」的费用差异必须通过对应模型的价格表与逐次 usage 计算；缓存不改变模型任务成功率这一点也需要在你的应用评测中单独验证。
 
-这组实验展示了一个具体端点上缓存命中与未命中时 usage 字段的差异。它不能单独证明所有 agent 的成本都会相差数倍；要判断自己的成本，应按目标供应商的输入、缓存读写单价和真实 usage 计算，并同时检查任务质量。
+这组旧表格摘要不能证明某个端点确实命中或未命中缓存，也不能单独证明 agent 成本会相差数倍；要判断自己的成本，应按目标供应商的输入、缓存读写单价和保存下来的逐次 usage 计算，并同时检查任务质量。
 
 顺带说一个推论：**长会话里「省 token」和「省请求」是两件事。**
 把更多内容塞进一轮（省请求）通常会破坏前缀稳定或增加单轮成本；
@@ -105,26 +105,40 @@ flowchart TB
 
 ```python
 import json
+import hashlib
+from types import SimpleNamespace as NS
+
+
+def _token_count(usage, field: str) -> int:
+    try:
+        value = getattr(usage, field)
+    except AttributeError:
+        raise ValueError(f"usage does not expose {field}; adapt this helper to the target API") from None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"usage.{field} must be a non-negative integer")
+    return value
 
 
 def hit_rate(usage) -> float:
-    """本次请求的缓存命中率。开发期把它打点，比事后翻账单便宜得多。
+    """按 Anthropic Messages 风格 usage 计算缓存读取占比；不是通用 provider 公式。
 
-    分母是全部输入侧 token（未命中 + 命中 + 新写入）。
+    这里假设 input_tokens 不含 cache read/write；目标 API 字段不同就要改公式。
     """
-    hit = usage.cache_read_input_tokens or 0
+    input_tokens = _token_count(usage, "input_tokens")
+    hit = _token_count(usage, "cache_read_input_tokens")
+    created = _token_count(usage, "cache_creation_input_tokens")
     total = (
-        (usage.input_tokens or 0)
+        input_tokens
         + hit
-        + (usage.cache_creation_input_tokens or 0)
+        + created
     )
     return hit / total if total else 0.0
 
 
 def cache_state(usage) -> dict:
     """当目标 API 暴露缓存 usage 字段时，用它记录该接口实际报告的读写量；其他行为仍需查文档。"""
-    read = usage.cache_read_input_tokens or 0
-    created = usage.cache_creation_input_tokens or 0
+    read = _token_count(usage, "cache_read_input_tokens")
+    created = _token_count(usage, "cache_creation_input_tokens")
     if read and not created:
         return {"状态": "报告缓存读取且无新写入", "读取": read}
     if read and created:
@@ -133,40 +147,54 @@ def cache_state(usage) -> dict:
 
 
 def request_fingerprint(req: dict) -> str:
-    """把一次请求序列化成确定的字符串，用于两次请求的「同不同」比较。
+    """计算完整、已脱敏 JSON 请求体的稳定指纹；调用前先移除凭据。
 
-    它的边界要说清楚：这是「请求文本」的指纹，不是「渲染后 token 串」的指纹。
-    它只能比较本地序列化出的请求表示，不能证明 provider 的缓存键相同或不同；接口可能采用规范化、断点和其他请求字段。按对应 API 文档解释 usage。
+    SHA-256 不是匿名化；不要把原始请求或指纹写入普通日志。相同指纹只表示
+    本地 JSON 表示相同，不能证明 provider 的缓存键相同或一定命中。
     """
-    parts = [json.dumps(t, sort_keys=True) for t in req.get("tools", [])]
-    parts.append(req.get("system", ""))
-    for m in req.get("messages", []):
-        parts.append(json.dumps(m, sort_keys=True, ensure_ascii=False))
-    return "\n".join(parts)
+    canonical = json.dumps(req, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+if __name__ == "__main__":
+    usage = NS(input_tokens=181, cache_read_input_tokens=1024, cache_creation_input_tokens=0)
+    first = {"model": "example-model", "system": "stable rules", "messages": []}
+    same = {"messages": [], "system": "stable rules", "model": "example-model"}
+    changed = {"model": "example-model", "system": "changed rules", "messages": []}
+    print(f"cache hit rate: {hit_rate(usage):.1%}")
+    print(f"cache state: {cache_state(usage)['状态']}; read={usage.cache_read_input_tokens}")
+    print("same payload:", request_fingerprint(first) == request_fingerprint(same))
+    print("changed payload:", request_fingerprint(first) != request_fingerprint(changed))
 ```
+
+```text
+cache hit rate: 85.0%
+cache state: 报告缓存读取且无新写入; read=1024
+same payload: True
+changed payload: True
+```
+
+> **实跑状态**：以上输出来自本地构造的 Anthropic Messages 风格 usage 对象，不是 provider 响应。`input_tokens` 与缓存读写字段的包含关系因 API 而异；只有确认目标 API 的字段口径后，才能沿用该分母。
 
 怎么在开发期用它们：
 
 1. **如果接口提供缓存用量，每次请求都记录它。** 观察变化有助于定位未命中，但指标下降也可能来自 TTL、缓存阈值、服务配置或请求字段，而不只是有人改了前缀。
-2. **发现未命中，先比 `request_fingerprint`。** 两次指纹不同，就去 diff 那两段文本 —— 时间戳、请求 id、字典序都在这里现形。
-3. **本地指纹相同但接口未报告读取**，先检查该 API 的缓存开关、TTL、最小前缀长度、断点和 usage 语义；之后再确认请求字段和序列化是否吻合。
+2. **发现未命中，先比本地指纹。** 两次不同，就在受控环境比较已脱敏的请求结构；时间戳、请求 id、工具顺序等可能造成差异。不要把原始 prompt 或指纹写入普通日志。
+3. **本地指纹相同但接口未报告读取**，先检查该 API 的缓存开关、TTL、最小前缀长度、断点和 usage 语义；之后再确认请求字段和序列化是否吻合。相同的本地 JSON 只能缩小排查范围，不能证明服务端使用相同缓存键。
 
-### 一个真实的错误
+### 一个历史排查假设
 
-我在第 18 章（成本与延迟）做那个「工具定义占 62%」的实测时，
-第一版脚本每次调用都把工具列表**按字典顺序重新序列化**，
-而我当时用的是无序的 `dict`。于是两次请求的 tools 顺序可能不同 ——
-**前缀从第一个工具就断开了**，缓存命中率接近零。
+第 18 章（成本与延迟）的旧记录称，当时第一版脚本把工具列表**按字典顺序重新序列化**，而使用了无序的 `dict`，所以两次请求的 tools 顺序可能不同。原始请求、序列化结果和逐次 usage 未归档，无法核实该问题是否实际发生、是否令目标端点的前缀缓存未命中，或是否令命中率接近零；这只能保留为当时的排查假设。
 
-这个 bug 的隐蔽之处在于：**它不影响正确性。** 本次工具定义顺序对任务理解没有造成可观察差异；但在采用序列化前缀匹配的缓存实现中，顺序变化可能降低复用。只有对照目标接口 usage，才能确认是否造成了额外处理或费用。
+这个假设的价值在于提醒：即使工具顺序变化不影响任务正确性，在采用序列化前缀匹配的缓存实现中也可能降低复用。但是否发生、是否影响当前接口 usage，必须用可核验的请求体和目标端点文档确认。
 
 对支持序列化前缀匹配的接口，一个可验证的做法是让结构序列化确定（例如稳定排序或有序结构），然后用目标 endpoint 的文档和 usage 检查收益；不要假设不同接口使用相同的序列化或缓存键。
 
 ## 六、小结
 
-- **这次 DeepSeek Anthropic 兼容端点观测**：第二次请求返回了 `cache_read=1024`；本次改变前缀后读缓存为 0。它是有日期和范围的观测，不是所有 provider 的保证。
+- **DeepSeek Anthropic 兼容端点旧摘要**：记录中的第二至第四次为 `cache_read=1024`、改词请求为 0；原始 usage 缺失且首个请求的 `cache_creation=0`，故不能确认其为真实缓存命中或推导失效原因。
 - **按目标 API 文档理解缓存契约**：自动/显式开关、断点、缓存键、最小长度、TTL 与 usage 字段都可能不同。
 - **运行时 KV cache 与跨请求 prompt cache 是相关但不同层次的概念**：前者用于模型推理；后者的实现和生命周期由服务决定。
 - **稳定可复用的前缀是常见优化方向，不是跨供应商的硬性正确性约束**。用文档和 usage 验证序列化、参数变化、历史改写及缓存成本的影响。
 
-排查缓存未命中时，先核对目标 API 的开关、断点、TTL、最小缓存长度和缓存键规则，再对照请求结构及响应 usage。此实验中的一次未命中只能说明这组请求没有读到缓存；不能把其他 provider 的行为预先归因于客户端前缀结构。
+排查缓存未命中时，先核对目标 API 的开关、断点、TTL、最小缓存长度和缓存键规则，再对照请求结构及响应 usage。旧表格的改词行只记有 `cache_read=0`；原始 usage 缺失，不能确认这是一次真实未命中，更不能据此归因于客户端前缀结构或推广到其他 provider。

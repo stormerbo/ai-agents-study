@@ -23,36 +23,35 @@ status: drafting
 
 ## 怎么判断一个项目值不值得读
 
-有五个信号，按可靠性排序：
+可以问五个问题；它们没有适用于所有任务的固定排序：
 
-**一、它是不是直接出现在我的调用栈里。** 如果它在我自己的代码里被调用，那它的行为就是我的行为的一部分 —— 这一类优先级最高。第 13 章装的真 LangChain 就属于这一类。
+**一、它是不是直接出现在我的调用栈里。** 如果它在我自己的代码里被调用，那它的行为就是我的行为的一部分 —— 当问题是生产行为时，这个信号尤其强。第 13 章追的 LangChain 就属于这一类。
 
 **二、它的问题我有没有踩过。** 一个踩过坑的库，读起来效率极高 —— 因为你有具体问题。
 
 **三、它的抽象层是不是我想学的。** 有些库的价值在实现（算法、性能），有些在抽象（接口设计）。后者更适合学设计。
 
-**四、它有多活跃、有没有第二个人读。** 一个人维护的库读起来快（代码少），但结论可能随时失效。
+**四、它由谁维护、近期是否仍有维护。** 维护者人数和提交频率不能直接代表代码规模或可靠性；它们提醒你检查维护连续性、安全修复和版本支持。
 
-**五、热度。** 放在最后，因为它和"我该不该读"几乎无关。
+**五、热度。** 它可以补充反映生态可见度，但不能替代你当前的问题、代码路径或维护状态判断。
 
-热度低的价值在于：**它通常意味着这个库没被过度包装，抽象层少。** 一个只有几千行的库，你一个下午能读完，而那些几万行的框架你可能读一个月还在表层。
+热度只能说明可见度，不能推出代码抽象少、质量更高或更适合阅读。评估依赖风险时，应另看维护状态、版本发布、已知安全问题与团队支持；评估阅读范围时，再看你要追的模块和调用路径。
 
 ## 一个具体的选法：从"我的调用栈"往外一层
 
-如果不知道从哪开始，可以用一个简单的规则：**把你自己项目里直接调用的第三方库列出来，读其中最靠下（最基础）的那一个。**
+如果不知道从哪开始，可以先从一个具体问题出发，找到自己代码调用的依赖，并优先读那个**拥有该行为、且离问题最近的模块**；不要为了追到底而自动钻到最底层依赖。
 
-比如本项目的调用栈是：
+比如从目标行为画路径时，要把工具 schema 与模型请求拆开：
 
 ```text
-我的代码
-  → langchain_core（@tool、消息类型、schema 生成）
-      → pydantic（schema 生成的实际执行者）
-      → httpx / anthropic（真正发请求的）
+工具 schema：应用代码 → langchain_core.tools → Pydantic schema
+模型请求：  Agent/应用 → provider integration → provider SDK → HTTP transport
+                                      例如 langchain-anthropic
 ```
 
-最靠下的是 pydantic 和 httpx，但它们太底层（读它们离"agent 怎么工作"太远）。所以合理的起点是 **langchain_core** —— 它足够靠近你的代码（你能直接看到它在做什么），又足够独立（一个下午能读透核心）。
+这两行是不同目标下的**候选追踪路径**，不是所有项目都共用的一条完整依赖链。若问题是工具 schema，就从 **langchain_core.tools** 开始；只有证据指向 schema 生成细节时再继续读 Pydantic。若问题是模型请求、认证或重试，就从项目实际安装的 provider integration 开始，按该版本追到 provider SDK 和 transport。包名或依赖清单本身不能证明运行时的调用关系。
 
-**这个"往外一层"的规则可以避免两个极端**：读自己代码（太快，学不到新东西）和读最底层的库（太深，和你无关）。
+这条选择法避免两个偏差：只重读自己的代码、看不到依赖行为；以及一路追到最底层、离当前问题越来越远。目标是找到承担待解释行为的边界，并在问题得到回答时停止。
 
 <Mermaid
   chart={`
@@ -62,22 +61,22 @@ flowchart TB
     B -->|要判断边界| D["关键路径 + 错误处理"]
     B -->|要学设计| E["只读抽象层：接口、基类、数据结构"]
     B -->|要判断风险| F["依赖、网络、文件、权限"]
-    G["五个信号（按可靠性）"] --> G1["1 它在我自己的调用栈里"]
+    G["五个问题（无固定排序）"] --> G1["1 它在我自己的调用栈里"]
     G --> G2["2 我踩过它的坑"]
     G --> G3["3 它的抽象层值得学"]
     G --> G4["4 有没有第二个人读"]
-    G --> G5["5 热度（几乎无关）"]
-    H["不知道从哪开始时：<br/>读调用栈里最靠下但还没太底层的那一个"] -.-> I["本项目 → langchain_core"]
+    G --> G5["5 热度（只反映可见度之一）"]
+    H["不知道从哪开始时：<br/>从拥有目标行为的近端模块开始"] -.-> I["schema 问题 → langchain_core.tools"]
 `}
 />
 
 ## 一个反过来的建议：先读小库
 
-如果目标是**学会"怎么读源码"这个技能**（而不是解决某个具体问题），那第一个项目应该挑**小的**。
+如果目标是**练习建立源码整体感**（而不是解决某个具体问题），可以从范围较小、与你目标有关的项目开始；“小”是降低初始范围的一个办法，不是质量标准。
 
-理由：读源码的难点不在理解某个函数，而在**建立"这个系统是怎么组织的"这个整体感**。小库能让你在一个下午走完"从入口到角落"的全程 —— 而那个全程本身就是训练。
+理由：读源码不仅要理解单个函数，还要逐步建立**这个系统如何组织**的整体感。范围较小的目标有时更容易走完一条端到端路径；实际耗时仍取决于语言、依赖和背景知识。
 
-有了这个经验之后再去读大框架，你会知道该看什么、该跳过什么。反过来则不成立：**从大框架开始读源码的人，大多数会卡在表层，然后得出"这个框架很复杂"的结论 —— 而那个结论既不能指导你写代码，也不能告诉你去哪里改。**
+有了这个经验之后再去读大框架，你会知道该看什么、该跳过什么。反过来则不成立：**直接从大型框架全仓开始可能让初学者难以建立整体感；若已有具体问题，从相关模块和入口开始通常更容易形成可检验的阅读目标。**
 
 ## 一个具体的判断：什么时候算"读完了"
 
@@ -91,111 +90,152 @@ flowchart TB
 2. 你能指出关键的那几处实现（文件 + 大致位置）
 3. 你能说出"如果我改 X，会发生什么"
 
-第三条最有价值 —— 它是"读懂了"和"看过了"的分界线。而它同时也是第 5 节那个"产出"的起点。
+在需要修改或评估变更影响时，第三条尤其有用；它把源码理解连接到具体决策。
 
 
-## 一个具体的量法
+## 文件数和行数能告诉你什么
 
-"一个下午能读完"是一个直觉判断，但它可以量化。我用文件数和行数量了几个候选库：
+“一个下午能读完”仍是时间估计，文件数与行数只能帮助比较代码规模，不能预测理解难度、依赖深度或实际阅读时间。下面的快照来自固定的本地 Python 3.14.7 / langchain-core 0.3.63 环境，统计安装包目录内的 `.py` 文件和物理行数，包含空行与注释；它不是整仓库规模，也不代表当前最新版：
 
-```text
-库                  文件数       行数     一个下午能读完吗
-langchain_core        ~200     ~50000     不能（要挑模块）
-langchain              ~50      ~10000     勉强
+| Distribution | Import 包 | `.py` 文件数 | 物理行数 |
+|---|---|---:|---:|
+| langchain-core 0.3.63 | `langchain_core` | 169 | 55,001 |
+| pydantic 2.14.1 | `pydantic` | 105 | 46,617 |
+| httpx 0.28.1 | `httpx` | 23 | 8,828 |
+| langchain / anthropic / openai | 本次环境未安装 | — | — |
+
+在这份固定快照环境中，脚本对已安装的三个 distribution 都报告 `readErrors=0`；本机缺少的包会明确报告未安装，不会被误记为零行。
+
+依赖快照与复现脚本见 `experiments/locks/reading-source-compare-py314-macos-arm64-20261021.txt` 和 `experiments/scripts/verify_reading_source_picking_projects_review_20261021.py`。统计结果只说明包目录规模；它不能推出“一个下午能否读完”，也不包括非 Python 文件、扩展模块或目录外测试。
+
+**选择阅读范围时，路径通常比整包规模更有用。** 第 3 节那次追踪只深入了四个文件、不到两百行相关代码；这不是说整个包只有这些代码，而是说明先找到待回答问题的调用路径，再决定是否扩大范围。
+
+定位路径可以先从项目导入点开始，再查依赖里的定义和下一跳：
+
+```bash
+# 1. 在自己的项目中找调用入口
+rg -n "langchain_core" . --glob "*.py"
+
+# 2. 让当前 Python 环境告诉你模块的实际文件位置
+MODULE_FILE="$(
+  python -c '
+import inspect
+from langchain_core.tools import tool
+print(inspect.getsourcefile(tool))
+  '
+)"
+BASE_FILE="$(
+  python -c '
+import inspect
+from langchain_core.tools import base
+print(inspect.getsourcefile(base._get_filtered_args))
+  '
+)"
+printf '%s\n' "$MODULE_FILE" "$BASE_FILE"
+
+# 3. 分别定位入口与下一跳，避免在错误文件中搜索符号
+rg -n \
+  "^def tool|create_schema_from_function" \
+  "$MODULE_FILE"
+rg -n "_get_filtered_args" "$BASE_FILE"
 ```
 
-（实跑数据，2026-10-09，见本节代码。注意这些都是整包的数字 —— 含大量与你无关的模块。）
-
-**关键不是整包有多大，而是"你要读的那条路径有多长"。** 第 3 节那次追踪只经过了四个文件、总共不到两百行相关代码 —— 而 `langchain_core` 整包有五万行。
-
-所以正确的量法是：**先定位那条调用链，再量它经过的模块。** 而这也正是第 3 节那套"从入口往下追"的价值 —— 它天然把范围收窄了。
-
-定位那条调用链有一个最小动作，三步、只用 `grep`：
-
-```text
-# 1. 先在你自己的项目里，找到调用这个库的地方（这才是入口）
-$ grep -rn "langchain_core" . --include=*.py | head
-# 2. 在这个库里找到被调函数的定义（先确认是不是 overload）
-$ grep -rn "^def tool" site-packages/langchain_core/tools/convert.py
-# 3. 从定义所在文件继续往下 grep 下一跳（第 3 节完整演示）
-```
-
-第 1 步的目的很具体：**把范围从「整个库」缩到「我真正在用的那几个函数」。** 不问这一句，你读的模块很可能和你的调用链无关 —— 而这就是"整包五万行"里绝大多数代码的位置。
+第 1 步把范围从整个库缩到当前项目确实调用的依赖；第 2、3 步避免猜测 `site-packages` 路径，并把阅读锚定到实际安装版本。
 
 ## 一个反过来的建议：别从最大众的库开始
 
 如果目标是学"怎么读源码"这个技能，第一个项目的选择有一个反直觉的建议：**不要选你最想学的那个大框架。**
 
-理由和上面那个数字有关：大框架的整包规模会把你淹没。而读源码的真正难点不是理解某个函数，是**建立"这个系统怎么组织"的整体感**。五万行里建立整体感，比五千行里难十倍。
+范围较大的仓库会增加建立整体感的成本，但文件数或行数不能推导难度倍数。练习时可以把问题限定在一个模块或路径，逐步扩展到相邻边界。
 
-更好的第一个项目是**一个你用得上、但只有几千行的库**。它的收益是双重的：你学会了读源码的节奏（多久能追完一条链、什么时候该停下来），而这个库本身的结论也对你有用。
+更好的起点通常是**一个与你目标相关、范围可控的组件或模块**。即使它属于大型框架，也可以先只读一条具体路径；反过来，一个小项目若与你的问题无关，也未必值得优先读。
 
-有了这个经验，再回到大框架时你会知道：**先只读那条链经过的文件，其他一律不看。** 这个"不看"的能力，恰恰是从小库那一次完整阅读里练出来的。
+之后面对更大的仓库，可以先围绕目标路径阅读，再按证据需要扩展到相邻模块；跳过范围外代码是任务选择，不是对其永远不看的规定。
 
 ## 一个具体的判断顺序
 
-把这一节的四个理由和五个信号合成一个可以照着走的顺序：
+把四个阅读理由与五个选择问题合成一个检查清单。下面顺序便于起步，不是通用评分或固定优先级：
 
 ```text
 1. 我读它的理由是什么？（四种之一，写下来，写不出就别读）
 2. 它在我自己的调用栈里吗？（是 → 优先级最高）
 3. 我踩过它的坑吗？（是 → 效率最高，因为有具体问题）
 4. 它有多大？（要学「怎么读」就挑小的；要解决具体问题就无所谓）
-5. 热度（几乎无关，放最后）
+5. 热度（只能作生态可见度信号，不能单独决定是否阅读）
 ```
 
-第 1 步那个「写下来」值得强调。**写不出理由的阅读，通常会在半小时后变成随便翻翻** —— 因为没有目标，也就没有「读到这里就够了」的判断依据。而这一节那张表（要改它 / 要判断边界 / 要学设计 / 要判断风险）正好提供了四个可选的目标。## 完整可运行代码
+第 1 步那个「写下来」值得强调。**写不出理由时，延长阅读前先把问题缩小或设定探索时限** —— 这能帮助你判断何时已经获得足够信息。而这一节那张表（要改它 / 要判断边界 / 要学设计 / 要判断风险）正好提供了四个可选的目标。## 完整可运行代码
 
-下面这段代码做一件事：把一个 Python 环境里所有已安装的、和你项目相关的库列出来，并给出它们的规模（文件数与行数）—— 用来判断"哪个值得一个下午读完"。
+下面这段代码统计当前 Python 环境中几个候选包的 `.py` 文件数与物理行数，用于比较安装包目录规模。它不能直接估算阅读时长。
 
 ```python
-"""挑项目：量一下候选库的规模。纯本地。实跑状态：2026-10-09。"""
-import importlib.util, os
+"""比较当前环境中若干 Python distribution 的包目录规模；不估算阅读时间。
+实跑状态：2026-10-21；Python 3.14.7 / macOS arm64；依赖见 lock 文件。
+"""
+from importlib import metadata, util
+from pathlib import Path
+import os
 
-CANDIDATES = ["langchain_core", "langchain", "pydantic", "anthropic", "httpx", "openai"]
+CANDIDATES = [
+    ("langchain-core", "langchain_core"),
+    ("langchain", "langchain"),
+    ("pydantic", "pydantic"),
+    ("anthropic", "anthropic"),
+    ("httpx", "httpx"),
+    ("openai", "openai"),
+]
 
 
-def measure(mod):
-    spec = importlib.util.find_spec(mod)
-    if not spec or not spec.origin:
-        return None
-    root = os.path.dirname(spec.origin)
-    files = lines = 0
+def measure(distribution, module):
+    try:
+        version = metadata.version(distribution)
+    except metadata.PackageNotFoundError:
+        return {"status": "distribution-not-installed"}
+
+    spec = util.find_spec(module)
+    if spec is None or spec.origin is None:
+        return {"status": "module-source-unavailable", "version": version}
+
+    root = Path(spec.origin).parent
+    files = lines = read_errors = 0
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d != "__pycache__"]
-        for f in filenames:
-            if not f.endswith(".py"):
+        dirnames[:] = [name for name in dirnames if name != "__pycache__"]
+        for filename in filenames:
+            if not filename.endswith(".py"):
                 continue
             files += 1
+            path = Path(dirpath) / filename
             try:
-                with open(os.path.join(dirpath, f), encoding="utf-8", errors="ignore") as fh:
-                    lines += sum(1 for _ in fh)
+                with path.open(encoding="utf-8") as handle:
+                    lines += sum(1 for _ in handle)
             except OSError:
-                pass
-    return {"path": root, "files": files, "lines": lines}
+                read_errors += 1
+    return {
+        "status": "measured",
+        "version": version,
+        "root": str(root),
+        "pythonFiles": files,
+        "physicalLines": lines,
+        "readErrors": read_errors,
+    }
 
 
 if __name__ == "__main__":
-    print("候选库的规模（.py 文件数与行数，不含 __pycache__）")
-    print()
-    print("  %-16s %8s %10s  %s" % ("库", "文件数", "行数", "一个下午能读完吗"))
-    rows = []
-    for m in CANDIDATES:
-        r = measure(m)
-        if not r:
-            print("  %-16s %8s %10s  （未安装）" % (m, "-", "-"))
+    print("安装包目录中的 .py 文件与物理行数；不是阅读时长估计")
+    print("distribution        version       files       lines  read errors")
+    for distribution, module in CANDIDATES:
+        result = measure(distribution, module)
+        if result["status"] != "measured":
+            print(f"{distribution:20} {result['status']}")
             continue
-        rows.append((m, r))
-        verdict = ("能（< 1 万行）" if r["lines"] < 10000 else
-                   ("勉强（1-3 万行）" if r["lines"] < 30000 else "不能（> 3 万行，要挑模块）"))
-        print("  %-16s %8d %10d  %s" % (m, r["files"], r["lines"], verdict))
+        print(
+            f"{distribution:20} {result['version']:12} "
+            f"{result['pythonFiles']:5} {result['physicalLines']:11,} "
+            f"{result['readErrors']:12}"
+        )
     print()
-    print("=== 怎么用这个数字 ===")
-    print("  目标如果是「学会读源码」这个技能，选 1 万行以内的 ——")
-    print("  它让你能在一个下午走完「从入口到角落」的全程，而那个全程本身就是训练。")
-    print()
-    print("  目标如果是解决具体问题（第 2 节那张表的四种理由），规模不重要 ——")
-    print("  你只需要读那条调用链经过的模块，几万行也只是其中几百行。")
+    print("行数含空行和注释；不包含非 .py 代码、包目录外测试或运行时依赖路径。")
+    print("阅读时间取决于目标问题、路径长度与背景知识，请把规模只当作范围线索。")
 ```
 
 ## 一条反直觉的建议：别挑"书单里推荐"的那个
@@ -208,7 +248,7 @@ if __name__ == "__main__":
 
 ## 常见坑
 
-- **按热度挑。** 热度和"我该不该读"几乎无关 —— 应该在五个信号里排最后。
+- **按热度挑。** 热度只是生态可见度的辅助信号，不能脱离阅读目标、调用路径与维护状态单独决定。
 - **为了学设计而逐行读实现。** 学设计看结构（概念、分层、边界），实现细节是另一个层面。
 - **从大框架开始。** 会卡在表层，然后得出"框架很复杂"的结论。先读小库建立整体感。
 - **读自己不用的库。** 最优先的是"直接出现在我调用栈里"的那些 —— 它的行为就是我行为的一部分。

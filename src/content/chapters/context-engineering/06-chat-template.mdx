@@ -4,30 +4,25 @@ title: Chat Template：你写的消息，模型看到的 token
 status: drafting
 ---
 
-这一节讲一层平时看不见的东西：**你发出去的消息数组，和模型实际读到的 token 串，不是一回事。**
+这一节讲一层平时看不见的东西：**应用提交的消息结构、provider 实际计数的输入 token，以及模型内部的序列化格式，不应当混为一谈。**
 
-中间那一步叫 Chat Template —— 它把「role + content」的结构渲染成模型能吃的标记序列。
-理解它的存在，能解释好几个反直觉的现象。
+很多本地推理框架会显式用 chat template 把角色消息渲染成模型专用的控制 token；托管 API 往往只暴露结构化请求和 usage/count-token 接口，不保证把最终模板或精确 token 字符串公开给调用方。工程上应把它当作 provider/model 的实现边界，用目标端点的计数和文档验证，而不是根据 JSON 形状猜内部标记。
 
-## 一、实测：同样的内容，token 差 25%
+## 一、历史观察：消息结构与内容没有被干净地分离
 
-10 行规则（约 310 字符）加一句问题。两种组织方式，**内容字符数完全相同**：
+2026-10-08 的历史记录比较了「合并成一条 user」与「10 条 user 规则 + 10 条 assistant 应答 + 最后一条问题」两种请求，并留下 238 与 298 两个输入 token 汇总值。但逐次请求/响应、准确 endpoint/model、usage 原文和评分材料未归档，不能独立复算。更关键的是，正文保留的拆分示例含 10 条额外的“记住了。”assistant 文本，因此两种请求并非只差消息边界，不能把 60 token 归因给 20 个边界标记。
 
 ```text
-组织方式                    input token   消息数
-合并成一轮 user                  238          1
-拆成 10 轮 + 10 条应答            298         21
+历史路线（仅摘要记录）       input token   消息数
+合并版                          238          1
+拆分版                          298         21
 ```
 
-（实测数据，`deepseek-flash`，2026-10-08。token 为三项之和，只含输入。）
+（历史汇总，`deepseek-flash`，2026-10-08；原始 usage 字段和样本缺失。）
 
-**差 60 token，25%。** 多出来的部分不是内容 —— 内容一个字都没变。
-它来自 **20 个角色边界**：每一轮 user 和 assistant 都要用一对特殊标记
-（形如 user / assistant 的控制标记）包起来，这些标记也占 token。
+这两个历史数值相差 60 token，约为合并版记录值的 25%；但额外 assistant 文本、消息结构、模板实现和缓存口径都可能影响比较。**这不是角色边界的隔离实验，也不能推出每轮固定增加多少 token。**
 
-这个数字值得记住，因为它是一条很容易踩的成本来源：**对话轮数本身要花钱。**
-一个 20 轮的会话，即使每轮只问一句话，光是角色标记就有几百 token。
-而且它是**每轮都重发**的（历史消息会被重发，见第 1 章第 4 节）。
+一般来说，不同角色消息与结构可能带来不同的请求 token 数；实际增量取决于目标模型/provider 的编码、合并规则、工具与多模态块。历史 turn 是否每轮都重新提交，也取决于你使用的有状态 API、引用响应 ID 还是自己重放完整历史。不要把消息数乘以一个通用边界常数来估算。
 
 ### 位置也会改变 token 数
 
@@ -41,8 +36,7 @@ C. 一半 system 一半 user           234     (0)
 D. 同一句问题问两轮                254    (+20)
 ```
 
-差别不大（几到几十 token），但它证明了一件事：**位置和角色会影响渲染结果。**
-所以「我把同一段文字挪了个位置」在 token 层面**不是一个等价操作**。
+这些历史数值不能证明某个位置造成了多少 token 差异；位置/role 变化可能同时改动请求结构、模型行为和缓存候选前缀。应把它作为目标端点的对照变量测量，而非普遍模板定律。
 
 那「10 行规则 + 一个问题」在数组里到底怎么摆？两种写法（示例：构造数据，未实跑；两份的规则文本逐字相同）：
 
@@ -67,7 +61,7 @@ D. 同一句问题问两轮                254    (+20)
 ]
 ```
 
-两份的**字符数完全一样**，但第一份 238 token、第二份 298 token —— 差在 20 个角色边界。记住这个形状：**能合并的合并，不是为了省那几个字，是为了省那 20 个边界标记，而且这份开销每轮都重发。**
+上面的 JSON 是示意，不是历史请求的逐字复现。它显示拆分版本还新增了 assistant 回答文本，因此不能用这份例子解释 238/298 的差值。若要隔离结构效应，需保存两个实际请求，保证信息、内容和验收规则可比，并用目标模型/token-count 接口记录原始请求与结果；即使这样，结构改变也可能影响行为，不能只以省 token 决策。
 
 <Mermaid
   chart={`
@@ -75,7 +69,7 @@ flowchart LR
     A["你写的 messages 数组"] --> B["Chat Template 渲染层<br/>厂商与模型各自实现"]
     B --> C["模型读到的 token 串"]
     C --> D["token 计数"]
-    C --> E["缓存前缀哈希"]
+    C --> E["provider 定义的缓存匹配"]
     C --> F["注意力看到的内容"]
     G["改了一个字"] --> B
     H["挪了消息位置"] --> B
@@ -86,136 +80,104 @@ flowchart LR
 
 ## 二、为什么这件事重要
 
-**一、你改的不是文字，是 token 串。** 同一句中文，加一个空格、换一个引号类型
-（全角/半角）、把顿号改成逗号，渲染出来的 token 可能完全不同。
-这解释了一个常见困惑：「我只改了个标点，为什么 token 数变了那么多？」
+**一、文字与 token 数不是一一对应。** 同一句中文加空格、换标点，tokenizer 可能会给出不同分词；但不能仅凭标点变化预测 token 差值。精确计数要指定模型/provider，并使用其 tokenizer 或 token-count 接口。
 
-**二、跨厂商的渲染不同。** 你的内部表示是「配置 + 历史」两段，
-而 OpenAI 把 system 当成 messages 里的第一条 —— 这一层转换就是 Chat Template 的差异。
-第 8 章讲适配层时提到的三个结构性差别，本质都是这一层的差别。
+**二、跨厂商的请求契约不同。** SDK/适配层可能把统一内部消息转换成 provider-specific 请求；角色、工具调用、多模态块、system/developer 指令和状态延续方式都需按目标 API 文档映射。不能把所有差异都归结为一个公开可见的 Chat Template；多数托管 API 不向应用返回确切的内部序列化串。
 
-**三、它决定了缓存的边界。** 上一节讲的「前缀哈希」不是对你写的 JSON 做哈希，
-而是对**渲染后的 token 串**做哈希。所以消息结构变了，缓存就断了 ——
-哪怕内容一个字没改。
+**三、输入结构可能影响缓存复用，但规则由 provider 定义。** Anthropic、OpenAI 与 DeepSeek 都提供各自的前缀缓存机制，缓存断点、最小前缀、匹配和 usage 字段并不相同；比如有些变更只影响第一个不匹配位置之后的前缀，也可能仍复用更早的部分。结构调整后检查目标 endpoint 的 cache usage/诊断，不要假设统一的“渲染后 token 哈希”或“缓存全废”。Anthropic 文档允许连续的 user 消息；但其 compaction 场景也说明，同角色消息在特定处理路径中可能合并。因此，不要假设数组中相邻两条 user 消息在每种 API 流程里都保留为两个独立 turn。
 
 ## 三、三个可操作的推论
 
-**推论一：能用一轮说完的，不要拆成多轮。** 上面的实测是 25% 的差距。
-当然这条有边界：把无关内容全塞进一轮会稀释注意力（第 2 节那个 system prompt 高度的实验）。
-**判据是：同样的内容如果本来就要一起用，就别拆轮次；如果不相关，就别合并。**
+**推论一：按语义和协议表达消息，不为未经验证的 token 假设改结构。** 历史 25% 差异有额外 assistant 文本混杂，不能证明合并总是更省，也不能证明模型表现等价。把多个事实合并或拆分时，需同时验证 token、缓存、输出质量和协议要求。
 
-**推论二：别把「结构变化」当成免费操作。** 在长会话里调整消息顺序、
-插入一条系统提醒、把某段内容从 system 挪到 user —— 这些都可能在缓存层产生代价。
-做这类改动后，值得看一眼 usage 字段。
+**推论二：别把「结构变化」当成免费操作，也别预设它一定破坏所有缓存。** 在长会话里调整消息顺序、插入系统提醒或把内容换 role，可能影响输入 token、缓存前缀或语义行为。做这类改动后，用 provider-specific usage 与诊断对比。
 
-**推论三：不要手写 token 估算公式。** 因为「字符数 ÷ 4」这类估算对中文、
-对结构化标记都不准。要比就实测：用响应里的 input_tokens 字段对比两个版本的差异，
-这比任何估算都可靠。
+**推论三：不要把通用字符公式当精确计数。** 「字符数 ÷ 4」不等同目标 tokenizer。若要在发请求前估算，可用 provider 提供的 token-count API；若要测账单/缓存行为，则比较真实请求的完整 usage 与成本字段。两种口径回答的问题不同。
 
-## 四、代码：怎么实测结构成本
+## 四、代码：按目标 provider 计数
 
-先给能用的那个。它的做法是**直接发一次请求，读响应里的 usage** ——
-这是唯一可靠的判断方法，也是本节那两组数字的来源：
+下面使用 Anthropic Messages API 的 token-count 接口，在**不生成回答**的情况下统计输入 token。它只回答该接口口径下请求输入有多少 token，不等同缓存命中、实际账单或其它 provider 的 tokenizer。
+
+**实跑状态：未调用 provider。** 下方 verifier 只用 fake SDK 检查包装函数与差值计算；要得到真实 token 数，需由读者配置自己的目标模型与凭据后运行。
 
 ```python
 import os
 
 import anthropic
 
-client = anthropic.Anthropic(
-    api_key=(
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    ),
-    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-)
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+if bool(api_key) == bool(auth_token):
+    raise RuntimeError("set exactly one of ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")
+client = anthropic.Anthropic(api_key=api_key, auth_token=auth_token)
 MODEL = os.environ["VERIFY_MODEL"]
 
 
 def input_tokens(system: str, messages: list[dict]) -> int:
-    """实测一次请求的输入 token。
-
-    只看 input_tokens 会漏掉缓存命中的部分，所以三项都要算上（第 0 章的坑）。
-    """
-    resp = client.messages.create(
-        model=MODEL, max_tokens=16, system=system, messages=messages,
+    """Count provider-reported input tokens without generating a model answer."""
+    response = client.messages.count_tokens(
+        model=MODEL,
+        system=system,
+        messages=messages,
     )
-    u = resp.usage
-    return (
-        (u.input_tokens or 0)
-        + (u.cache_read_input_tokens or 0)
-        + (u.cache_creation_input_tokens or 0)
-    )
+    return response.input_tokens
 
 
-def compare_structures(variants: list[tuple[str, str, list[dict]]]):
-    """variants: [(名字, system, messages), ...] —— 同一份内容的不同结构各测一次。"""
-    out = [(name, input_tokens(system, messages)) for name, system, messages in variants]
-    base = min(t for _, t in out)
-    return [(n, t, f"{100.0 * (t - base) / base:+.0f}%") for n, t in out]
+def compare_variants(
+    variants: list[tuple[str, str, list[dict]]], baseline_name: str,
+) -> list[tuple[str, int, int]]:
+    """Return (name, input_tokens, delta_vs_baseline); define comparable inputs yourself."""
+    names = [name for name, _, _ in variants]
+    if len(set(names)) != len(names) or baseline_name not in names:
+        raise ValueError("variant names must be unique and include the baseline")
+
+    counts = [(name, input_tokens(system, messages)) for name, system, messages in variants]
+    by_name = dict(counts)
+    baseline = by_name[baseline_name]
+    return [(name, count, count - baseline) for name, count in counts]
+
+
+if __name__ == "__main__":
+    stable_system = "你是退款支持助手。不要编造订单状态。"
+    variants = [
+        ("single-message", stable_system, [
+            {"role": "user", "content": "订单 A-1001：退款前确认订单存在。请先检查状态。"},
+        ]),
+        ("two-user-messages", stable_system, [
+            {"role": "user", "content": "订单 A-1001：退款前确认订单存在。"},
+            {"role": "user", "content": "请先检查状态。"},
+        ]),
+    ]
+    # Provider APIs may combine adjacent same-role messages. This compares
+    # accepted request inputs; it does not guarantee two distinct user turns.
+    print(compare_variants(variants, baseline_name="single-message"))
 ```
 
-用法：把「合并版」和「拆 10 轮版」构造成两个 variant，各跑一次，差值就是你要找的
-角色边界成本。它不需要你猜任何东西，也不依赖厂商的模板长什么样。
+运行前设置 `VERIFY_MODEL`，并按官方 SDK 选择 API key 或 bearer token。示例两组请求只保持事实大致一致，消息结构可能影响模型行为；结果仅比较 Anthropic 当前 token-count 接口的输入 token 差异，**不能把差值归因成纯边界开销、缓存效果、费用差或答案质量等价**。要测缓存需发送实际 Messages 请求并分别记录 `input_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens`；要测账单还须按当前模型价格与组织配置计算。
 
-### 那个估算函数，只配用来建立量级直觉
+没有跨模型通用的“每条消息边界 token”常数。设计阶段可用请求 token-count 接口估量；若该 provider 没有此接口，只能把 tokenizer / 模板估值明确标成近似值，并在运行 usage 上校准。缓存 usage 不能简单当成普通 input tokens 或货币成本。
 
-网上常见一个「每条消息约 3~5 token 边界标记」的估算公式。它只在一种情况下有用：
-你**暂时不能发请求**（比如在做设计评审），需要一个大概的数字。除此之外不要用它 ——
-那个 3 是经验值，不同厂商的模板标记长度不同，中文与结构化标记也都不满足
-「字符数 ÷ 4」这类公式：
+### 一个排查案例：短提醒为什么可能改变 token 与缓存
 
-```python
-def structural_overhead(messages, baseline_tokens, baseline_messages=1):
-    """⚠️ 只用来建立量级直觉，不要用它做决策 —— 判断请用上面的 input_tokens()。"""
-    extra = (len(messages) - baseline_messages) * 3   # 经验值：每条消息 3~5 token 的边界
-    return {"消息数": len(messages), "额外 token 估算": extra,
-            "占基准比例": f"{100.0 * extra / max(baseline_tokens, 1):.0f}%"}
-```
+历史笔记记载：在每轮前重复加入一条短系统提醒后，观察到成本上升，并把它解释为“消息开销 + 缓存前缀失配”。但逐次请求、usage、价格、endpoint 和缓存诊断均未归档，不能复算，也不能确认这两个因素各自贡献多少。尤其不能据此说缓存“全废”或代价是消息文本的几十倍。
 
-这也是推论三的意思：**要精确值就实测，不要推算。** 估算函数和实测函数放在一起，
-是为了让你一眼看出两者能给出的东西不一样 —— 前者给方向，后者给数字。
-
-### 一个真实的错误
-
-我在第 18 章做成本实测时，为了「让模型更好地记住早期指令」，
-在每个用户回合前面**追加一条很短的系统提醒**（大约 15 个字）。
-当时的想法是「15 个字，可以忽略不计」。
-
-跑完之后发现成本涨了明显一截。原因有两层：
-
-- **表面上**：每轮多了一条消息，边界标记 + 那 15 个字，约 20 token
-- **真正的大头**：**这条提醒插在中间，破坏了前缀稳定** —— 上一节讲过，
-  改开头会导致后面全部失效。而那些「早期指令」本来已经被缓存了
-
-所以真实代价远大于 20 token：**它是「缓存全废」而不是「多几条消息」。**
-
-这个错误很典型：**你以为是加了一点内容，实际是改了一个结构。**
-而结构改动在缓存层的代价是内容改动的几十倍。
-所以一条实用的规则是：**要加内容，加在末尾。** 除非有明确理由，不要往中间插东西。
+可复现的排查顺序是：保存变更前后的完整请求结构和模型配置；用目标 provider 的 token-count 接口比较输入规模；用真实响应记录完整 usage、缓存读写和实际计价；若 provider 提供 cache diagnostics，定位前缀首次分歧位置。相同请求数、同一模型/区域/工具配置和同一轮次内容下再做对照。每轮重复追加规则会使历史内容累计增长，但规则是否重复、放哪种 role，应先服从 API 语义和授权边界，再看测量结果。
 
 ## 五、什么时候该关心这一层
 
 这一层大多数时候可以不管 —— 你的请求正常、成本可接受，就没必要去研究模板。
 但有四个时刻它值得你花时间：
 
-**一、成本突然涨了而内容没变。** 检查是不是有人加了系统提醒、
-改了消息顺序、或者引入了新的消息类型。这一层的变化不会触发任何报错。
+**一、成本突然涨了而业务内容看起来没变。** 对比完整请求、工具 schema、模型与 provider 设置、缓存读写及计价口径；调用方 JSON 看似相同也不保证 API 端点渲染/计量一致。
 
-**二、跨厂商迁移。** 你要把同一套请求发到两个厂商。这时候「我用的是同一份内容」
-这个说法是不成立的 —— 渲染出来的 token 串不同，成本与缓存行为都不同。
-第 8 章讲适配层时，这是最容易出错的一层。
+**二、跨厂商迁移。** 为每个 provider 单独验证角色映射、工具/多模态结构、token 计数、状态延续、缓存与 usage 字段。共享领域内容不代表请求契约、计量或行为等价。
 
 **三、缓存命中率不达预期。** 上一节的排查清单里，「序列化是否确定」
 和「结构是否稳定」这两条都属于这一层。
 
-**四、你在做提示词的 A/B 对比。** 如果两个版本的**结构**不同（不只是措辞不同），
-那么成本差异可能来自结构而不是措辞。**做 A/B 时最好只改一处**，
-否则你分不清是哪个改动带来的效果。
+**四、你在做提示词的 A/B 对比。** 把提示内容、消息结构、模型参数和缓存状态列为实验变量；若要归因单一因素，固定其它变量并用相同任务集重复测量，单次 token 差异不能证明输出质量等价。
 
-还有一个反过来的场景：**当你需要省 token 时，这一层往往有比「删内容」更划算的空间。**
-本节那个 25% 的例子说明，光是调整消息组织方式就能省掉四分之一，
-而这不需要砍掉任何实质信息。**先看结构，再砍内容。**
+如果要降成本，检查是否重复发送了不必要的历史、工具定义或文档；但是否可删除、摘要或改 role 要按任务质量、API 状态模型、缓存规则与安全语义评测。本节历史 25% 不是可迁移的节省预期。
 
 ## 六、一个具体的例子：同一条规则，两种写法
 
@@ -232,26 +194,24 @@ def structural_overhead(messages, baseline_tokens, baseline_messages=1):
           把订单 A-1001 退了
 ```
 
-从「模型能不能遵守」的角度，两种写法可能都对。但从成本角度：
+两种写法会改变请求的语义角色和结构。system/developer 与 user 的区别不只是成本标签；别为了缓存把用户数据或租户策略放进跨用户共享前缀，也别仅凭位置假设模型表现等价。
 
-- **写法一**：规则在 system 里，是稳定前缀的一部分 —— **只付一次，之后命中缓存**
-- **写法二**：提醒在 user 消息里，**每轮都不同** —— 前缀从这条消息开始就变了，缓存断掉
+- **写法一**：如果这是适用于该请求的应用指令，放在 provider 规定的 system/developer 位置；其是否可缓存、缓存多久、如何计费要查当前接口与模型规则。
+- **写法二**：若提醒只适用于这一轮，把它放在本轮输入中；若每轮重复追加到持久 transcript，会增加后续请求上下文，但缓存可能仍命中早期稳定前缀，实际结果看 provider 的断点与匹配规则。
 
 而且写法二还有个更隐蔽的问题：**它会随对话轮次累积。**
 如果每轮都加一句提醒，20 轮之后历史里有 20 句几乎相同的话，
 既占 token 又可能让模型以为这是 20 条独立的约束。
 
-**结论：凡是「每次都适用」的规则，都应该放在稳定前缀里。**
-动态提醒只适合「只在这一轮适用」的内容 —— 而且最好也放在末尾。
+**结论：按语义与权限选择消息角色，按 provider 缓存契约安排稳定前缀。**
+共享、稳定且对当前主体适用的说明可考虑放前；用户/租户专属事实、动态内容与逐轮输入需保持正确作用域，不能为了命中缓存越权共享。
 
-这个例子的价值在于它很常见：**很多人加提醒的位置是随手选的，
-而位置决定了它是「付一次」还是「付每一次」—— 这个差别在长会话里会被放大几十倍。**
+缓存只是成本与延迟优化，不是持久状态存储或授权隔离机制；一条稳定前缀也不保证命中，缓存最小长度、断点、TTL、路由和 provider 策略都可能影响结果。
 
 ## 七、小结
 
-- **Chat Template 是「消息数组 → token 串」的渲染层**，你的输入不等于模型的输入
-- **同样的内容，拆成 10 轮比合并成 1 轮多 60 token（25%）** —— 轮数本身要花钱
-- **位置与角色会影响渲染结果**，所以「挪个位置」不是等价操作
-- **缓存哈希是对渲染后的 token 串做的**，结构变了缓存就断
-- **要加内容就加在末尾** —— 往中间插会破坏前缀稳定，代价是几十倍
-- **不要手写 token 估算公式**，用响应里的 usage 字段对比两个版本实测
+- Chat template 是模型/provider 的消息序列化机制；托管 API 不一定公开内部模板细节。
+- 2026-10-08 的 238/298 token 汇总缺少原始请求；拆分示例还包含额外 assistant 文本，不能归因到消息边界。
+- 结构与角色变化可能影响 token、语义和缓存复用；影响范围与计量取决于 provider/model/API。
+- 用 provider token-count 接口测输入 token；用真实响应 usage、缓存诊断和价格信息测实际运行成本。
+- 保持缓存前缀稳定有助于部分 provider 的复用，但不保证命中；不要牺牲角色语义、租户隔离或安全边界。

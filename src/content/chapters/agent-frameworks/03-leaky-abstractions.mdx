@@ -4,80 +4,46 @@ title: 抽象在哪里泄漏
 status: drafting
 ---
 
-「抽象泄漏」是一个有明确含义的说法：**当一个抽象宣称替你处理了某个细节，但你在某些情况下不得不了解那个细节时，它就泄漏了。**
+「抽象泄漏」指一个抽象隐藏了实现细节，但在某些需求或故障路径上，使用者仍必须理解、配置或绕过该细节。它不是框架质量差的同义词；关键是明确**哪项需求触发下探、谁负责保证行为、绕行会带来什么维护成本**。
 
-这一节不给理论，直接用真框架跑出一个泄漏现场。用的是 LangChain 0.3.7。
+下面用一个固定版本的 LangChain 工具 schema 例子说明：类型注解可以生成字段约束，散文描述则不会自动变成机器可校验的枚举。示例只看本地生成的 JSON Schema，不请求模型。
 
-## 泄漏现场：装饰器生成的 schema 缺了 enum
+## 泄漏现场：字段说明不是字段约束
 
-先看它生成的完整 schema：
+在 LangChain `0.3.7` / `langchain-core 0.3.63` 中，`@tool` 默认根据函数签名推断参数 schema；`parse_docstring` 默认关闭。普通 `str` 参数生成 `type: string`，不会因为文档字符串里写了「只支持明天或后天」就自动生成 enum。`Literal["明天", "后天"]` 则能在该版本的本地 schema 中表达枚举。参数说明解析与 schema 约束是两件事；即使打开 docstring 解析，说明文本也不能代替类型约束。
 
-```text
-{
- "description": "查询某个城市某一天的最高气温（摄氏度）。\n\nArgs:\n    city: 城市名\n    day: 只支持「明天」或「后天」",
- "properties": {
-  "city": { "title": "City", "type": "string" },
-  "day":  { "title": "Day",  "type": "string" }
- },
- "required": ["city", "day"],
- "title": "get_weather",
- "type": "object"
-}
-```
-
-问题在 `day` 上：它只有 `type: string`。
-
-而**文档字符串里明确写了「只支持『明天』或『后天』」** —— 这句话进了 `description`（在函数级描述里），却没有变成字段级的 `enum` 约束。
-
-这个差别的代价有多大？第 4 章第 2 节实测过：**自由字符串 0/3 给出合法值，enum 3/3 合法。** 也就是说，装饰器生成的 schema 是一个「能用」的 schema，但它落在第 4 章那个 0/3 的档位上。
+早期章节曾把这一现象描述成装饰器无法生成 enum，并引用 2026-10-08 记录的自由字符串 `0/3`、enum `3/3` 结果。前半句过度概括：这个固定版本支持 `Literal`。后半句缺少逐次响应、完整请求、模型快照与评分器，当前无法独立复核，因此只保留为历史摘要，不用于证明 enum 导致成功率提高。下面的可运行例子只验证本地 schema，不验证模型行为。
 
 ## 抽象泄漏的定义在这里怎么体现
 
 按定义检查：
 
-- **抽象宣称**：你写普通的 Python 函数，我用类型注解和文档字符串自动生成 schema。
-- **实际情况**：它能生成 object / string / integer / required，但生成不了 enum。
-- **结果**：要拿到 enum，你必须知道「它内部是把注解翻译成 JSON Schema 的」—— 然后改写注解。
+- **抽象提供的便利**：从函数签名推断参数 schema，避免手工重复声明字段。
+- **触发下探的需求**：调用方需要机器可校验的枚举，而普通 `str` 只表达了字符串类型。
+- **可用的扩展点**：在本节固定版本中可以使用 `Literal`、显式 Pydantic `args_schema`，或经验证的 JSON Schema。具体方案取决于校验、维护和目标 provider 的兼容要求。
+- **仍由应用负责的事**：检查最终生成的 schema，并在工具执行边界校验业务规则。schema 描述输入契约，不自动保证授权、数据库状态或业务副作用安全。
 
-改法是用 `Literal`：
+要拿到 enum，不需要猜内部实现：查看生成物，并核对框架版本文档与支持的输入类型。这里的下探只需改一处注解；其他框架、版本或复杂约束可能需要不同做法。
 
-```python
-from typing import Literal
+## 常见的泄漏检查面
 
-@tool
-def get_weather_v2(city: str, day: Literal["明天", "后天"]) -> dict:
-    ...
-```
+下面三类是审查时常见的检查面，**不是按实测频率排序的结论，也不是完整分类**。
 
-再打印一次，schema 里就有了：
+**第一类：schema 与约束。** 从函数签名推断 schema 时，检查必填字段、枚举、格式、范围和嵌套对象是否出现在最终产物中。注解或显式 schema 能表达哪些约束，要按具体版本验证。模型输出即使符合 schema，也仍需应用校验权限与业务条件。
 
-```text
-day 的定义： {"enum": ["明天", "后天"], "title": "Day", "type": "string"}
-```
+**第二类：错误与重试策略。** 错误可按来源区分，例如本地输入校验失败、provider 返回的终态错误、网络/API 失败、工具执行失败，以及结果状态未知。并非每个框架都把这些类别映射成同一种异常，也不能笼统断言框架会自动重试。核对具体 SDK 的默认行为、错误类型和可配置策略。对于可能产生副作用的工具，超时只说明调用方未及时收到结果，不能单独证明远端操作没有发生；只有应用层具备幂等保障，或状态查询/对账确认操作尚未生效时，才有依据重放该工具操作。provider 对模型请求的 replay-safety 提示只适用于该 provider 请求，不能证明工具副作用安全。否则应暂停并进入查询、人工处理或补偿流程。
 
-**问题解决了，但注意代价：这已经不是在写「普通的 Python 函数」了。** `str` 变成 `Literal["明天", "后天"]` 这个改动的唯一目的，是让框架生成出你想要的东西。你为了用一个抽象，不得不了解它内部的翻译规则。
-
-这就是泄漏：**抽象没有消失，它只是从「你不需要知道」变成了「你必须在某些时候知道」。**
-
-## 三类常见的泄漏
-
-按出现频率排，框架类的抽象有三处最容易漏。
-
-**第一类：schema 与约束。** 就是上面这个例子。凡是「从类型注解推断 schema」的抽象，都会在枚举、范围、格式、条件必填这些约束上泄漏 —— 因为 Python 的类型系统表达不了它们（这正是第 5 章讲 JSON Schema 那一节的内容）。
-
-**第二类：错误处理。** 抽象通常定义一个「错误」的概念，但真实的错误有层次：可以重试的、不能重试的、状态未知的。第 4 章实测过「状态未知」这个特殊情形 —— 模型面对它会主动不重试。而框架的错误类型里往往没有这个区分，你要么自己包一层，要么把语义丢掉。
-
-**第三类：控制流的边角。** 重试与退避、超时、并发限制、人工审批中断 —— 这些在流程图上是小方块，在抽象里往往需要特殊的钩子。第 11 章第 4 节那个断点恢复就是个例子：状态持久化和「副作用不重复」是两件事，而多数框架只提供前者。
+**第三类：控制流与恢复边界。** 重试与退避、超时、并发限制、人工审批中断等，在不同框架里可能由内建配置、钩子或应用代码实现。第 11 章第 4 节的断点恢复也应按 runtime 与副作用边界理解：持久化工作流状态不等于外部写入 exactly-once；是否能恢复、何时重放、如何去重，都要针对具体执行路径验证。
 
 ## 怎么面对泄漏
 
-三步，都不复杂：
+可以用三步把抽象边界变成可检查的工程问题：
 
-**第一步，把抽象生成的东西打印出来看。** 这是本节做的事 —— 它不需要读源码，只要把 schema、把发出去的消息、把错误对象打出来。**用真框架跑一次，比读十页文档有用。**
+**第一步，检查实际产物。** 打印工具 schema、规范化后的请求、错误类型或恢复状态，并与目标 SDK 版本的文档对照。不要仅凭函数注解或配置文件推断运行时行为。离线 schema 检查能验证生成物，但无法替代一次目标 endpoint 的协议兼容测试。
 
-**第二步，测试边界而不是测试正路。** 正路框架都替你测过了。该测的是：参数越界时它怎么处理？工具抛异常时错误长什么样？中断之后能不能恢复？这些正是泄漏发生的地方。
+**第二步，测试你负责的边界。** 覆盖缺字段、非法值、权限拒绝、超时、重复请求、中断恢复等与你的任务相关的条件。为每个测试写明预期责任层：SDK、应用、provider 或外部系统。边界集合由真实需求决定，所谓“正常路径都被框架测过”并不能替你的集成测试作保证。
 
-**第三步，为每个泄漏记一笔。** 记下「哪个需求需要绕开抽象、怎么绕」。这份清单就是你的迁移成本 —— 第 5 节会用到它。
+**第三步，记录扩展和后果。** 写下绕过抽象的方法、升级时要复核的接口、附加的测试责任，以及绕行是否跳过原有校验或观测。清单可以帮助第 5 节比较迁移成本，但频次和影响面要来自你的项目数据，不能从一个例子外推。
 
 ### 泄漏登记表长什么样
 
@@ -87,10 +53,10 @@ day 的定义： {"enum": ["明天", "后天"], "title": "Day", "type": "string"
 {
   "need": "工具参数需要枚举约束",
   "workaround": "把 str 换成 Literal[\"明天\", \"后天\"]",
-  "scope": "每个带枚举参数的工具，当前 4 个",
-  "breaks_other": "手写 input_schema 会覆盖装饰器生成的 schema，自动校验随之失效",
-  "repro": "python check_tool_schema.py",
-  "cleanup": "1 行 / 工具"
+  "scope": "本仓库示例 1 个；真实项目数量待盘点",
+  "breaks_other": "若改用显式 schema，需单独验证框架运行时是否仍应用预期的参数校验",
+  "repro": "python3.10 experiments/scripts/verify_agent_frameworks_leaky_abstractions_w6.py",
+  "cleanup": "改注解并更新 schema 回归检查；实际工时待测"
 }
 ```
 
@@ -99,7 +65,7 @@ day 的定义： {"enum": ["明天", "后天"], "title": "Day", "type": "string"
 - `need` 写**需求**，不是「哪里烦」。需求决定这条泄漏会不会反复出现。
 - `workaround` 要具体到能照做 —— 只写「改注解」，三个月后等于没写。
 - `scope` 给处数。这就是第 5 节估迁移成本的分母。
-- `breaks_other` 记「绕开之后什么别的抽象跟着失效了」。这是最常被漏、代价也最大的一项 —— 就是本节末尾「频次 × 影响面 × 连带代价」里的第三项。
+- `breaks_other` 记绕开后需要重新验证的其他保证，例如运行时解析、自动校验或观测；是否确实失效要实测。它对应本节末尾启发式中的「连带代价」。
 - `repro` 是一条能重跑的命令或脚本名。**判据：照着它跑一遍能不能看到同一个现象。**
 - `cleanup` 是换框架时每个点要动的工作量。
 
@@ -108,197 +74,139 @@ day 的定义： {"enum": ["明天", "后天"], "title": "Day", "type": "string"
 <Mermaid
   chart={`
 flowchart TB
-    A["抽象宣称：写普通函数<br/>自动生成 schema"] --> B["实际生成"]
-    B --> C["city: type string ✅<br/>day: type string ⚠️"]
-    C --> D["文档里写了「只支持明天或后天」<br/>但没有变成 enum 约束"]
-    D --> E["第 4 章实测：<br/>自由字符串 0/3 合法<br/>enum 3/3 合法"]
-    E --> F["要拿回 enum：改用 Literal"]
-    F --> G["但这已经不是在写<br/>「普通的 Python 函数」了"]
-    G --> H["泄漏的定义：<br/>抽象没有消失，只是从<br/>「不需要知道」变成「有时候必须知道」"]
-    C -.-> I["三类高频泄漏：<br/>schema 约束 / 错误分层 / 控制流边角"]
+    A["需求：参数必须是限定枚举"] --> B["函数签名为普通 str"]
+    B --> C["生成 schema：type=string，无 enum"]
+    C --> D{"该版本可用的表达方式？"}
+    D -->|"Literal 注解"| E["生成 enum，再检查实际 schema"]
+    D -->|"显式 args_schema"| F["维护显式契约并测试调用边界"]
+    E --> G["应用仍负责业务规则与授权校验"]
+    F --> G
+    H["历史 0/3 与 3/3 摘要"] -.-> I["缺原始数据；不作模型效果证据"]
 `}
 />
 
 ## 一个反过来的视角
 
-泄漏不全是坏事。**一个从不泄漏的抽象，通常意味着它能表达的东西很少。**
+泄漏不全是坏事，也不能从“抽象没有泄漏”推出它表达力不足。抽象的目标、使用场景与边界各不相同；真正有用的判断是：**当前抽象覆盖了哪些需求，未覆盖时有哪些可维护的扩展方式？**
 
-链（chain）抽象就很少泄漏 —— 因为它只做一件事：按顺序调用。你几乎不会遇到「需要绕开它」的情况，因为你能想到的需求它都表达不了，你也不会拿它做那些事。
+- 如果任务参数本来就是自由文本，就不需要枚举约束；但要确认下游是否接受任意字符串。
+- 如果业务契约限定了值域，schema 可以描述这个约束；应用仍应按权限和业务状态做校验。
+- 如果扩展点需要 fork 或复制大量内部实现，把这项成本与显式实现、其他框架的方案一起比较，不要直接推断抽象“安全”或“迟早成为负债”。
 
-所以判断标准不是「有没有泄漏」，而是：**泄漏的地方，是不是你真正需要的地方。**
+早期版本曾用「零泄漏意味着表达力很少」作为反向观察。它没有可检验的范围或证据，现改为需求驱动的检查方法。
 
-- 如果你的任务不需要 enum（比如参数本来就是自由文本），那这个泄漏对你没有影响
-- 如果你需要精确的 schema 约束，那它每一天都在影响你
+> **历史说明（2026-10-09）**：当时写作曾把散文说明未形成 enum 的现象说成装饰器不能生成 enum。LangChain `langchain-core 0.3.63` 的官方 API 将 `parse_docstring` 默认值列为 `False`，该选项的作用是解析 Google Style 文档字符串中的参数说明；它不把说明文字转换为类型约束。函数注解或显式 schema 定义参数结构。当前章节用固定版本的本地示例核对普通 `str` 与 `Literal` 生成物；该例不代表其他版本或其他框架。
 
-这也是为什么「哪个框架好」没有通用答案 —— 答案取决于你的需求落在它的泄漏区还是覆盖区。
-
-
-> **修正（2026-10-09）**：这一节当时把这个现象记成了「抽象泄漏」。写第 22 章时读了 LangChain 源码（langchain_core 0.3.63），准确的说法要更具体：
->
-> `@tool` 有一个 `parse_docstring` 参数，**默认是 `False`**（见 `convert.py` 的五处重载）。所以写在 `Args:` 段里的参数说明根本没被读取 —— 而且那段原文还会漏进工具级 description。打开这个开关之后，说明会进 `description`，但**仍然不会变成 `enum`**：schema 来自 pydantic 的 `model_json_schema()`（`base.py:103`），而 pydantic 只能从**类型标注**产生约束。
->
-> 所以更准确的结论是：**约束写在散文里，就等于把它从「机器可校验」降级成了「模型可以忽略的提示」。** 完整的追踪过程见第 22 章第 3 节，可复现脚本在 `verify-output/read-source-tool.py`。
 ## 完整可运行代码
 
-下面这段代码用真实的 LangChain 跑一遍上面的对照：先打印装饰器生成的 schema，再用 Literal 拿回 enum。
+下面的代码固定 LangChain 与 Pydantic 版本，只在本地构造工具 schema。它分别检查普通 `str`、开启 `parse_docstring` 的参数说明，以及 `Literal` 枚举。示例不发送模型请求；它验证 schema 生成行为，不测模型是否遵守 schema。
+
+```bash
+python -m pip install "langchain==0.3.7" "langchain-core==0.3.63" "pydantic==2.9.2"
+```
 
 ```python
-"""真框架对照：同一个任务，手写循环 vs LangChain。
+"""比较函数类型、docstring 参数说明和 Literal 对本地 schema 的影响。"""
 
-不是性能对比 —— 比的是三件事：
-  1. 代码量
-  2. 你能看见什么、看不见什么
-  3. 想加一个需求时，需要在哪里「逃出抽象」
+import json
+from typing import Literal
 
-实跑状态：2026-10-09，langchain 0.3.7 + deepseek-flash（Anthropic 兼容端点）。
-"""
-import os, json, time
-
-print("langchain 版本：", end="")
 import langchain
-print(langchain.__version__)
-
-from langchain_core.tools import tool as lc_tool
-from langchain_anthropic import ChatAnthropic
-
-TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34}
-
-# ---- 手写版的工具定义：schema 与实现分开写 ----
-HAND_TOOLS = [{
-    "name": "get_weather",
-    "description": "查询某个城市某一天的最高气温（摄氏度）。",
-    "input_schema": {"type": "object",
-                     "properties": {"city": {"type": "string"},
-                                    "day": {"type": "string", "enum": ["明天", "后天"]}},
-                     "required": ["city", "day"]},
-}]
+import langchain_core
+import pydantic
+from langchain_core.tools import tool
 
 
-def hand_get_weather(city, day):
-    return TEMP.get((city, day), {"error": "没有数据"})
-
-
-# ---- 框架版的工具定义：一个装饰器，schema 从类型注解推断 ----
-@lc_tool
-def get_weather(city: str, day: str) -> dict:
-    """查询某个城市某一天的最高气温（摄氏度）。
+@tool
+def plain_weather(city: str, day: str) -> str:
+    """查询天气。
 
     Args:
         city: 城市名
-        day: 只支持「明天」或「后天」
+        day: 只支持明天或后天
     """
-    return TEMP.get((city, day), {"error": "没有数据"})
+    return f"{city} {day}: fixture"
+
+
+@tool(parse_docstring=True)
+def described_weather(city: str, day: str) -> str:
+    """查询天气。
+
+    Args:
+        city: 城市名
+        day: 只支持明天或后天
+    """
+    return f"{city} {day}: fixture"
+
+
+@tool
+def literal_weather(city: str, day: Literal["明天", "后天"]) -> str:
+    """查询天气。"""
+    return f"{city} {day}: fixture"
 
 
 if __name__ == "__main__":
-    print()
-    print("=== 1. 代码量 ===")
-    print("手写版工具定义：%d 行（schema 手写）" % len(json.dumps(HAND_TOOLS, ensure_ascii=False).split(chr(10))))
-    print("框架版工具定义：6 行（一个装饰器 + 文档字符串）")
-    print("→ 框架在「schema 生成」这一层确实省事")
-    print()
-
-    print("=== 2. schema 长什么样（框架替你生成了什么）===")
-    print(json.dumps(get_weather.args_schema.model_json_schema(), ensure_ascii=False, indent=1)[:600])
-    print()
-
-    print("=== 3. 一个抽象泄漏的现场 ===")
-    print("题目：它的 input_schema 里有没有 enum 约束？")
-    schema = get_weather.args_schema.model_json_schema()
-    print("day 的定义：", json.dumps(schema["properties"].get("day"), ensure_ascii=False))
-    if "enum" not in json.dumps(schema["properties"].get("day", {})):
-        print("→ ❌ 没有 enum。文档字符串里写了「只支持明天或后天」，")
-        print("   但生成的 schema 只有 type: string。")
-        print("   而第 4 章实测过：enum 约束下模型 3/3 合法，自由字符串 0/3。")
-        print("   要拿到 enum，必须逃出装饰器，改用 pydantic 的 Literal 或手动写 schema。")
-    print()
-    print("结论：抽象替你生成了「能用的」schema，但没有生成「最好的」schema。")
-    print("      而第 4 章的实测说明这两者的差别是 0/3 和 3/3。")
-
-
-# ==== 4. 逃出抽象：用 Literal 把 enum 找回来 ====
-print()
-print("=== 4. 逃出抽象之后 ===")
-from typing import Literal
-
-
-@lc_tool
-def get_weather_v2(city: str, day: Literal["明天", "后天"]) -> dict:
-    """查询某个城市某一天的最高气温（摄氏度）。
-
-    Args:
-        city: 城市名
-        day: 明天或后天
-    """
-    return TEMP.get((city, day), {"error": "没有数据"})
-
-
-schema2 = get_weather_v2.args_schema.model_json_schema()
-print("day 的定义：", json.dumps(schema2["properties"].get("day"), ensure_ascii=False))
-has_enum = "enum" in json.dumps(schema2["properties"].get("day", {}))
-print("现在有 enum 了：%s" % ("✅ 是" if has_enum else "❌ 否"))
-print()
-print("代价：这已经不是在写「普通的 Python 函数」了 —— 类型注解从 str 变成了 Literal，")
-print("      而 Literal 是为「生成 schema」这个目的服务的。这就是**抽象泄漏**：")
-print("      为了拿到想要的效果，你必须了解抽象内部是怎么把注解翻译成 schema 的。")
+    plain_day = plain_weather.args_schema.model_json_schema()["properties"]["day"]
+    described_day = described_weather.args_schema.model_json_schema()["properties"]["day"]
+    literal_day = literal_weather.args_schema.model_json_schema()["properties"]["day"]
+    print(f"langchain={langchain.__version__}")
+    print(f"langchain-core={langchain_core.__version__}")
+    print(f"pydantic={pydantic.__version__}")
+    print("plain.day=" + json.dumps(plain_day, ensure_ascii=False, sort_keys=True))
+    print("described.day=" + json.dumps(described_day, ensure_ascii=False, sort_keys=True))
+    print("literal.day=" + json.dumps(literal_day, ensure_ascii=False, sort_keys=True))
+    print("provider request: none (local schema construction only)")
 ```
 
-实跑输出（2026-10-09）：
+**实跑状态（仅本地 schema 构造，不调用 provider）**：下方输出只适用于上列固定版本。实跑同时检查了 `parse_docstring=True`：参数说明可出现在字段描述中，但不会替代枚举约束。
 
 ```text
-=== 3. 一个抽象泄漏的现场 ===
-题目：它的 input_schema 里有没有 enum 约束？
-day 的定义： {"title": "Day", "type": "string"}
-→ ❌ 没有 enum。文档字符串里写了「只支持明天或后天」，
-   但生成的 schema 只有 type: string。
-   而第 4 章实测过：enum 约束下模型 3/3 合法，自由字符串 0/3。
-   要拿到 enum，必须逃出装饰器，改用 pydantic 的 Literal 或手动写 schema。
-
-=== 4. 逃出抽象之后 ===
-day 的定义： {"enum": ["明天", "后天"], "title": "Day", "type": "string"}
-现在有 enum 了：✅ 是
+langchain=0.3.7
+langchain-core=0.3.63
+pydantic=2.9.2
+plain.day={"title": "Day", "type": "string"}
+described.day={"description": "只支持明天或后天", "title": "Day", "type": "string"}
+literal.day={"enum": ["明天", "后天"], "title": "Day", "type": "string"}
+provider request: none (local schema construction only)
 ```
 
+这组结果把两种信息分开了：`description` 是给读者或模型看的说明，`enum` 才是 schema 中机器可检验的值域约束。不同 provider 对 schema 子集的接受行为仍要单独核实；接收方约束也不替代服务端业务校验。
 
-## 泄漏的第三种形态：错误语义被压平
+## 错误语义与重放安全
 
 第三类泄漏（控制流的边角）值得单独展开，因为它最不容易被发现。
 
-真实的工具失败有三层语义，第 4 章实测过它们的区别：
+工具或模型调用失败可从结果上区分，但不能仅凭异常名字得出统一重试规则：
 
-- **可以重试的失败**（网络抖动、限流）→ 应该重试
-- **不能重试的失败**（参数错误、权限不足）→ 应该修正或放弃
-- **状态未知的失败**（超时后不知道操作是否生效）→ **不应该重试**，因为可能有副作用
+- **明确未执行且暂时失败**（例如 provider 表示请求未接收）可能适合重试，仍需遵循服务端建议、预算和退避策略。
+- **明确不可恢复的输入或授权错误**通常应修正请求、拒绝执行或交由业务流程处理。
+- **状态未知**（例如调用方等待超时，但远端可能已经提交）不代表“一定不能重试”，而是**不能盲目重放有副作用的操作**。先用幂等键、状态查询或对账确认结果；如果无法判断，应暂停自动重试并转人工或补偿。
 
-而框架通常只有一个「错误」的概念。当你把一个「状态未知」包装成框架的普通异常时，框架的重试机制会**帮你重试** —— 于是副作用执行了两次。
+框架对模型请求和工具副作用的重试可能是不同机制。比如 [OpenAI Agents SDK 的模型文档](https://openai.github.io/openai-agents-python/models/) 将 runner 管理的模型重试设为 opt-in，并在策略上下文中提供 replay-safety 信息；这不能推出所有 SDK 的默认行为，也不意味着框架会替应用保证工具操作幂等。选型时应分别检查 provider 请求重试、工具执行重试和业务操作重放。
 
-这和第 11 章第 4 节那个 `u1, u2, u2, u3` 是同一个问题，只是触发路径不同：那次是进程崩溃，这次是框架的重试。**两者的根因都是「错误语义被压平」。**
+这与第 11 章第 4 节的崩溃恢复案例有相同的工程关注点：**恢复逻辑必须考虑外部系统是否已提交副作用**。故障时序相似，但不能仅凭一个案例断言根因一定是“错误语义被压平”。
 
-所以在评估框架时，有一个具体的问题值得问：**它的重试机制能不能区分「可以重试」和「状态未知」？** 如果答案是不能，那你至少要知道这一点，并在工具层自己处理幂等。
+## 泄漏区与业务价值
 
-## 泄漏区往往就是价值区
-
-最后补一个反过来的观察：**框架替你处理得越好的地方，通常越不是你的差异化所在；而它泄漏的地方，往往正好是你业务里最有价值的部分。**
-
-schema 生成是很标准的活，框架做得好、泄漏也少（除了 enum 这种边界）。而预算、熔断、幂等、错误分层这些 —— 恰恰和第 9 章那四道闸门一样 —— 是需要按业务定制的地方。
-
-所以「框架省下的 ≠ 你需要的」这句话，可以更准确地表述为：**框架省下的是通用问题，泄漏的是定制问题。** 而你的系统值不值钱，取决于定制问题解决得怎么样。
+评估时可分别列出框架已经提供的通用能力，以及仍由应用决定的策略。预算、熔断、幂等、授权和错误恢复经常需要结合业务要求，但各框架与 SDK 覆盖范围不同，应逐项查看文档和配置，不能一概归为“泄漏”或“价值区”。
 
 ## 一个判断泄漏严重程度的方法
 
-不是所有泄漏都一样严重。有三个维度可以用来分级：
+不是所有未覆盖的需求都一样。可以用三个维度记录**本项目中的**影响，而不是假设通用频率：
 
-**一、绕开它需要改多少地方。** 那个 enum 的例子只需要改一个类型注解 —— 影响面是一处。而如果某个泄漏需要你在每个工具上包一层，那就是系统性成本。
+**一、绕开它需要改多少地方。** `Literal` 的例子在一个函数里只改一项注解；若相同需求散落在多个工具中，先盘点实际数量，再估算集中 schema 或公共校验能否减少重复维护。
 
-**二、绕开之后会不会破坏抽象的其他部分。** 有些绕法会连带失效（比如你手写了 schema，装饰器的自动校验就不生效了）。这种泄漏的代价是双份的。
+**二、绕开之后会不会破坏其他保证。** 使用显式 schema 时，要验证工具构造、运行时解析和业务校验分别由谁负责；不要未经测试就假定自动校验一定保留或一定失效。
 
-**三、泄漏区是不是你的高频需求。** 如果你的工具参数基本都是自由文本，那 enum 这个泄漏你一辈子碰不到几次；如果每个工具都有枚举字段，它每天都在影响你。
+**三、该需求在自己的任务里出现多频繁。** 从 issue、调用数据或需求清单统计分母与时间窗口。没有数据时标成待盘点，不能把单例示例说成每天发生。
 
-三个维度合起来给出一个判断：**频次 × 影响面 × 连带代价**。低的可以忽略，高的要在选型时就算进成本。
+可以用「频次 × 影响面 × 连带代价」作为**项目内部的排序启发式**，但要先定义计数单位、观察窗口与影响等级。该乘积不是通用风险公式；当数据稀疏时，保留原始计数和不确定性，不要输出伪精确分数。
+
 ## 常见坑
 
-- **只看文档，不打印生成物。** 把 schema、发出的消息、错误对象打出来看，比读十页文档有用。
-- **只测正路。** 正路框架已经测过了。泄漏发生在参数越界、工具异常、中断恢复这些边界上。
-- **把泄漏当成「框架的 bug」。** 它多半是类型系统的表达力边界，不是实现缺陷 —— 换成任何一家都一样。
-- **追求零泄漏的抽象。** 从不泄漏通常意味着表达力很低。该问的是「泄漏的地方是不是我需要的地方」。
-- **不记录绕开抽象的地方。** 那些绕法就是你的迁移成本，不记下来，下次换框架还得重新发现一遍。
+- **只看文档，不打印生成物。** 对照 schema、规范化请求或错误对象，确认目标版本实际产生了什么。
+- **把说明文本当成机器约束。** 分清 `description`、schema 关键字和应用侧校验；不要把其中一层当成另一层的保证。
+- **把一个 SDK 的行为推广到所有框架。** 版本、配置、endpoint 和工具执行 runtime 都会改变责任边界。
+- **把所有超时当成同一种失败。** 区分明确拒绝、可重试传输错误与结果状态未知；副作用调用先查询或去重，再决定是否重放。
+- **把“逃逸测试”当成框架安全证明。** 它只能验证选定版本、配置、需求和失败路径；还要检查升级兼容性、权限、隐私与部署边界。
+- **不记录绕开抽象的地方。** 记录需求、复现步骤、适用版本、验证结果和剩余责任；没有盘点的数据明确标成未知。

@@ -4,209 +4,216 @@ title: 成本的四块来源
 status: drafting
 ---
 
-前面十七章里散落着很多成本数字：单次调用 365 token、agent 1625、12 轮对话累计 57822、8 个子 agent 是 8430 的 8.1 倍。这一节把它们收成一个模型。
+前面章节里散落着一些历史成本记录：单次调用 365 token、agent 1625、12 轮累计输入 57,822、以及某组子 agent 的 8.1 倍 token 比值。它们来自不同任务和记录口径，部分缺少逐次原始请求/响应，不能直接拼成一组可比较的质量或账单证据。本节把**成本归因方法**收拢起来，并将历史数字与可计算的情景模型分开。
 
-## 四块来源
+## 四种成本观察角度
 
-一次 agent 运行的成本由四块组成，而它们的增长方式完全不同：
+一次 agent 运行可以从四种角度看成本；这些分析视角会交叉，**不是四个互斥的账单项目**：输入和输出是 API usage 中通常需要分别核算的 token 类别；工具定义是输入的一部分；“重复”是多个调用/执行者反复提交内容的放大机制。
 
-| 来源 | 什么时候付 | 增长方式 |
+| 观察角度 | 什么时候出现 | 如何计量 |
 |---|---|---|
-| **输入** | 每一轮都要重发全部上下文 | 简化模型下累计呈**二次增长** |
-| **输出** | 只有新增的部分 | 线性，但单价通常是输入的几倍 |
-| **工具定义** | 每一轮都随输入重发 | 线性（工具数 × 轮数） |
-| **重复** | 多 agent / 子 agent 各装一份 | 乘份数 |
+| **输入** | 按调用协议发送上下文；Stateless 客户端常在下一次请求中带上当前需要的消息历史 | 按完整调用轨迹和目标 provider usage 汇总；只有当每轮提交完整且上下文逐轮增长时，简化模型才呈二次增长 |
+| **输出** | 模型每次响应生成内容 | 按每次调用的实际 output usage 汇总；单价由 provider、model 与 token 类别决定 |
+| **工具定义** | 请求中包含工具 schema 时 | 它已包含在输入里；可单独归因分析，但不得把已含在 usage 的工具定义再加一遍 |
+| **重复** | 多轮、多 agent 或重试再次提交上下文/工具定义时 | 不是额外 token 字段；从调用轨迹看哪些输入被重复以及重复了几次 |
 
-**第二列是这一节最重要的东西："每一轮都要重发"。** 这是 agent 成本区别于普通 API 调用的根本原因。
+**先区分请求形态、归因维度与账单口径。** Hosted conversation state、缓存或延迟加载会改变请求与 usage；不要把“每轮必定重发完整历史”当成所有 agent runtime 的事实。工具 schema 也不是独立于输入的第二份账单：把它标记出来是为了知道输入成本从哪里来，汇总账单时不能重复计算。
 
-## 第一块和第二块：输入与输出
+## 第一、二块：输入与输出
 
-第 1 章测过一组对照：单次调用 365 token、workflow 619、agent 1625 —— 同样是完成任务，agent 的 token 是单次调用的 4.5 倍。差别不在输出了多少，而在**输入被重发了多少次**。
+第 1 章保留过一组历史 token 摘要：单次调用 365 token、workflow 619 token、agent 1625 token。这些记录缺少可独立核验的逐次原始响应、完整任务轨迹与质量评分；它们不能证明各方案任务质量等价，也不能把 4.5 倍 token 比值当成费用或质量差异。
 
-第 7 章测过多轮：12 轮对话累计输入 57822 token，是末轮单次（8907）的 **6.5 倍**。按模型外推 50 轮是 **24.2 倍**。
+第 7 章另有 12 轮累计输入 57,822、末轮 8,907，以及按原模型外推的 50 轮 24.2 倍记录。它们仍是历史摘要，缺少足以重建 endpoint、逐轮请求和用量口径的原始证据；保留作复核线索，不作通用增长实测。
 
-这个增长是**平方级**的，公式在第 1 章已经推过：
-
-```text
-累计输入 = Σ[57 + 16(n-1)]（n=1..N）= 57N + 8N(N-1)      （N 为轮数）
-```
-
-这里的二次项是 `8N(N-1)`：每轮输入按 16 token 增长，但累计时要对 0 到 N-1 求和。它说明累计输入是二次增长；「轮数翻倍约增至四倍」只是在二次项占主导时的近似，不是每个 N 都精确成立。
-
-所以「让 agent 多跑几轮」这个决定的成本不是线性的。第 11 章讲预算闸门时说"设一个最大步数"，成本上的理由就在这里。
-
-**输出的单价通常是输入的几倍**（各厂商不同，本站不写具体价格 —— 第 3 节讲怎么估算）。但输出量小得多，所以在多轮场景里**输入往往才是主要成本**。这一点和直觉相反，值得用数据确认一次再下结论。
-
-## 第三块：工具定义
-
-第 4 章实测：约 60 token 一个工具，8 个工具 678 token，86 个工具 **4945 token**。
-
-关键在于**这个成本每一轮都要付一次**。8 个工具跑 10 轮 = 6780 token 的工具定义开销 —— 而这部分内容**从头到尾没变过**。
-
-这引出第 3 节要讲的缓存：**不变的内容是最好的缓存对象，而工具定义恰好是最典型的不变内容。**
-
-## 第四块：重复
-
-第 12 章测过多智能体：单 agent 4270 token，主管加 3 个工人 8161 token，**1.91 倍**。而背景更大时（3489 字）是 1.99 倍。
-
-第 3 章那个 8.1 倍（8 个子 agent 各装一份共享背景，68548 vs 8430）是同一个模型取不同参数的结果：**输入乘以份数，输出不乘。** 所以输出占比高时倍数被摊平，背景占比高时倍数放大。
-
-用公式表达：
+累计输入的二次项只出现在下面这些假设同时成立时：每轮都提交完整的、随轮数增加的上下文，且新上下文按固定增量增长。这不是所有 agent 或 server-side conversation state 的公式：
 
 ```text
-倍数 = (输入 × 份数 + 输出) / (输入 + 输出)
+简化模型：累计输入 = Σ[57 + 16(n-1)]（n=1..N）= 57N + 8N(N-1)
+假设：stateless、每轮重发完整历史、每轮新增 16 token
 ```
 
-这个公式可以直接用来判断"该不该上多智能体"：**如果你的任务里输出占比高（比如生成长文本），多智能体的成本惩罚比你想的小；如果背景占比高（比如多份材料分析），惩罚会显著放大。**
+这里的二次项是 `8N(N-1)`：在该假设中，每轮输入按 16 token 增长，再对 0 到 N-1 累加。二次项占主导时，“轮数翻倍约增至四倍”才是近似，**不是每个 N 都精确成立**。实际任务应按调用轨迹中的每轮输入量求和；若使用 server-side state、裁剪或摘要，增长形状会不同。
+
+第 11 章讲预算闸门时会讨论任务步数限制。步数是一个控制旋钮，但不能仅凭轮数推断账单；还要统计每轮 input/output usage、工具定义以及重试与失败调用。
+
+输出 token rate 因 provider 与 model 而异，有些模型的输出费率高于输入；不能只看 token 数比较成本。确认当前 price sheet 后，用该 workload 的实际输入/输出构成分别估算。输入是否占主要成本，也应由 usage 和费率计算得出。
+
+## 第三种观察：工具定义
+
+第 4 章保留的 DeepSeek 兼容端点历史摘要显示，8/20/44/86 个工具时请求总 input 为 678/1326/2623/4945，两端差约 55 token/新增工具。它没有隔离 schema token，也缺少原始请求和逐次缓存 usage，所以不是隔离测得的 schema token，更不能当成固定“每个工具的价格”。
+
+如果 endpoint 每次请求都携带完整工具 schema，那么 schema 会增加输入量；如果有工具延迟加载或 prompt cache，具体未缓存/缓存读取/写入的字段与费率要按该 endpoint 文档解读。实测时用相同模型、system、messages 和其余请求参数做有/无工具对照，同时记录 provider 返回的完整 usage。**工具 token 已经包含在输入 usage 时，只能作为输入的归因子集，不能再次加到总输入上。**
+
+## 第四种机制：重复
+
+历史记录曾报告多智能体场景：单 agent 4,270 token，主管加 3 个工人 8,161 token（1.91 倍）；另一个背景更大的配置为 1.99 倍。第 3 章还记录 8.1 倍（8 个子 agent 的记录摘要 68,548 vs 8,430）。这些任务的原始逐次轨迹、统一评分与账单资料不完整，**不能据此确认各拓扑质量等价、普遍成本倍数，或把 token 比值当作费用倍数**。
+
+只在一个受控的敏感性模型里，可以假设被复制的输入乘以 `m`，而输出量固定不变：
+
+```text
+token-volume multiplier = (input × m + output) / (input + output)
+```
+
+这个算式只说明：在这些假设下，输出占比越高，复制输入造成的总 token 增幅越小。真实多 agent 系统还可能重复工具 schema、生成更多输出、增加失败/重试或改变任务质量；应从所有 agent 的实际调用轨迹分别汇总 usage 和 provider 费率。它可以帮助提出评估问题，**不能单独决定是否采用多智能体**。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["一次 agent 运行的成本"] --> B["输入<br/>每轮重发全部上下文"]
-    A --> C["输出<br/>只算新增"]
-    A --> D["工具定义<br/>每轮随输入重发"]
-    A --> E["重复<br/>多 agent 各装一份"]
-    B --> F["随轮数平方增长<br/>累计 = 57N + 8N(N-1)"]
-    C --> G["线性；单价高但量小"]
-    D --> H["60 token/工具 × 轮数<br/>第 4 章实测"]
-    E --> I["倍数 = (输入×份数 + 输出) / (输入+输出)"]
-    F --> J["轮数翻倍 → 累计输入翻四倍"]
-    H --> K["不变的内容是最好的缓存对象<br/>（第 3 节）"]
+    A["一次 agent 运行的成本"] --> B["输入<br/>按 provider usage 汇总"]
+    A --> C["输出<br/>按每次响应 usage 汇总"]
+    A --> D["工具定义<br/>是输入的归因子集"]
+    A --> E["重复<br/>调用轨迹中的放大机制"]
+    B --> F["仅在 stateless 全量重发模型中<br/>累计 = 57N + 8N(N-1)"]
+    C --> G["累计以实际 output usage 与模型费率计算"]
+    D --> H["可单独归因；已计入输入后不得重复相加"]
+    E --> I["复制输入的敏感性模型<br/>不等于真实 multi-agent 总账"]
+    F --> J["二次项占主导时才近似四倍"]
+    H --> K["稳定前缀可能复用<br/>须按 provider 契约验证（第 3 节）"]
 `}
 />
 
 ## 一个可操作的估算方法
 
-看上面的数字会有一个自然的问题：**我怎么估我自己的系统？** 步骤只有四步。
+**第一步，使用各次调用实际 usage 与元数据。** 记录 endpoint/provider、返回的实际 model、request/trace id、任务 id、轮次、step kind、输入/输出 usage、结束状态和延迟；不要把日志中的字段名直接当作跨 provider 的标准。
 
-**第一步，量一次单轮的实际 token。** 别用估算 —— 跑一次真的调用，读回 usage。注意要看三项之和（第 4 节的缓存陷阱）：
+以当前官方接口文档为例，Anthropic Messages API 的 `input_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens` 是三个不重叠的输入类别，官方总输入算法为三者相加；DeepSeek Chat API 同时报告 `prompt_tokens`、`prompt_cache_hit_tokens`、`prompt_cache_miss_tokens` 与相关 cached-token details；OpenAI usage 有 `input_tokens`，并可能在 `input_tokens_details` 下报告 `cached_tokens` 与 `cache_write_tokens`。字段关系和费用算法因 provider/model/endpoint 而异：**只能按对应接口定义把 usage 映射到不重叠的计费类别，不能把总量和它的明细再次相加，也不得把 Anthropic 的字段公式套给其他 provider。**
+
+**第二步，按任务类型看调用数与成本分布。** 记录每个完整任务的调用轮数和总费用，按 workload/cohort 查看 P50、P90、P99；样本太少时只描述样本，不把分位数当稳定总体估计。若任务确实按轮次增长上下文，单独画出每轮 token 和成本，但不要假设所有接口都在每轮完整重发。
+
+**第三步，做同条件对照来归因工具定义。** 在相同 model、system、messages 和采样设置下，比较有/无工具的完整调用 usage；按 provider 契约核对缓存读写计量，并检查工具是否每次都实际提交、是否延迟加载。工具 schema 已在总输入 usage 中时，它只是可归因的子集。不要直接用“工具数 × 60 token × 轮数”，除非这是你明确标出的、经过本地验证的情景假设。
+
+**第四步，按 provider 的当前费率逐次折算，再汇总任务账单。** 可把计算过程写成概念模板：
 
 ```text
-输入 = input_tokens + cache_read_input_tokens + cache_creation_input_tokens
+call_cost = provider_pricing(model, usage_categories, current_rate_card)
+task_cost = Σ(call_cost for every request, including retries and failed requests when billed)
 ```
 
-这三个字段的含义：`input_tokens` 是本次**未命中缓存**、真正要重算的输入；`cache_read_input_tokens` 是从前缀缓存**读回**的部分；`cache_creation_input_tokens` 是本次**写入缓存**的部分。**总输入是三者之和** —— 只看第一个字段，会把缓存命中的轮次当成「成本骤降」（第 3 节实测过这个误判）。
+按账单费率分别计算未缓存、缓存读取、缓存写入与输出，再对任务内请求求和；费率卡也可能包含图片、音频或服务调用等类别，实际计算以当前 provider 计费文档和账单为准。工具定义不是另一个 token 账单字段，不得在 usage 已含 schema 后再加一次。
 
-**第二步，量轮数分布。** 不是平均轮数，是分布 —— 因为累计输入在简化模型下呈二次增长，长会话可能对账单贡献不成比例；实际主体仍要按完整 usage 与计价测量。看 P50、P90、P99。
+四步里，最容易跳过的是逐次归因：只看平均轮数或总 token 会隐藏长任务、重试和缓存状态的差异。最后的成本结论应由完整调用轨迹、provider usage 与当前费率共同决定，而不是从一个简化公式推断。
 
-**第三步，算工具定义的固定开销。** 工具数 × 60 token × 平均轮数。若它占比很高，可把缓存列入候选优化；只有目标 endpoint 支持并允许缓存、usage 确认产生命中，且按该 provider 的读写缓存计价计算后确有节省，才应启用。否则应比较缩减工具定义、按需提供工具等方案。
+## 一个需要用任务级数据回答的问题
 
-**第四步，把上面三项加起来乘调用量。** 得到的是**输入侧**成本，输出侧单独算。
+减少重复输入，和更换更低单价的模型，哪项节省更多？不能从不同章节的 token 摘要直接比较：每个模型的输入/输出构成、缓存读写、任务完成质量和实际费率都可能不同。
 
-四步里，第二步最容易被跳过 —— 很多人用平均轮数去估，而那会显著低估。因为长会话的累计输入增长更快；具体总体账单仍取决于输入、工具定义、输出和各厂商计价，应该按每轮 usage 汇总，而不是只按平均轮数推断。
+第 1 章历史摘要中的 365 与 1,625 token 缺少可复核的完整请求和评分；把差额换算成“省 78% 成本”，或据此断言它超过“模型单价减半”的收益，都没有充分依据。正确做法是对同一目标 workload 设立可接受的质量/完成判据，分别测试减少上下文重复与模型替换，按每次调用的 provider usage 和当前费率核算总成本，并同时比较延迟、失败率和重试。
 
-## 一个反直觉的结论
-
-把这一节的数据合起来，得到一条和直觉相反的结论：
-
-**在本节的本地对照中，减少重复输入带来的降幅大于把模型单价减半的假设降幅；这只是该任务与计价假设下的结果。**
-
-理由：第 1 章那组本地 token 对照中，单次调用为 365 token，agent 为 1625 token（约 4.5 倍）；按相同任务、相同模型与相同单价比较，差额来自多轮输入重复。若把 agent 的 token 量假设性地降到单次调用的 365 token，减少量为 (1625−365)/1625≈78%。这是该对照的 token 降幅，不是不同模型价格或真实账单节省的普遍结论；真实成本还受输入/输出构成、模型单价、缓存读写费率及可消除重复的程度影响。
-
-模型选择仍然重要（第 4 节会讲分级路由）。应按目标 workload 的实际 usage、质量与计价分别估算减少重复输入和更换模型的收益，再决定优先级。
+分级路由仍是候选优化（第 4 节），但路由自身也可能增加判定调用或升级重试。先收集基线，再用固定评测集和在线灰度检验质量与成本，最后决定优先级。
 
 
-## 本地估算示例：工具定义占输入侧 token 的约 62%
+## 固定假设场景：工具定义约占情景输入量的 62%
 
-上面的公式可以代进具体数字。我用一个常见的形态算了一遍：8 个工具、每轮输出 300 token、跑 30 轮。
+以下是本地算术演示，不是 provider 实测或账单。假设每轮上下文从 57 token 起、之后每轮增加 16 token；每个工具 schema 按 60 token 计；每轮输出 300 token；输出的情景单位按普通输入的 4 倍计。表中工具 schema 与上下文假设分开列示，只为归因；真实 provider usage 通常已将 schema 纳入输入，账单不得重复相加。
 
 ```text
-场景                                    输入      输出     工具定义      折算计费
-单轮，无工具                              57      300          0        1,257
-单轮，8 个工具                            57      300        480        1,737
-10 轮，8 个工具                        1,290    3,000      4,800       18,090
-30 轮，8 个工具                        8,670    9,000     14,400       59,070
-30 轮，8 工具，4 个 agent 共享背景      34,680    9,000     14,400       85,080
+场景                                      上下文   输出   schema估算   情景成本单位
+单轮，无工具                                  57    300          0          1,257
+单轮，8 个工具                                57    300        480          1,737
+10 轮，8 个工具                            1,290  3,000      4,800         18,090
+30 轮，8 个工具                            8,670  9,000     14,400         59,070
+30 轮，上下文复制 4 份（输出/schema 不变）  34,680  9,000     14,400         85,080
 ```
 
-（本地计算，2026-10-09。输出单价按输入的 4 倍计。）
+（本地计算，2026-10-09。`4×` 输出权重、`60 token/schema` 与上下文复制次数都是情景参数，不是当日或当前价格。）
 
-三个数字值得单独看：
+**第一**，在这组假设里，30 轮的上下文+schema token 为 23,070，是单轮无工具的上下文 57 的约 405 倍。它体现“固定小输入逐轮增长”的数学结果，不代表一般任务的 token 或费用倍率。
 
-**第一，30 轮比单轮，轮数是 30 倍，但输入加工具定义的输入侧 token 量增长约 405 倍。** 这是本节执行模型按每轮求和的结果；二次增长是长轮数下的近似，不应把轮数平方当作所有 N 上的精确比例。
+**第二**，30 轮 schema 估算量为 14,400，占该情景上下文+schema token 的 62.4%（14,400 / (8,670 + 14,400)）。这是指定参数下的归因示例，不是分离测得的 schema 用量、账单占比或可复用的工具单价。
 
-**第二，在这个本地估算中，30 轮里工具定义累计占输入侧 token 的约 62%。** 这里假设每轮都带 8 个工具定义、每个定义按 60 token 计，并按表中口径把累计输入（8,670）与工具定义（14,400）相加；14,400 / (8,670 + 14,400) ≈ 62.4%。它是 token 构成比例，不等同于真实账单占比，也不代表其他工具集、模型 API 或 prompt 缓存策略会有相同比例。
+**第三**，在该敏感性模型里，输出和工具定义保持不变，只把上下文复制 4 份，用来隔离“重复上下文”这一变量；它不是多 agent 工作流的完整总成本。真实 agent 的工具 schema、输出、重试都要从各自实际请求轨迹取数。
 
-**第三，4 个 agent 共享背景时，输入侧再乘 4，输出不乘。**
+这组假设可提示你检查重复传输；是否缓存、延迟加载或缩短输入，应按目标 endpoint 的 usage、当前费率、延迟和质量评估。不能只凭 62.4% 情景占比断定缓存优先于换模型。
 
-这组假设提示我们检查工具定义的重复传输。可将缓存作为候选方案，但只有目标 endpoint 支持并允许缓存、usage 显示命中，并且按该 provider 的缓存读写费率核算后确实省钱时才采用；也可对比缩减或按需提供工具定义。不能仅凭这组 62% 的估算就断定缓存优先于换模型。
+## 把成本归因落到调用轨迹
 
-## 一个把它落地的方法：先给成本打上标签
-
-上面四块来源是**分析框架**。要在真实系统里用起来，还得先把成本拆到能归属的粒度上。做法是：**每一次调用都打上三个标签。**
+上面的角度是**分析框架**。实际系统应逐次记录调用并归属到完整任务；三个标签是起点，还要保留 provider usage 与计费所需信息。
 
 ```text
+task_id      串起一个完整任务的所有请求
+request_id   对应 provider 返回的 request/response id（如可用）
+provider     实际 endpoint 与 provider
+model        响应返回的 model id
 step_kind    planning | execution | summarization | retrieval
-model        实际用的模型名
-turn_index   这是第几轮
+turn_index   这是任务中的第几轮
+usage        原始 provider usage 与版本化后的非重叠归一化字段
+outcome      stop reason / error / retry / latency
 ```
 
 三个标签分别对应三个不同的问题：
 
-- **step_kind** —— 回答「钱花在哪种工作上」。如果发现 60% 花在 summarization 上，那第一个该优化的是摘要，不是工具调用。
-- **model** —— 回答「换模型能省多少」。同时它也是验证分级路由生效的方式（第 4 节）。
-- **turn_index** —— 回答「是前期贵还是后期贵」。这个维度最容易被忽略，而它的信息量最大 —— 因为累计输入在这个简化模型下呈二次增长，**后期那几轮通常更贵**。
+- **task_id / request_id** —— 把所有调用串成任务并与账单或日志核对；敏感标识应按数据策略做脱敏或短期化。
+- **provider / model** —— 区分实际 endpoint 和返回模型，以当前费率归算；只看请求时填写的别名可能会归错价格。
+- **step_kind / turn_index / outcome** —— 用于比较工作阶段、轮次成本和失败/重试；只有特定任务分布才会呈现“后期更贵”，要用逐次 usage 检验。
 
-没有第三个标签，你会看到「平均每轮 3000 token」这样一个没用的数字；有了它，你会看到「第 1 轮 500、第 20 轮 8000」，然后立刻明白该优化什么。
+仅有三个标签仍不足以对账：需要 provider usage、模型费率版本、时间戳、结束状态及重试关联。比如“一开始每轮 500、后期每轮 8,000”可以作为假想轨迹，具体系统是否如此要由采样数据回答。
 
-**这三个标签是第 15 节那套追踪的扩展。** 追踪本来就是逐步记录的，加上成本字段几乎是零边际成本 —— 而它让成本从「一个总数」变成了「可归因的结构」。
+**把成本与现有 tracing 关联**，但不要为了成本长期保存 prompt 原文或敏感业务载荷；通常先记录 usage、模型、调用阶段、状态和必要的版本/哈希元数据。
 ## 完整可运行代码
 
-下面这段代码按上面的公式算一遍：给定轮数、每轮输入输出、工具数，算出总成本以及四块各自的占比。
+下面的 Python 程序按明确列出的本地情景参数计算示例表；schema token 从上下文输入中拆开只为归因，真实 API 的 usage 通常会把它计入输入。程序输出是 `scenario_cost_units` 情景成本单位，不是 provider 账单。实跑状态：Python 标准库本地情景计算；结果是构造情景，不是 provider 请求或账单。
 
 ```python
-"""成本模型：四块来源各自占多少。纯本地计算。实跑状态：2026-10-09。"""
-TOOL_TOKENS = 60          # 第 4 章实测：约 60 token/工具
-FIXED_INPUT = 57          # 第 1 章公式的常数项
-PER_TURN_INPUT = 16       # 第 1 章公式的每轮增量
+"""成本情景代理：演示输入、工具 schema 与输出的算术关系，不是 provider 账单。纯本地计算。"""
+TOOL_TOKENS_PER_TOOL = 60   # 情景参数；不是实测的通用 schema 单价
+FIXED_INPUT = 57            # 简化上下文模型的起点
+PER_TURN_INPUT = 16         # 每轮上下文增量
 
 
-def estimate(turns, tools, output_per_turn, out_price_ratio=4.0, share_context=1):
-    """share_context>1 表示多 agent，每个 agent 各装一份背景。"""
-    input_total = 0
+def estimate(turns, tools, output_per_turn, output_rate=4.0, context_copies=1):
+    """复制上下文但固定工具/schema与总输出的敏感性演示。"""
+    if turns < 1 or tools < 0 or context_copies < 1:
+        raise ValueError("turns/context_copies must be >= 1 and tools >= 0")
+    context_total = 0
+    schema_total = 0
     output_total = 0
-    tool_total = 0
     for n in range(1, turns + 1):
-        ctx = FIXED_INPUT + PER_TURN_INPUT * (n - 1)      # 历史累积
-        tool_total += TOOL_TOKENS * tools                  # 每轮重发工具定义
-        input_total += (ctx * share_context)
+        context_total += (FIXED_INPUT + PER_TURN_INPUT * (n - 1)) * context_copies
+        schema_total += TOOL_TOKENS_PER_TOOL * tools
         output_total += output_per_turn
-    billed = input_total + output_total * out_price_ratio
-    return {"input": input_total, "output": output_total, "tools": tool_total,
-            "billed": billed, "turns": turns}
+    scenario_cost_units = context_total + schema_total + output_total * output_rate
+    return {
+        "context": context_total,
+        "output": output_total,
+        "schema_estimate": schema_total,
+        "scenario_cost_units": scenario_cost_units,
+        "turns": turns,
+    }
 
 
 if __name__ == "__main__":
-    print("四块来源的占比（输出单价按输入的 4 倍计）")
+    print("本地情景成本代理（输出权重按上下文的 4 倍）")
     print()
-    print("  %-34s %9s %9s %9s %11s" % ("场景", "输入", "输出", "工具定义", "折算计费"))
+    print("  %-42s %9s %9s %10s %12s" % ("场景", "上下文", "输出", "schema估算", "情景成本单位"))
     cases = [
         ("单轮，无工具", 1, 0, 300, 1),
         ("单轮，8 个工具", 1, 8, 300, 1),
         ("10 轮，8 个工具", 10, 8, 300, 1),
         ("30 轮，8 个工具", 30, 8, 300, 1),
-        ("30 轮，8 工具，4 个 agent 共享背景", 30, 8, 300, 4),
+        ("30 轮，上下文复制 4 份（其他不变）", 30, 8, 300, 4),
     ]
-    for label, t, tl, o, sc in cases:
-        e = estimate(t, tl, o, share_context=sc)
-        total = e["input"] + e["tools"] + e["output"] * 4
-        print("  %-34s %9d %9d %9d %11d" % (label, e["input"], e["output"], e["tools"], total))
+    for label, turns, tool_count, output, copies in cases:
+        result = estimate(turns, tool_count, output, context_copies=copies)
+        print("  %-42s %9d %9d %10d %12d" % (
+            label, result["context"], result["output"],
+            result["schema_estimate"], result["scenario_cost_units"]))
+
+    one = estimate(1, 0, 300)
+    many = estimate(30, 8, 300)
+    input_side = many["context"] + many["schema_estimate"]
     print()
-    e1 = estimate(1, 0, 300); e2 = estimate(30, 8, 300)
-    print("=== 关键对比 ===")
-    print("  单轮到 30 轮，轮数 30 倍，但输入侧成本增长 %.0f 倍 —— 因为累计输入呈二次增长。" %
-          ((e2["input"] + e2["tools"]) / e1["input"]))
-    print("  30 轮里，工具定义累计占了输入侧的 %.0f%%。" %
-          (e2["tools"] / (e2["input"] + e2["tools"]) * 100))
-    print("  4 个 agent 共享背景时，输入侧再乘 %.0f 倍（输出不乘）。" %
-          (estimate(30, 8, 300, share_context=4)["input"] / estimate(30, 8, 300)["input"]))
+    print("30 轮情景的上下文+schema量是单轮无工具上下文的 %.0f 倍。" %
+          (input_side / one["context"]))
+    print("工具schema假设占该情景上下文+schema量的 %.1f%%。" %
+          (many["schema_estimate"] / input_side * 100))
+    print("上下文复制 4 份的敏感性场景固定输出和工具定义，仅用于隔离上下文重复。")
 ```
 
-## 一条真实的调用记录长什么样
+## 一条可归因记录需要包含什么
 
-先明确两个落库字段：`stop_reason` 是响应里说明模型为什么停下的字段（第 2 节已展开），`max_tokens` 是请求里限制输出长度的字段。
+`stop_reason`、`finish_reason` 等结束状态字段的名称和语义由 provider API 定义；日志可保存 provider 原字段并在版本化 adapter 中归一化。`max_tokens` 一类请求参数限制输出或计算行为，但不等于完整任务成本预算。
 
-「每次调用打三个标签」落到文件里，就是一行一条 JSON（本次实跑 2026-10-12，`deepseek-flash`，一个 4 轮的最小 agent 循环）：
+以下四行是从历史记录整理出的**规范化的历史记录摘要**，不是保存下来的原始逐次请求/响应；原始逐次请求/响应未归档，确切 endpoint、字段映射和 usage 分解无法独立复核。`input_tokens`、`cache_read`、`cache_create` 是该样例内部的规范化列名，不保证等同任何 provider 字段或原始响应：
 
 ```json
 {"trace_id":"tr_a1","turn_index":1,"step_kind":"planning","model":"deepseek-flash","input_tokens":341,"cache_read":0,"cache_create":0,"output_tokens":129,"stop_reason":"tool_use","latency_ms":1460}
@@ -219,59 +226,77 @@ if __name__ == "__main__":
 
 | 字段 | 从哪来 | 类型 / 取值 |
 |---|---|---|
-| trace_id | 你自己生成，串起同一任务的所有调用 | string |
-| turn_index | 循环里的轮次计数 | int，从 1 开始 |
-| step_kind | 调用前由你的代码标注（这一步在干什么） | `planning / execution / summarization / retrieval` |
-| model | 请求里实际用的模型名 | string |
-| input_tokens / cache_read / cache_create | 响应体 `usage` 的三个字段，改名后落库 | int |
-| output_tokens | 响应体 `usage.output_tokens` | int |
-| stop_reason | 响应体字段；`max_tokens` 必须单独告警（第 5 节） | string |
-| latency_ms | 你的计时（发出请求到读完响应） | int |
+| task_id / trace_id | 由应用生成，关联一次完整任务的所有请求 | 脱敏标识 |
+| request_id | provider 返回的 id（如有） | string |
+| turn_index / step_kind | 应用记录轮次与阶段 | int / 受控枚举 |
+| provider / endpoint / requested_model / returned_model | 记录实际路由与模型别名/返回值 | string |
+| usage_raw | 原始 provider usage（遵循数据保留策略） | 结构化字段或短期留存 |
+| usage_normalized | 版本化 adapter 生成、明确非重叠的分类 | int 与 adapter 版本 |
+| outcome / stop field / retry | 用 provider 原字段并保留重试关系 | 受控枚举 / int |
+| latency_ms / timestamp | 应用本地时钟测时及事件时间 | int / timestamp |
 
-**判据：** 这 9 个字段之外不加也行，但少一个都会让某类问题问不出来 —— 没有 `step_kind` 就回答不了「钱花在哪种工作上」，没有 `turn_index` 就看不到后期输入增长，没有把三项拆开就无法识别缓存。
+**判据：** 只有当原始字段和归一化规则足以把请求放进正确账单类别，才可用于费用核对。任务 id、provider/model、usage、费率版本和重试关联缺一项，都可能让“总 token”无法解释为实际成本；可按敏感数据策略对 request id 做哈希/缩短，并避免记录 prompt 原文。
 
-## 从这批记录算 P90 轮数与工具定义占比
+## 从归一化样例计算分位数与 schema 情景占比
 
-有了记录，前面那些「看 P50/P90/P99、算工具定义占比」才有了落点（下面代码跑的正是上面那 4 条真实记录）：
+下面代码跑的是上方四条规范化历史摘要，仅演示分位数与归因算法；字段映射不可独立复核，不能把其输出当作 provider usage 或成本结论。
 
 ```python
-# 从 records.jsonl 读；这里内联同一批记录以便直接运行
+"""对本地归一化 usage 样例计算分位数与工具 schema 情景占比。"""
+import math
+
+# 这些列是示例 adapter 的规范化类别，不是 provider 的统一原始字段。
 RECORDS = [
     {"turn_index": 1, "step_kind": "planning", "input_tokens": 341, "cache_read": 0, "cache_create": 0, "output_tokens": 129},
     {"turn_index": 2, "step_kind": "execution", "input_tokens": 227, "cache_read": 256, "cache_create": 0, "output_tokens": 57},
     {"turn_index": 3, "step_kind": "execution", "input_tokens": 169, "cache_read": 384, "cache_create": 0, "output_tokens": 56},
     {"turn_index": 4, "step_kind": "summarization", "input_tokens": 238, "cache_read": 384, "cache_create": 0, "output_tokens": 22},
 ]
-TOOL_TOKEN_PER_TOOL = 60          # 第 4 章实测：约 60 token/工具
+TOOL_TOKEN_PER_TOOL = 60   # 假设参数；不是该 usage 中分离测得的工具 token
+TOOLS_PER_REQUEST = 1
 
-def total_input(r):               # 关键：三项之和，不是只读 input_tokens
-    return r["input_tokens"] + r["cache_read"] + r["cache_create"]
 
-def percentile(xs, p):            # 最近秩法，够用；生产里可用 statistics/numpy
-    xs = sorted(xs)
-    k = max(0, min(len(xs) - 1, int(round((p / 100) * (len(xs) - 1)))))
-    return xs[k]
+def normalized_input(record):
+    """仅在 adapter 已确认三类不重叠时，汇总本例的输入 token。"""
+    return record["input_tokens"] + record["cache_read"] + record["cache_create"]
+
+
+def percentile_nearest_rank(values, p):
+    """最近秩法：升序后取 ceil(p*n)-1；用于说明口径，不代表稳定总体估计。"""
+    if not values:
+        raise ValueError("values must not be empty")
+    if not 0 <= p <= 100:
+        raise ValueError("p must be between 0 and 100")
+    ordered = sorted(values)
+    rank = max(1, math.ceil(p / 100 * len(ordered)))
+    return ordered[rank - 1]
+
 
 if __name__ == "__main__":
-    ins = [total_input(r) for r in RECORDS]
-    for r in RECORDS:
+    inputs = [normalized_input(record) for record in RECORDS]
+    for record in RECORDS:
+        total = normalized_input(record)
         print("  第 %d 轮 %-14s 总输入 %5d（input %d + cache_read %d + create %d）"
-              % (r["turn_index"], r["step_kind"], total_input(r),
-                 r["input_tokens"], r["cache_read"], r["cache_create"]))
+              % (record["turn_index"], record["step_kind"], total,
+                 record["input_tokens"], record["cache_read"], record["cache_create"]))
     print()
-    print("P50=%d  P90=%d  P99=%d  （样例 4 条，P90 接近最大值）"
-          % (percentile(ins, 50), percentile(ins, 90), percentile(ins, 99)))
-    by = {}
-    for r in RECORDS:
-        by[r["step_kind"]] = by.get(r["step_kind"], 0) + total_input(r)
-    grand = sum(by.values())
-    for k, v in sorted(by.items(), key=lambda kv: -kv[1]):
-        print("  %-14s %5d token  %4.1f%%" % (k, v, 100 * v / grand))
-    tool = TOOL_TOKEN_PER_TOOL * 1 * len(RECORDS)
-    print("工具定义 ≈ %d token，占输入侧 %d 的 %.1f%%" % (tool, grand, 100.0 * tool / grand))
+    print("P50=%d  P90=%d  P99=%d  （最近秩法；样例仅 4 条）"
+          % (percentile_nearest_rank(inputs, 50),
+             percentile_nearest_rank(inputs, 90),
+             percentile_nearest_rank(inputs, 99)))
+    by_step = {}
+    for record in RECORDS:
+        by_step[record["step_kind"]] = by_step.get(record["step_kind"], 0) + normalized_input(record)
+    total_input = sum(by_step.values())
+    for step, value in sorted(by_step.items(), key=lambda item: -item[1]):
+        print("  %-14s %5d token  %4.1f%%" % (step, value, 100 * value / total_input))
+
+    schema_estimate = TOOL_TOKEN_PER_TOOL * TOOLS_PER_REQUEST * len(RECORDS)
+    print("工具定义情景估算 ≈ %d token，占输入侧 %d 的 %.1f%%。"
+          % (schema_estimate, total_input, 100 * schema_estimate / total_input))
 ```
 
-实跑输出（2026-10-12）：
+程序输出摘录（关键结果）：
 
 ```text
   第 1 轮 planning       总输入   341（input 341 + cache_read 0 + create 0）
@@ -279,22 +304,22 @@ if __name__ == "__main__":
   第 3 轮 execution      总输入   553（input 169 + cache_read 384 + create 0）
   第 4 轮 summarization  总输入   622（input 238 + cache_read 384 + create 0）
 
-P50=553  P90=622  P99=622  （样例 4 条，P90 接近最大值）
+P50=483  P90=622  P99=622  （最近秩法；样例仅 4 条）
   execution       1036 token  51.8%
   summarization    622 token  31.1%
   planning         341 token  17.1%
-工具定义 ≈ 240 token，占输入侧 1999 的 12.0%
+工具定义情景估算 ≈ 240 token，占输入侧 1999 的 12.0%。
 ```
 
-**读法：** 三条结论一次出来 —— 「钱花在哪种工作上」（execution 占 51.8%）、「后期比前期贵」（341 → 622，后期输入增长的迹象）、「工具定义的固定开销」（12.0%，工具多、轮数多时会快速上升）。样本只有 4 条，P90 没有统计意义 —— 它演示的是**算法口径**；真实系统里要按任务维度收集几百条再算。
+**读法：** 在这四行规范化摘要中，execution 占示例归一化输入的 51.8%；这不证明实际历史任务后期变贵，因为摘要本身不能独立复核。12.0% 是把假设 `60 token/工具` 乘以 4 次请求后的 schema 情景量，占样例归一化输入的比例；**不是独立测得的工具定义 usage 或账单费用**。四条样本不足以支持稳定的 P50/P90/P99 推断；这里仅演示最近秩法，真实系统应按目标 workload 采集更多完整调用。
 
-**失败形态：** 用 `input_tokens` 单字段算「每轮输入」—— 上面第 2 轮会算出 227 而不是 483，缓存生效的轮次看起来比真实便宜一半，于是「缓存省钱」被系统性低估。这类误判在本项目里真实发生过一次（第 3 节）。
+**失败形态：** 把归一化样例里的 `input_tokens` 当成 provider 总输入，或没有查清它与缓存明细是否互斥；本例第 2 行只看该列得到 227，三个已声明为不重叠的本地类别相加才是 483。面对真实响应，先按具体 API 文档检查总量与明细关系，避免漏计或重复计数。本项目旧记录曾出现此类解读，但因原始逐次响应缺失，具体因果仍无法独立复核。
 
 ## 常见坑
 
 - **只按平均轮数估算。** 长会话可能贡献不成比例，要查看 P90/P99 和实际逐轮 usage。
-- **只看 `input_tokens`。** 必须加上 cache_read 和 cache_creation 两项（第 4 节的实测陷阱）。
-- **以为输出是主要成本。** 多轮场景里输入通常才是，而且它每轮重发。
-- **忽略工具定义的固定开销。** 60 token/工具 × 轮数，86 个工具时每轮就近 5000 token。
-- **把「一亿 token」当成线性。** 累计输入二次增长；轮数翻倍约增至四倍（长轮数近似）。
-- **把示例比例当成普遍优化收益。** 本地对照在其 token 假设下可减少约 78%；换成单价减半的假设则是 50% 成本降幅。真实 workload 应按完整 usage、模型价格和缓存计价分别测算后决定顺序。
+- **把某个 provider 的 usage 算法当通用公式。** 按 endpoint 文档区分总输入、缓存读取/写入明细和费用，确认字段是否重叠后再归一化。
+- **预设输入或输出一定是主要成本。** 按当前费率和完整调用轨迹计算两者实际贡献。
+- **忽略工具定义带来的请求输入变化。** 某些 endpoint 每轮会提交工具 schema；历史请求总量不能直接当成 schema 单价。记录缓存读写和完整 usage，再估算目标 endpoint 的边际费用。
+- **把简化模型推广成所有 agent 的增长律。** 二次项要求 stateless 全量重发且上下文按轮增长；其他状态协议、摘要、裁剪与缓存行为要从实际 trace 测量。
+- **把情景比例当成普遍优化收益。** 60 token/schema、输出 4×、上下文复制 4 份都只是参数；真实 workload 必须按目标任务的质量判据、provider usage、当前费率、延迟和失败/重试成本一起对照。

@@ -6,20 +6,18 @@ status: drafting
 
 写工具 schema 时，很容易把它当成「给人看的 API 文档」—— 功能写清楚、参数列全，就完事了。
 
-**它不是文档。它是 prompt。** 模型决定「用不用这个工具」和「参数填什么」，唯一的依据就是你写的那段 `description`。没有任何别的信息源。
+**工具定义会进入模型上下文，是 prompt 的一部分。** 描述会影响工具选择与参数解释，但它不是唯一信号：模型还会看到当前对话、system 指令、所有可用工具及其 schema / examples、`tool_choice`、模型与 endpoint 的行为。把工具接口写清楚是在缩小歧义，不等于能保证某种调用结果。[Anthropic Define tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)。
 
-这一节用两组对照说明：描述改一句话，模型的表现可以完全不同。
+本节先给出两组历史探索性样本，再说明如何为工具定义设计边界和参数约束。它们提示了可测试的假设，但因样本很小、原始请求响应缺失，不能单独证明描述或 enum 会带来普遍效果。
 
-## 实测一：一句描述，同时修正了两个问题
+## 历史探测一：扩充工具定义后，样本输出发生变化
 
-同一个工具，只改 `description` 和参数的说明：
+两个版本同时改了工具级 `description` 和参数级 `city` 说明，因此这不是只改变一句描述的单变量对照。以下是 2026-10-08 DeepSeek 兼容端点的三类问题摘要；逐次请求、响应和完整 scorer 未归档，本轮无法独立复算，结果只描述这组历史观察：
 
-| | 定义 |
-|---|---|
-| **模糊版** | `description: "查询天气。"`；参数 `city` 无说明 |
-| **精确版** | `description: "查询指定城市的当前实时天气。仅覆盖当下，不包含历史天气，也不提供未来预报——如果用户问的是明天的天气或是否会下雨，本工具无法回答。"`；参数说明 `"城市名，必须是英文名或邮政编码，例如 \"Beijing\" 或 \"100000\"。不要传中文。"` |
+- **模糊版**：`description: "查询天气。"`；参数 `city` 无说明。
+- **精确版**：`description: "查询指定城市的当前实时天气。仅覆盖当下，不包含历史天气，也不提供未来预报——如果用户问的是明天的天气或是否会下雨，本工具无法回答。"`；参数说明 `"城市名，必须是英文名或邮政编码，例如 \"Beijing\" 或 \"100000\"。不要传中文。"`。
 
-三个问题，两种定义各跑一遍：
+历史 stdout 摘要记录的 3 个问题如下；每个定义下每题一次，不足以估计准确率：
 
 | 问题 | 模糊版 | 精确版 |
 |---|---|---|
@@ -27,16 +25,16 @@ status: drafting
 | 上海现在的气温是多少？ | 调用，`{"city":"上海"}` | 调用，`{"city":"Shanghai"}` |
 | **北京明天会下雨吗？** | **调用** ← 误用 | **不调用** |
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（历史 stdout 摘要，`deepseek-flash`，2026-10-08；原始响应缺失，当前不可独立复核。）
 
-**一句描述同时解决了两件事：**
+**这组摘要报告了两种变化，但不能把它们分别归因于工具描述或参数描述：**
 
 1. **参数格式** —— 模糊版三次都把中文城市名传了进去（`"北京"`），精确版加了「必须是英文名」之后三次都是 `"Beijing"`。这不是模型「变聪明了」，是你把要求写出来了。
-2. **误用** —— 预报类问题在模糊版下被当成了天气查询（工具答不了，但模型不知道），精确版因为描述里写明了「不提供未来预报」，模型直接不调用。
+2. **工具边界** —— 预报问题在模糊版下调用了工具，精确版不调用；这与新增的不适用边界一致，但单组小样本不能证明因果或一般误用率。
 
-第二点是主要收益。**误用比填错参数更糟**，因为它看起来「成功」了 —— 工具被调用了、返回了数据、模型基于一份答非所问的数据编出回答。你很难在日志里发现这件事。
+从工程风险看，边界误用可能比格式错误更难发现：工具可以成功返回，但回答仍不适用于用户问题。这是需要单独验收的风险类型，不是上述三条记录测出的普遍严重度结论。
 
-## 实测二：enum 把校验提前了
+## 历史探测二：enum 与自由字符串的输出对照
 
 一个设置优先级的工具，参数 `level` 有两种写法：
 
@@ -54,36 +52,34 @@ status: drafting
 }
 ```
 
-同样三个问题（「标成最高优先级」「标成低优先级」「很紧急，标记一下」）：
+以下三个问题各有一次历史输出（「标成最高优先级」「标成低优先级」「很紧急，标记一下」）；这只是探索性样本，不是错误率或因果估计：
 
 | 参数约束 | 模型实际传入的值 | 是否合法 |
 |---|---|---|
 | **自由字符串** | `"最高"` / `"低"` / `"紧急"` | **0/3 合法** |
 | **enum 三档** | `"high"` / `"low"` / `"high"` | **3/3 合法** |
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（历史 stdout 摘要，`deepseek-flash`，2026-10-08；每种 schema 三条，原始请求响应缺失，不能复核。）
 
-自由字符串的 **3 次全部非法** —— 它忠实地把用户说的中文词抄了进去。而 enum 版一次都没错。
-
-这不是「模型更小心了」，是**校验位置变了**：
+历史摘要记录了自由字符串 0/3 合法、enum 3/3 合法，但只有每种 schema 的三个单次样本，原始请求/响应未归档，因此不能复算，也无法排除模型随机性、提示措辞或端点行为的影响。它提出一个可在你自己的模型和端点上重新测量的假设，并不证明校验已前移：
 
 <Mermaid
   chart={`
 flowchart LR
-    subgraph F["自由字符串"]
-        F1["模型生成任意值<br/>'最高' / '紧急' / 'P0'"] --> F2["你的代码在运行时<br/>校验并拒绝"]
-        F2 --> F3["报错、重试、或写入脏数据"]
+    subgraph F["自由字符串或非 strict enum"]
+        F1["schema 提供类型/取值提示"] --> F2["模型仍可能输出不合规值"]
+        F2 --> F3["宿主校验；拒绝、修复或安全失败"]
     end
-    subgraph E["enum"]
-        E1["模型只能从<br/>三个合法值里选"] --> E2["生成时就不存在非法值"]
-        E2 --> E3["运行时校验变成多余"]
+    subgraph E["支持的 strict schema"]
+        E1["provider 约束结构化生成"] --> E2["保证范围限于受支持 schema 子集"]
+        E2 --> E3["宿主仍校验授权与业务语义"]
     end
 `}
 />
 
-**enum 把校验从「运行时」提前到了「生成时」。** 自由字符串等于告诉模型「随便填」，然后你在代码里为这个「随便」收拾残局。
+**`enum` 为模型提供一个有限取值集合，但是否形成硬约束取决于接口。** 在非 strict 调用中，它仍是 schema 指引，模型可能输出不符合的值；Anthropic Messages API 对支持的 user-defined tools 可用 `strict: true` 保证符合受支持的 JSON Schema 子集。其他 provider/endpoint 要核对各自的约束能力；无论是否 strict，宿主仍须执行业务授权和语义校验。[Anthropic strict tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use)。
 
-这个思路和传统工程里的类型系统是同一件事：**让非法状态无法被表达**，而不是等到它出现再检查。它也是下一节（poka-yoke，日语「防呆」，意思是让错误的操作在结构上无法完成）的雏形。
+把 enum 写进 schema 能明确接口契约并帮助模型选值；只有 provider 对该 schema/endpoint 明确提供受约束生成时，才可把结构合法性当作生成期保证。宿主仍需做业务语义、权限和副作用校验。它是下一节 poka-yoke（防呆）的一个弱形式：约束强度取决于运行时是否真正执行该约束。
 
 ## 一份可直接用的 schema 自检清单
 
@@ -93,11 +89,11 @@ flowchart LR
 |---|---|---|
 | **描述说清了「什么时候不该用」吗** | 描述里有没有明确排除边界场景 | 「查询天气」没有排除预报，导致误用 |
 | **参数的格式写具体了吗** | 有没有给出格式、单位、示例 | `city` 没说语言，模型传了中文 |
-| **取值固定的参数用 enum 了吗** | 有确定取值集合的一律 enum | `level` 用自由字符串，3/3 非法 |
+| **取值固定的参数用 enum 了吗** | schema 明确枚举；非 strict 模式下宿主仍校验 | 历史样本自由字符串 0/3 合法，仅作探测线索 |
 | **可选参数是不是太多了** | 可选参数越多，无效组合越多 | 一堆可选字段靠代码隐含约束（见第 3 节） |
 | **描述里有给人看的话吗** | 「该接口由 XX 团队维护」这类对模型无用 | 它在占用 prompt 篇幅，稀释真正有用的信息 |
 
-最后一条容易被忽略：**描述是 prompt，所以要按 prompt 的标准写 —— 每一句都要对模型的决策有用。** 给人看的元信息（维护团队、版本号、内部编号）在这个通道里没有价值，只占 token。
+最后一条容易被忽略：描述会进入模型上下文，因此应优先写清操作边界、参数语义和使用条件。维护团队、内部编号等信息通常不属于模型决策所需的工具契约；若确实影响路由或版本选择，则应明确说明并在目标模型上验证。
 
 ## 完整可运行代码
 
@@ -110,7 +106,7 @@ flowchart LR
   should_avoid 不该用的问题（测误用）
   probe_params 参数填法容易出错的问题
 
-判据全部可机判，不用肉眼看输出。
+它只是小样本探测脚本：输出可供人工检查，不能单凭一次调用评价模型质量或计算准确率。
 """
 
 import json
@@ -129,7 +125,7 @@ MODEL = os.environ["VERIFY_MODEL"]
 
 TOOL = {
     "name": "set_priority",
-    "description": "设置任务的优先级。",
+    "description": "设置当前对话所指任务的优先级；仅支持设置优先级，不负责查找、删除或修改其他任务。",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -147,9 +143,9 @@ TOOL = {
 LEGAL = {"low", "medium", "high"}
 
 PROBES = {
-    "should_use": ["把「修复登录 bug」标成最高优先级。"],
-    "should_avoid": [],  # 若工具有明确的「不该用」场景，填在这里
-    "probe_params": ["这个任务很紧急，帮我标记一下：上线前的安全审查。"],
+    "should_use": ["把当前任务标成最高优先级。"],
+    "should_avoid": ["删除当前任务。"],  # 本工具只设置优先级，不执行删除
+    "probe_params": ["当前任务很紧急，帮我标记一下。"],
 }
 
 
@@ -159,9 +155,26 @@ def probe(question: str) -> dict:
         messages=[{"role": "user", "content": question}],
     )
     calls = [b for b in resp.content if b.type == "tool_use"]
+    stop_reason = resp.stop_reason
+
+    if stop_reason == "end_turn":
+        status = "complete_no_tool" if not calls else "invalid_response: tool call with end_turn"
+    elif stop_reason == "tool_use":
+        if len(calls) != 1:
+            status = f"invalid_response: expected one tool call, got {len(calls)}"
+        elif calls[0].name != TOOL["name"]:
+            status = f"invalid_response: unexpected tool {calls[0].name!r}"
+        elif not isinstance(calls[0].input, dict):
+            status = "invalid_response: tool input is not an object"
+        else:
+            status = "tool_call"
+    else:
+        status = f"incomplete:{stop_reason}"
+
     return {
-        "called": bool(calls),
-        "input": calls[0].input if calls else None,
+        "status": status,
+        "called": status == "tool_call",
+        "calls": [{"name": b.name, "input": b.input} for b in calls],
     }
 
 
@@ -171,109 +184,134 @@ if __name__ == "__main__":
             r = probe(q)
             print(f"[{kind}] {q}")
 
+            if r["status"].startswith(("incomplete:", "invalid_response:")):
+                print(f"    ⚠️ 该样本不能评分：{r['status']}")
+                continue
             if kind == "should_avoid":
-                # 误用：不该调却调了
-                mark = "❌ 误用" if r["called"] else "✅ 正确地没调"
+                # 只有 end_turn 且没有工具调用才算正确地未调用
+                mark = "❌ 误用" if r["status"] == "tool_call" else "✅ 正确地没调"
                 print(f"    {mark}")
 
             elif kind == "should_use":
-                mark = "✅ 调用了" if r["called"] else "❌ 该调却没调"
-                shown = json.dumps(r["input"], ensure_ascii=False)
-                print(f"    {mark}  input={shown}")
+                mark = "✅ 调用了" if r["status"] == "tool_call" else "❌ 该调却没调"
+                shown = json.dumps(r["calls"], ensure_ascii=False)
+                print(f"    {mark}  calls={shown}")
 
             else:  # probe_params
-                val = (r["input"] or {}).get("level")
-                ok = val in LEGAL
+                if r["status"] != "tool_call":
+                    print("    参数未观测：模型没有发出唯一有效的工具调用")
+                    continue
+                tool_input = r["calls"][0]["input"]
+                val = tool_input.get("level") if isinstance(tool_input, dict) else None
+                ok = isinstance(val, str) and val in LEGAL
                 print(f"    参数 {'✅ 合法' if ok else '❌ 非法'}：{val!r}")
 
-    print("\n把 enum 打开再跑一遍 —— 非法值应当消失。")
+    print("\n分别对照自由字符串、非 strict enum 和目标 endpoint 支持的 strict 模式；每次都统计选择、参数合法性、拒答和截断。非 strict enum 不保证非法值消失，所有模式仍需宿主校验。")
 ```
 
-> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+> **实跑状态**：当时保存的 stdout 摘要称表格由直接 HTTP 请求采集，但逐次请求与原始响应未归档，本轮无法独立复算。上方 SDK 探测脚本本身也未在官方 endpoint 验证；请将其作为本地实验模板，而非表格结果的复现脚本。
 
-## 三个写法错误：两个会被当场拒绝，一个不会
+## 历史 schema 探测：端点接受性不能泛化
 
-schema 写错时，API 不一定告诉你。我把三类常见错误各试了一次：
+以下是 2026-10-08 DeepSeek 兼容端点的三条历史探测摘要，不代表其他 API 的现行行为；原始请求与响应未归档，本轮无法复现：
 
 | 写法 | 结果 |
 |---|---|
-| 两个工具的 `name` 都叫 `get_weather` | **HTTP 400**：`Tool names must be unique.` |
-| 工具名写成 `get weather 天气` | **HTTP 400**：`Invalid 'tools[0].name': string does not match pattern. Expected a string that matches the pattern '^[a-zA-Z0-9_-]+$'.` |
-| `required` 里写了 `properties` 中并不存在的字段 | **HTTP 200** —— 不报错，模型照常发起调用 |
+| 两个工具的 `name` 都叫 `get_weather` | 历史 DeepSeek 兼容端点摘要为 HTTP 400：`Tool names must be unique.`；当前行为须按目标 endpoint 文档验证。 |
+| 工具名写成 `get weather 天气` | **历史 DeepSeek 兼容端点返回 HTTP 400**（2026-10-08 摘要；原始响应未归档）。Anthropic 当前文档给出的格式为 `^[a-zA-Z0-9_-]{1,128}$`，其他端点应核对各自契约。 |
+| `required` 里写了 `properties` 中并不存在的字段 | 历史兼容端点摘要为 HTTP 200，但这是特定 endpoint 的旧观察；JSON Schema 标准并不要求 `required` 名称必须出现在 `properties` 中。 |
 
-前两条是好事：**命名约束被前置了**，你会在第一次调试时就撞上，而不是上线后发现某个工具永远调不到。
+这两条历史结果说明该 endpoint 当时会在请求阶段拒绝重名与不符合其名称格式的工具定义；当前规则、长度限制和错误语义都应以目标 endpoint 文档为准。启动期校验可更早暴露本地配置错误，但不能替代 provider 契约检查。
 
-第三条才是值得警惕的。`required: ["city", "province"]` 而 `properties` 里只有 `city` —— 这是一份**自相矛盾**的 schema：它要求模型填一个它没被允许填的字段。API 不检查这个一致性，模型也没报错，它正常调用、只填了 `city`。
+第三条不应称为 JSON Schema 无效：标准允许 `required` 中出现未在 `properties` 声明的名称；默认情况下该字段可能由 `additionalProperties` 接受但没有类型约束。若你的接口希望每个必填字段都有明确定义，可额外启用本地 `required ⊆ properties` 规则。历史 endpoint 返回 200 仅作该次记录，不是普遍 API 行为。
 
-**推论：`required` 与实际字段的一致性，只能由你自己的校验拦。** 在注册工具时跑一遍这几条即可：
+**工程建议：** 若接口契约要求每个必填字段都有显式类型和描述，可在注册阶段实施本地规则 `required ⊆ properties`。这是一条项目级质量约定，不是 JSON Schema 标准本身的语法要求；provider 接受性仍须按 endpoint 验证。
 
 | 检查项 | 为什么 |
 |---|---|
-| 工具名匹配 `^[a-zA-Z0-9_-]+$` 且全库唯一 | API 会拦，但早失败比晚失败好 |
-| `required` 是 `properties` 的子集 | **API 不拦**，只能自己拦 |
-| 顶层 `type` 是 `object` | API 会拦；写成数组或留空都会 400 |
+| 工具名符合当前 provider 文档且全库唯一 | 本地早失败；字符集与长度规则依 provider/endpoint 而异 |
+| 每个 required 字段都显式列于 properties | 可选的本地质量规则；不能说成所有 provider 的 schema 验证行为 |
+| 根 schema 为工具输入所需的对象形状 | 按 provider 文档验证；本节历史错误响应未经当前 endpoint 复现 |
 | 描述里有没有写清边界与不适用场景 | 上一节的主题，机器判断不了，只能人看 |
 
-前三条加起来不到二十行代码，放进工具注册函数里，就能把一整类「schema 写了但没生效」挡在启动阶段：
+下面的 helper 演示几条本地接口质量检查，能在启动时发现其中一部分契约错误；它不是完整 schema validator，也不保证 provider 接受性：
 
 ```python
 import re
+from collections.abc import Mapping
 
-NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+# Anthropic 当前文档的名称约束；其他 provider/endpoint 请核对各自契约。
+NAME_RE = re.compile(r"[a-zA-Z0-9_-]{1,128}")
 
 
-def validate_tools(tools: list[dict]) -> list[str]:
-    """注册期自检：返回错误列表，空列表表示通过。
-
-    放在「定义工具」和「发出第一次请求」之间。第三、四条尤其重要 ——
-    它们就是 API 不拦、模型也不报错的那类错误（本节实测过）。
-    """
+def validate_tool_contracts(tools: object) -> list[str]:
+    """本地接口质量自检，不是完整 JSON Schema 或 provider validator。"""
     errors: list[str] = []
+    if not isinstance(tools, list):
+        return ["tools 必须是数组"]
     names: set[str] = set()
     for i, tool in enumerate(tools):
-        name = tool.get("name", "")
-
-        if not NAME_RE.match(name):
-            errors.append(f"tools[{i}].name 不合法：{name!r}（只允许字母数字与 _-）")
-        if name in names:
+        if not isinstance(tool, Mapping):
+            errors.append(f"tools[{i}] 必须是对象")
+            continue
+        name = tool.get("name")
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+            errors.append(f"tools[{i}].name 不符合 Anthropic 当前文档格式")
+            name = f"tools[{i}]"
+        elif name in names:
             errors.append(f"tools[{i}].name 重复：{name!r}")
-        names.add(name)
-
-        schema = tool.get("input_schema", {})
+        else:
+            names.add(name)
+        schema = tool.get("input_schema")
+        if not isinstance(schema, Mapping):
+            errors.append(f"{name}: input_schema 必须是对象")
+            continue
         if schema.get("type") != "object":
-            errors.append(f"{name}: 顶层 type 必须是 object")
-
-        props = set(schema.get("properties", {}))
-        missing = set(schema.get("required", [])) - props
+            errors.append(f"{name}: input_schema.type 应为 object（本地接口约定）")
+        props = schema.get("properties", {})
+        required = schema.get("required", [])
+        if not isinstance(props, Mapping):
+            errors.append(f"{name}: properties 必须是对象")
+            continue
+        if (not isinstance(required, list)
+                or any(not isinstance(k, str) for k in required)
+                or len(required) != len(set(required))):
+            errors.append(f"{name}: required 应为无重复字符串数组")
+            continue
+        # JSON Schema 允许 required 中的名称不出现在 properties；
+        # 本项目将其列为接口质量规则，避免隐式且无描述的字段。
+        missing = set(required) - set(props)
         if missing:
-            # API 不拦这一条：它返回 200，模型只填它被允许填的字段
-            errors.append(f"{name}: required 里有 properties 中不存在的字段 {sorted(missing)}")
-
+            errors.append(f"{name}: required 未在 properties 声明：{sorted(missing)}")
     return errors
 
 
 if __name__ == "__main__":
-    bad = [
-        {"name": "get weather", "input_schema": {"type": "object", "properties": {}}},
-        {"name": "search", "input_schema": {
-            "type": "object",
-            "properties": {"city": {"type": "string"}},
-            "required": ["city", "province"],      # ← province 不存在
-        }},
+    examples = [
+        [{"name": "get_weather", "input_schema": {
+            "type": "object", "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        }}],
+        [{"name": "bad name", "input_schema": {"type": "object", "properties": {}}}],
+        [{"name": "search", "input_schema": {
+            "type": "object", "properties": {"city": {"type": "string"}},
+            "required": ["province"],
+        }}],
     ]
-    for e in validate_tools(bad):
-        print("❌", e)
+    for case in examples:
+        print(validate_tool_contracts(case) or ["本地契约检查通过"])
 ```
 
-把它接在工具注册的入口上：注册失败就抛异常，进程起不来 —— 这比上线两周后
-发现「某个工具的描述从来没生效」便宜得多。
+这个 helper 只检查几个项目级约定；它不会完整验证 JSON Schema，也不会证明某 provider/模型/endpoint 接受该 schema 子集。官方 JSON Schema 中 `required` 是必须出现的属性名集合；名称未列在 `properties` 中不自动构成 schema 语法错误，但本项目把它视为接口质量问题，因为字段缺少明确的类型和描述。[JSON Schema 2020-12 validation](https://json-schema.org/draft/2020-12/json-schema-validation)。
+
+把本地自检接在工具注册入口上，可让约定错误更早暴露；之后仍要用目标 provider/模型/endpoint 的文档和请求验证其接受性。
 
 ## 常见坑
 
-**把工具描述当文档写。** 它是模型唯一的决策依据。功能写清楚不够 —— 还要写清「什么时候不该用」，因为误用比参数错更难发现。
+**把工具描述当成只给人看的文档。** 功能写清楚不够，还应写明「什么时候不该用」；再用正例和反例测试边界行为，因为文案本身不是可靠的授权或执行约束。
 
-**参数格式靠代码校验。** 实测：`level` 用自由字符串时 **3/3 非法**（`"最高"`、`"低"`、`"紧急"` 全被原样传入）。用 enum 则 3/3 合法。**能写进 schema 的约束，就不要留到运行时。**
+**参数格式只靠自然语言约定。** 把有限取值写入 schema 可减少歧义；但非 strict 模式下仍须在宿主校验。历史 3/3 与 0/3 结果只是未经复核的小样本，不能作为正确率保证。
 
 **描述里塞给人看的元信息。** 维护团队、版本号、内部编号对模型决策没有价值，只占 prompt 篇幅。这条通道里的每一句都该为决策服务。
 
-**只测「模型能不能调对」。** 漏了另一面：**该不该调**。准备一组「不该用这个工具」的问题，看它会不会硬调 —— 本节实测里，模糊描述下预报问题被误调用了。
+**只测「模型能不能调对」。** 也要测试「该不该调」：加入明确不适用场景的负例，并将模型选择与宿主授权分开。本文历史样本只提示这种探测值得做，无法量化一般误用率。

@@ -6,43 +6,40 @@ status: drafting
 
 这一章的最后一节要回答一个问题：**同样一件事，走 API 还是点界面？**
 
-这个问题有一个强有力的默认答案，而它值得用数据讲清楚，而不是靠「API 更快」这种印象。
+没有适用于所有任务的固定答案。先找满足任务语义、权限和验收要求的最窄接口，再比较完整集成与运行成本。
 
-## 实测：同一件事，两条路线的代价
+## 历史对照：这组数字能说明什么
 
-任务完全相同 —— 「创建用户 Zhang San / zhang@example.com」。一条走 API（一次工具调用），一条走界面（第 2 节那个观测-动作循环）：
+2026-10-09 留下了一组同任务提示的模型调用记录：一条向模型提供 `create_user` 工具 schema，另一条用截图和坐标循环操作本地合成表单。记录值分别是 API 路线 386 / 384 / 384 token（每次一次模型请求），界面路线 5,334 / 5,416 / 5,835 token（每次五次模型请求，平均约 5,528）。
 
-| 路线 | token | 模型往返次数 |
-|---|---:|---:|
-| A 走 API（一次工具调用） | **384** | **1** |
-| B 走界面（观测-动作循环） | **5,528** | **5** |
-| 差距 | **14.4 倍** | **5 倍** |
+这组数**不能作为两种路线的端到端成本或成功率对照**。代码里的 API 路线只读取模型返回的 `tool_use.input`，没有执行 `create_user`，也没有验证数据库写入；界面路线则在本地 Python 状态对象中填表，`done` 只检查 name 与 email 是否非空，没有核对是否等于目标值。旧 scorer 因而把“生成了工具参数”和“本地表单非空”当作两种不同的成功信号。原始逐次请求与响应也未留存，历史数字不能独立复算。
 
-（实跑数据，2026-10-09，`deepseek-flash`。各跑 3 次取的代表值；API 路线三次是 386 / 384 / 384。）
+| 历史路径 | 保留的模型用量 | 实际测到的内容 |
+|---|---:|---|
+| API 工具参数生成 | 386 / 384 / 384 token，每次 1 次请求 | 模型生成了结构化工具调用；调用没有执行，后端结果未知 |
+| 截图/坐标循环 | 5,334 / 5,416 / 5,835 token，每次 5 次请求 | 模型驱动了本地模拟表单；完成标签只要求两个字段非空 |
+| 算术比值 | 约 14.4 倍（5,528 ÷ 384） | 仅是这两种不等价执行路径的历史用量比值，不是可用于选型的成本结论 |
 
-而且注意：API 路线这一次就拿到了完全正确的入参 —— `{"name": "Zhang San", "email": "zhang@example.com"}`，一次就成了。
+所以可以保留的观察是：**在这套旧提示、模型别名和合成适配器中，五轮截图循环记录了更多模型 token 与请求次数。** 不能据此说 API 已经完成了创建、成功率相同或 API 路线普遍便宜 14.4 倍。历史请求/响应缺失，也无法排除模型路由、端点行为和评分构造的影响。
 
-**14.4 倍的差距不是实现水平问题，是结构问题。** 它来自第 1 节那三点区别的叠加：
-
-- 观测是像素 → 每步要付一张截图的钱（约 283 token），而工具调用传的是几十个 token 的 JSON
-- 动作是通用原语 → 一个动作只走一步，而工具调用可以在一次入参里把整件事说完
-- 没有返回值 → 每步都需要一次新的观测才能确认，往返次数被迫翻倍
+当前官方工具集也不只有“业务 API”与“桌面截图”两种选项。Anthropic 将 computer use 定位为广泛但较慢的整桌面路线，将 browser use 定位为网页中的结构化页面访问与操作；Playwright 文档建议优先用贴近用户语义的 role locator 或显式测试契约，而不是脆弱的 CSS/XPath 链。具体 SDK、模型支持和能力会变化，应按目标环境的官方文档核对。[Anthropic 工具组合说明](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-combinations)、[Anthropic Browser Use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/browser-use-tool)、[Playwright Locators](https://playwright.dev/docs/locators)。
 
 ## 由此得到的一条默认规则
 
-**有 API 就别点界面。** 这条规则应当默认遵守，只有当它明确不成立时才考虑界面路线。
+**先选满足任务要求的最窄接口，再测端到端成本。** 业务 API、CLI、网页 DOM/accessibility、browser agent 与整桌面 computer-use 能力不同；具体应由所需语义、授权、状态反馈、环境限制和恢复机制决定。API/SDK 值得优先评估，但不能仅凭“API”这个标签断言更便宜、更可靠或已获授权。
 
-这个「明确不成立」有具体的判据，不是感觉：
+可以按可用能力缩小候选范围，再在目标环境对照端到端结果：
 
-| 情况 | 该走哪条 | 理由 |
+| 情况 | 优先评估 | 需要验证什么 |
 |---|---|---|
-| 有官方 API 或 SDK | **API** | 便宜 14 倍、往返少 5 倍、而且结果是结构化的 |
-| 有非官方的稳定接口（内部系统） | **API**（优先） | 只要它稳定，收益和上面一样 |
-| 界面里有数据，但接口不开放 | **界面**（或抓取） | 拿不到结构化数据，视觉是唯一通道 |
-| 桌面软件，没有 HTTP 接口 | **界面** | 没有别的选择 |
-| 一次性任务，量很小 | **看情况** | 写集成的成本可能高于点几次界面 |
+| 有业务 API / SDK | 先验证具体接口 | 语义、调用者权限、后置条件、幂等和错误状态；工具调用本身不等于执行成功 |
+| 有 CLI 或内部服务接口 | 评估该接口 | 版本稳定性、权限边界、可观察性、审计与维护成本 |
+| 任务限定在网页 | DOM/accessibility locator、browser agent 或 Playwright | 语义定位、动态页面行为、授权、页面内容注入风险；工具差异以各自官方文档为准 |
+| 必须验证最终渲染或只能通过屏幕操作 | 视觉 / computer-use | 截图是否足够、动作风险、反馈/状态核验、失败恢复和隔离 |
+| 遗留桌面程序且没有更窄接口 | computer-use 或人工操作 | 操作系统支持、沙箱、权限、可恢复性与全流程验收 |
+| 一次性且量很小 | 与人工操作比较 | 自动化搭建、人工时间、风险、审计和后续维护的总成本 |
 
-第四行和第五行是界面路线真正站得住的场景。它们的共同特征是：**没有接口，或者接口的获取成本高于任务本身的价值。**
+这张表是候选路线，不是固定排序。共同判据是：**接口是否表达任务语义、是否具备真实授权与足够反馈、失败后能否安全恢复，以及全生命周期成本如何**。对网页，结构化定位通常比桌面坐标更可约束；但 DOM 也可能过时、缺信息或无法覆盖视觉验收。
 
 ## 一个更容易踩的坑：混合路线
 
@@ -50,36 +47,62 @@ status: drafting
 
 **用 API 做决策，用界面做执行。**
 
-比如批量录入 100 条记录：解析、去重、字段映射、校验全部由代码完成（这些是确定性的，不该花模型的钱），只在**真正需要点界面**的那一步交给视觉。这样模型只负责「往哪个框里填什么」，而不是从头到尾走一遍循环。
+比如批量录入记录：解析、映射和可由规则判定的校验可以用代码完成；去重键必须来自业务唯一性规则，格式预检不等于邮箱有效或用户有权创建。若只能经网页提交，优先使用经验证的 DOM/accessibility locator；只有缺少可靠结构化接口或需要视觉判断时才用截图/坐标。对每次提交记录幂等键或操作标识，并用后端查询或可信 UI 状态验证结果。
 
-反过来的形态也要小心：**用界面做决策、用 API 做执行**。这通常是个坏组合 —— 你付出了视觉的全部成本，却只为了触发一个本来可以直接调用的接口。
+如果截图中确有只有视觉才能读取的信息，视觉判读后再调用 API 可能是合理组合；若同一信息已有授权的结构化接口，就不必为它额外采集整屏并送入模型。
 
-把它写出来分两段。**第一段是纯代码**（解析、去重、校验），拿一批 103 行、里面混了 3 条重复和 2 条坏邮箱的记录跑：
+下面先用合成 CSV 展示一个本地预处理器。它用邮箱作为此 fixture 的去重键，并用简单字符串规则拦截明显格式错误；这是教学筛选器，不是 RFC 完整邮箱校验或地址存在性验证。示例会生成 103 行，其中 3 条重复、2 条明显格式错误：
 
 ```python
 import csv
 from io import StringIO
 
+
 def prepare(csv_text, seen=None):
-    """把一批原始记录处理成可提交清单：去重 + 邮箱校验。
-    这一步完全不调模型，也不碰界面。"""
+    """筛掉 fixture 中的重复和明显格式错误；生产规则需替换。"""
     seen = seen if seen is not None else set()
-    ok, dropped = [], []
+    accepted, dropped = [], []
     for row in csv.DictReader(StringIO(csv_text)):
-        name, email = row["name"].strip(), row["email"].strip().lower()
-        key = (name, email)
+        name = row["name"].strip()
+        email = row["email"].strip().lower()
+        if "@" not in email or "." not in email.split("@")[-1]:
+            dropped.append(("格式预检未通过", name, email))
+            continue
+        key = email  # 本 fixture 假设邮箱唯一；实际去重键由业务定义
         if key in seen:
             dropped.append(("重复", name, email))
             continue
         seen.add(key)
-        if "@" not in email or "." not in email.split("@")[-1]:
-            dropped.append(("邮箱非法", name, email))
-            continue
-        ok.append({"name": name, "email": email})
-    return ok, dropped
+        accepted.append({"name": name, "email": email})
+    return accepted, dropped
+
+
+def sample_csv():
+    rows = [{"name": f"User {i:03}", "email": f"user{i:03}@example.com"}
+            for i in range(1, 99)]
+    rows += [rows[9], rows[19], rows[29]]
+    rows += [
+        {"name": "No Email", "email": "not-an-email"},
+        {"name": "Bad Domain", "email": "x@nodot"},
+    ]
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=["name", "email"])
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue()
+
+
+if __name__ == "__main__":
+    source = sample_csv()
+    prepared, dropped = prepare(source)
+    print("原始行数：%d" % (source.count("\n") - 1))
+    print("可提交：%d 条" % len(prepared))
+    print("被挡下：%d 条" % len(dropped))
+    for kind, name, email in dropped:
+        print("   %-10s %s / %s" % (kind, name, email))
 ```
 
-输出（构造数据，本次真跑，2026-10-12）：
+输出（构造数据，2026-10-20，本地可重复）：
 
 ```text
 原始行数：103
@@ -88,77 +111,87 @@ def prepare(csv_text, seen=None):
    重复       User 010 / user010@example.com
    重复       User 020 / user020@example.com
    重复       User 030 / user030@example.com
-   邮箱非法     No Email / not-an-email
-   邮箱非法     Bad Domain / x@nodot
+   格式预检未通过 No Email / not-an-email
+   格式预检未通过 Bad Domain / x@nodot
 ```
 
-**第二段才是界面**，而且只在一条记录上走一次视觉（示例：构造数据，未实跑；`fill_form_directly` / `confirm_success` 需要按你的界面实现）：
+**第二段才处理提交**。下面是接口伪代码，函数需按应用实现；优先用稳定的业务接口或网页语义定位，截图/坐标只在确有必要时使用。
 
 ```python
-# 混合路线：代码决定「填什么」，视觉只用在「确认那一步」。
-# 每条记录 1 次模型调用，而不是第 2 节那种 5 次往返的循环。
-for rec in ok:
-    fill_form_directly(rec["name"], rec["email"])   # 坐标固定，直接注入，不问模型
-    click_submit_directly()
-    if not confirm_success(screenshot()):            # 唯一一次视觉：看提交后的界面
-        queue_for_human(rec)                        # 读不出成功就去人工队列
+for record in prepared:
+    operation_key = business_idempotency_key(record)
+    result = submit_via_verified_interface(record, operation_key)
+    if result.status == "unknown":
+        state = lookup_operation(operation_key)
+        if state == "applied":
+            continue
+        if state != "definitely_not_applied" or not retry_policy_allows(record):
+            queue_for_human(record, "结果未知，先不要重试")
+            continue
+        result = submit_via_verified_interface(record, operation_key)  # 同一业务键、有界重试
+    if result.status != "confirmed":
+        queue_for_human(record, result.reason)
 ```
 
-这样每条记录的模型调用从「5 次往返」降到「1 次截图」。按第 2 节实测的「每步约 +300 token」，这是量级上的差别 —— 而**决策与校验部分连一次模型都不用调**，因为它们是确定性的。
+`submit_via_verified_interface` 应封装经验证的 API、CLI、DOM/accessibility locator 或受限 GUI adapter；上面的伪代码没有假定它一定是模型或视觉调用。只有调用次数、目标判据与权限相同时，才可对比不同实现的 usage、延迟、成功/未知结果率和维护成本。
 
-边界要说清楚：这套做法成立的前提是**表单的坐标与流程稳定**（填两个框、点一个按钮）。如果界面每天变、弹窗随机出现，那「直接注入」会脆，仍然得走完整的观测-动作循环。
+如果只能通过坐标操作，固定窗口、缩放、滚动和表单变化仍会影响命中；截图中的“成功”提示也不一定证明后端已提交。优先查询可信业务状态；无法确认时先对账，再决定重试或转人工。
+
 
 ## 那这一章的价值在哪
 
 如果结论是「尽量别用」，那用一整章讲它值得吗？值得，理由有两个。
 
-**第一，它有你绕不开的场景。** 内部系统、老后台、桌面软件 —— 这些场景在真实工作里占比并不低，而且往往是「数据就在这里，但只能手点」的那种。
+**第一，部分任务确实没有满足要求的窄接口。** 遗留系统、桌面应用、视觉验收或跨应用流程可能需要 UI；要先检查 browser DOM/accessibility、CLI、内部服务和官方 API 是否能覆盖任务。
 
-**第二，它把这个领域的边界讲清楚了。** 前面几章建立的直觉是「给模型合适的接口，它就能做好」；这一章是那条直觉的反面：**当接口不存在时，你要付出什么代价。** 知道这个代价的量级（14 倍、5 倍往返、失败时再翻 2 到 5 倍），你才能在选型会上给出一个有依据的判断，而不是「这个应该能做吧」。
+**第二，它让接口选择也成为系统设计的一部分。** 路线选择要覆盖任务执行、授权、状态验证、失败恢复、隔离和运维，而不只比较模型 token。本章保留的 14.4 倍历史比值因两条路径的执行边界与成功判据不同，不能作为 API 与 GUI 的相对成本证据；重新比较时应保存请求/响应、实际执行、统一的后置条件、完整 usage 和错误/未知结果。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["有一个任务要自动化"] --> B{"有 API 或稳定接口吗？"}
-    B -->|有| C["走 API<br/>实测 384 token / 1 次往返"]
-    B -->|没有| D{"能抓到结构化数据吗？"}
-    D -->|能| E["优先抓取<br/>比点界面便宜且稳定"]
-    D -->|不能| F["走界面<br/>实测 5,528 token / 5 次往返"]
+    A["有一个任务要自动化"] --> B{"任务本身是否要操作/验证真实 UI？"}
+    B -->|是| F["评估截图/坐标或其他 UI 接口"]
+    B -->|否| C{"有满足语义、权限和可靠性要求的 API/CLI/DOM/accessibility 接口吗？"}
+    C -->|有| D["比较候选接口的维护与运行成本"]
+    C -->|没有| F
+    D --> E["实现业务接口并验证真实后置条件"]
+    F --> I["网页任务先评估 DOM / accessibility / browser agent"]
     F --> G["按第 2 节设计循环<br/>按第 4 节画四道闸门"]
     F --> H["按第 3 节做结果核对<br/>验收落在数据层"]
-    C -.-> I["同样的任务：<br/>界面路线贵 14.4 倍、往返多 5 倍"]
+    F -.-> J["整桌面截图/坐标是宽泛 UI 路线<br/>仅在更窄接口不满足需求时考虑"]
 `}
 />
 
 ## 如果一定要用界面：一份上线前的清单
 
-判断必须走界面路线之后，在写循环之前先把这几件事定下来。它们全部来自本章的实测。
+判断必须走界面路线之后，在写循环之前先定好以下控制和验收条件。它们是工程检查项，不是本章历史对照已验证的结论。
 
 **一，把「完成」写成可核对的判据。** 不是「完成任务」，而是「数据库里多了一条 `name=Zhang San, email=zhang@example.com` 的记录」。第 3 节的结论：验收必须落在数据层。写不出这个判据，说明任务本身还没定义清楚。
 
 **二，画出活动范围。** 列出允许点击的矩形区域。范围越小越好 —— 白名单之外一律拦截，不需要模型理解为什么。
 
-**三，按失败路径定预算。** 实测失败是成功的 2.4 到 5.3 倍。步数上限和 token 上限都要设，缺一个都不行。
+**三，按目标工作负载定预算。** 第 3 节的 tiny/noop 旧输出不能建立可靠成本倍率；仍应设置适合任务风险的步数、token 或时间上限，并用目标环境的成功判据与完整 usage 测量。
 
-**四，定熔断阈值。** 连续几步界面无变化就中止。实测 3 到 4 步是合理的起点，2 会误杀正常流程。
+**四，评估停滞检测。** 重复截图或无变化计数可以作为启发式信号；阈值需针对目标 UI 测试误报、漏报，并把触发停滞与业务失败区分。
 
-**五，列出不可逆动作，并指定批准入口。** 批准入口必须在循环之外。如果一个动作无法撤销、又无法人工确认，那它就不该被自动执行。
+**五，列出高影响动作，并根据授权与业务策略设置审批或补偿。** 不可逆性是风险因素之一；是否自动执行还取决于明确授权、独立校验和恢复方案。
 
-**六，把动作幂等化。** 「设置」而不是「追加」。因为重试是常态，而不是异常。
+**六，设计幂等与未知结果处理。** 能用业务幂等键、去重记录或可查询操作状态时就使用；点击提交后超时应先对账，不能把“未知”当成“未执行”再盲目重试。
 
-**七，先在小样本上测出真实成功率。** 第 3 节实测：目标 180×52 时接近 100%，缩到 44×26 掉到 75%。批处理 100 条而成功率 75%，意味着 **25 条要人工兜底** —— 这个数字必须在上线前知道，而不是上线后发现。
+**七，先建立任务级验收，再测目标环境表现。** 第 3 节旧 scorer 没有核对完整字段，且逐次响应缺失，无法给出可辩护的成功率。部署评估应使用预先定义的完整后置条件、足够样本和覆盖目标环境的测试集，再估算人工兜底量。
 
-七条里有五条是「在写循环之前就该定好的」。这也是本章最后想留下的印象：**界面自动化的难点不在循环本身，而在给循环画边界。**
+这些条件大多应在实现循环前定义。最终选择应由任务语义、权限、状态反馈、失败恢复和全生命周期成本共同决定。
 ## 完整可运行代码
 
-下面这段代码把两条路线并排跑一次 —— 同一件事，同一个模型，唯一的差别是走 API 还是走界面。
+下面保留旧用量采集 harness，供读者检查它测了什么。它不是端到端路线基准：API 臂只生成工具调用、不运行工具；UI 臂更新本地模拟状态，完成标签不等于目标字段正确。代码需要 Pillow、有效的 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `VERIFY_MODEL`，并将字体路径写死为 macOS 示例；不会在本轮审计中调用 provider。两个请求入口都使用拒绝 HTTP 重定向的 opener：若服务端返回 30x，调用会在原端点停止，避免把 `x-api-key` 随 POST 转发到跳转目标。该控制不替代对 base URL、TLS、代理和凭据来源的信任配置；[Python urllib.request 文档](https://docs.python.org/3.14/library/urllib.request.html)说明 `redirect_request` 返回 `None` 时会拒绝这次重定向。
 
 ```python
-"""同一件事：走 API（工具调用） vs 走界面（观测-动作循环）。
+"""旧对照用量 harness：API 工具调用提议 vs 本地截图表单模拟。
 
-自包含：合成界面与循环已内联，不依赖任何外部脚本。
-
-实跑状态：2026-10-09，deepseek-flash（输出为当时原脚本的结果，内联版与之逻辑等价）。
+API 臂只取 tool_use.input，不执行 create_user；UI 臂只修改本地 Python 状态。
+state["done"] 仅检查字段非空，不代表目标值正确或后端提交成功。
+依赖 Pillow、macOS 示例字体路径、兼容的 provider endpoint 和环境变量。
+实跑状态：2026-10-09 的历史输出；原始逐次请求/响应缺失，本轮未重跑。
 """
 import os
 import base64, json, urllib.request
@@ -193,12 +226,23 @@ def render(state):
     return b.getvalue()
 
 
+class RejectRedirects(urllib.request.HTTPRedirectHandler):
+    """Do not forward the API key to an unverified redirect target."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def open_api(req, timeout=180):
+    opener = urllib.request.build_opener(RejectRedirects())
+    return opener.open(req, timeout=timeout)
+
+
 def post(body):
     req = urllib.request.Request(
         os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=json.dumps(body).encode(),
         headers={"content-type": "application/json", "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
                  "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    with open_api(req, timeout=180) as resp:
         return json.loads(resp.read())
 
 
@@ -218,7 +262,7 @@ TASK = "在表单里填入 Name = Zhang San、Email = zhang@example.com，然后
 
 
 def ui_arm(max_steps=12):
-    """界面路线：每一步发一张当前截图，模型回一个动作。"""
+    """本地模拟界面循环；done 是非空字段标记，不是完整任务验收。"""
     st = {"focus": None, "v": {"name": "", "email": ""}, "done": False}
     hist = [{"role": "user", "content": [{"type": "text", "text": TASK + "\n当前屏幕："},
              {"type": "image", "source": {"type": "base64", "media_type": "image/png",
@@ -269,6 +313,7 @@ TOOL = {
 
 
 def api_arm():
+    """只请求模型生成工具参数；本函数不会执行 create_user。"""
     body = json.dumps({
         "model": os.environ["VERIFY_MODEL"], "max_tokens": 500,
         "tools": [TOOL],
@@ -280,7 +325,7 @@ def api_arm():
         headers={"content-type": "application/json",
                  "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
                  "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    with open_api(req, timeout=180) as resp:
         data = json.loads(resp.read())
     u = data.get("usage", {})
     tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
@@ -290,39 +335,39 @@ def api_arm():
 
 
 if __name__ == "__main__":
-    print("同一个任务：创建用户 Zhang San / zhang@example.com")
+    print("旧用量对照：创建用户提示；API 不执行，UI 为本地模拟")
     print()
-    print("--- 路线 A：走 API（一次工具调用）---")
+    print("--- 路线 A：API 工具调用提议（不执行工具）---")
     for i in range(3):
         tin, tout, args = api_arm()
         print("  第%d次：输入 %d + 输出 %d = %d token，1 次往返" % (i + 1, tin, tout, tin + tout))
         if i == 0:
             print("        工具入参：%s" % json.dumps(args, ensure_ascii=False))
     print()
-    print("--- 路线 B：走界面（观测-动作循环）---")
+    print("--- 路线 B：本地表单模拟（弱 done 标签）---")
     totals = []
     for i in range(3):
         state, tokens, steps = ui_arm()
         totals.append((tokens, steps))
         print("  第%d次：%d token，%d 次往返（%s）" % (i + 1, tokens, steps,
-                                                     "成功" if state["done"] else "失败"))
+                                                     "done（字段非空）" if state["done"] else "未达 done 标签"))
     avg_b = sum(t for t, _ in totals) / len(totals)
     print()
     print("  界面路线平均 %.0f token / %.1f 次往返" % (avg_b, sum(s for _, s in totals) / len(totals)))
 ```
 
-实跑输出（2026-10-09）：
+2026-10-09 留存的历史 stdout（原始响应缺失，本轮未复现）；其中 UI 的“成功”仅表示旧 harness 的弱 done 标签：
 
 ```text
 同一个任务：创建用户 Zhang San / zhang@example.com
 
---- 路线 A：走 API（一次工具调用）---
+--- 路线 A：API 工具调用提议（不执行工具）---
   第1次：输入 314 + 输出 72 = 386 token，1 次往返
         工具入参：{"name": "Zhang San", "email": "zhang@example.com"}
   第2次：输入 314 + 输出 70 = 384 token，1 次往返
   第3次：输入 314 + 输出 70 = 384 token，1 次往返
 
---- 路线 B：走界面（观测-动作循环）---
+--- 路线 B：本地表单模拟（弱 done 标签）---
   第1次：5334 token，5 次往返（成功）
   第2次：5416 token，5 次往返（成功）
   第3次：5835 token，5 次往返（成功）
@@ -332,15 +377,15 @@ if __name__ == "__main__":
 
 ## 本节小结
 
-1. **同一件事，界面路线贵 14.4 倍、往返多 5 倍** —— 这是结构决定的，不是实现水平问题。
-2. **「有 API 就别点界面」应当默认遵守**，破例要能说出具体理由。
-3. **混合路线通常最优**：代码做决策与校验，视觉只做无法 API 化的那一步。
-4. **本章的结论是「尽量别用」，但代价必须知道** —— 内部系统、老后台、桌面软件这些场景你绕不开，而选型时需要的是量级（14 倍、5 倍往返、失败再翻 2 到 5 倍），不是「这个应该能做吧」这种印象。
+1. **旧用量记录不是有效的端到端对照**：API 臂没有执行工具，UI 臂的 done 判据不验证目标值，不能比较两路线成功率或任务级成本。
+2. 先选语义、授权、状态反馈和恢复机制满足任务要求的最窄接口，再测真实端到端成本。
+3. 混合路线可以组合确定性代码、业务接口与 UI，但要保留权限边界、幂等与未知结果对账。
+4. 历史 14.4 倍比值只描述两组不等价 harness 的 token 算术，不应作为选型规则。
 ## 常见坑
 
-- **「有 API 但还是点了界面」。** 同一个任务实测差 14.4 倍 token、5 倍往返。这条规则要默认遵守，例外要能说出理由。
-- **只看 token，不看往返。** 5 次往返意味着 5 次延迟、5 个可能失败的环节。界面路线在延迟上通常也明显更差。
-- **忘了算失败路径。** 界面路线失败时还要再翻 2.4 到 5.3 倍（第 3 节实测），而 API 调用的失败成本几乎可以忽略。
-- **把「能跑通」当成「可以上线」。** 第 3 节实测的成功率是 75% 到 100%，取决于目标大小；这个区间对批处理任务往往不够。
-- **忽略混合路线。** 「代码做决策、视觉只做执行」通常比「全程视觉」便宜一个数量级，而且确定性高得多。
-- **用界面路线去触发一个本来就能直接调用的接口。** 付出视觉的全部成本，换来一个本该免费的动作。
+- **把旧 harness 的 14.4 倍比值当作 API 与 GUI 的成本差。** 两臂执行边界和成功判据不同；需要在真实 executor、相同后置条件与相同权限下重做对照。
+- **只看模型 token 或轮数。** 还要统计 executor、状态查询、失败恢复、授权和人工兜底的延迟与成本。
+- **忘了测失败路径。** 第 3 节留存的失败 token 总量来自单次历史摘要，不能据此推导通用倍率；应在目标任务上记录完整 usage、退出原因与任务级结果。
+- **把旧 harness 标签当成成功率。** 第 3 节 scorer 未校验完整目标字段，不能提供可用于部署决策的成功率；应先修正判分器并保存可审计的逐次结果。
+- **为了少调模型而绕过结构化接口或授权检查。** 混合路线也要验证幂等、真实后置条件和未知副作用处理。
+- **已验证某个 API/CLI/DOM/accessibility 接口适用于任务、且权限与运维条件满足，仍无理由地使用截图/坐标操作。** 应记录选择依据，并比较目标工作负载下的总成本和可靠性。

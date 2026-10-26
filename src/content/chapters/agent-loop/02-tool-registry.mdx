@@ -6,14 +6,14 @@ status: drafting
 
 第 4 章讲过工具的描述与 schema。这一节讲**装工具的那个东西** —— 注册表。
 
-它看起来只是一个字典（名字到函数），但一个能用的注册表要承担四件事：
+它看起来只是一个字典（名字到函数），但一个能用的注册表至少要组织四类职责：
 
-1. **对外给出规格**：把内部实现翻译成模型能读的 schema
-2. **对内分发调用**：按名字找到函数并执行
-3. **在校验层拦一道**：参数不合法时不执行
-4. **统一失败形态**：把异常翻译成模型能理解的错误结果
+1. **对外给出规格**：把受控的工具描述翻译成模型能读的 schema
+2. **对内分发调用**：按本轮允许的名字找到实现
+3. **执行前校验与授权**：检查参数，并由宿主按当前主体、租户、资源和策略再次做访问控制
+4. **表达结果与失败类型**：区分成功、确定失败、可安全重试与结果未知
 
-四件事里，第 1 和第 2 是显而易见的，第 3 和第 4 才是真正决定健壮性的部分。
+schema 与分发很适合集中管理；授权策略可以由注册表提供动作元数据，但不能只凭“名字在表里”就放行。
 
 ## 规格与实现要分开
 
@@ -26,7 +26,7 @@ def get_weather(city: str, day: str) -> dict:
     ...
 ```
 
-函数签名告诉你的类型是 `str`，但模型需要知道的是：`day` 只接受「明天」和「后天」两个值。这个信息在类型里表达不出来，必须写进 schema。第 4 章实测过它的价值：enum 约束下模型 3/3 给出合法值，自由字符串则 0/3。
+这个普通函数签名只告诉我们 `day` 是字符串，没有表达它只接受「明天」和「后天」。Python `Literal` 或框架注解有时能映射成 enum；这里展示显式 schema，是为了让模型侧契约与运行时校验可以分别检查，而不是说类型系统无法表达枚举。第 4 章的历史小样本记录 enum 约束下 3/3 合法、自由字符串 0/3；该结果只适用于当时模型、提示和样本，不是通用效果保证。
 
 所以注册表里存的是**两份东西**：给模型看的 schema，和给代码用的函数。它们由同一个条目关联，但不是同一个东西。
 
@@ -34,41 +34,51 @@ def get_weather(city: str, day: str) -> dict:
 
 第二件容易被跳过的事：**参数校验。**
 
-为什么不能指望模型给对？第 5 章实测过：schema 里的范围、模式、格式约束**全都不强制**。模型可能给你一个超出范围的数字、一个不存在的 id、一个拼错的枚举值。
+为什么仍要在本地校验？普通、非 strict 的工具调用并不保证 provider 会强制执行 schema 中的范围、模式或格式约束；具体行为取决于 endpoint、模型与请求设置。Anthropic 的 `strict: true` 等受支持模式可以约束 schema 子集内的工具输入，但不能替代本地校验、业务规则和授权。模型仍可能给出语义上错误、过期或无权访问的资源标识。
 
-如果直接把它传进函数，你会得到一个 Python 异常 —— 而那个异常对模型毫无意义。正确的顺序是：
+如果直接把它传进函数，你会得到一个 Python 异常 —— 而那个异常对模型毫无意义。执行前还要基于当前调用主体与目标资源做授权，不能把 schema 校验或工具在注册表中存在当成授权。教学流程可以写成：
 
 ```python
-def execute(name, args):
+def execute(principal, name, args):
     entry = registry.get(name)
     if entry is None:
-        return error("没有名为 %s 的工具" % name)      # 不抛异常，回一个可读的错误
+        return known_tool_error("当前未开放该工具")
     problems = validate(args, entry.schema)
     if problems:
-        return error("参数不合法：%s" % problems)        # 告诉它哪里错了
-    return run(entry.fn, args)
+        return known_tool_error("参数不合法：%s" % problems)
+    decision = authorize(principal, entry.action, resource_from(args))
+    if not decision.allowed:
+        return known_tool_error("当前主体无权执行该操作")
+    if entry.requires_approval and not approval_is_current(principal, entry, args):
+        return pause_for_approval()  # 尚未执行；不能伪装成成功
+    try:
+        return run(entry.fn, args)
+    except KnownToolFailure as exc:
+        return tool_error_result(str(exc))  # 确定失败，可按策略决定是否重试
+    except OutcomeUnknown:
+        raise PauseAndReconcile()  # 先查账/下游状态，不把未知结果交给模型重试
 ```
 
-注意两个 `return error(...)`：**它们不抛异常，而是回一个结果。** 这是第 4 章那条结论的直接应用 —— 错误要作为工具结果回填给模型，并且要说清原因，否则它不知道该怎么改。
+`known_tool_error(...)` 表示宿主已确定这次没有执行或得到确定失败；回填时应按 provider 协议格式化，例如 Anthropic 的 `tool_result`。授权拒绝、参数错误和下游超时不能混成一种可重试错误；若请求可能已提交但回执丢失，先由宿主暂停并对账，不能让模型自行决定是否重放。
 
 ## 失败必须被翻译
 
 第三件事：**把异常统一成模型能读的形态。**
 
-工具的失败有两大类：
+工具失败至少要分成四种结果，而不能只分“预期/意外”：
 
-- **可以预期的失败**（查不到数据、参数越界、权限不足）→ 应该作为正常结果返回，并在内容里说清原因
-- **意外的失败**（网络超时、代码 bug、依赖挂了）→ 应该被捕获，翻译成一条简短说明，**不要让异常穿透到循环外面**
+- **参数或业务拒绝**：宿主已确定工具没有执行，说明哪个规则未通过；只有策略允许时才把它作为工具错误交给模型修正。
+- **确定的下游失败**：有可信回执证明操作失败，可回传错误并按重试策略处理。
+- **结果未知**：例如写请求超时但接收方可能已提交；暂停模型续跑，按稳定操作键查询/对账，不能直接重放。
+- **宿主缺陷或权限异常**：记录最小必要诊断并失败关闭；不要把堆栈或敏感细节泄漏给模型。
 
-第二类的处理原则是：**循环不应该因为一个工具出错而终止。** 模型收到「这个工具暂时不可用」之后，往往能换一条路 —— 而如果异常直接抛出，你连让它尝试的机会都没有。
+是否继续是宿主的控制流决定，不是“循环遇到任何工具错误都必须继续”。只有错误语义已知、权限边界仍成立，而且后续动作安全时，才把可操作的错误结果交给模型。
 
-但有一个例外必须说清楚：**如果失败意味着「状态未知」，不要急着回填成功或失败。** 第 4 章实测过这个场景：返回「状态未知」时，模型会主动不重试并说明理由。这是对的 —— 因为它意识到重复执行可能有副作用。
+## 注册表是执行入口，不自动构成授权边界
 
-## 注册表还有一个隐含职责：它是安全边界
+工具调用把动作描述成有名字和 schema 的调用，但“模型能看见哪些工具”不等于“当前主体被授权做什么”。工具集合可能随租户、用户、任务、远端能力或运行期策略变化；即使工具名在表里，参数指向的资源也必须再次检查。模型提出的是动作请求，宿主仍要验证身份、租户、资源范围、权限、预算和审批。
 
-第 9 章讲过计算机使用的动作空间是**开放**的（同一个 click 什么都能点）。工具调用的**动作空间**指的是「模型这一轮所有可能做出的动作的集合」，而它是**封闭**的 —— 模型只能调用注册表里有的东西。
-
-这个差别看起来是工具调用的优势，但它只在一种情况下成立：**注册表里没有危险的工具。**
+工具清单可以减少模型能提出的动作形态，但不是授权证明。将数据库函数注册成 `refund_order` 也不代表任意用户都能退款；查询订单工具也不能省略租户过滤。真正的边界来自宿主在每次执行时对主体与资源做的授权判断。
 
 一个真实的坏例子是「万能 SQL 工具」：
 
@@ -90,17 +100,16 @@ flowchart TB
     B -->|是| D{"参数通过校验？"}
     D -->|否| E["返回「哪个字段、什么原因」<br/>让它自己改"]
     D -->|是| F["执行函数"]
-    F --> G{"抛异常了吗？"}
-    G -->|"预期内失败"| H["作为正常结果返回<br/>并说明原因"]
-    G -->|"意外异常"| I["捕获并翻译<br/>不让它穿透循环"]
-    G -->|"成功"| J["返回结果"]
+    F --> G{"结果能确定吗？"}
+    G -->|"确定成功"| J["返回真实结果"]
+    G -->|"确定失败"| H["按策略返回结构化错误"]
+    G -->|"结果未知"| I["暂停续跑<br/>宿主先对账"]
     C --> K["作为 tool_result 回填"]
     E --> K
     H --> K
-    I --> K
     J --> K
-    K --> L["模型据此决定下一步"]
-    K -.-> M["注册表 = 安全边界<br/>它的内容就是动作空间的全部"]
+    K --> L["宿主校验结果与策略后决定是否继续"]
+    K -.-> M["工具清单描述能力<br/>授权仍按主体和资源判断"]
 `}
 />
 
@@ -125,27 +134,23 @@ KeyError: 'get_weather_by_city'
 {"error": "没有名为 get_weather_by_city 的工具。可用工具：get_weather"}
 ```
 
-**下一轮它就用对了。** 这个对比说明了注册表第三件事的价值：把「代码级失败」翻译成「对话级反馈」，模型才有机会自我修正 —— 而这正是第 5 章第 3 节那条结论（带错误信息重试 6/6，空洞重试 0/6）在循环里的应用。
+在这次历史运行里，模型下一轮改用了正确工具名；这是一个样例观察，不代表所有模型或提示都能稳定自我修正。可推广的工程结论是：宿主应把确定的工具错误按协议回填，同时用轮数、权限和副作用策略控制后续调用。
 
 ## 注册表要不要管并发
 
-第 1 章讲过，一次回复里可以有多个工具调用块，它们的执行是你可以选择的。注册表在这里有一个容易忽略的职责：**决定同一轮里的多个调用是串行还是并行，以及失败时怎么算。**
+第 1 章讲过，一次回复里可以有多个工具调用块，API 不要求宿主按固定顺序执行。注册表可以提供每个工具的并发元数据，调度器再结合本轮实际参数、资源依赖与失败策略决定是否并发。
 
-三种策略，各有代价：
+API 可以在一轮返回多个调用，但不替宿主规定执行顺序。Anthropic 文档列出并发、按出现顺序串行、或混合执行几种选择；工具之间的依赖、副作用和共享状态决定哪种策略合适。
 
-**全串行。** 一个执行完再下一个。最简单，也最容易推理 —— 副作用顺序确定。代价是慢：三个互不相关的查询要等三倍时间。
+**全串行**最容易推理，适合有顺序依赖或暂时无法证明安全的动作。**并发**能降低互相独立操作的等待时间，但失败时同批其他操作可能已经完成。**混合执行**可以把互不依赖的调用并发成批，并在有顺序依赖的调用前后设置屏障。
 
-**全并行。** 一起发出去。快，但有两个问题：一是如果你有多个副作用工具，顺序就不确定了；二是其中一个失败时，其他的可能已经生效了。
+“只读即可并行、有副作用就串行”只能当保守启发式，不是充分判据：读请求也可能消耗配额或持有共享资源；两个写入可能在互不重叠资源上安全并发，也可能竞争同一业务状态。应显式判断数据依赖、资源冲突、可交换性、接收方幂等契约、速率限制与取消语义。无法判断时选择串行。
 
-**按工具声明。** 每个工具在注册表里标一个「可并行 / 必须串行」，调度器据此分组。这是实际系统里最常见的做法，代价是你要为每个工具做判断。
-
-选择的关键在这条：**只读工具可以并行，有副作用的工具默认串行。** 因为并行一个副作用操作，等于把「执行顺序」这个信息交给了调度器 —— 而它不知道业务上哪个顺序才对。
-
-还有一个细节：并行执行时，**每个工具的结果仍要按各自的 tool_use_id 回填**（`tool_use_id` 指的是「这一轮里某一次具体调用」的唯一标识，就是响应里 `tool_use.id` 那个值），而且顺序最好保持与请求一致（虽然协议不强制）。保持一致的好处是，日志和轨迹读起来可预测。
+并行执行时，**每个结果必须按自己的 `tool_use_id` 关联**。结果块在回填消息中的排列顺序可以按原请求顺序保持，便于阅读；不要用完成先后或列表位置代替 ID 配对。代码示例还把连续的可并发调用作为一批，遇到串行调用就先等待该批完成，以免把前后有依赖的步骤重排。任何调用执行前都要完成整批协议字段检查（至少包括 ID 存在且唯一），以免先产生副作用、后发现结果无法可靠配对。
 
 ### 「可并行」这个标记落在哪
 
-它是注册表条目上的一个字段，和 `schema`、`fn` 并列。要给它显式默认值，因为忘记标注时必须退到安全的一边：
+下面的 `parallel_safe` 只是教学调度器的**粗粒度提示**，不是完整的并发安全证明。生产元数据还应明确资源/键范围、顺序依赖、限流、幂等和失败恢复契约。示例把未标注的工具按串行处理，作为本例的保守默认：
 
 ```python
 entry = {
@@ -155,16 +160,19 @@ entry = {
 }
 ```
 
-判据只有一条：**这个调用会不会改变外部状态？** 会改（写库、发消息、扣款）就是 `False`，纯读（查询、计算、检索）才给 `True`。默认 `False` 意味着「忘记标注」的代价是多等一会儿，而不是写坏数据 —— 这是这里唯一可接受的默认值。
+不能只问“会不会改变外部状态”。至少要检查调用之间是否共享资源、存在先后依赖或非交换写入，以及并发请求是否受接收方契约与限流约束。教程示例仅给无共享状态的只读查询标 `True`，其余默认串行；在实际系统里仍要按具体参数和资源动态判定。
 
-有了这个字段，同一轮里的多个 `tool_use` 就能按它分组调度。下面这段是自包含的：
+有了这个字段，同一轮里的多个 `tool_use` 就能按它分组调度。下面这段是自包含的调度示例。它先检查整批调用 ID，再做任何工具分发；它**假设工具名、参数 schema 与授权已经由前置宿主门禁验证**，不能直接接收未经校验的原始模型块：
 
 ```python
-"""按 parallel_safe 分组的调度：只读并发、副作用串行。
+"""按 parallel_safe 分组的教学调度器；串行调用是顺序屏障。
 
 自包含，不需要凭据。
 实跑状态：2026-10-12。
+
+调用前仍须由宿主完成 schema 校验与逐次授权；本例只负责 ID 完整性和调度。
 """
+import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -174,32 +182,99 @@ class Registry:
         self.entries = {}
 
     def tool(self, name, fn, parallel_safe=False):
-        # parallel_safe 默认 False：不声明就串行 —— 忘记标注时退到安全的一边
+        # 本例约定：True 表示可与同一连续批次中的同类工具并发；生产系统需更细的资源冲突契约。
         self.entries[name] = {"fn": fn, "parallel_safe": parallel_safe}
 
     def execute(self, name, args):
         return self.entries[name]["fn"](**args)
 
 
+class DispatchNeedsReconciliation(RuntimeError):
+    def __init__(self, failed_ids, partial_results):
+        super().__init__("调用结果未知；先对账再恢复：%s" % failed_ids)
+        self.failed_ids = failed_ids
+        self.partial_results = partial_results
+
+
+def validate_tool_use_ids(blocks):
+    """整批预检 ID，避免副作用发生后才发现结果无法安全配对。"""
+    seen = set()
+    for block in blocks:
+        if not isinstance(block, dict):
+            raise TypeError("tool_use 必须是对象")
+        call_id = block.get("id")
+        if not isinstance(call_id, str) or not call_id.strip():
+            raise ValueError("tool_use.id 必须是非空字符串")
+        if call_id in seen:
+            raise ValueError("tool_use.id 必须在本批次唯一")
+        seen.add(call_id)
+
+
 def dispatch(blocks, registry):
-    """按 parallel_safe 分组：只读的并发发出去，副作用逐个来。"""
-    safe, unsafe = [], []
-    for b in blocks:
-        (safe if registry.entries[b["name"]]["parallel_safe"] else unsafe).append(b)
+    """校验整批 ID 后，只把连续的并发安全调用组成一批。"""
+    validate_tool_use_ids(blocks)
     results = {}
-    if safe:
-        with ThreadPoolExecutor(max_workers=len(safe)) as pool:
-            futures = {pool.submit(registry.execute, b["name"], b["input"]): b for b in safe}
-            for fut, b in futures.items():
-                results[b["id"]] = fut.result()
-    for b in unsafe:
-        results[b["id"]] = registry.execute(b["name"], b["input"])
+    index = 0
+    while index < len(blocks):
+        block = blocks[index]
+        entry = registry.entries.get(block["name"])
+        if entry is None:
+            results[block["id"]] = {"error": "工具未开放", "execution": "not_executed"}
+            index += 1
+            continue
+
+        if not entry["parallel_safe"]:
+            try:
+                results[block["id"]] = registry.execute(block["name"], block["input"])
+            except Exception as exc:
+                raise DispatchNeedsReconciliation([block["id"]], results) from exc
+            index += 1
+            continue
+
+        batch = []
+        while index < len(blocks):
+            candidate = blocks[index]
+            candidate_entry = registry.entries.get(candidate["name"])
+            if candidate_entry is None or not candidate_entry["parallel_safe"]:
+                break
+            batch.append(candidate)
+            index += 1
+
+        with ThreadPoolExecutor(max_workers=len(batch)) as pool:
+            futures = {
+                pool.submit(registry.execute, item["name"], item["input"]): item
+                for item in batch
+            }
+            failed_ids = []
+            for future, item in futures.items():
+                try:
+                    results[item["id"]] = future.result()
+                except Exception:
+                    # The function may have committed before raising. Do not guess or retry here.
+                    results[item["id"]] = {"error": "执行结果未知", "execution": "outcome_unknown"}
+                    failed_ids.append(item["id"])
+            if failed_ids:
+                raise DispatchNeedsReconciliation(failed_ids, results)
     return results
 
 
 def backfill(blocks, results):
-    return [{"type": "tool_result", "tool_use_id": b["id"], "content": results[b["id"]]}
-            for b in blocks]
+    """按原请求顺序回填协议结果；未知执行结果必须先对账，不能到这里。"""
+    validate_tool_use_ids(blocks)
+    output = []
+    for block in blocks:
+        result = results[block["id"]]
+        if isinstance(result, dict) and result.get("execution") == "outcome_unknown":
+            raise RuntimeError("未知副作用结果不得回填为普通 tool_result")
+        item = {
+            "type": "tool_result",
+            "tool_use_id": block["id"],
+            "content": json.dumps(result, ensure_ascii=False),
+        }
+        if isinstance(result, dict) and result.get("execution") == "not_executed":
+            item["is_error"] = True
+        output.append(item)
+    return output
 
 
 def slow_read(city):
@@ -237,11 +312,11 @@ if __name__ == "__main__":
 结果：{'t1': {'city': '北京', 'temp_c': 31}, 't2': {'city': '上海', 'temp_c': 31}, 't3': {'created': 'ORD-1'}}
 ```
 
-两个只读查询各睡 0.4 秒，却和一个副作用写入一起在 0.81 秒里跑完 —— 因为查询是并发的，写入单独串行。三个都串行的话，这个数会接近 1.2 秒。`dispatch` 返回的是 `{tool_use_id: result}` 而不是列表，回填时才能靠 id 对齐「哪个结果对应哪次调用」，而不是靠顺序。
+这是 2026-10-12 一次本地运行的观察：两个只读查询各睡 0.4 秒时，查询并发后再执行写入，测得 0.81 秒；全串行的约 1.2 秒是按三个 0.4 秒等待相加的估算，不是另一组实测。它只演示这段 sleep 脚本的调度关系，不代表真实工具延迟或总体性能。`dispatch` 以 `tool_use_id` 关联结果，回填再按请求顺序输出，避免把响应顺序误当调用身份。
 
 ## 完整可运行代码
 
-下面这个注册表实现了上面四件事：给模型看 schema、按名字分发、执行前校验、把异常翻译成可读错误。
+下面的本地注册表示例演示 schema 暴露、按名字分发、最小参数校验，以及已知失败与未知结果的区别。它没有实现身份认证、租户授权或审批；真实宿主需要在每次工具执行前调用相应策略。
 
 ```python
 """工具注册表：schema、分发、校验、异常翻译。
@@ -250,6 +325,18 @@ if __name__ == "__main__":
 
 实跑状态：2026-10-09，已跑通。
 """
+
+
+class KnownToolFailure(Exception):
+    """接收方已明确证明操作失败，宿主可向模型回传错误。"""
+
+
+class OutcomeUnknown(Exception):
+    """调用可能已产生效果，但宿主没有可信回执。"""
+
+
+class PauseAndReconcile(RuntimeError):
+    """宿主应暂停 provider 续跑并查询 operation ledger/下游状态。"""
 
 
 class Registry:
@@ -271,35 +358,75 @@ class Registry:
         """对内：分发 + 校验 + 异常翻译。三件事都在这里。"""
         entry = self.entries.get(name)
         if entry is None:
-            return {"error": "没有名为 %s 的工具。可用工具：%s"
-                             % (name, ", ".join(self.entries))}
+            return {"error": "没有名为 %s 的工具。可用工具：%s" % (name, ", ".join(self.entries)), "is_error": True}
 
         problems = self.validate(args, entry["schema"]["input_schema"])
         if problems:
-            return {"error": "参数不合法：%s" % "；".join(problems)}
+            return {"error": "参数不合法：%s" % "；".join(problems), "is_error": True}
 
         try:
             return entry["fn"](**args)
-        except Exception as exc:                     # 不让异常穿透循环
-            return {"error": "工具执行失败：%s" % exc}
+        except KnownToolFailure as exc:
+            return {"error": str(exc), "is_error": True}
+        except OutcomeUnknown as exc:
+            raise PauseAndReconcile("工具结果未知；先对账，不要交给模型盲目重试") from exc
+        except Exception as exc:
+            # 未知异常可能发生在下游提交之后；先失败关闭并对账。
+            raise PauseAndReconcile("宿主异常，工具结果未知；先对账") from exc
 
     @staticmethod
     def validate(args, schema):
-        """最小校验：必填、类型、枚举。真实实现可以用 jsonschema 库。"""
+        """教学用根层校验：必填、部分类型、枚举；不是完整 JSON Schema validator。"""
         problems = []
+        if not isinstance(args, dict):
+            return ["工具输入必须是 JSON 对象"]
         for key in schema.get("required", []):
             if key not in args:
                 problems.append("缺少必填字段 %s" % key)
-        for key, spec in schema.get("properties", {}).items():
+        properties = schema.get("properties", {})
+        if schema.get("additionalProperties") is False:
+            problems.extend("未知字段 %s" % key for key in args if key not in properties)
+        for key, spec in properties.items():
             if key not in args:
                 continue
             want = spec.get("type")
-            if want == "integer" and not isinstance(args[key], int):
+            if want == "string" and not isinstance(args[key], str):
+                problems.append("%s 应该是字符串，收到 %r" % (key, args[key]))
+            if want == "integer" and type(args[key]) is not int:
                 problems.append("%s 应该是整数，收到 %r" % (key, args[key]))
-            if "enum" in spec and args[key] not in spec["enum"]:
+            if want == "number" and (isinstance(args[key], bool) or not isinstance(args[key], (int, float))):
+                problems.append("%s 应该是数字，收到 %r" % (key, args[key]))
+            if want == "boolean" and not isinstance(args[key], bool):
+                problems.append("%s 应该是布尔值，收到 %r" % (key, args[key]))
+            if want == "object" and not isinstance(args[key], dict):
+                problems.append("%s 应该是对象，收到 %r" % (key, args[key]))
+            if want == "array" and not isinstance(args[key], list):
+                problems.append("%s 应该是数组，收到 %r" % (key, args[key]))
+            if "enum" in spec and not any(
+                Registry.same_json_value(args[key], allowed) for allowed in spec["enum"]
+            ):
                 problems.append("%s 必须是 %s 之一，收到 %r"
                                 % (key, spec["enum"], args[key]))
         return problems
+
+    @staticmethod
+    def same_json_value(left, right):
+        """JSON boolean 与 number 不同；Python 中 True == 1，因此不能直接用 in。"""
+        if isinstance(left, bool) or isinstance(right, bool):
+            return type(left) is type(right) and left is right
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            return left == right
+        if type(left) is not type(right):
+            return False
+        if isinstance(left, list):
+            return len(left) == len(right) and all(
+                Registry.same_json_value(a, b) for a, b in zip(left, right)
+            )
+        if isinstance(left, dict):
+            return left.keys() == right.keys() and all(
+                Registry.same_json_value(left[key], right[key]) for key in left
+            )
+        return left == right
 
 
 reg = Registry()
@@ -319,7 +446,7 @@ def get_weather(city, day):
            "description": "一个会抛异常的工具（用来演示异常翻译）。",
            "input_schema": {"type": "object", "properties": {}, "required": []}})
 def boom():
-    raise RuntimeError("下游服务超时")
+    raise KnownToolFailure("下游明确返回业务拒绝")
 
 
 if __name__ == "__main__":
@@ -341,8 +468,8 @@ if __name__ == "__main__":
         mark = "✅" if "error" not in out else "⛔"
         print("  %s %-12s → %s" % (mark, label, out))
     print()
-    print("五个结果里有四个是 error，但**没有一个异常穿透出来**。")
-    print("模型收到的是可读的说明，而不是 Python 的堆栈。")
+    print("五次调用里四次是确定错误；本例把这些错误映射成可读结果。")
+    print("未知副作用结果或未分类宿主异常会暂停并要求对账，不伪装成普通可重试工具错误。")
 ```
 
 ## 注册表还要能被观察
@@ -358,12 +485,12 @@ if __name__ == "__main__":
 
 最后一条尤其重要。如果只记「执行成功的」，你就无法区分「模型没想调那个危险工具」和「它想调但被拦住了」—— 而后者恰恰说明闸门在工作，也是你调阈值的依据。第 9 章讲审计轨迹时给的是同一条理由。
 
-四个字段里，参数要记**原始 JSON**，不要记解析后的对象。因为排查时你需要知道模型原本写了什么 —— 比如第 10 章那个把三元表达式塞进参数的案例，只有原始字符串才能看出问题。
+审计记录应能区分模型提出的调用、宿主授权决定、实际执行与最终结果，但不要默认把原始参数完整落日志：其中可能有凭据、个人信息或业务机密。优先记录脱敏后的字段、稳定 hash、结果类别和关联 ID；确需保留原始请求时，限定访问、加密、保留期限与审计用途。
 
 ## 常见坑
 
-- **把函数签名当 schema 用。** 枚举、范围、格式这些模型需要的信息在类型里表达不出来，必须单独写。
-- **参数不合法时直接抛异常。** 模型看不懂 Python 的堆栈，它需要的是「哪个字段、什么原因」。
-- **让工具异常穿透循环。** 一个工具挂了不应该终止整轮任务，回一条错误结果让模型换路更划算。
+- **把函数签名当完整 schema 用。** 普通类型注解通常不能表达模型需要的全部范围、格式与描述；Python `Literal` 等机制可以表达部分枚举，运行时 schema 仍应单独定义并校验。
+- **把最小示例校验器当成完整 JSON Schema 实现。** 本例只检查根层必填、部分类型、枚举与额外字段；生产环境应使用经过验证的 schema validator，并单独做业务校验与授权。
+- **把所有异常都吞掉并交给模型重试。** 只有确定没有执行或确定失败时才回填错误；结果未知、权限异常和宿主缺陷应暂停续跑并对账。
 - **提供「万能工具」。** 一个能执行任意 SQL 的工具，等于把整个数据库的动作空间交给模型。工具粒度就是权限粒度。
 - **在注册表里藏业务分支。** 同一个工具名在不同任务下行为不同，会让模型无法从描述推断出正确用法。

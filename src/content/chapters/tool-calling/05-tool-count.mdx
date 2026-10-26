@@ -4,30 +4,30 @@ title: 工具数量的代价
 status: drafting
 ---
 
-「把 50 个工具全部暴露给模型，效果会明显变差」—— 这个说法流传很广，背后的解释也很合理：工具定义占满上下文、相似工具互相干扰、选择空间变大。
+「把很多工具全部暴露给模型，选择效果会变差」是常见担忧。机制上，工具定义会占用输入上下文；更多候选也可能增加选择难度。但影响大小取决于具体模型、工具描述、任务分布和调用策略，不能只凭工具数推断。
 
-我把这几条都测了。**成本那部分完全成立，准确率那部分我没能复现。**
+本节保存的是 2026-10-08 某 DeepSeek 兼容端点的历史摘要，不含逐次原始请求、响应和 scorer。它报告了几档工具数量、少量选择题与三个请求规模；本轮无法独立重放。下面把成本记录限定为该样本，并把准确率结果视为探索性观察，不能推出普遍规律。
 
-## 实测一：成本是确定的，而且可算
+## 历史记录一：请求输入量随工具数上升
 
 固定 8 个核心工具，往里加无关工具，只问一句「你好」：
 
-| 工具数 | 工具定义占用的 token |
+| 工具数 | 含工具定义的请求总 input token |
 |---:|---:|
 | 8 | 678 |
 | 20 | 1326 |
 | 44 | 2623 |
-| 86 | **4945** |
+| 86 | 4945 |
 
-（实测数据，`deepseek-flash`，2026-10-08。token 为三项之和，只含输入。）
+（2026-10-08 的 DeepSeek 兼容端点历史摘要；请求/响应、精确端点标识与逐次 usage 未归档。表中记录的是包含工具定义的请求总 input token，不是隔离出来的工具 schema token。）
 
-**线性增长，约 60 token 每个工具。** 这个数字可以直接用来估算：你的工具集是 30 个还是 100 个，每次请求的固定开销差多少，一眼就能算出来。
+四个点随工具数量上升。用两端估算边际变化：`(4945 - 678) / (86 - 8) ≈ 55` 个 input token / 新增工具。它只适用于这组描述和该历史 endpoint；表中还含固定请求开销，因此不能把总数直接除以工具数当作工具单价。
 
-而且要注意：**这份开销每轮都要付一次。** 一个跑 10 轮的 agent，86 个工具的光是定义就吃掉约 5 万 token —— 无论这一轮实不实际用它。
+工具定义会进入模型输入上下文，重复请求的总输入量仍可统计；实际费用取决于 provider 的计费与缓存规则。以 Anthropic 为例，缓存命中、缓存写入和未缓存输入分列计量，工具定义可作为缓存前缀；应把各 input usage 字段相加来比较总输入 token，并另外按当前价格计算费用。[Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)、[tool use with prompt caching](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)。
 
-这一条没有争议，也不需要实测才能相信 —— 但**值得实测一次得到你自己工具集的单价**，因为描述写得详细与否会让每个工具从 40 token 涨到 200 token 以上。
+要估算你自己的工具 schema 开销，应使用相同模型、系统提示、用户问题和采样参数，比较带工具与不带工具的总输入 token；缓存状态也要记录。不要把本节样本的斜率或费用外推到自己的 endpoint。
 
-## 实测二：选择准确率，我没能复现下降
+## 历史记录二：小型探针未显示下降
 
 同一组实验里，我每隔一组就问 8 个需要**精确选到某个工具**的问题，看选对率：
 
@@ -38,46 +38,44 @@ status: drafting
 | 44 | 8/8 |
 | 86 | **8/8** |
 
-（实测数据，`deepseek-flash`，2026-10-08。8 个核心工具始终存在，所以每题都有正确答案。）
+（2026-10-08 DeepSeek 兼容端点历史摘要：据称每档使用同一组 8 道题，8 个候选工具始终可选。原始问题、逐次响应、端点精确标识和 scorer 未留存，因此不能复核样本映射或判分。）
 
-**到 86 个工具为止，一次都没选错。**
+旧摘要报告这四档均为 8/8。它说明这组小型探针当时没有记录错选；没有逐次响应与可复核 scorer，不能据此声称模型在 86 个工具下普遍不会选错。
 
-> 这里要说清楚我第一次实验的失误：我最初按「3 个工具 / 8 个 / 20 个 / 43 个」分组，用的是同一套问题。结果 3 个工具那组只有 3/8 —— 因为问发票、优惠券、运单时，**那些工具根本没提供**，模型只能挑个最近的。那不是选择失败，是题目超出了工具集。**对照组必须有正确答案，否则测的是别的东西。** 这是本次写作里的第五个测量缺陷。
+> 一份更早的历史记录称：最初的 3 工具组只有 3/8，且发票、优惠券、运单工具未包含在候选集。原始调用记录未留存，无法复核数字；但方法论仍成立：若正确工具不在候选集，就不能把该题作为工具选择错误计分。**每个比较组都应保证相同题目有可用答案，或明确报告不同分母。**
 
-换成「核心固定、只加干扰」之后，结果就是上面那样：8/8 到底。
+后续历史摘要称改成「核心工具固定、只增加干扰项」后得到上表结果；缺少原始轨迹，本轮不能复核。
 
-## 实测三：语义重叠也没能动摇它
+## 历史记录三：语义重叠探针
 
 「相似工具互相干扰」这条看起来最有可能成立，我单独测了：
 
-**5 个工具都在查订单**（`search_orders` / `find_order` / `query_orders_by_status` / `list_recent_orders` / `get_order_detail`），问同一个问题 5 次：
+旧摘要称这组使用 5 个语义重叠的订单工具（`search_orders` / `find_order` / `query_orders_by_status` / `list_recent_orders` / `get_order_detail`），并重复同一问题 5 次：
 
 ```text
 find_order / find_order / find_order / find_order / find_order
 → 出现 1 种选择，稳定
 ```
 
-（对照组是 3 个语义清晰可分的工具，同样 5/5 稳定。）
+（旧摘要另报 3 个语义清晰工具的对照为 5/5；原始轨迹未归档，本轮无法确认响应和判分。）
 
-**没有出现摇摆。** 如果歧义真的严重到影响行为，至少应该看到几次不同的选择。
+旧摘要称五次都选了 `find_order`。重复同一问题的五条记录不能证明语义重叠通常不会造成干扰；本轮没有原始轨迹可供确认。
 
-## 实测四：动词相近的成对工具 —— 有信号，但被别的东西污染了
+## 历史记录四：动词相近工具的探索性探针
 
 最后一组我做得更狠：8 个**动词相近**的订单工具（`get_order` / `update_order` / `cancel_order` / `close_order` / `refund_order` / `reopen_order` / `archive_order` / `restore_order`），问 5 个只差一个动作的问题。
 
-得分只有 **1/5** —— 看起来终于复现了。但逐条看下去，故障原因各不相同：
+旧摘要报告 5 题中有 1 题与作者预期工具不一致；这不是可复核的 scorer 结果：
 
-| 问题 | 实际选择 | 我的期望 | 真实原因 |
+| 问题 | 旧摘要记录的选择 | 旧答案键 | 作者当时的解释（未复核） |
 |---|---|---|---|
 | 订单 ORD-9001 现在是什么情况？ | `get_order` | `get_order` | ✅ |
-| 客户不要了，把这单退了吧。 | **未调用** | `refund_order` | 模型**先追问确认**（不可逆操作） |
-| 这单已经处理完了，收尾一下。 | **未调用** | `close_order` | 问题里**没给订单号** |
-| 我需要改一下收货地址，订单 ORD-9001。 | `get_order` | `update_order` | ❗**真正的选择错误** |
-| 之前归档的那个订单我要再看，ORD-9001。 | `get_order` | `restore_order` | ❓「我要再看」本来就是查询，我的答案键有争议 |
+| 客户不要了，把这单退了吧。 | 未调用 | `refund_order` | 旧摘要解释为追问确认；原始轨迹缺失 |
+| 这单已经处理完了，收尾一下。 | 未调用 | `close_order` | 旧摘要解释为缺少订单号；原始轨迹缺失 |
+| 我需要改一下收货地址，订单 ORD-9001。 | `get_order` | `update_order` | 旧摘要归类为错选；未复核响应与 scorer |
+| 之前归档的那个订单我要再看，ORD-9001。 | `get_order` | `restore_order` | 旧摘要也承认题意可能支持查询；答案键未定 |
 
-**5 题里只有 1 题是货真价实的选择错误。** 另外两题是模型按前几节观察到的习惯「先追问」（不可逆操作 + 缺必填参数），一题是我的答案键本身站不住。
-
-**5 题里只有 1 题是货真价实的选择错误。** 另外两题是模型按前几节观察到的习惯「先追问」（不可逆操作 + 缺必填参数），一题是我的答案键本身站不住。
+旧摘要的作者复盘把 5 题分成：1 次直接错选、2 次未调用并解释为追问、1 题答案键有歧义，以及表格中剩余的 1 次匹配。由于原始逐次响应、工具轨迹和 scorer 未归档，这些分类无法独立复核；1/5 不应作为该组的准确率或错误率。
 
 ### 答案键必须唯一且可机判
 
@@ -86,24 +84,24 @@ find_order / find_order / find_order / find_order / find_order
 1. **唯一** —— 只有一个工具是正确的；
 2. **可机判** —— 能用字符串比较判对错，不需要人来读输出。
 
-上面第 5 题恰好违反了唯一性：「之前归档的那个订单我要再看」—— 期望是 `restore_order`，但 `get_order` 同样能回答「这个订单现在怎么样」。模型选 `get_order` 不算错，是我的题目有歧义。改法是把意图钉死到只有一个工具能满足：
+从旧摘要保存的文字看，「之前归档的订单我要再看」没有明确表达要恢复状态；若工具契约中 `get_order` 能查询归档订单，那么 `restore_order` 不是唯一答案。因为原始完整工具定义未归档，这里只能把它作为答案键歧义的可能来源。要验证恢复操作，应明确要求改变状态，例如：
 
 | | 题目 | 唯一答案 | 为什么唯一 |
 |---|---|---|---|
 | ❌ 有歧义 | 之前归档的那个订单我要再看。 | `restore_order`？（有争议） | `get_order` 也能满足「再看」 |
 | ✅ 无歧义 | 把已归档的订单 ORD-9001 恢复为进行中。 | `restore_order` | 要改状态，`get_order` 不产生任何状态变更 |
 
-**复核方法（别用同一套直觉检查同一套直觉）：** 把题目和完整工具集交给另一个模型，问「所有能达成这个目标的工具编号，列出全部」。如果它给出两个以上，这题的答案键就要改，或者题目要改。这一步比人工复核便宜，也比「我觉得应该选它」可靠。
-所以这一组的真实结论只能说这么远：**动词相近的工具确实会带来困惑**（至少出现了一次选错），但我的实验设计不足以量化它 —— 它被「模型会先追问」这个行为淹没了。
+**复核方法：** 把题目和完整工具集交给独立评审者，让它列出所有可能满足目标的工具，帮助发现歧义。另一个模型也会犯错，不能把它当答案键 oracle；最终要依据工具契约和业务意图确认题目是否只有一个可接受动作。
+因此不能从这组 5 题估计动词相近工具的影响。旧摘要最多提出一个待验证假设：相似动作名和问题意图可能需要更清晰的 schema、消歧问题与独立评测。
 
 <Mermaid
   chart={`
 flowchart TB
-    T["工具数量增加"] --> C["成本：线性增长<br/>约 60 token 每个工具<br/>每轮都要付"]
-    T --> A["准确率：本组实测未下降<br/>8 → 86 个工具都是 8/8"]
-    T --> D["动词相近时出现困惑<br/>但样本不足以量化"]
-    C --> R["这是分组按需加载的<br/>主要理由"]
-    A --> R2["防误用不靠减数量<br/>靠描述边界与结构消除歧义"]
+    T["工具定义增加"] --> C["请求总 input 上升<br/>本历史样本的边际约 55"]
+    T --> A["选择质量：8 道历史探针报告 8/8<br/>原始轨迹缺失，不能外推"]
+    T --> D["动词相近组的作者复盘<br/>缺轨迹，待独立评测"]
+    C --> R["测量上下文、缓存与<br/>实际账单后再选策略"]
+    A --> R2["不能用减少工具数<br/>代替清晰契约与授权校验"]
 `}
 />
 
@@ -115,11 +113,11 @@ flowchart TB
 2. 从最小可用工具集开始，逐步加工具，每加一组测一遍选对率
 3. 同时记录 token 成本
 
-**两边一起看**：成本一定会涨；准确率涨不涨、跌不跌，只有测了才知道。假如你的准确率一直没掉，那「分组加载」对你来说就是纯成本优化 —— 那也是个正当理由，但要知道自己在优化什么。
+**两边一起看**：工具定义越多通常会增加输入上下文；具体费用依赖 token 计量、缓存和价格。选择质量则用固定探针与合适对照组测量。若测量没有显示质量收益，分组加载仍可能降低未使用工具的上下文开销，但要把额外路由调用、缓存和遗漏工具的风险一起算。
 
 ## 分组按需加载怎么写
 
-结论说「要么预设常驻上限，要么按场景分组加载」，但分组加载不能只有一句话。下面是它的最小实现，分三步：**核心工具常驻、用一个路由工具选组、按组拼 tools。**
+工具集较大时可以比较常驻全量暴露、host 预分组、按需工具发现等策略。下面是一个路由分组片段，展示核心工具常驻、模型请求组名、host 校验后拼接工具。它依赖调用方提供 client、模型配置和各工具定义，**不是独立可运行脚本**。
 
 ```python
 CORE = [get_order, list_orders]        # 几乎每轮都要用，永远在
@@ -134,7 +132,7 @@ GROUP_TOOL = {
     "name": "select_tool_group",
     "description": (
         "选择接下来要用的一组工具。先判断用户的任务属于哪一类，再选组。"
-        "不确定时选 orders —— 它覆盖最常见的订单操作。"
+        "任务不明确时不要选择写操作工具，应返回澄清或交由 host 决策。"
     ),
     "input_schema": {
         "type": "object",
@@ -144,31 +142,50 @@ GROUP_TOOL = {
 }
 
 
-def route(system: str, user: str) -> str:
-    """第 1 轮：只给路由工具 + 核心工具，让模型表达「我要换到哪一组」。"""
+def route(system: str, user: str) -> str | None:
+    """第 1 轮只给路由工具；无效/不完整选择返回 None，由 host 决定澄清或停止。"""
     resp = client.messages.create(
         model=MODEL, max_tokens=64,
         system=system + "\n如果任务需要订单/账单/物流之外的专用工具，先调用 select_tool_group。",
         tools=[GROUP_TOOL, *CORE], messages=[{"role": "user", "content": user}],
     )
-    for b in resp.content:
-        if b.type == "tool_use" and b.name == "select_tool_group":
-            return b.input["group"]
-    return "orders"                     # 没选就落到默认组
+    if resp.stop_reason != "tool_use":
+        return None
+    calls = [b for b in resp.content if b.type == "tool_use"]
+    if len(calls) != 1 or calls[0].name != "select_tool_group":
+        return None
+    value = calls[0].input
+    group = value.get("group") if isinstance(value, dict) else None
+    return group if isinstance(group, str) and group in GROUPS else None
 
 
 def tools_for(group: str) -> list:
-    """核心工具常驻 + 该场景组的工具。"""
+    """核心工具常驻 + 该场景组的工具；无效组不回退到有副作用的默认组。"""
+    if not isinstance(group, str) or group not in GROUPS:
+        raise ValueError("unknown_tool_group")
     return [*CORE, *GROUPS[group]]
 ```
 
-用法是在主循环里：第 1 轮走 `route()` 拿到组名，之后每一轮 `client.messages.create(..., tools=tools_for(group))`。
+用法是在主循环里：第 1 轮调用 `route()`。若返回 None，应停止并澄清或交给 host 决策；拿到合法组名后才调用 `tools_for(group)`。不要把解析失败静默回退到可能包含副作用工具的默认组。
 
 三个必须知道的代价：
 
-- **换组会改写 tools 前缀，缓存从第一个工具就断开**（第 3 章第 7 节）。所以一次任务里最多换一次组，别每轮重选。
-- **路由本身要花一次调用。** 任务短的时候，这一次调用的成本可能超过省下的定义 token。
+- **修改工具集合可能影响 prompt cache**，但具体失效范围由 provider 协议决定。Anthropic 当前文档允许 defer_loading 与 tool search 在需要时追加工具引用并保留工具定义前缀缓存；这不是跨 provider 能力，需核对目标 endpoint。
+- **路由本身可能要一次模型调用。** 任务短时，该调用的成本、延迟和误路由风险可能超过减少的上下文开销。
 - **核心工具必须真正常驻**，否则模型在组里找不到最常用的那几个，会绕更远的路。
+
+### 不一定要手写模型路由
+
+如果目标平台支持延迟加载工具，可以把「找工具」和「暴露完整定义」拆开。Anthropic 当前的 tool search / `defer_loading` 机制可先保留轻量搜索入口，再把命中的定义放入对话；文档说明这种 tool reference 方式不会改写已缓存的工具定义前缀。它与本节手写的 `select_tool_group` 路由不是同一实现，也不代表其他 provider 支持相同能力。[Anthropic manage tool context](https://platform.claude.com/docs/en/agents-and-tools/tool-use/manage-tool-context)、[tool use with prompt caching](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)。
+
+| 方案 | 适用点 | 需要验证 |
+|---|---|---|
+| 每轮暴露完整工具集 | 工具少、延迟优先、所有工具都可能用到 | 输入上下文与缓存成本 |
+| host 预选工具组 | 应用已知任务类型，可在代码中安全路由 | 路由规则覆盖率、授权和遗漏工具 |
+| provider 的 tool search / 延迟加载 | provider 支持时，工具很多且大部分请求只需少数工具 | endpoint 能力、搜索质量、加载时延、缓存命中 |
+| programmatic tool calling | 主要瓶颈是多次工具往返和中间结果进入上下文 | 是否支持、沙箱和最终结果校验；它不等于减少工具定义 token |
+
+不要把某一条路由方案预设为效果最优；先测目标任务里的总输入、缓存、延迟、误选和漏选。
 
 ### 它和 3.8 的 skill 两阶段是同一个模式
 
@@ -178,10 +195,10 @@ def tools_for(group: str) -> list:
 | 选择层放在哪 | 一段索引文本 | 一个 `select_tool_group` 工具 |
 | 选中后加载什么 | skill 正文（指令） | 该组的工具定义 |
 | 省的是什么 | 正文 token | 工具定义 token |
-| 共同代价 | 多一轮往返；换组/换 skill 会改前缀、断缓存 | 同左 |
+| 共同代价 | 可能增加一次路由往返；工具集变化对缓存的影响依 provider 与加载机制而定 | 同左 |
 | 共同前提 | 选择层的描述要能区分，否则选错 | 同左 |
 
-认清这一点很有用：**你不需要为「skill 加载」和「工具分组」各写一套机制** —— 它们都是「常驻索引 + 按需加载正文」，区别只在加载的是指令还是工具定义。
+skill 两阶段加载和工具分组在结构上都可用「常驻索引 + 按需加载」思考，但协议、缓存、授权与错误处理并不相同，应沿用各自平台的机制。
 ## 完整可运行代码
 
 ```python
@@ -189,82 +206,195 @@ def tools_for(group: str) -> list:
 """审计工具集的成本与选择准确率。
 
 两个输出：
-  1. 工具定义的 token 单价（用来估算每轮固定开销）
+  1. 同设置请求间的总输入 token 差值（按 provider 口径解释）
   2. 选对率随工具数的变化（用来判断是否需要分组加载）
 """
 
-import json
 import os
 
 import anthropic
 
+API_KEY = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+if not API_KEY:
+    raise RuntimeError("set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")
+MODEL = os.environ.get("VERIFY_MODEL")
+if not MODEL:
+    raise RuntimeError("set VERIFY_MODEL to the model id supported by your endpoint")
+
 client = anthropic.Anthropic(
-    api_key=(
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    ),
+    api_key=API_KEY,
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
-MODEL = os.environ["VERIFY_MODEL"]
 
-TOOLS: list[dict] = [...]  # 你真实的工具定义
-
-# 探测问题：每条都必须能在**完整工具集**里找到唯一的正确答案，
-# 否则测出来的不是选择能力，是题目超出了工具集（本节踩过的坑）。
-PROBES: list[tuple[str, str]] = [
-    ("帮我找一下「蓝牙耳机」这个商品的信息。", "search_products"),
-    # ...
+# 把你的探针目标对应工具放在前 4 个位置；扩大规模时只在其后追加干扰工具。
+TOOLS: list[dict] = [
+    {
+        "name": "search_products",
+        "description": "按商品关键词检索商品目录。",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "get_price",
+        "description": "查询一个商品当前价格。",
+        "input_schema": {
+            "type": "object",
+            "properties": {"product_id": {"type": "string"}},
+            "required": ["product_id"],
+        },
+    },
+    {
+        "name": "check_inventory",
+        "description": "查询指定商品的库存数量。",
+        "input_schema": {
+            "type": "object",
+            "properties": {"sku": {"type": "string"}},
+            "required": ["sku"],
+        },
+    },
+    {
+        "name": "lookup_order",
+        "description": "按订单号查询订单状态。",
+        "input_schema": {
+            "type": "object",
+            "properties": {"order_id": {"type": "string"}},
+            "required": ["order_id"],
+        },
+    },
 ]
 
+# These synthetic distractors make the default 4/8/16 comparison executable.
+# Replace them with real, task-relevant tool definitions for an actual evaluation.
+TOOLS.extend(
+    {
+        "name": f"unrelated_demo_{index:02d}",
+        "description": f"处理 U-{index:02d} 的独立演示项目；与商品、库存、订单探针无关。",
+        "input_schema": {
+            "type": "object",
+            "properties": {"reference": {"type": "string"}},
+            "required": ["reference"],
+        },
+    }
+    for index in range(1, 13)
+)
 
-def tool_tokens(tools: list[dict]) -> int:
-    resp = client.messages.create(
-        model=MODEL, max_tokens=16, tools=tools,
-        messages=[{"role": "user", "content": "hi"}],
-    )
-    u = resp.usage
-    # 三项之和 —— 只读 input_tokens 会被自动缓存误导（第 0 章）
-    return (
-        (u.input_tokens or 0)
-        + (u.cache_read_input_tokens or 0)
-        + (u.cache_creation_input_tokens or 0)
-    )
+# 每题在所有待比较的工具子集中都必须有唯一正确答案；这些四个目标放在核心前缀里。
+PROBES: list[tuple[str, str]] = [
+    ("帮我找一下「蓝牙耳机」这个商品。", "search_products"),
+    ("查询商品 P-100 的当前价格。", "get_price"),
+    ("SKU-100 还有多少库存？", "check_inventory"),
+    ("订单 O-100 的状态是什么？", "lookup_order"),
+]
+REPEATS = 5  # 每题重复采样；真实评测还需扩大并代表目标任务分布的题集。
+MAX_MODEL_CALLS = 85  # 四档规模的上限：4 * 4 * 5 次评分 + 4 次测量 + 1 次基线。
+
+
+def request_input_usage(tools: list[dict]) -> tuple[int, int, int]:
+    request = {
+        "model": MODEL,
+        "max_tokens": 16,
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    if tools:
+        request["tools"] = tools
+    resp = client.messages.create(**request)
+    usage = getattr(resp, "usage", None)
+    if usage is None:
+        raise ValueError("response is missing usage")
+    values = []
+    for field in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+        if not hasattr(usage, field):
+            raise ValueError(f"usage.{field} is unavailable; do not treat it as zero")
+        value = getattr(usage, field)
+        if value is None and field != "input_tokens":
+            value = 0
+        if type(value) is not int or value < 0:
+            raise ValueError(f"usage.{field} must be a non-negative integer")
+        values.append(value)
+    # Keep uncached, cache-read, and cache-write counts visible; sum them only for total input.
+    return tuple(values)
+
+
+def validate_probe_coverage(tools: list[dict]) -> None:
+    available = {
+        tool.get("name") for tool in tools
+        if isinstance(tool, dict) and isinstance(tool.get("name"), str)
+    }
+    missing = sorted({expected for _, expected in PROBES if expected not in available})
+    if missing:
+        raise ValueError(f"missing expected tools from candidate set: {missing}")
 
 
 def accuracy(tools: list[dict]) -> tuple[int, list[str]]:
+    validate_probe_coverage(tools)
+    if REPEATS < 1:
+        raise ValueError("REPEATS must be at least 1")
+
     ok, misses = 0, []
-    for question, expected in PROBES:
-        resp = client.messages.create(
-            model=MODEL, max_tokens=2000, tools=tools,
-            messages=[{"role": "user", "content": question}],
-        )
-        picked = next((b.name for b in resp.content if b.type == "tool_use"), None)
-        if picked == expected:
-            ok += 1
-        else:
-            misses.append(f"{picked or '未调用'}(应 {expected})")
+    for probe_index, (question, expected) in enumerate(PROBES, 1):
+        for trial_index in range(1, REPEATS + 1):
+            resp = client.messages.create(
+                model=MODEL, max_tokens=2000, tools=tools,
+                messages=[{"role": "user", "content": question}],
+            )
+            label = f"probe_{probe_index}_trial_{trial_index}"
+            if resp.stop_reason != "tool_use":
+                misses.append(f"{label}:incomplete(stop_reason={resp.stop_reason})")
+                continue
+            calls = [block for block in resp.content if block.type == "tool_use"]
+            if len(calls) != 1:
+                misses.append(
+                    f"{label}:" + ("no_tool_call" if not calls else f"multiple_tool_calls({len(calls)})")
+                )
+                continue
+            if calls[0].name == expected:
+                ok += 1
+            else:
+                misses.append(f"{label}:{calls[0].name}(expected {expected})")
     return ok, misses
 
 
 if __name__ == "__main__":
-    print(f"{'工具数':>6} {'定义 token':>11} {'每工具':>8}   选对率")
-    print("-" * 52)
+    if not TOOLS or not PROBES:
+        raise ValueError("fill TOOLS and PROBES before running")
+    sizes = sorted({min(n, len(TOOLS)) for n in (4, 8, 16, len(TOOLS))})
+    planned_calls = len(sizes) * len(PROBES) * REPEATS + len(sizes) + 1
+    if planned_calls > MAX_MODEL_CALLS:
+        raise ValueError(f"planned {planned_calls} model calls exceeds MAX_MODEL_CALLS={MAX_MODEL_CALLS}")
+    # Validate every comparison group and the call budget before making even the baseline request.
+    for n in sizes:
+        validate_probe_coverage(TOOLS[:n])
 
-    # 逐步加工具：4、8、16、全部
-    for n in (4, 8, 16, len(TOOLS)):
+    print(f"{'工具数':>6} {'总输入':>10} {'未缓存':>10} {'缓存读取':>10} {'缓存写入':>10} {'相对基线':>10} {'边际/工具':>10}   固定探针命中")
+    print("-" * 106)
+    print(f"本次最多调用模型 {planned_calls} 次（含输入量测量）；按目标 endpoint 预算后再运行。")
+
+    baseline_usage = request_input_usage([])
+    baseline = sum(baseline_usage)
+    previous_n, previous_total = 0, baseline
+    for n in sizes:
         subset = TOOLS[:n]
-        tok = tool_tokens(subset)
+        usage = request_input_usage(subset)
+        total = sum(usage)
+        overhead = total - baseline
+        marginal = (total - previous_total) / (n - previous_n)
         ok, misses = accuracy(subset)
         note = "" if not misses else "  " + " ".join(misses[:3])
-        print(f"{n:>6} {tok:>11} {tok // n:>8}   {ok}/{len(PROBES)}{note}")
+        uncached, cache_read, cache_write = usage
+        print(
+            f"{n:>6} {total:>10} {uncached:>10} {cache_read:>10} {cache_write:>10} "
+            f"{overhead:>10} {marginal:>10.1f}   {ok}/{len(PROBES) * REPEATS}{note}"
+        )
+        previous_n, previous_total = n, total
 
-    print("\n注意：如果子集里缺了某题的正确答案，那一题的结果没有意义 ——")
-    print("     要么只统计『答案在子集内』的题，要么固定核心只加干扰项。")
 ```
 
-> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+> **实跑状态**：上方历史表格来自 2026-10-08 的直接 HTTP 请求摘要，但原始请求/响应和 endpoint 标识未归档，现不能独立重放。上面的 Python 示例是新的 Anthropic SDK 测量脚本，本轮以 FakeClient 离线检查预算/题目预检、token usage 拆分、评分分支和路由错误输入，**没有调用官方 endpoint**。默认内置 4 个目标工具与 12 个合成干扰工具，因此实际会比较 4/8/16 个候选；若使用 4 个探针和每题 5 次重复，计划 64 次请求。选择评分只检查“恰好一个 `tool_use` 且名称命中”，不校验参数正确性或端到端任务质量；真实评测需替换成实际工具与代表性题集、预先定义接受条件并按任务/风险分层。token 量会分别显示未缓存输入、缓存读取与缓存写入，再相加估算总输入；缺失必需 usage 字段会报错。预算与所有组的答案覆盖检查发生在首次 API 请求之前。运行需安装 `anthropic`，设置 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN`、`VERIFY_MODEL`；兼容 endpoint 可选设置 `ANTHROPIC_BASE_URL`。
 
-## 没有硬上限，只有账单
+## 历史端点在 600 个工具的单次请求中没有返回错误
 
 工具多到一定程度，会不会有个硬性上限把你拦住？我试了三档：
 
@@ -274,43 +404,44 @@ if __name__ == "__main__":
 | 200 | 200，正常调用 | 6077 |
 | 600 | 200，正常调用 | 17661 |
 
-（实测数据，`deepseek-flash`，2026-10-08，每个工具的 schema 都极简。）
+（2026-10-08 DeepSeek 兼容端点历史摘要；请求/响应与精确 endpoint 标识未归档，每个 schema 据称都极简。）
 
-**没有任何一档被拒绝。** 工具数量膨胀不会以「报错」的形式出现，它只会以**账单和延迟**的形式出现：600 个工具一次请求就要 17661 个输入 token，而且按本节的结论，**这笔钱每一轮都要再付一次**。
+旧摘要报告 64、200、600 个工具各有一次 HTTP 200，最后一档记录 17,661 个请求总 input token。它只说明这些单次请求当时未被拒绝，不能证明 endpoint 没有更低的限制，也没有测量延迟或普遍账单。其他 provider 和模型版本可能有不同限制。
 
-这条的工程含义比「选择准确率会不会下降」更硬：
+工程上应将 provider 的请求限制和本地预算分开核实：
 
-- 你不会收到任何警告 —— 系统照常工作，只是慢而且贵
-- 报错容易被发现，成本曲线不容易被发现，它需要你主动去算，或者有按 token 计费的监控
-- 所以「什么时候该收敛工具数量」**不能等指标来提醒**：要么预设常驻上限（比如单轮不超过 20 个），要么按场景分组加载
+旧摘要只报告这三档请求当时返回 200；没有测延迟，也没有检查所有 endpoint 限制。生产环境应查目标 provider 的当前请求限制，按预算、上下文容量和质量评测设置工具集策略，并监控 token usage 与实际费用。
 
-- 你不会收到任何警告 —— 系统照常工作，只是慢而且贵
-- 报错容易被发现，成本曲线不容易被发现，它需要你主动去算，或者有按 token 计费的监控
-- 所以「什么时候该收敛工具数量」**不能等指标来提醒**：要么预设常驻上限（比如单轮不超过 20 个），要么按场景分组加载
-
-**怎么持续监控单价。** 工具定义那部分的成本可以精确拆出来：同一个请求发两次，一次带完整 `tools`、一次带空 `tools`，两次输入 token 的差就是工具定义的成本。每次请求都打这两个点，按天看趋势：
+**怎么在自己的 endpoint 估算边际输入量。** 比较带工具和不带工具的请求时，要保持模型、提示、消息与采样设置一致；总输入可按未缓存、缓存读取和缓存写入字段相加。差值估算的是这两种请求在该 endpoint 下的输入差，不是通用定价；计费还要按当前缓存价格和供应商规则换算。
 
 ```python
 def tools_overhead(usage_with: object, usage_without: object) -> int:
-    """工具定义每一轮固定吃掉多少输入 token（三项之和，见第 0 章）。"""
-    def total(u: object) -> int:
-        return (
-            (u.input_tokens or 0)
-            + (u.cache_read_input_tokens or 0)
-            + (u.cache_creation_input_tokens or 0)
-        )
+    """相同调用设置下，两次请求总输入 token 的差值；不是普遍价格。"""
+    def total(usage: object) -> int:
+        counts = []
+        for field in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"):
+            if not hasattr(usage, field):
+                raise ValueError(f"usage.{field} is unavailable")
+            value = getattr(usage, field)
+            if value is None and field != "input_tokens":
+                value = 0
+            if type(value) is not int or value < 0:
+                raise ValueError(f"usage.{field} must be a non-negative integer")
+            counts.append(value)
+        return sum(counts)
+
     return total(usage_with) - total(usage_without)
 ```
 
-把这个差值除以工具数，就是**你自己那套描述的单价**（本节实测是约 60 token 一个，那是极简 schema 的值）。描述写得越详细，这个数字越大 —— 而它每一轮都付。所以它是「该不该收敛工具数量」唯一需要盯的指标。
+把差值除以新增工具数，可得到这两次请求之间的**样本边际输入变化**。它受固定提示、工具定义、模型 tokenizer、缓存状态和 endpoint 计量口径影响；本节旧摘要约 55 token/新增工具只描述那组历史请求，不能当作 schema 单价或通用账单。费用还需按该 provider 当前缓存读写价格换算。是否分组应同时看总输入、缓存、路由调用、延迟、误选/漏选与质量，不能由单一 token 数决定。
 ## 常见坑
 
-**以为「工具多了效果一定变差」。** 本节的两次设计里，8 → 86 个工具选对率始终是 8/8，语义重叠的 5 个工具也没出现摇摆。**确定会变差的是成本，不是准确率** —— 至少在这组测试里是这样。
+**把历史小样本当作规律。** 旧摘要称 8 到 86 个工具的四档均为 8/8，另有 5 次语义重叠探针；原始请求、响应和 scorer 缺失，不能支持普遍准确率结论。输入长度会随工具定义增加，缓存与账单影响需按目标 provider 单独核对。
 
 **对照组里没有正确答案。** 我第一次按「3 / 8 / 20 / 43 个工具」分组，用同一套问题，结果 3 个工具那组只有 3/8 —— 因为**那些工具压根没提供**。测选择能力时，每题的正确工具必须在工具集里。
 
-**把「没调用工具」当成选错。** 本节的动词组里，两题「未调用」其实是模型在追问（缺必填参数、或不可逆操作要先确认）—— 这是第 4 节观察到的行为，不是选择失败。**看轨迹要看全过程，不要只看最后选了哪个。**
+**把所有非匹配结果都算成错选。** 无工具调用、多工具调用、拒绝、截断和参数不合法是不同结果。先检查完整 stop_reason 与 tool-call 集合，再按预先定义的规则分类。旧摘要中两题未调用被解释为追问，但由于原始轨迹缺失，本轮无法确认。
 
 **为了省成本而分组，却不为质量而分组。** 如果测下来准确率没掉，分组加载就是纯成本优化 —— 这是个正当理由，但别把它说成「为了效果更好」。
 
-**工具描述写得越长越好。** 实测约 60 token 每个工具是**我这套描述**的单价。描述写详细了，单价轻松翻倍 —— 而这份开销每轮都要付。
+**把总请求 token 当成纯工具单价。** 估算工具定义边际开销时，要从相同设置的带工具请求中扣除基线请求，并报告缓存读写及输入字段；样本表中的总 input token 不能直接除以工具数。

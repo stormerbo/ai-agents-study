@@ -11,7 +11,7 @@ export const chapter = {
   outcomes: [
     '能根据规模与运维需求，判断一个检索场景要不要上向量库',
     '能在装框架之前先算出它会动到哪些已有依赖',
-    '能用真框架跑通一个最小 agent，并说清它替你解决了什么、没解决什么',
+    '能用真实框架搭一个最小状态图，并区分工作流骨架、Agent 循环、检查点与外部副作用',
     '能把审批与进度做成界面，并说得出为什么不需要客户端状态',
   ],
   depth: 'guided',
@@ -45,7 +45,7 @@ export const chapter = {
       chapterId: 'tooling',
       slug: 'retrieval-stack',
       title: '工具地图（一）：检索链路',
-      summary: '向量库、embedding、切分工具 —— 什么时候需要它们，什么时候一段矩阵乘法就够。',
+      summary: '按检索模态、数据规模和实际负载选择词法检索、embedding、ANN 与重排；历史基准不作为通用阈值。',
       estimatedMinutes: 18,
       difficulty: 'intermediate',
       hasBody: true,
@@ -57,17 +57,41 @@ export const chapter = {
           basis: 'inferred',
           question: '为什么不能只问「哪个向量库好」？',
           answer:
-            '因为选型问题的真正形式是**「我的规模落在哪一侧」**。本站实测（1311 块语料、512 维）：numpy 暴力检索一次查询 **0.02 毫秒**，而 chromadb 是 **0.83 毫秒** —— 后者慢了 40 倍，因为它每次调用有自己的开销。放大到合成向量后交叉点出现在 **1 万到 5 万之间**（1 万时 numpy 0.83ms 仍快于 chromadb 1.50ms；5 万时 chromadb 4.58ms 对 1.73ms 反超）。所以「哪个向量库好」是个错问题；「我的 N 有多大、要不要过滤/更新/持久化」才决定答案。',
+            '向量库只适用于选定向量检索路径的需求；如果用 BM25 等词法检索，不需要 embedding 或向量数据库。本站 2026-10-09 的一次历史单机基准（当时 1311 块、512 维、CPU、Chroma 默认 HNSW 配置）里，numpy 0.02ms 和 Chroma 0.83ms 的历史摘要不能直接证明快 40 倍：配套代码的 NumPy 只取 top-1、Chroma 返回 top-5，合成规模比较还使用不相同的重复次数/统计值；逐次延迟未归档。它不评估语义质量或 ANN 召回。当前示例已让两边都取 top-1，预热一次后以 11 次测量的中位数比较方法，并输出模型设备；它不复现历史表。选型要按自己的检索模态、数据规模、质量、过滤、更新、持久化和目标硬件实测。',
         },
         {
           id: 'embedding-local-vs-api',
           basis: 'inferred',
           question: '本地 embedding 和调 API，该怎么选？',
           answer:
-            '先量本地那一侧的成本。本站实测 `BAAI/bge-small-zh-v1.5`（512 维）：**246 块/秒**，1311 块编码 5.3 秒，向量共 2.6 MB —— 而且是**一次性**的（建完索引就不用再编）。这个数字决定了判断：如果语料规模在万级、且不频繁重建，本地的吞吐完全够用，而它换来的是**零网络依赖、零按量计费、数据不出机器**。反过来，如果语料在百万级、或者需要多语言/长文本的特殊能力，API 的模型质量与免运维才划得来。注意判据里没有「哪个更准」—— 那需要在你的数据上评测（第 6 章那套），不该靠别人给的榜单。',
+            '本站一次离线 CPU 批量运行中，`BAAI/bge-small-zh-v1.5`（512 维）对 1311 块编码 5.3 秒（246 块/秒，向量矩阵约 2.6 MiB）。该数值只适用于原机器、模型、批大小与语料；后续新增或更新文档仍可能需要编码，不能视为一次性成本。它不能证明线上持续编码无需 GPU，也不能据此断言本地一定够快或托管 API 更值得。应按目标更新频率、并发、质量、资源和数据边界比较本地与获批托管方案。',
+        },
+        {
+          id: 'retrieval-modalities-and-rerank',
+          basis: 'documented',
+          sourceIds: ['sentence-transformers-retrieve-rerank', 'openai-embeddings-create'],
+          question: '检索是否一定需要 embedding？cross-encoder 能否直接用于小语料？',
+          answer:
+            '不一定。Sentence Transformers 文档将第一阶段召回描述为可选词法检索（例如 Elasticsearch）或 bi-encoder 稠密检索；cross-encoder 对 query-document pairs 共同打分，在大语料上逐对打分通常很慢，因此常先召回候选再重排。对小语料可以直接逐对打分，例如单文档段落搜索示例。此策略是工程折衷，不等于对所有语料都有更高质量或可接受延迟。',
+        },
+        {
+          id: 'embedding-dimensions-are-model-specific',
+          basis: 'documented',
+          sourceIds: ['openai-embeddings-create'],
+          question: 'embedding 输出维度能否随意调整？',
+          answer:
+            '不能跨模型或 API 一概而论。OpenAI 的 text-embedding-3 系列支持在请求中指定 dimensions；其他模型/endpoint 需查各自文档。本节的 bge-small-zh-v1.5 示例输出 512 维。查询和文档向量必须使用兼容的模型及维度；切换后应重建索引，并在代表性数据上重测检索质量与成本。',
+        },
+        {
+          id: 'benchmark-top-k',
+          basis: 'documented',
+          sourceIds: ['chroma-python-collection-query'],
+          question: '为什么基准比较前要让向量库和暴力检索返回相同数量的结果？',
+          answer:
+            'Chroma 的 `collection.query` 用 `n_results` 指定每个查询返回的近邻数。本节把它设为 1，与 NumPy `argmax` 的 top-1 对齐；不同 top-k 的延迟结果不能直接比较。',
         },
       ],
-      resourceIds: ['langchain-docs'],
+      resourceIds: ['sentence-transformers-retrieve-rerank', 'openai-embeddings-create', 'openai-embeddings-faq', 'faiss-index-guide', 'chroma-python-collection-query'],
     },
     {
       id: 'tooling/orchestration-stack',
@@ -83,27 +107,44 @@ export const chapter = {
       checkpoints: [
         {
           id: 'version-constraint',
-          basis: 'inferred',
+          basis: 'documented',
+          sourceIds: ['pypi-langgraph-1-2-14', 'pypi-langchain-0-3-7', 'pypa-packaging-version', 'pip-user-guide', 'pip-install-cli'],
           question: '为什么「装一个框架」是选型里被低估的一步？',
           answer:
-            '因为它会动到你已经装好的东西 —— 而那个影响在需求文档里看不到。本站实测：环境里是 `langchain-core 0.3.63` + `langchain 0.3.7`，而 `langgraph 1.2.14` 要求 `langchain-core<2,>=1.4.7` —— **冲突**（`pydantic>=2.7.4` 对 2.9.2 则兼容）。直接装会把 langchain-core 升到 1.x，于是 langchain 0.3.7 坏掉，而第 13 章那些绑在 0.3.63 上的实测结论也失去可复现性。解法是**独立 venv**：框架可以试，但不许污染已验证过的环境。这条经验对后端工程师不新鲜 —— 新鲜的是一开始就要把它算进选型成本。',
+            'PyPI 精确发行元数据显示，`langgraph 1.2.14` 要求 `langchain-core>=1.4.7,<2`，而 `langchain 0.3.7` 要求 `langchain-core>=0.3.15,<0.4`，两个区间没有交集；`pydantic 2.9.2` 满足两者声明的 Pydantic 范围。2026-10-09 的已装环境版本是历史记录，原始 pip resolver 输出没有归档，因此不能声称本轮重现了安装过程。pip 文档说明分次安装可能破坏未列入本次目标的已装包；应对完整项目约束做 dry run，并在隔离环境验证。直接约束比较示例用第三方 `packaging`，不替代 resolver。',
         },
         {
           id: 'observability-what',
           basis: 'inferred',
           question: '可观测性平台解决的是哪一刻的问题？',
           answer:
-            '它解决的是**「线上出问题、你不在场」**那一刻。自己写轨迹（第 15 章那四个字段）能让**你在场时**定位到具体哪一步；而平台补的是另外三件：跨请求的聚合（哪些输入模式在失败）、留痕与共享（别人能看你看到的那次轨迹）、以及时间轴上的对比（这次变差是从哪个版本开始的）。所以判据是**「出问题的时候，除了你还有谁会来看」**：只有你一个人看，自己写就够了；有值班、有交接、有多个服务，那平台的价值立刻出现 —— 因为它把「你脑子里的上下文」变成了「别人能打开的东西」。',
+            '自建轨迹可以记录一次运行发生了什么；符合需求的平台可能提供跨运行聚合、共享与版本比较，但功能、数据保留和访问控制因产品而异。是否采用平台，除团队协作外，还要看数据敏感边界、保留期限、集成成本、可用性与预算。',
+        },
+        {
+          id: 'trace-data-minimization',
+          basis: 'documented',
+          sourceIds: ['opentelemetry-semconv-guidance'],
+          question: '为什么不应默认把原始 prompt、tool 参数和结果写进 trace？',
+          answer:
+            'OpenTelemetry 的语义约定指导只记录对操作有明确价值的属性；敏感、冗长或昂贵的属性应设置为 opt-in。原始输入/输出可能含个人信息、凭据或业务敏感内容，因此先用最小化摘要，并对必要原文落实脱敏、访问控制、加密与保留期限。本规则是工程数据最小化建议，不构成法律合规结论。',
+        },
+        {
+          id: 'pip-resolver-installed-package-scope',
+          basis: 'documented',
+          sourceIds: ['pip-user-guide', 'pip-install-cli'],
+          question: '单独运行 pip install 是否保证整个当前环境仍满足依赖声明？',
+          answer:
+            '不保证。pip 文档说明，单独安装某个包时 resolver 通常只考虑本次命令列出的包及其依赖，可能使其他已安装包不再满足声明约束。对完整项目依赖清单做 dry run 可预览解析计划；该预览仍取决于 pip 版本、索引和输入约束，不能证明运行时兼容。安装后还可用 pip check 检查已安装包声明的冲突。',
         },
       ],
-      resourceIds: ['langchain-docs'],
+      resourceIds: ['langchain-docs', 'pip-user-guide', 'pip-install-cli', 'pypa-packaging-version', 'pypi-langgraph-1-2-14', 'pypi-langchain-0-3-7', 'opentelemetry-semconv-guidance'],
     },
     {
       id: 'tooling/local-models',
       chapterId: 'tooling',
       slug: 'local-models',
       title: '本地与开源模型：什么时候该自己跑',
-      summary: '不是「省钱」那么简单 —— 本地模型的三个真实理由与三个真实代价。',
+      summary: '按数据边界、离线要求和变更控制选型，并用目标任务评测质量、容量与全生命周期成本。',
       estimatedMinutes: 16,
       difficulty: 'intermediate',
       hasBody: true,
@@ -113,26 +154,42 @@ export const chapter = {
         {
           id: 'why-local',
           basis: 'inferred',
-          question: '抛开成本，什么时候必须用本地模型？',
+          question: '什么约束会让本地或自托管成为候选方案？',
           answer:
-            '三个理由里只有一个是成本。**数据不能出机器** —— 这是唯一「花钱也解决不了」的理由，也是本站这个项目私有的原因之一。**离线或网络不可靠** —— 生产环境未必有稳定出口。**要固定版本** —— 托管模型的滚动更新你说了不算（第 20 章讲过这个区分）。而成本是最弱的理由：本地要自己承担 GPU、运维、以及质量可能下降带来的返工。所以判断顺序应该是「有没有前两个理由」→ 有就本地；没有 → 再算成本账，而那时托管通常赢。',
+            '先把数据处理边界、断网时必须支持的能力和可复现性要求写成可验证条件。再核对每个获批的托管产品/部署/合同是否满足条件；只有没有可接受的托管方案时，数据或网络约束才会要求自托管。版本标识也不保证底层权重和运行栈不可变。硬约束满足后，再以目标任务集比较质量、延迟、容量、运维和全生命周期成本。',
         },
         {
           id: 'local-embedding',
           basis: 'inferred',
-          question: '本地跑 embedding 是一个被低估的切入点。',
+          question: '怎样判断本地 embedding 是否适合当前负载？',
           answer:
-            '因为它**不需要 GPU**、不需要模型服务、而且是一次性的。本站实测：`bge-small-zh-v1.5` 在纯 CPU 上 246 块/秒，1311 块编码 5.3 秒，模型只有 512 维、向量共 2.6 MB。这个量级意味着「本地」的成本几乎可以忽略 —— 而它换来的是数据不出机器。所以一个实用的路径是：**生成类任务继续用托管模型，检索/分类这类「编码型」任务换成本地小模型。** 这个切分能覆盖「数据敏感」需求的一大部分，而不必一上来就自建推理服务。',
+            '用代表性语料和并发负载同时测质量、吞吐、延迟、资源和更新频率。本站一次离线 CPU 批量运行中，`bge-small-zh-v1.5`（512 维）对 1311 块耗时 5.3 秒（246 块/秒，向量矩阵约 2.6 MiB）；该数字只适用于原机器、模型、批大小与语料。新增或更新文档可能触发新的编码工作，不能视为一次性成本。它不能证明线上持续编码无需 GPU，也不能证明 embedding 比生成任务简单。再按数据边界比较本地与获批托管方案。',
+        },
+        {
+          id: 'model-rights',
+          basis: 'documented',
+          sourceIds: ['osi-open-source-ai-definition', 'huggingface-model-card-guides'],
+          question: '如何判断本地可下载模型的权重是否可用于目标产品？',
+          answer:
+            '“开放权重”不自动等于满足 Open Source AI Definition 的开放 AI 系统，也不自动回答具体商业部署、修改或再分发是否获准。OSI 的定义列出使用、研究、修改与分享自由及相关组成材料；Hugging Face 模型卡可展示许可证元数据，但标签不是法律结论。应对选定版本核对完整许可文本、可接受使用政策、署名、修改、商业使用、再分发、基座模型和依赖条款；无法确认的条件登记为风险并走组织审核，不据“开源”标签推定可用。',
+        },
+        {
+          id: 'hosted-data-boundary',
+          basis: 'documented',
+          sourceIds: ['microsoft-foundry-data-privacy', 'openai-enterprise-privacy'],
+          question: '使用托管模型是否必然意味着数据不受治理或用于训练？',
+          answer:
+            '不能一概而论。Microsoft Foundry 与 OpenAI 分别说明了各自产品边界内的数据用途、保留与配置选项；这些承诺不等于数据留在客户本地，也不能外推到其他服务、地区、功能或合同。选型时要按实际 endpoint、功能与部署配置核对数据流、存储和日志。',
         },
       ],
-      resourceIds: ['langchain-docs'],
+      resourceIds: ['microsoft-foundry-data-privacy', 'openai-enterprise-privacy', 'claude-model-deprecations', 'osi-open-source-ai-definition', 'huggingface-model-card-guides'],
     },
     {
       id: 'tooling/first-agent',
       chapterId: 'tooling',
       slug: 'first-agent',
-      title: '动手：用 LangGraph 搭一个最小 agent',
-      summary: '一个真能跑的最小 agent，以及它没替你解决的那个问题。',
+      title: '动手：用 LangGraph 搭最小状态图',
+      summary: '用离线状态图观察检查点与节点重试，明确它不是完整 Agent，也不提供外部副作用的 exactly-once 保证。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
       hasBody: true,
@@ -140,21 +197,31 @@ export const chapter = {
       keywords: ['tooling'],
       checkpoints: [
         {
-          id: 'checkpoint-boundary',
+          id: 'graph-skeleton-scope',
           basis: 'inferred',
-          question: '框架的检查点为什么防不住「重复副作用」？',
+          question: '这个示例为什么不是一个完整的 Agent？',
           answer:
-            '因为它**在节点返回之后**才写。本站实测（langgraph 1.2.14）：一个节点内先写库、再返回状态，中间注入崩溃 —— 恢复后节点重跑，库里出现了三条**相同的 u2 记录**，节点被执行 **3 次**。这不是框架的缺陷，是**检查点机制的原理边界**：它保证「已完成节点的状态不丢」，不保证「未完成节点的副作用不重」。副作用与状态落盘之间的那个窗口，任何检查点机制都覆盖不到 —— 所以第 11 章那条结论（幂等要自己写）在用了框架之后**仍然成立**。',
+            '它只有确定性节点和静态边，没有模型决策、工具调用或继续/结束判定。它演示的是 LangGraph 状态图骨架；要称作完整 Agent，还需补上模型、工具协议、宿主执行与安全边界。',
+          note: '此依据来自本节代码结构与课程中 Agent loop 的定义；示例本身不发起 provider 请求。',
+        },
+        {
+          id: 'checkpoint-boundary',
+          basis: 'documented',
+          sourceIds: ['langgraph-graph-api'],
+          question: 'LangGraph 的普通节点失败后，为什么外部副作用仍可能重复？',
+          answer:
+            '官方语义是普通图状态在 super-step 边界检查点，节点在完成前中断/失败时可能从函数开头重跑；`task` 可保存已完成任务的结果，但图检查点本身不与任意外部系统共享事务。本节固定脚本在 LangGraph 1.2.14 中复现了同进程节点异常后 3 次执行、测试列表出现 3 条相同业务键。这个本地列表不是数据库，不能代表进程重启、生产 saver 或真实外部服务。要处理外部副作用，仍需使用业务幂等键、事务、接收端去重或结果对账。',
         },
         {
           id: 'framework-value',
-          basis: 'inferred',
-          question: '那用框架换来了什么？',
+          basis: 'documented',
+          sourceIds: ['langgraph-persistence', 'langgraph-graph-api', 'owasp-authorization-cheat-sheet'],
+          question: '同一个 thread_id 是否足以恢复进程重启前的图状态？',
           answer:
-            '换来的是**「已完成部分」的可靠性与可运维性**：状态的结构化管理、跨进程恢复（把检查点换成数据库即可）、流式输出、以及可视化。第 11 章那个手写循环能跑，但它的状态是你自己序列化的、恢复语义是你自己定的、并发与时序的坑要自己趟。所以框架的价值不在「帮你写 agent 逻辑」（那部分它给得很少），而在**把状态与恢复这套基础设施标准化**。判断要不要用它，就问一句：**你的 agent 需不需要跨进程恢复和多人协作运维？** 不需要，手写更清楚；需要，框架省下的正是最难自己写好的那一层。',
+            '不够。`thread_id` 用于定位 thread 的检查点；跨进程恢复还要求持久化 checkpointer 与正确的部署配置。`InMemorySaver` 把检查点放在 RAM，进程重启后会丢失。thread ID 也不是身份凭证：服务端仍需校验用户、租户与任务的访问权限。长期跨 thread 的应用数据属于 store/业务存储，不等于当前 thread 的检查点。',
         },
       ],
-      resourceIds: ['langchain-docs'],
+      resourceIds: ['langchain-docs', 'langgraph-persistence', 'langgraph-graph-api', 'owasp-authorization-cheat-sheet'],
     },
     {
       id: 'tooling/agent-ui',
@@ -173,17 +240,25 @@ export const chapter = {
           basis: 'inferred',
           question: '审批界面为什么可以不需要客户端状态？',
           answer:
-            '因为**审批的四个选项本质上是四条不同的请求，不是内存里的一次选择**：同意、拒绝、修改后同意、换个方式 —— 它们各自对应一个不同的下一步，而不是「先选中再提交」。理解这一点之后，界面可以是一个纯 server component，用原生 `<details>` 折叠正文、用按钮发请求，**零客户端 JS**。好处很实际：没有水合、没有 hydration mismatch 的风险（§4.7 记录过这个坑）、也没有状态同步问题。反面例子是把它做成一个带 modal 状态、loading 状态、二次确认状态的前端组件 —— 那些状态都来自「先选中再提交」这个错误的模型。',
+            '客户端 React state 不是审批工作流状态。独立动作可由原生表单或链接提交；但 Server Component 的普通 `type="button"` 不会自动发请求，事件处理器需要 Client Component，表单可以绑定 Server Action。无论 UI 如何呈现，服务端都要逐请求认证、授权、校验，并以持久化状态处理并发、过期和未知外部结果。本站 `<ApprovalDemo />` 当前只是静态示意，按钮被禁用，不接后端。',
         },
         {
           id: 'ui-progress',
           basis: 'inferred',
           question: '进度为什么不该用百分比？',
           answer:
-            '因为**步数在 agent 里不可预知**。第 10 章实测过静态计划在分支任务上有 0/3 的成功率 —— 计划本身都不可靠，用它来算总步数就更不可靠。百分比会因此跳来跳去，而且给出虚假的精确感。更诚实的是**按动作显示**：「正在读取第 3 份文档」「等待确认发送给 zhangsan@example.com」。它具体、不会跳，而且信息量并不比百分比少。如果确实需要一个粗糙的进度感，用**可预知的阶段**（已找到资料 → 正在整理 → 准备发送），而不是用步数。',
+            '百分比只有在总工作量有稳定且可解释的分母时才有意义。动态分支、重试或可变工具调用会使分母不确定；此时展示已发生动作、当前等待或有明确语义的阶段，避免把估算值显示成精确完成度。稳定流程仍可用百分比，但不能把它当成任务成功保证。',
+        },
+        {
+          id: 'nextjs-server-form-boundary',
+          basis: 'documented',
+          sourceIds: ['nextjs-server-client-components', 'nextjs-forms-server-actions'],
+          question: 'Server Component 中的审批控件怎样在不写客户端事件处理器时提交？这是否省略服务端授权？',
+          answer:
+            'Next.js 文档说明 Server Component 可以渲染带 Server Action 的表单；表单支持渐进增强。普通 `type="button"` 不会自动提交，事件处理器属于需要 Client Component 的交互。即使表单只在登录页面渲染，Server Action 仍须在请求内单独执行认证和授权，并验证输入。该结论只描述框架交互能力，不证明本站示意组件已接入后端。',
         },
       ],
-      resourceIds: ['langchain-docs'],
+      resourceIds: ['nextjs-server-client-components', 'nextjs-forms-server-actions'],
     },
   ],
 } satisfies Chapter;

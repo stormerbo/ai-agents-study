@@ -25,31 +25,32 @@ client → notifications/initialized（我准备好了）
 
 ## 改了之后
 
-2026-07-28 把那三层都去掉了：**initialize 握手、notifications/initialized、协议级的会话（以及 `Mcp-Session-Id` 这类头）。**
+2026-07-28 的现代协议不再使用 `initialize` / `notifications/initialized` 握手，也不再使用协议级 session 和 `Mcp-Session-Id`。这是现代协议行为；需要兼容 2025-11-25 及更早版本的 dual-era 实现，仍要保留旧版 initialize/session 分支。
 
-取而代之的是：**每个请求自己携带它需要的一切。**
+取而代之的是：**每个现代请求都携带处理它所需的协议版本与客户端能力元数据。** 应用自己的任务状态和业务状态仍需单独管理。
 
 ```json
 {"jsonrpc": "2.0", "id": 1, "method": "tools/list",
- "params": {"_meta": {"protocolVersion": "2026-07-28",
-                      "clientCapabilities": {"elicitation": {}}}}}
+ "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                      "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}}}}
 ```
+
+如果通过 Streamable HTTP 发送，上面只是 JSON-RPC body；每个 POST 还必须带 `MCP-Protocol-Version` 与 `Mcp-Method`，两者要和 body 中的版本与方法一致。`tools/list` 不需要 `Mcp-Name`；`tools/call`、`resources/read`、`prompts/get` 还必须带与 `params.name` 或 `params.uri` 对应的 `Mcp-Name`。这些是 HTTP binding 的头，不适用于 stdio。
 
 版本和客户端能力放进 `_meta`，跟着**每一个请求**走。server 每次收到请求都自己判断一次：这个版本我支持吗？
 
-不支持就返回 `UnsupportedProtocolVersionError`。
+请求缺少必需的 `_meta` 字段时返回 `-32602 Invalid params`；版本字段存在但不支持时返回 `-32022 UnsupportedProtocolVersion`。两个错误不能混为一类。
 
-同时新增了 `server/discover`，让 server 主动声明自己支持的版本和能力 —— 因为客户端不再有「握手时问一次」的机会，需要一个显式的发现方法。
+现代协议要求 server 实现 `server/discover`，但 client **可以选择**在首个操作前调用它，也可以直接发送任意请求并处理版本错误。它是发现能力的入口，不是取代 initialize 的强制握手。只实现现代路径的 server 只能声明自己实际实现的现代版本；若要声明并接受 2025-11-25 等旧版，还必须实现相应的 initialize/session 分支。
 
 ## 我在一个最小实现里验证的机制
 
 我按这个形态写了一个一百行的 server（第 4 节），用真正的子进程管道驱动它。三个关键点都如预期：
 
 ```text
-不带 _meta 直接调 tools/list  → error  UnsupportedProtocolVersionError (-32001)
-                                      {"requested": null, "supported": ["2026-07-28", ...]}
+不带必需的 _meta 字段          → error  Invalid params (-32602)
 
-带错误的协议版本              → error  UnsupportedProtocolVersionError (-32001)
+带错误的协议版本              → error  UnsupportedProtocolVersionError (-32022)
                                       {"requested": "2020-01-01", ...}
 
 带正确版本                    → result {"tools": [...]}
@@ -57,13 +58,13 @@ client → notifications/initialized（我准备好了）
 
 （实跑数据，2026-10-09。这是按规范描述的形态自己实现的，不是对官方 SDK 的测试。）
 
-**关键观察**：同一个方法，因为请求里带的版本不同，结果完全不同。这在有状态的协议里是不可能的 —— 那里版本只在握手时检查一次，之后的请求不再重复校验。
+**关键观察**：在现代协议中，服务端会按每条请求携带的版本独立判断。对照的 legacy initialize/session 路径则在一次握手中确定该会话的协议版本；不能把这个比较推广成“所有有状态协议都只能检查一次版本”。
 
-而 `requested: null` 这个细节值得注意：不带 `_meta` 时，server 看到的是「没有版本信息」，而不是「版本为空」。它选择**拒绝**而不是猜一个默认值 —— 这个选择让「忘记带版本」这个错误立刻暴露，而不是在某个后续行为里表现出来。
+注意两类报错的区别：缺少必需的 `io.modelcontextprotocol/protocolVersion` 或 `io.modelcontextprotocol/clientCapabilities` 是无效参数；字段齐全但版本不受支持，才返回 `UnsupportedProtocolVersionError`（`-32022`），并列出支持版本。若走 Streamable HTTP，版本不支持时 transport 必须返回 HTTP 400，并在 JSON-RPC error body 中保留 `-32022` 及支持版本信息。
 
-## MRTR：服务端不再主动发请求
+## MRTR：服务端请求改为结果内的补输入
 
-这次修订里第二重要的变化，是**把服务端发起的请求改掉了**。
+这次修订里第二重要的变化，是**现代协议不再通过 server→client JSON-RPC request 通道发请求**。
 
 旧版协议里，server 可以主动向 client 发请求，主要有三类：
 
@@ -71,17 +72,24 @@ client → notifications/initialized（我准备好了）
 - `sampling/createMessage`：**借用客户端的模型**生成一段内容
 - `elicitation/create`：让客户端向用户要一个输入
 
-这是「反向调用」—— 一次交互的发起权可以在双方之间来回。
+这些操作在旧版协议中由 server 通过双向 JSON-RPC 通道发给 client，但不是脱离客户端操作、随时弹出的独立调用：SEP-2260 要求它们关联到一个正在处理的 client request。2026-07-28 将这类往返改为 MRTR；Roots 与 Sampling 在该版被标记为 deprecated，仍为旧版兼容保留。
 
 2026-07-28 把它换成了 **MRTR（多轮往返请求，Multi Round-Trip Requests）**：server 不再主动发请求，而是**把「我还需要输入」作为返回值交回去**。
 
 ```json
 {
   "resultType": "input_required",
-  "inputRequests": [
-    {"id": "confirm", "prompt": "确认给 张三 转账 5000 元？",
-     "schema": {"type": "boolean"}}
-  ]
+  "inputRequests": {
+    "confirm": {
+      "method": "elicitation/create",
+      "params": {
+        "mode": "form",
+        "message": "确认给 张三 转账 5000 元？",
+        "requestedSchema": {"type": "object", "properties": {"confirmed": {"type": "boolean"}}, "required": ["confirmed"]}
+      }
+    }
+  },
+  "requestState": "opaque-server-state"
 }
 ```
 
@@ -90,24 +98,24 @@ client → notifications/initialized（我准备好了）
 我的实现里完整跑通了这条路径：
 
 ```text
-第一次调用     result  {"resultType": "input_required", "inputRequests": [...]}
+第一次调用     result  {"resultType": "input_required", "inputRequests": {"confirm": ...}}
 补上确认后重调  result  {"resultType": "complete", "content": [{"text": "已转账 5000 元给 张三"}]}
 ```
 
-**发起权始终在客户端** —— 这是整个无状态化方向的必然结果。如果 server 能随时发起请求，那它就隐含地要求连接上存着上下文，而那正是这次修订要去掉的东西。
+线上 JSON-RPC 往返由 client 发起：server 把所需输入作为当前结果的一部分返回，client 再以新请求 ID 重试原操作。这不代表必然出现人工确认——部分 SDK 默认会自动处理 `input_required` 并重试；是否展示给用户、是否要求审批，必须由 host 的策略实现。
 
 ## 回程报文长什么样（MRTR 的另一半）
 
 上面只给了「去程」—— server 怎么把需求交回来。真正要落地的是**回程**：客户端补上输入之后那次请求到底发什么。这一步中文资料几乎都没有，下面把我自己实现里的形态完整列出来。
 
-（三段报文为示例：构造数据，未实跑；它们描述的是**本节的字段约定**，不是从规范文档逐字抄来的。接第三方 server 时以对方的规范/实现为准。）
+（三段报文为构造示例，未作为真实流量抓取；字段形态按 MCP 2026-07-28 的 MRTR schema 编写。接入扩展或厂商实现时，再核对其扩展字段和 SDK 行为。）
 
 **第一次请求。** 客户端把模型的 tool_use 转成 tools/call，带 `_meta`：
 
 ```json
 {"jsonrpc": "2.0", "id": 11, "method": "tools/call",
- "params": {"_meta": {"protocolVersion": "2026-07-28",
-                      "clientCapabilities": {"elicitation": {}}},
+ "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                      "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}},
             "name": "transfer_money",
             "arguments": {"to": "张三", "amount": 5000}}}
 ```
@@ -117,63 +125,65 @@ client → notifications/initialized（我准备好了）
 ```json
 {"jsonrpc": "2.0", "id": 11,
  "result": {"resultType": "input_required",
-            "inputRequests": [
-              {"id": "confirm",
-               "prompt": "确认给 张三 转账 5000 元？",
-               "schema": {"type": "boolean"}}]}}
+            "inputRequests": {
+              "confirm": {"method": "elicitation/create",
+                "params": {"mode": "form", "message": "确认给 张三 转账 5000 元？",
+                  "requestedSchema": {"type": "object", "properties": {"confirmed": {"type": "boolean"}}, "required": ["confirmed"]}}}},
+            "requestState": "opaque-server-state"}}
 ```
 
-**第二次请求 —— 这就是缺失的那一半。** 三个要点：**原样带回同一个 `id`**（11），它决定这次回答属于哪一问；回答按 `inputRequests[].id` 对应放进 `params.inputResponses`；一次返回多个 `inputRequests` 时，就一次把多个回答都带上。
+**第二次请求 —— 这就是缺失的那一半。** 客户端用一个**新的 JSON-RPC id**（12），因为这是独立请求；把回答按 `inputRequests` 的 map key 放进 `params.inputResponses`；一次返回多个请求时，可以在 map 中同时带回多个对应结果。server 若提供 `requestState`，客户端还必须原样回传；它是 server 定义的不透明状态，若其中内容影响安全决策，server 应保护其完整性。带 `inputResponses` 或 `requestState` 的重试请求及其结果不可缓存。
 
 ```json
-{"jsonrpc": "2.0", "id": 11, "method": "tools/call",
- "params": {"_meta": {"protocolVersion": "2026-07-28",
-                      "clientCapabilities": {"elicitation": {}}},
+{"jsonrpc": "2.0", "id": 12, "method": "tools/call",
+ "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                      "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}},
             "name": "transfer_money",
             "arguments": {"to": "张三", "amount": 5000},
-            "inputResponses": [
-              {"id": "confirm", "value": true}]}}
+            "requestState": "opaque-server-state",
+            "inputResponses": {
+              "confirm": {"action": "accept", "content": {"confirmed": true}}}}}
 ```
 
 **第二次响应。** 补齐之后才是正常结果：
 
 ```json
-{"jsonrpc": "2.0", "id": 11,
+{"jsonrpc": "2.0", "id": 12,
  "result": {"resultType": "complete",
             "content": [{"type": "text", "text": "已转账 5000 元给 张三"}]}}
 ```
 
 如果 `id` 对不上，按 JSON-RPC 的一般规则处理：当成一条无法对应的响应，记日志并丢弃，**不要把它塞进别的调用** —— 那会把一次失败的往返变成一次错误的副作用。
 
-**一次要说清楚的口径：`_confirmed` 不是规范字段。** 本节最后那份实现里，判断「客户端确认过没有」用的是 `params.get("_confirmed")` —— 那是我为了在最小实现里演示 MRTR 而**自己约定的字段**。规范里的回答应该按 `inputRequests[].id` 回填（就是上面第二次请求那个形态）。**照抄本节的 `_confirmed` 去接第三方 server 会对不上协议**；要做生产接入，字段名以对方的规范/实现为准。本节用它只是为了让「两次请求返回不同结果」这件事在一个一百行的 server 里看得见。
+**两项协议细节会影响互操作性。** `inputRequests` 和 `inputResponses` 都是以服务端分配键为索引的 map；重试必须使用新的 JSON-RPC id。服务器也不能把客户端回传的 elicitation 结果直接当作自身授权：它只是用户交互结果，具体动作仍须由服务端自己的身份与策略规则授权。
+
+如果宿主需要在用户回答前重启，应在自己的任务存储中保存原始工具名、参数、待处理的 request key 和 `requestState`；恢复时重新发起协议请求，并使用新的 JSON-RPC id。MCP 不会替 host 保存这份业务检查点。
 
 **三种不顺利的回程形态。** 客户端不总是能给出满意的回答：
 
 | 情况 | 客户端怎么做 | 结果 |
 |---|---|---|
-| 用户拒绝 | 不发第二次请求；或把决定作为回答回填（如 `{"id":"confirm","value":false}`） | server 不能把「没确认」当成「确认」，应返回已取消 / 未执行 |
-| 超时 / 拿不到回答 | 不发第二次请求，按失败回填 tool_result（`is_error: true`） | 模型看到失败，可以换一条路径或告诉用户 |
-| 只答了一部分 | 第二次请求只带已回答的那些 `inputResponses` | server 若仍缺输入，**再返回一次** `input_required`，只列还缺的那几个 |
+| 用户拒绝 | 用对应 key 回填 `{"action":"decline"}` | server 不能把拒绝当确认；应返回未执行或替代路径 |
+| 用户取消 / 未得到回答 | 回填 `{"action":"cancel"}`，或由客户端取消请求 | server 应按未完成处理，不能假设用户同意 |
+| 只答了一部分 | `inputResponses` 只带已完成的 map 项 | server 若仍缺输入，可以再次返回 `input_required`，列出仍需处理的请求 |
 
-第三种最需要设计上注意：**MRTR 可以往返不止一轮。** 收敛条件是 server 返回 `complete` 或明确报错，不是「往返了一次就结束」。
+第三种最需要设计上注意：**MRTR 可以往返不止一轮。** 收敛条件是 server 返回 `complete` 或明确错误，不是「往返了一次就结束」。
 
 ## 这对安全边界是个改善
 
-MRTR 那一节最后有个附带结论，值得单独说：**它让「服务端能不能用你的模型」这件事从「随时可发生」变成了「在明确的一轮里发生」。**
+MRTR 对 host 可见性的影响值得单独说，但不要把它误读成自动的人类审批机制。
 
-在旧版协议下，`sampling/createMessage` 是 server 主动发起的 —— 你在某个时刻会突然发现自己的模型被对方用了一次，用来干什么由对方决定。改成 MRTR 之后，同一个动作变成了：server 返回一个「我需要模型帮我生成一段内容」的请求，**你的客户端决定要不要满足它**。
-
-差别不在于能力，在于**你有了一个可以说不的时刻**。第 5 节会看到，这种「明确的决策点」是安全设计里最值钱的东西。
+旧版协议的 `sampling/createMessage` 必须关联到一个正在处理的 client request，并由 client handler 处理，并非 server 能在任意时刻偷偷触发模型。2026-07-28 把采样输入放进 `input_required` 结果；host/SDK 看到的是一项待处理输入。某些 SDK 默认会自动调用已注册的 sampling handler 并重试，因此是否展示给用户、是否允许采样、是否需要审批，仍由 host 策略决定。MRTR 让请求与原始操作的关联更清楚，但它本身不保证人工确认，也不等同于安全边界。
 
 ## 对你的代码意味着什么
 
-最直接的结论：**任何写着「先 initialize 再调用」的教程或示例代码，在这个版本上都不再适用。** 你会遇到的第一个错误就是 `UnsupportedProtocolVersionError`，因为那些代码根本不带 `_meta`。
+最直接的结论：**旧版 initialize 教程只适用于旧版连接生命周期。** 它们不能直接作为 `2026-07-28` 请求示例；支持两代协议的客户端要按传输规则识别并回退，现代客户端则必须为每个请求附上必需的 `_meta`。
 
 迁移时要注意的四处：
 
-**一、版本从「连接级」变成「请求级」。** 如果你在某个地方缓存了协商结果，那个缓存现在是错的。
+**一、版本从握手协商变成逐请求声明。** 现代协议不再依赖 server 保存连接级版本状态；client 仍可缓存 server 支持的版本/协议 era 来选择要发送的版本，但每条现代请求都必须携带自己的版本元数据。
 
-**二、会话相关的代码全部作废。** `Mcp-Session-Id`、连接级的客户端能力存储、以会话为单位的清理逻辑 —— 都可以删掉。
+**二、现代协议路径不再依赖协议级 session。** 只支持 2026-07-28 的实现可以移除 initialize 与 `Mcp-Session-Id` 处理；dual-era 服务仍须保留 legacy 分支。应用自己的授权上下文、任务状态和订阅生命周期不能因协议无状态而一并删除。
 
 **三、资源订阅换了方法。** 从 `resources/subscribe` 改为 `subscriptions/listen`（一条长连接流）。注意这是少数几个**有状态**的残留 —— 订阅本身就是一种状态，所以它被明确地隔离成一个单独的流，而不是混在普通请求里。
 
@@ -191,7 +201,7 @@ flowchart TB
     B --> B4["新增 server/discover<br/>让 server 自己声明"]
     A3 -.-> C["server 主动发请求：<br/>roots/list、sampling、elicitation"]
     C -.-> D["MRTR 替换它：<br/>返回 input_required<br/>客户端补输入后重调"]
-    D -.-> E["发起权始终在客户端<br/>→ 你有明确的「说不」时刻"]
+    D -.-> E["是否自动处理由 host/SDK 策略决定<br/>协议本身不保证人工审批"]
 `}
 />
 
@@ -200,28 +210,40 @@ flowchart TB
 
 旧版的 `initialize` 天然规定了时机：连接建立时调一次。新版没有握手，`server/discover` 变成**由你决定什么时候问**。三条落地规则：
 
-1. **首次接入时调一次**，把 `protocolVersions` 与 `capabilities` 记下来（写成配置或缓存，不是每个请求都问）。
-2. **收到 `UnsupportedProtocolVersionError` 时重查一次**，然后用交集里的版本重发 —— 这就是第 4 节说的那条修法。
-3. **`capabilities` 里的 `listChanged` 为真时**，不要永久缓存工具列表；定期或在收到变更通知后重取 `tools/list`。
+1. `server/discover` 是可选的预检，不是现代协议每次连接都必须先走的握手；也可以首个请求直接使用配置版本，再按 `UnsupportedProtocolVersionError` 的 `supported` 字段重试兼容版本。HTTP transport 还必须遵守每个 POST 的 `MCP-Protocol-Version` 请求头要求。
+2. 发现结果若缓存，遵循响应中的 `ttlMs` 与 `cacheScope`；版本支持可能随部署配置变化，缓存过期或配置变更时再刷新。
+3. `tools/list` 等 cacheable 结果必须返回 `ttlMs` 与 `cacheScope`；缓存键还要包含方法及影响结果的参数。声明 `listChanged` 时，client 可通过 `subscriptions/listen` 接收通知并立即失效缓存；TTL 与通知可并用。`public` 仅适用于对所有调用者都相同且不含用户专属数据的结果，`private` 不得跨授权上下文共享。
 
-不要每个请求都先 discover 一次：无状态化的收益之一是请求自包含，额外的发现往返会把这个收益浪费掉。
+不要每个操作都先 discover 一次：这会额外增加一次往返。
 
 ### subscriptions/listen 的消息形态
 
-前面那条「资源订阅从 `resources/subscribe` 改为 `subscriptions/listen`」需要落到报文上。它是一条长连接流：请求时声明要听什么，之后 server 持续推通知。
+前面那条「资源订阅从 `resources/subscribe` 改为 `subscriptions/listen`」需要落到报文上。客户端通过 `notifications` filter 选择事件；server 先确认实际接受的过滤条件，再沿同一条长连接流推送带 subscription ID 的通知。下面只展示 JSON-RPC body，示例未实跑：
 
 ```json
-{"jsonrpc": "2.0", "id": 21, "method": "subscriptions/listen",
- "params": {"_meta": {"protocolVersion": "2026-07-28"},
-            "subscriptions": [{"uri": "file:///team/coding-standards.md"}]}}
+{"jsonrpc":"2.0","id":21,"method":"subscriptions/listen",
+ "params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                      "io.modelcontextprotocol/clientCapabilities":{}},
+           "notifications":{"resourceSubscriptions":["file:///team/coding-standards.md"]}}}
 ```
+
+server 首先发送 acknowledgment（没有 JSON-RPC `id`，subscription id 放在 `_meta`）：
 
 ```json
-{"jsonrpc": "2.0", "method": "notifications/resources/updated",
- "params": {"uri": "file:///team/coding-standards.md"}}
+{"jsonrpc":"2.0","method":"notifications/subscriptions/acknowledged",
+ "params":{"_meta":{"io.modelcontextprotocol/subscriptionId":21},
+           "notifications":{"resourceSubscriptions":["file:///team/coding-standards.md"]}}}
 ```
 
-（两条为示例：构造数据，未实跑。）注意第二条**没有 `id`** —— 通知不是请求，收到的人不需要回。为什么必须把它单独隔离成一条流：**「我订阅了、有变化通知我」本身跨越多次交互，是一个状态。** 把它混进普通请求，就等于把刚删掉的会话状态又请回来了。
+之后的资源更新也带同一个 subscription id：
+
+```json
+{"jsonrpc":"2.0","method":"notifications/resources/updated",
+ "params":{"_meta":{"io.modelcontextprotocol/subscriptionId":21},
+           "uri":"file:///team/coding-standards.md"}}
+```
+
+注意通知**没有 `id`**；client 用 `_meta.io.modelcontextprotocol/subscriptionId` 将它关联回订阅请求。若使用 Streamable HTTP，还要在 HTTP 层附上 `Mcp-Method: subscriptions/listen` 与必需的 `MCP-Protocol-Version`；该方法不需要 `Mcp-Name`。这条 subscription stream 是跨越多个通知的显式长流，不代表普通 MCP 请求重新变成 sessionful。
 
 ### 迁移：before / after
 
@@ -245,15 +267,15 @@ VERSION = "2026-07-28"                           # 常量或配置，不再是�
 
 def send_new(method, params):
     params = dict(params)
-    params["_meta"] = {"protocolVersion": VERSION,               # ← 每个请求都带
-                       "clientCapabilities": {"elicitation": {}}}
+    params["_meta"] = {"io.modelcontextprotocol/protocolVersion": VERSION,               # ← 每个请求都带
+                       "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}}
     return send_raw(method, params)
 
 def call_tool(name, args):
     return send_new("tools/call", {"name": name, "arguments": args})
 ```
 
-差别只有三处：去掉了握手；`VERSION` 的来源从协商结果变成了常量或配置；所有请求统一在 `_meta` 里带版本与能力。**这就是「会话相关的代码全部作废」的具体含义。**
+下面的迁移片段是用于对照请求形状的伪代码摘录，不是可独立运行的 client：`send` / `send_raw` 是抽象传输函数，未展示 JSON-RPC id 分配、响应解析、错误处理或 Streamable HTTP header 构造。差别只有三处：现代请求不再依赖 initialize；版本由 client 配置并写入每个请求；client capabilities 也逐请求携带。若还需兼容 legacy peers，应保留另一条 initialize/session 路径。这个示例只展示 JSON-RPC body；使用 Streamable HTTP 时，客户端还必须发送每个 POST 所需的版本与方法头，`tools/call` 另外要发送 `Mcp-Name`。**现代协议路径取消协议级会话，不会自动取消应用级状态。**
 
 ## 为什么值得做这次修订
 
@@ -261,40 +283,41 @@ def call_tool(name, args):
 
 **第一，部署变简单了。** 无状态的 server 可以随意水平扩展、随意重启 —— 任何一个实例都能处理任何一个请求，因为它们之间没有需要保持一致的会话。这是所有无状态设计的共同收益，MCP 只是把它应用到了工具协议上。
 
-**第二，失败恢复变简单了。** 有状态的连接断了之后，那些会话数据怎么处理是一个真问题：重连吗？恢复吗？超时了怎么办？无状态之后，连接断了就是断了，下一个请求重新带一遍 `_meta` 即可。**这是把「分布式状态」这个难题整体删掉，而不是解决它。**
+**第二，服务端路由变简单了。** 对不依赖应用状态的请求，任一实例都能处理；跨请求的业务状态仍需数据库、显式 handle 或其他存储。传输中断只说明响应没完整到达，不代表 server 没执行动作；有副作用的 `tools/call` 不能因此盲目重试，更不能据此推断 exactly-once。
 
-**第三，代理和缓存变得可能。** 因为每个请求自包含，你可以把它放进队列、做负载均衡、甚至缓存那些幂等的请求。而这些在有状态的会话上都很难做。
+**第三，代理和有限缓存更容易实现。** 现代规范只为 `server/discover`、各类 list/read 等指定结果定义缓存提示（`ttlMs` 与 `cacheScope`）；这不是“所有幂等请求都能安全缓存”。客户端还必须按方法与影响结果的参数划分缓存键；`private` 响应不得跨授权上下文共享。携带 `inputResponses` 或 `requestState` 的 MRTR 重试请求及其结果不可缓存。
 
 ## 代价也很实在
 
 同一枚硬币的另一面：
 
-**每个请求都变大了。** 版本和能力信息要重复携带。这个开销在单次请求里很小（几十字节），但如果你的调用非常频繁，累积起来就不可忽略。
+**请求会重复携带协议元数据。** 实际字节数取决于 client capabilities、identity、trace context 以及 HTTP headers；此处没有测量固定的“几十字节”开销。高频场景可用真实请求量与报文大小估算。
 
 **有些东西天然是有状态的。** 资源订阅就是最明显的例子 —— 「我订阅了这个资源，有变化通知我」这个过程本身跨越多次交互。协议的处理方式不是假装它不存在，而是**把它明确隔离成一条单独的流**（`subscriptions/listen`），而不是让它污染普通请求。
 
-**服务端要重复做同一件事。** 版本校验从「握手时一次」变成了「每次请求一次」。这是把复杂度从**状态管理**转移到了**重复计算**上 —— 而后者通常更容易做对（无状态、可测试、可缓存）。
+**服务端要重复读取协议元数据。** 现代协议对每个请求校验版本与 capabilities；开销是否显著要按具体服务测量。应用授权和业务状态不能靠这项协议校验代替。
 
 **这是一次典型的架构取舍：把状态从系统里拿掉，代价是每个请求多背一点东西。** 值不值取决于你的场景 —— 而 MCP 的选择说明，在「工具生态」这个场景里它认为值。
 ## 完整可运行代码
 
-下面是最小 server 的无状态实现：版本校验在每个请求上、支持 server/discover、用 MRTR 处理需要补充输入的工具。
+下面是最小 server 的无状态实现：版本校验在每个请求上、支持 server/discover、用 MRTR 处理需要补充输入的工具。它只覆盖本节演示的 JSON-RPC request 路径和 stdio 行读取；不实现 HTTP binding、认证或异步取消，也没有接入官方 SDK。收到无 `id` 的 JSON-RPC notification 时不回响应，但这不等于完成了 `notifications/cancelled` 的取消语义。
 
 ```python
 """一个最小 MCP server（stdio + 换行分隔的 JSON-RPC 2.0）。
 
 按 2026-07-28 那版的**无状态**形态实现：
-  - 没有 initialize 握手，每个请求自己在 _meta 里带协议版本与客户端能力
-  - 版本不匹配 → UnsupportedProtocolVersionError
-  - server/discover 让 server 主动声明支持的版本
+  - 这是 modern-only server；没有 initialize 握手，每个请求自己在 _meta 里带协议版本与客户端能力
+  - 仅声明本例实际实现的现代版本；版本不匹配 → UnsupportedProtocolVersionError
+  - server/discover 返回支持的版本与服务端能力；cacheable 的 discover/tools-list 响应带 ttlMs/cacheScope
+  - 成功结果的 `_meta` 中标识 `serverInfo`；这是推荐的自我声明信息，不是认证凭据（本示例的 error response 为简洁未加该字段）
   - 需要补充输入时不主动发请求，而是返回 InputRequiredResult（MRTR）
 
 它只在**形态**上照做，没有对接官方 SDK —— 所以它验证的是协议机制本身，
 而不是「官方实现是否如此」。实跑状态：2026-10-09。
 """
-import json, sys
+import json, math, sys
 
-SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25"]
+SUPPORTED_VERSIONS = ["2026-07-28"]
 
 TOOLS = [
     {"name": "get_weather",
@@ -306,7 +329,7 @@ TOOLS = [
     {"name": "transfer_money",
      "description": "给指定账户转账（不可逆）。",
      "inputSchema": {"type": "object",
-                     "properties": {"to": {"type": "string"}, "amount": {"type": "number"}},
+                     "properties": {"to": {"type": "string"}, "amount": {"type": "number", "exclusiveMinimum": 0}},
                      "required": ["to", "amount"]}},
 ]
 
@@ -321,50 +344,108 @@ def error(req_id, code, message, data=None):
 
 
 def result(req_id, payload):
+    # 2026-07-28 规范建议每个结果都携带 serverInfo；这是自报信息，不用于安全判断。
+    payload.setdefault("_meta", {}).setdefault(
+        "io.modelcontextprotocol/serverInfo",
+        {"name": "demo-server", "version": "1.0.0"})
     return {"jsonrpc": "2.0", "id": req_id, "result": payload}
 
 
 def handle(req):
-    """处理一个请求。注意：这里是**无状态**的 —— 没有 session 对象可查。"""
+    """处理本例覆盖的 JSON-RPC 消息；不保存协议级 session。"""
+    if not isinstance(req, dict):
+        return error(None, -32600, "Invalid request")
+
     method = req.get("method")
     req_id = req.get("id")
-    params = req.get("params", {})
-    meta = params.get("_meta", {})
-    version = meta.get("protocolVersion")
+    if req.get("jsonrpc") != "2.0" or not isinstance(method, str) or not method:
+        return error(req_id if isinstance(req_id, (str, int)) and not isinstance(req_id, bool) else None,
+                     -32600, "Invalid request")
 
-    # --- 无状态化的核心：版本校验发生在**每个请求**上，而不是握手时 ---
+    # JSON-RPC notification 没有 id，也不得收到响应。本例不实现异步取消。
+    if "id" not in req:
+        return None
+    if req_id is None or isinstance(req_id, bool) or not isinstance(req_id, (str, int)):
+        return error(None, -32600, "Invalid request")
+
+    params = req.get("params", {})
+    if not isinstance(params, dict):
+        return error(req_id, -32602, "Invalid params")
+    meta = params.get("_meta")
+    if not isinstance(meta, dict):
+        return error(req_id, -32602, "Missing or invalid per-request _meta")
+    version = meta.get("io.modelcontextprotocol/protocolVersion")
+    client_caps = meta.get("io.modelcontextprotocol/clientCapabilities")
+
+    # 每条现代请求都声明版本和 client capabilities；字段类型错误是 Invalid params。
+    if not isinstance(version, str) or not version or not isinstance(client_caps, dict):
+        return error(req_id, -32602, "Missing or invalid per-request _meta fields")
     if version not in SUPPORTED_VERSIONS:
-        return error(req_id, -32001, "UnsupportedProtocolVersionError",
+        return error(req_id, -32022, "Unsupported protocol version",
                      {"requested": version, "supported": SUPPORTED_VERSIONS})
 
     if method == "server/discover":
-        return result(req_id, {"protocolVersions": SUPPORTED_VERSIONS,
-                               "capabilities": {"tools": {"listChanged": True}},
-                               "serverInfo": {"name": "demo-server", "version": "1.0.0"}})
+        return result(req_id, {"resultType": "complete",
+                               "supportedVersions": SUPPORTED_VERSIONS,
+                               "capabilities": {"tools": {}},
+                               "ttlMs": 0, "cacheScope": "public",
+                               "_meta": {"io.modelcontextprotocol/serverInfo":
+                                         {"name": "demo-server", "version": "1.0.0"}}})
 
     if method == "tools/list":
-        return result(req_id, {"tools": TOOLS})
+        return result(req_id, {"resultType": "complete", "tools": TOOLS,
+                               "ttlMs": 0, "cacheScope": "public"})
 
     if method == "tools/call":
         name = params.get("name")
         args = params.get("arguments", {})
+        if not isinstance(name, str) or not isinstance(args, dict):
+            return error(req_id, -32602, "Invalid tool name or arguments")
 
         if name == "get_weather":
-            out = TEMP.get((args.get("city"), args.get("day")), {"error": "没有数据"})
+            city = args.get("city")
+            day = args.get("day")
+            if not isinstance(city, str) or day not in ("明天", "后天"):
+                return error(req_id, -32602, "Invalid get_weather arguments")
+            out = TEMP.get((city, day), {"error": "没有数据"})
             return result(req_id, {"resultType": "complete",
                                    "content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
 
         if name == "transfer_money":
-            # MRTR：金额超过阈值时不主动发 elicitation，而是让客户端补输入后重调
-            if not params.get("_confirmed"):
+            recipient = args.get("to")
+            amount = args.get("amount")
+            if (not isinstance(recipient, str) or not recipient.strip()
+                    or isinstance(amount, bool) or not isinstance(amount, (int, float))
+                    or not math.isfinite(amount) or amount <= 0):
+                return error(req_id, -32602, "Invalid transfer_money arguments")
+
+            # 本例只演示交互往返，不会执行转账，也不把用户回答当服务端授权。
+            input_responses = params.get("inputResponses", {})
+            if not isinstance(input_responses, dict) or any(key != "confirm" for key in input_responses):
+                return error(req_id, -32602, "Invalid inputResponses")
+            response = input_responses.get("confirm")
+            if response is None:
                 return result(req_id, {
                     "resultType": "input_required",
-                    "inputRequests": [{"id": "confirm",
-                                       "prompt": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
-                                       "schema": {"type": "boolean"}}]})
+                    "inputRequests": {"confirm": {
+                        "method": "elicitation/create",
+                        "params": {"mode": "form",
+                                   "message": "确认给 %s 转账 %s 元？" % (recipient, amount),
+                                   "requestedSchema": {"type": "object",
+                                                       "properties": {"confirmed": {"type": "boolean"}},
+                                                       "required": ["confirmed"]}}}}})
+            if not isinstance(response, dict):
+                return error(req_id, -32602, "Invalid confirmation response")
+            action = response.get("action")
+            if action in ("decline", "cancel"):
+                return result(req_id, {"resultType": "complete",
+                                       "content": [{"type": "text", "text": "用户拒绝或取消；未执行（本例无真实副作用）"}]})
+            content = response.get("content")
+            if action != "accept" or not isinstance(content, dict) or content.get("confirmed") is not True:
+                return error(req_id, -32602, "Invalid confirmation response")
             return result(req_id, {"resultType": "complete",
-                                   "content": [{"type": "text", "text": "已转账 %s 元给 %s"
-                                                % (args.get("amount"), args.get("to"))}]})
+                                   "content": [{"type": "text", "text": "模拟完成：用户确认给 %s 转账 %s 元；本示例没有执行转账。"
+                                                % (recipient, amount)}]})
 
         return error(req_id, -32602, "Unknown tool: %s" % name)
 
@@ -378,10 +459,12 @@ def main():
             continue
         try:
             req = json.loads(line)
-        except Exception as e:
-            print(json.dumps(error(None, -32700, "Parse error: %s" % e)), flush=True)
+        except Exception:
+            print(json.dumps(error(None, -32700, "Parse error")), flush=True)
             continue
-        print(json.dumps(handle(req), ensure_ascii=False), flush=True)
+        response = handle(req)
+        if response is not None:
+            print(json.dumps(response, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":
@@ -390,10 +473,10 @@ if __name__ == "__main__":
 
 ## 常见坑
 
-- **照更早的教程写 initialize 握手。** 在这个版本上第一个请求就会拿到 UnsupportedProtocolVersionError。
-- **把版本当成连接级的属性缓存起来。** 无状态之后它是**每个请求**的属性，缓存它等于缓存了一个不存在的会话。
+- **把旧版 initialize 当成 2026-07-28 的握手。** 现代路径不再走 initialize；若要兼容旧 peer，必须按传输与版本规则保留 legacy 分支。
+- **把协商结果当成连接级的现代协议状态。** 客户端可以缓存支持版本的发现结果，但现代请求仍须各自携带协议版本元数据。
 - **以为「无状态」等于「不能有长连接」。** 资源订阅（subscriptions/listen）就是一条长连接流 —— 它是显式隔离出来的有状态部分。
 - **在 server 里主动向 client 发请求。** 应该返回 input_required，让客户端补输入后重调。
-- **以为本节实现里的 `_confirmed` 是协议字段。** 它是本节为演示自造的；规范的回填按 `inputRequests[].id` 对应（见上面的回程报文）。
+- **把用户输入当作服务端授权。** `inputResponses` 证明客户端回传了交互结果；真实动作仍须由服务端独立检查身份、资源和授权策略。
 - **把「忘记带 _meta」当成默认版本。** 正确做法是拒绝 —— 让错误立刻暴露，而不是在后续行为里显现。
-- **忽略 MRTR 对安全的改善。** 「明确的决策点」是这次修订里最有价值的副产品，第 5 节会用到。
+- **把 MRTR 当作安全边界或人工审批。** SDK 可能自动满足输入并重试；是否展示、授权或审批须由 host 与 server 各自的策略保证。

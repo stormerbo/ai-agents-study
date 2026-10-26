@@ -1,0 +1,125 @@
+---
+lesson: capstone/acceptance
+title: 最终验收：让证据替项目说话
+status: drafting
+---
+
+综合项目的验收不是“服务启动成功”，也不是测试数量够多。它要证明一个人从干净环境可以安装、配置、启动、执行任务、处理审批、恢复故障、评测模型变化，并能向接手者解释哪些能力已经验证、哪些仍未知。本节把设计文档的验收矩阵变成可交付的验收包和答辩脚本。
+
+机器裁决有五种结果：`ready-for-human-acceptance`（必需材料齐全且结构门禁通过，可进入人工验收）、`blocked`（至少一个已提交 gate 记录失败）、`incomplete`（仍缺必需 gate）、`insufficient-evidence`（含 unverified 或不符合要求的证据类型）、`invalid-report`（报告或证据结构/定位/hash 无效）。矩阵还会逐 gate 标出 `missing`、`failed`、`unverified`、`passed`、`invalid-report` 或 `not-evaluated`。机器门禁只负责整理证据和挡住明显缺口，不会替团队批准上线。
+
+## 交付包是什么
+
+交付包至少包含：
+
+| 产物 | 必须回答的问题 | 可核查证据 |
+|---|---|---|
+| 可复现仓库 | 干净环境如何安装、配置、启动？ | 锁文件、启动命令、依赖版本、运行记录 |
+| 系统说明 | 为什么需要 Agent，哪些步骤其实是固定 workflow？ | 边界图、状态机、工具清单和取舍记录 |
+| 数据与权限 | principal 从哪里来，授权在哪一层执行？ | 身份链、对象/租户负例、授权撤销记录 |
+| 任务与副作用 | 审批绑定什么，未知结果如何对账？ | action 参数 hash、outbox、接收方回执和故障记录 |
+| 评测 | 质量、成本、延迟怎样比较？ | 数据集版本、基线、逐条差异、端点与 usage |
+| 运维 | 出现限流、worker 退出、备份恢复问题怎么办？ | runbook、恢复演练时间线、停止与回滚条件 |
+| 交接 | 未参与开发的人能否独立验证？ | 交接者记录、卡点、修订后的文档版本 |
+
+测试结果必须带定位符，能指向 CI run、轨迹、日志片段、SQL 核对结果、报告或签字记录。只有“本地通过”而没有命令、版本、日期和结果文件的，不算可交付证据。对真实用户资料的负例用合成或脱敏数据；记录证据时不得泄漏 API Key、个人资料或客户消息。
+
+## 按硬门槛验收
+
+下面矩阵承接项目设计里的验收场景。每一项都写状态、证据类型、可定位的产物和一句观察结论。安全相关项只要失败，不能用其他项的通过抵消。
+
+| ID | 场景 | 通过条件 |
+|---|---|---|
+| `live_model_normal` | 真模型正常任务 | 至少一次真实模型工具往返，有事件、usage、出处和结果 |
+| `invalid_tool_args` | 工具参数非法 | 执行前拒绝，无成功副作用 |
+| `midflow_approval` | 流程中途审批 | 任务挂起，后续动作未运行，待办可恢复 |
+| `restart_after_approval` | 审批后重启 | 从持久化动作和原参数继续 |
+| `concurrent_approval` | 重复/并发批准 | 一个 outbox 操作、一个接收端效果 |
+| `revoked_identity_or_changed_args` | 撤权或参数变化 | 旧审批失效，无越权执行 |
+| `delivery_race` | 投递和取消/撤权竞争 | 领取前可阻止；领取后诚实报告未知或已发生 |
+| `cross_tenant_retrieval` | 跨租户检索 | 越权资料和事件不进入上下文/响应 |
+| `http_timeout_single_task` | HTTP 等待超时 | 仍返回同一任务 id，只有有效执行者 |
+| `lease_expiry_fencing` | 租约过期 | 新 owner 接管，旧 epoch 写入被拒绝 |
+| `external_response_lost` | 外部成功后丢响应 | 对账恢复回执，不重复动作 |
+| `receiver_without_idempotency` | 接收端无幂等/查询 | 暂停自动动作并要求人工确认 |
+| `cancel_before_after_claim` | 投递前后取消 | 领取前无副作用，领取后反映已发生/待核实 |
+| `rate_limit_and_budget` | 限流和预算不足 | 退避受预算/deadline 限制，无无限重试 |
+| `stream_cut_usage_unknown` | 断流且缺 usage | 保留未知消耗，单独预留重试预算 |
+| `delete_and_acl_revoke` | 删除文档与 ACL 撤销 | 旧索引/缓存不再返回越权材料 |
+| `refusal_truncation_partial_tool_failure` | 拒绝、截断、部分工具失败 | 分别分类，不伪装 completed |
+| `provider_migration` | 模型/端点升级 | 有契约与质量回归，差异和不支持项留档 |
+| `official_blind_holdout` | 正式隐藏集验收 | 外部授权、候选/镜像/scorer 绑定、单次消费记录与独立评分齐全；公开 fixture 不可代替 |
+
+此列表不是要求每项都用同一种测试。纯状态转换适合单元测试；数据库约束和并发批准需集成测试；真实模型至少要有一次受控在线往返；质量迁移需要固定数据集上的配对评测；人工可读性与交接要由独立读者完成。材料应标明每种证据覆盖到哪一层，避免拿离线 fixture 证明真实模型能力。
+
+当前仓库预先冻结了一个 bounded smoke case：合成订单查询后，经人工审批发送通知。`live_model_normal` 只有在订单查询成功、通知 action 成功、数据库中的批准记录与原 action 参数及资源/ACL/policy 版本一致，并且最终输出和每轮 usage 均有效时才能通过。报告绑定 smoke case id 与 dataset hash；它只说明某个端点、模型和这条合成任务完成过一次，不是质量率或生产可靠性证明。**实跑状态（2026-10-20）：未通过。** DeepSeek Messages 兼容端点实际完成两轮调用，订单和政策只读检索成功；模型随后提出通知动作，调用报告快照记录任务停在人工审批（`waiting_approval`）。单独保存的终态快照则记录 task 为 `failed`、approval 与 `send_notice` action 为 `cancelled`；不能把 task 状态写成 cancelled。报告的最终输出状态为 `not_completed`（最终输出没有生成），验收 registry 仍为 `incomplete`。现有材料没有成功的通知工具结果或送达回执，也没有独立 sink 接收日志；因此它没有证明通知已发送，但也不能据此断言 sink 从未收到请求。该次运行证明了有限的真实模型往返和审批暂停路径，不证明 `live_model_normal` 成功，也不代表质量率或生产可靠性。原始报告及终态快照保存在忽略目录 `verify-output/stage5-live/5f394310-aaae-4043-aac1-7cd9a3f42fd1/`；当前观察摘要与输入文件 SHA-256 登记在 W6 审计结果中。离线测试本身不发真实 provider 请求。
+
+## 机器门禁与本地报告
+
+### 正式盲测的证据链
+
+`official_blind_holdout` 不是把仓库里的 `holdout.json` 再跑一遍。正式运行的冻结规格必须同时绑定 holdout 版本、唯一 `run_id`、owner 的 `authorization_event_id`、候选源码与镜像、数据集、评分器和执行器的 SHA-256，以及精确十进制字符串形式的费用上限、样本数、输出大小上限和 UTC 截止时间。为了避免“事件 ID 参与规格 hash、却要授权后才能拿到 ID”的循环，owner 先生成 `authorization_event_id`，把它写进规格并算出 hash，再用这个 ID 提交授权。执行器在预约前核对本地候选/评分器/执行器身份；外部 registry 必须原子地把完整规格 hash 绑定到 reservation，不能只接受候选自己提交的一组字段。
+
+这里说的“登记后端”，就是一个由组织控制的服务：运行前保存授权和冻结规则，发放一次性运行编号，并记录开始、结束或中止事件；候选只能拿到作答所需的测试输入，拿不到答案和评分标签。冻结规格还要记录 owner、executor、recovery operator 的稳定身份系统 subject ID；三个角色必须是不同身份，避免授权、运行和异常恢复都由同一主体控制。owner ID、executor ID 和 recovery operator ID 不含姓名、邮箱或凭据。预约成功后，runner 在启动 candidate 前核对 registry 返回的脱敏授权/预约两条事件：角色应分别是 owner/executor，actor ID 应与冻结 subject ID 一致，run 与组件 hash 必须匹配 frozen spec，预约事件必须指向授权事件，时间有序且 payload hash 与内容一致。任一字段不符就不调用 candidate。这个本地检查只能发现响应内部矛盾，不能证明外部服务真的认证了 actor、事件不可篡改或 hash 由可信 registry 计算。candidate runtime 每次只收到非语义 attempt id、本次冻结的测试输入、截止时间和剩余预算字符串；它看不到 case id、参考答案、评分标签或评分器输入。测试输入在运行前仍是保密数据，但运行时会交给候选及其调用的模型以便作答。runtime 必须把剩余预算转换成 provider 单次请求硬限制，并能强制终止超时进程。执行器先收集所有候选输出，再把私有标签交给独立 scorer。输出上限还有一道容易误解的边界：当前 `max_output_bytes` 的本地检查发生在 `candidate.execute` 返回之后，能拒绝过大的 JSON，但不能防止适配器在返回前先把超大响应读入内存。正式隔离 runtime 必须在 IPC/流式读取时最多接收上限加 1 字节，超限立即终止候选；返回后的检查只是第二道结构校验，不是资源隔离证明。授权规格还必须在运行前冻结质量门槛、停止条件、预算、样本与输出上限、截止时间和所有组件身份；质量门槛包括最低任务数、最低通过率（整数 basis points，0–10000）及是否要求全任务通过。停止条件至少覆盖预算超限、deadline、真实副作用、权限边界破坏、证据缺失、标签泄露和身份不符，可再添加更严格条件。执行器输出 `official-blind-holdout-run-result-v4`；完整验收材料包使用 `official-blind-holdout-evidence-envelope-v6`，后者由运行结果、独立取回的 registry 事件链和 gate 元数据组成，因此两个 schema 不能混作同一个 artifact。v6 中每条事件都要带可验证签名回执；验收器还会从已 pin 的状态源查询最新撤销状态，并在遇到已撤销 key 的历史回执时从独立 anchor source 查询精确回执锚。若冻结规格选 `single-authority-v1`，验收依赖 append authority 与签名密钥托管域作为信任根；若威胁模型包含其中任一方被攻破或串通，则必须选 `dual-witness-v1`。双见证路径要求每条权威事件都有独立 witness 回执，并从 verifier 配置的来源读取最新回执链、校验来源身份/作用域/新鲜度、签名和前序关系，再把终态回执摘要与独立 handoff 记录核对。代码和测试 fixture 已接入本地 `acceptance.decide`，但这不证明 witness 真正独立读取日志或属于不同管理域。当前仓库提供的是本地验证接口和测试 fixture，不是已认证的线上状态/锚/witness 服务；本地 SQLite sequence floor 也不能抵御管理员回滚。当前本地 runner 尚未生成这层正式材料包。执行器结果携带完整 frozen spec、规范化 SHA-256、`passed_tasks`、按整数运算推导的 `pass_rate_bps`、原始门槛与 `quality_decision`。`report_sha256` 是对规范化结果正文（不含验收包装层与 registry 事件快照）的 hash；终态 registry event 必须保存同一个 digest，验收器从正文重算并比对终态事件，发现报告改写或事件未绑定。`authorized → reserved → terminal` 三类事件还必须按 `previous_event_id` 首尾相连，不能只依赖数组顺序。聚合 `metrics` 对象含样本数、通过数、通过率、冻结阈值、总 token usage 和成本，验收器重新计算其规范化 hash 并逐字段核对，不能只检查 hash 字符串格式。最终门禁会从报告中的规格内容重新计算 hash，并核对授权、预约、终态事件上的同一 hash；只比较三处相同字符串不足以证明规格内容没被改。这里的 `decision=completed` 只表示流程结束，不能代替质量结论。最终门禁重算通过率和阈值关系，拒绝自相矛盾的报告。费用字段也必须是十进制字符串；JSON 整数或浮点数不能进入最终门禁。
+
+`reserve` 返回的题面读取 capability 可以理解成**一次性门禁钥匙**：它只交给受信 executor，绝不能交给 candidate，也不能写进事件、日志或报告。钥匙必须短时有效，并绑定唯一 run、冻结的 candidate/image、dataset 版本和受信 runtime；它只允许 runtime 读取本次固定样本的题面，不允许读取标签或其他 run。registry 要原子地完成“预约成功”和“给唯一 runtime session 发钥匙”，并保证并发预约最多一人成功；钥匙只能兑换一次，不能在 `reconcile` 中重新取回。若 reserve 已成功但响应丢失，或 runtime 没有在有效期内接收钥匙，就走受限 `recover_abort` 并消耗该版本额度，不能重发钥匙或换 executor。
+
+对接真实登记服务时，不能只跑本地 fake 测试。还要用两个并发 executor 竞争同一预约、丢弃预约成功响应、重放或越权使用 capability、让 executor 与 recovery operator 同时写终态，并在事件提交前后重启服务。每次都要重新读取服务端持久状态，确认只发生一次预约/终态、未授权方读不到题面或标签、日志不含密钥，而且提交后的事件不会因重启丢失或改写。任何一项不能证实，就先不要消耗正式盲测额度。
+
+如果 reserve 或终态写入的响应丢失，先按 `run_id` 查询 registry。若 registry 显示仍是 `authorized` 且事件序列里没有 reservation，才可按原授权重试 reserve；`not_found` 表示授权事件本身不存在，不能据此直接预约。若已经 `reserved`，但响应里没有返回题面读取 capability，就不能再运行候选，也不能把题面权限转给另一执行器。外部服务需要提供受限的 `recover_abort`：只有独立 recovery operator 能调用，而且 registry 从受信运行时审计源核实证据、确认 candidate 从未启动时，才可追加 `aborted` 终态；不能只相信 operator 自己提交的证据链接和 hash。如果 candidate 可能启动过或无法证明未启动，就拒绝清理状态，先隔离运行时并调查。未知的尝试数、usage 和费用必须保持未知，不能填零。若要重放终态写入，只能使用原 terminal event id 和完全相同的 payload；不能重新执行候选或释放这次盲测额度。`reconcile` 的返回只能是脱敏事件字段和 payload hash，不能带题面、标签、原始输出或 capability；payload hash 只用于检查内容有没有变化，不是签名或真实性证明。仓库里的 `RegistrySnapshot` 只是外部查询结果的数据结构，fake registry 的测试不证明数据库真的 append-only、响应真的可信或题面权限真的隔离。`official_holdout.py` 仍未接入可信外部 registry、隐藏数据 custodian、隔离 runtime 或独立 scorer，不能证明隐藏集已被消费，离线测试也不是正式盲测证据。完整实现边界与协议记录在 Stage 5 设计计划中。
+
+[`acceptance.py`](../../../examples/capstone-acceptance/acceptance.py) 固定了 19 个 gate id，包含 `official_blind_holdout`。它在受控 evidence root 下核对实际文件、hash、provenance 和来源类型，并通过 `build_acceptance_matrix()` 把每项列为 `missing`、`failed`、`unverified`、`passed`、`invalid-report` 或 `not-evaluated`。若一个 gate 失败，其他缺失项仍会单独显示；公开 fixture 不能满足正式 holdout。矩阵明确标注 `authenticated: false`，因为本地结构校验无法证明外部 registry 真实、实际执行发生或人工签署有效。所有证据齐全也只返回 `ready-for-human-acceptance`，而不是自动发布。
+
+**实跑状态（2026-10-23）：** 在本地运行下面的离线 acceptance 测试，81 项通过。这些测试验证证据门禁和矩阵分类，不包含真实 provider 请求、真实 blind holdout、外部 registry 认证或独立人工审批。将关键 gate 标为 failed 后裁决为 `blocked`；漏掉 holdout 时矩阵仍显示 `missing`；fixture 冒充 holdout 时显示 `unverified`；通过率与冻结门槛矛盾、质量门槛/必需停止条件脱离冻结规格、规格 hash 与规格正文不符、指标正文与其 hash 不一致、报告正文 hash 与终态 registry event 不符、registry 的 `previous_event_id` 链断裂，或盲测中断却声称已消费时，报告会被拒绝或标为 `unverified`。中断报告不要求伪造完整评分指标，但必须有匹配的 aborted 终态、尝试数和失败类型，且状态不能提升为 pass。
+
+```text
+$ uv run --frozen --project examples/p4-durable-support python -m unittest discover -s examples/capstone-acceptance -p test_acceptance.py -v
+Ran 81 tests
+OK
+
+one failed hard gate -> blocked
+missing evidence -> incomplete
+fixture for live model gate -> insufficient-evidence
+```
+
+本地 acceptance report 会附上逐项矩阵。下面是**构造数据**，只展示一个已通过结构校验的 integration gate；`artifact` 是 evidence root 下的相对路径，运行时还要对实际文件与 hash 做核验：
+
+```json
+{
+  "gate_id": "external_response_lost",
+  "required_kind": "integration",
+  "evidence_kind": "integration",
+  "evidence_status": "passed",
+  "artifact": "artifacts/external-response-lost.json",
+  "state": "passed"
+}
+```
+
+`state: passed` 仅表示本地结构门禁接受了该 artifact，不证明真实数据库行为、provider 执行或 reviewer 身份。报告里的 `authenticated: false` 是刻意保留的限制。locator 必须解析到 evidence root 内的文件，不能用 `ci://` 等 URI 代替实际 artifact；原始证据还要包含可核对的 run/release provenance、提交和时间。
+
+<Mermaid
+  chart={`
+flowchart TD
+  A[干净环境启动与版本核对] --> B[自动单元/集成门禁]
+  B --> C{硬 gate 全通过且证据齐吗}
+  C -->|失败| D[blocked：修复后重跑]
+  C -->|缺失/fixture| E[insufficient-evidence：补真实证据]
+  C -->|通过| F[独立接手者按文档复现]
+  F --> G{答辩能引用轨迹与代码吗}
+  G -->|否| H[补文档/实现，重新交接]
+  G -->|能| I[ready-for-human-acceptance]
+  I --> J[人工验收与发布决定]
+`}
+/>
+
+## 独立交接和能力答辩
+
+找一位没有参与实现的人，从干净环境开始，只按 README 和运行手册完成：安装依赖、准备本地配置、启动服务、跑离线测试、提交合成订单请求、在中途审批、重启后续跑、触发一次外部结果未知的恢复、查看评测与成本报告。记录实际耗时、每次卡点、需要作者口头解释的地方；交接者不能靠作者提示继续。发现的问题修正文档后，再找人复跑关键路径。
+
+答辩不检查术语背诵，而要求用轨迹、代码或状态记录回答：为何用 Agent，哪些步骤固定为 workflow；模型如何无法越过授权入口；审批究竟批准了哪组参数；外部状态未知时为什么不直接重试；如何区分检索失败和生成失败；怎样证明模型迁移没有破坏关键契约。答不出就说明证据链或系统边界仍不清楚。
+
+项目是否满足“真实可运行”必须看目标环境：在线真模型请求、数据库恢复、跨进程接管、MCP 互操作和独立交接都需要各自的证据。当前仓库的 SQLite 演示或 fixture 结果可以帮助读者理解设计和测试判据，但不能被包装成最终项目已验收。验收结论应逐项给出 `passed`、`failed` 或 `unverified`，在所有硬 gate 通过且证据够用之后，再由项目负责人作发布决定。
+
+### 本节验收
+
+提交一份 19 项矩阵、可定位证据包、真实模型往返记录、干净环境启动说明、独立交接记录和答辩答案；硬 gate 不得失败，未知能力要留在 `unverified` 清单中。所有门禁通过只代表可进入人工验收，不自动批准公开发布。

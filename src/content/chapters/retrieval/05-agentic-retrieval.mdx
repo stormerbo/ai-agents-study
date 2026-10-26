@@ -6,45 +6,39 @@ status: drafting
 
 前面四节把检索当成一条**固定管线**：查询进来、召回、重排、送进上下文。这条管线什么时候跑、跑几次，都是你的代码决定的。
 
-另一条路是把它反过来：**把检索做成一个工具，让模型自己决定要不要查、查什么、查几次。** 这就是 agentic retrieval。它听起来更「智能」，很多框架也默认这么做。
+“Agentic retrieval”没有一个跨论文与框架完全统一的边界。本节把相关设计拆开，避免混为一谈：固定检索；先改写查询再检索一次；根据查询或风险选择不检索/检索一次/多步检索；以及用前一轮证据决定下一轮查询的迭代检索。一次改写不等于多跳检索，模型调用检索工具也不自动等于多轮推理。
 
-所以我量了一下它到底好多少。结果和我预期相反。
+研究里的实现也不都只是给通用 API 加一条 prompt。Adaptive-RAG 用复杂度分类器在不检索、单步和多步策略间选择；Self-RAG 则训练模型生成检索与反思标记。这些论文结果只适用于各自模型、数据集和实验设置，不能直接推出你的服务该让模型自行决定检索。见 [Adaptive-RAG](https://aclanthology.org/2024.naacl-long.389.pdf) 与 [Self-RAG](https://arxiv.org/abs/2310.11511)。
 
-## 实测：三种形态的对照
+本节保留 2026-10-08 的本地历史记录作为待核实线索，再用一个不调用模型的可运行夹具讲清控制流和失败边界。
 
-用同一批 10 条口语化查询（就是第 3 节里词法检索全军覆没的那批），三种做法：
+## 历史对照：三种形态的旧记录（未独立复核）
 
-- **臂 A**：原问题直接拿去检索（固定管线，不做任何处理）
-- **臂 B**：让模型把问题改写成 3 条检索词，检索一次，合并结果
-- **臂 C**：把检索做成工具，让模型自己决定查什么、查几轮，上限 3 轮
+旧记录声称使用同一批 10 条口语化查询，并对三种做法各运行 3 次。原始 query 清单、语料版本、金标证据、逐轮请求/响应、排序与 scorer 均未归档；它与前一节相同的 10 条 query 也无法由现存记录核对。因此下面是**不可独立复核的历史摘要**，不是本站当前夹具或已重放实验：
 
-每种做法跑 3 轮，看正确答案有没有落进最终候选集：
+- **臂 A**：原问题直接拿去检索（无 query rewrite）
+- **臂 B**：让模型把问题改写成 3 条检索词，再合并检索结果
+- **臂 C**：允许模型提出检索 query 或 DONE，最多 3 轮
 
-| 做法 | 命中（3 轮） | 平均 | 调用次数 | 输入 token | 输出 token |
+下表保留旧表原值。`命中（3 轮）`指三次重复记录，不是 top-3；其余列的汇总窗口也未确认：
+
+| 旧记录的做法 | 命中记录（三次） | 旧表均值（分母未核实） | 调用数（窗口未知） | 输入 token（口径未知） | 输出 token（口径未知） |
 |---|---|---:|---:|---:|---:|
 | A 原问题直接检索 | 0 / 0 / 0 | **0/10** | 0 | — | — |
 | B 改写查询后检索一次 | 6 / 5 / 8 | **6.3/10** | 10.0 | 754 | 4,276 |
 | C 多轮自主检索 | 3 / 4 / 3 | **3.3/10** | 18.7 | 5,660 | 7,527 |
 
-（实跑数据，2026-10-08，`deepseek-flash`。token 为三项之和，含缓存命中部分。）
+（旧记录自述于 2026-10-08 使用 `deepseek-flash`；调用数、token 数是单次、均值还是三次合计，以及缓存 token 的口径均无法由原始数据确认。）
 
-表格里的「命中」指的是**正确答案所在的小节落进了最终候选集**（章节级口径，见第 4 节）。如果换成「答案在哪一篇」这种粗口径，三种做法的差距会被抹平 —— 这是第 4 节那个坑的又一次出现，所以每次报指标都要写清楚口径。
+旧记录把命中定义为正确答案所在小节进入最终候选集，但金标、候选生成、最终候选深度和聚合方式没有留档。即使暂按表中数字解读，也不能由此说查询改写通常有效、agentic 方法较差，或差异由“模型选择不查”导致：A/B/C 同时改变了模型调用、查询数量、控制策略、历史上下文和可能的候选合并方式，缺少公平的配对设计。
 
-三件事同时发生了：
+不要用这张表作成本预测。特别是旧记录中的输入 token 比值 `5,660 / 754` 只有在二者统计口径、运行次数、缓存 usage、最终答案调用与所有轮次完全一致时才可比较；当前资料无法验证这些前提。
 
-1. **原问题直接检索：一条都没命中。** 这验证了第 3 节的结论 —— 用户不会用你文档里的词。
-2. **让模型改写一次查询：命中率从 0 涨到 6.3/10。** 这是最大的一步改进，成本只有 10 次调用。
-3. **让它自己决定查几次：反而掉到 3.3/10**，而且调用次数几乎是 B 的两倍、输入 token 是 B 的 7.5 倍。
+## 一个可复现的控制流失败
 
-第 3 点需要解释。如果「自主」意味着更聪明，为什么它会比「改写一次」更差？
+如果控制器只接受 `SEARCH: ...`，并把任何其他输出都解释为 `DONE`，模型拒绝、格式错误、截断或临时错误都可能被误记成“正常结束”。这是一种协议设计风险；它不能证明旧实验中发生过多少次，也不能证明模型当时是在“自认为知道答案”。
 
-## 原因：它经常选择不查
-
-我把臂 C 每一轮实际发出的查询词打了出来。**「不查」的判定很机械：模型这一轮的输出里没有 `SEARCH:` 这一行，就按 DONE 记账**（下面代码里的 `if not m: break`）。10 条里有 **平均 3.3 条从头到尾一次检索都没发** —— 模型第一轮就直接输出了 DONE。
-
-也就是说，**它自认为知道答案，于是不查。** 而这些问题的正确答案恰恰不在模型的参数里（它们是我自己文档里的实测结论）。
-
-这件事在小规模上可以直接复现。下面这段代码跑的是一模一样的循环逻辑，输出就是当场的轨迹（`命中` 是检索返回的文档 id，`多跳` 问的是「这一轮用到了上一轮的结果吗」）：
+旧记录曾列出两条轨迹：一条首轮输出 DONE，一条检索一次后输出 DONE。由于逐次请求/响应未归档，它们是未复核摘要。下面的本地脚本用固定 FakePlanner 重现这类**控制流形状**，不模拟模型判断，也不测回答质量。
 
 **第一条轨迹：一次都没查。**
 
@@ -61,306 +55,277 @@ status: drafting
   轮2  查询=DONE（未检索）                               命中=[]          多跳=否
 ```
 
-**第三条轨迹：真正的多轮长什么样**（**构造示例，未实跑** —— 上面两条是本节实跑输出，这一条是为了让你看见「第一轮结果决定第二轮查什么」这个唯一值得开多轮的形态）：
+**第三条轨迹：一种证据驱动的多轮形状**（构造示例，未实跑；前两条也是未独立复核的历史轨迹）：
 
 ```text
-问题: 缓存失效和重排候选集大小之间有什么关系
-  轮1  查询=缓存失效的条件              命中=[缓存]        多跳=否
-  轮2  查询=前缀改动 影响哪些后续步骤    命中=[缓存, 重排]  多跳=是  ← 查询词里的「前缀改动」来自轮1 命中的正文
-  轮3  查询=重排 候选集 上限            命中=[重排, 切分]  多跳=是  ← 由轮2 的 [重排] 续出
+问题: Plan A 退役后，它的替代方案有什么配额限制？
+  轮1  查询=Plan A replacement     命中=[migration]  多跳=否
+      证据=版本 4.2 中 Plan A 被 Plan B 替代
+  轮2  查询=Plan B quota           命中=[quota]      多跳=是
+      证据=Plan B 的每月配额为 5,000 个任务
 ```
 
-把三条摆在一起，差别不在模型强弱，而在**它有没有被迫先查一次**：第一条没查，第二条查完就满足，只有第三条是「每一跳都由上一跳的正文决定」。这也是下一小节那条设计规则的由来。
+此夹具的第二条 query「Plan B quota」由第一轮返回的正文中的实体 Plan B 决定；它只是演示数据依赖，不是模型实测，也不证明多轮优于一次检索。
 
-第一个问题，模型**一次都没查**。第二个问题它查了一次，而且查得很好 —— 命中正确段落。同一个提示词、同一个模型，差别只在于它**判断自己需不需要查**。
-
-而它对这个判断是没有依据的：要判断「我知不知道答案」，模型只能依赖自己的参数记忆，可它并不知道哪些信息在你的私有文档里。**「要不要查」这个决定，落在模型最不可靠的那一类判断上。**
-
-这和第 3 章的一个观察是同一类：模型在「状态未知」时反而谨慎，行为很难预测。**凡是把关键决策交给模型自行判断的地方，都要先量一遍它判断得准不准。**
+控制流夹具只说明“模型给出 DONE 时宿主可能停止检索”这件事。它不判断模型为什么给 DONE，也不说明首轮强制检索在所有产品里都正确。是否允许跳过检索应由任务契约决定：例如，答案必须来自私有且新鲜的资料时，可让宿主强制走授权后的检索路径；一般知识问答或已验证的无需检索任务，跳过可能是允许状态。不能只靠模型自报信心来满足权限、引用或拒答要求。
 
 ## 那什么时候该用多轮
 
-多轮检索不是没用，而是它的适用范围比看起来窄得多。它真正有优势的场景只有一类：**第一轮的结果会改变下一步该查什么。**
+多轮检索更有理由被评估的情形包括：第一轮新证据会改变查询或工具参数；问题需要跨文档聚合；或探索任务要根据中间结果逐步缩小范围。这是提出实验假设的信号，不是保证多轮更准确、更快或更便宜的判据。
 
-- **多跳问题**：「A 方案在哪个版本被废弃，替代它的是什么？」—— 第二跳的查询词只有在第一跳的答案出来之后才能确定。这类问题固定管线做不了。
-- **跨文档比对**：需要先定位两份文档，再对比。
-- **探索式任务**：用户自己也不知道要什么，需要边看边收窄。
+- **多跳事实查询**：先找出实体或版本，再据此查替代方案；验证第二步是否真的依赖第一步的结果。
+- **跨文档聚合**：比较两份或多份权威材料，需保留每条证据的来源与冲突。
+- **探索任务**：目标会随中间发现变化；需让用户确认范围或设置预算。
 
-反过来说，如果问题本身已经清楚（「退款几天到账」），多轮不会带来任何收益，只会增加轮次与不确定性。
+反过来，若任务契约要求只基于某一权威资料回答，单次检索可能足够；但仍应在目标集上检查证据覆盖、权限过滤和答案质量。更稳妥的结构通常是由宿主规定安全边界与预算，策略可选择 no-retrieval / one-shot / iterative；模型可以提出下一条查询，但不应单独决定授权范围或将失败状态伪装成 DONE。
 
-还有一条务实的中间路线值得优先考虑：**固定管线打底，把「再查一次」做成显式的工具调用，并由你设上限。** 这样既保留了多跳能力，又不会把「要不要查」整个交给模型 —— 你可以在代码里规定「第一次必须查」。
+## 多轮设计要控制哪些边界
 
-## 如果要用多轮，把它关进笼子
+旧表不足以推出通用规则。以下是可检验的工程约束，适用与否仍取决于任务契约：
 
-上面那组数据能直接推出四条设计规则：
+1. **明确何时必须检索。** 若答案必须来自私有、实时或可审计来源，由宿主根据任务类型与授权强制执行检索；若产品允许回答一般知识或无答案状态，可保留跳过路线。不要把检索授权交给模型，也不要只用模型自报信心决定能否跳过来源检查。
+2. **把硬预算放在代码里。** 限制最大模型调用数、检索次数、累计输入/输出 token、deadline 与候选总量。每轮分别做授权与 tenant 过滤；`max_rounds` 只限制循环轮数，不能替代成本、超时或访问控制。
+3. **每轮记录可诊断字段。** 保存 trace ID、查询（按隐私策略脱敏）、候选 ID 与来源版本、阶段/终态、耗时和目标 endpoint 的原始 usage。区分 DONE、拒绝、截断、工具错误、空结果与预算耗尽；不能将解析失败都记作正常完成。
+4. **把答案质量与成本放在同一任务集比较。** 固定语料快照、query、gold evidence、授权边界和最终答案 scorer；比较固定检索、一次改写、模型路由和迭代检索。报告逐题配对结果以及证据覆盖、答案质量、拒答、工具/模型调用数、累计 usage、延迟与错误率。
+5. **防止无进展循环与证据污染。** 检查重复查询/重复候选并设置停机策略；将检索文本作为不可信输入，引用时保留来源与版本。查询计划可由模型提出，过滤和执行由宿主裁定。
 
-1. **强制第一轮必查。** 臂 C 失败的直接原因是模型可以选 DONE，而它做这个判断时没有依据。做法很简单：第一轮不由模型决定 —— 用改写后的查询直接查一次，把结果放进上下文，之后才交给模型决定要不要追加。实测里 6.3/10 的臂 B 正是这么做的。
-2. **上限写死在代码里。** 不是「在提示里告诉它最多查 3 次」，而是循环条件里的 `max_rounds`。模型可以忘记指令，循环计数器不会。
-3. **每一轮都记日志。** 记下查询词、命中数、耗时。本次如果没有这份日志，我会把「一次都没查」误判成「查了但没命中」—— 而这恰好是第 4 节说的那两种完全不同的问题。
-4. **把成本算进设计。** 臂 C 的输入是臂 B 的 7.5 倍。多轮带来的收益必须超过这个倍数才划算，而本次实验里它的命中率反而更低。
-
-这四条合起来是一句话：**多轮是一种能力，不是一个默认值。** 只有当「第一轮的结果会改变下一步该查什么」这个条件成立时，它才值得开。
+因此，多轮是一个需要用目标任务验证的策略选项。只有测得它带来的答案或任务收益超过额外调用、延迟、复杂度和权限风险时，才值得保留；单次历史小样本不能替你做这个决策。
 
 ```python
-# arm_b.py
-"""臂 B：改写查询 → 多路检索 → 合并去重；臂 C 的强制首轮也在这里。
+# retrieval_policy.py
+"""策略轮廓：query rewrite、候选合并与迭代检索的接口边界。
 
-两个地方和臂 C 不同：
-  1. 查询由模型改写而来，不靠它自己临场决定查什么；
-  2. 第一轮由代码强制执行，之后才允许模型追加。
-
-实跑状态：控制流在本地 Python 3.10 上跑通（下面 __main__ 用假 client）；
-真实调用与本节臂 B 的采集脚本同一形态，未在官方端点实跑。
+本段依赖调用方提供 client、search 和受权限过滤的 docs；不是独立程序。
+本轮用 fake client 核对解析与控制流边界；未连接 provider 或生产检索库。
 """
 
-import hashlib
 import json
 import re
 
-REWRITE_SYSTEM = (
-    "你是检索查询改写器。把用户问题改写成 3 条不同角度的检索词，"
-    "覆盖同义说法、相关术语、具体名词。只输出 JSON 数组，不要解释。"
-)
 
-
-def parse_queries(text):
-    """解析改写结果。要同时认围栏和裸数组 —— 第 5 章那个坑。"""
-    m = re.search(r"\[(?:[^\[\]]*)\]", text, re.S)
-    if not m:
-        return []
+def parse_queries(text, limit=3):
+    """只接受完整 JSON 数组；格式不合约就让调用方回退到原 query。"""
     try:
-        queries = json.loads(m.group(0))
+        queries = json.loads(text)
     except json.JSONDecodeError:
         return []
-    return [q.strip() for q in queries if isinstance(q, str) and q.strip()][:3]
-
-
-def rewrite(client, model, question):
-    """一次额外调用换 3 条检索词 —— 这是实测里最大的单步改进（0 → 6.3/10）。"""
-    resp = client.messages.create(
-        model=model, max_tokens=500,
-        system=REWRITE_SYSTEM,
-        messages=[{"role": "user", "content": question}],
-    )
-    text = "".join(b.text for b in resp.content if b.type == "text")
-    if resp.stop_reason == "max_tokens":
-        # 截断时不要解析半截数组，直接用原问题兜底
-        return [question]
-    return parse_queries(text) or [question]
+    if not isinstance(queries, list) or len(queries) > limit:
+        return []
+    if not all(isinstance(q, str) and q.strip() for q in queries):
+        return []
+    return [q.strip() for q in queries]
 
 
 def merge_hits(round_results, k):
-    """多路结果合并去重，保留最早出现的轮次。
-
-    去重是必须的：三路检索很容易返回同一段，不去重的话它会被
-    重复塞进上下文，白占候选名额、也白付 token。
-    """
-    seen, merged = {}, []
-    for rnd, hits in round_results:
+    """按传入顺序去重；这不是 RRF，也不代表相关性排名。"""
+    if type(k) is not int or k < 1:
+        raise ValueError("k must be a positive integer")
+    seen, merged = set(), []
+    for _round_no, hits in round_results:
         for doc_id in hits:
             if doc_id not in seen:
-                seen[doc_id] = rnd
+                seen.add(doc_id)
                 merged.append(doc_id)
-    return merged[:k], seen
+    return merged[:k]
 
 
 def arm_b(client, model, question, search, k=5):
-    queries = rewrite(client, model, question)
-    rounds = [(1, search(q)) for q in queries]
+    """一次改写后做多路检索；输出顺序由 search adapter 的约定决定。"""
+    response = client.messages.create(
+        model=model,
+        max_tokens=500,
+        system="把问题改成最多 3 条检索 query，只输出 JSON 字符串数组。",
+        messages=[{"role": "user", "content": question}],
+    )
+    text = "".join(block.text for block in response.content if block.type == "text")
+    queries = parse_queries(text) if response.stop_reason == "end_turn" else []
+    queries = queries or [question]
+    rounds = [(1, search(query)) for query in queries]
     return merge_hits(rounds, k)
 
 
-def arm_c(client, model, question, search, max_rounds=3, k=5):
-    """臂 C 的修正版：第一轮必查，之后才交给模型决定要不要追加。"""
-    rounds = [(1, search(question))]        # ← 代码决定，不是模型决定
-    merged, _ = merge_hits(rounds, k)
-    for rnd in range(2, max_rounds + 1):
-        # 和本节末尾那个 agentic() 里的调用完全相同，只是把「已合并的上下文」喂回去
-        resp = client.messages.create(
-            model=model, max_tokens=3000,
-            system="你是一个会主动检索的助手。每次只输出一条指令：SEARCH: <查询词> 或 DONE。",
-            messages=[{"role": "user", "content":
-                       "问题：" + question + "。已有资料：" + "、".join(merged) +
-                       "。需要继续查就输出 SEARCH: <查询词>，够了就输出 DONE。"}],
+def arm_c(client, model, question, search, docs, max_rounds=3, k=5):
+    """每轮把实际证据正文交给 planner；ID 列表本身不是证据上下文。"""
+    if type(max_rounds) is not int or max_rounds < 1:
+        raise ValueError("max_rounds must be a positive integer")
+    rounds = [(1, search(question))]  # 仅当任务策略要求首轮检索时才强制这样做
+    merged = merge_hits(rounds, k)
+    status = "round_limit"
+    for round_no in range(2, max_rounds + 1):
+        evidence = "\n".join(
+            "[%s] %s" % (doc_id, docs[doc_id])
+            for doc_id in merged
+            if doc_id in docs
         )
-        text = "".join(b.text for b in resp.content if b.type == "text")
-        m = re.search(r"SEARCH:\s*(.+)", text)
-        if not m:
-            break                            # 输出里没有 SEARCH: 就是 DONE
-        rounds.append((rnd, search(m.group(1).strip())))
-        merged, _ = merge_hits(rounds, k)
-    return merged
+        response = client.messages.create(
+            model=model,
+            max_tokens=300,
+            system="输出 SEARCH: <query> 或 DONE；若格式不符，宿主会报协议错误。",
+            messages=[{"role": "user", "content":
+                       "问题：%s\n已检索证据：\n%s" % (question, evidence)}],
+        )
+        if response.stop_reason != "end_turn":
+            return merged, "provider_nonterminal"
+        text = "".join(block.text for block in response.content if block.type == "text").strip()
+        if text == "DONE":
+            status = "done"
+            break
+        match = re.fullmatch(r"SEARCH:\s*(.+)", text)
+        if not match:
+            return merged, "protocol_error"
+        rounds.append((round_no, search(match.group(1).strip())))
+        merged = merge_hits(rounds, k)
+    return merged, status
 ```
 
-### 臂 C 的改动：把「第一次」从模型手里拿回来
+## 将策略、检索与答案生成拆开
 
-臂 B 与臂 C 的代码只差两行，但那是本节最重要的两行 —— **第一轮检索由代码发起，模型只负责「之后要不要追加」**：
+上面的 `arm_c` 是接口轮廓，不是实验复现。它的首轮示例直接用原 query 检索；这与 `arm_b` 的“三条改写 query”条件不同，因此不能说只改了“第一次由谁决定”。需要比较策略时，应把差异写清楚：
 
-| 版本 | 第一轮谁决定 | 实测命中 |
-|---|---|---:|
-| 臂 C 原版 | 模型（可输出 DONE） | **3.3/10** |
-| 修正版（下面这两行） | 代码 | —（该改动将第一轮变成必查；本节没有单独测过修正版的新数字） |
-
-```diff
-- log = []
-- for rnd in range(1, max_rounds + 1):
--     # 模型第一轮就可能输出 DONE
-+ rounds = [(1, search(question))]   # 代码强制第一轮
-+ merged, _ = merge_hits(rounds, k)
-+ for rnd in range(2, max_rounds + 1):   # 从第二轮开始才交给模型
-+     ...
-```
-
-为什么这个改动有效，可以从上面的轨迹直接读出来：**「要不要查」是模型最不可靠的一类判断，而「第一次查什么」不需要它判断。** 臂 B 已经证明「用改写后的查询查一次」能到 6.3/10 —— 修正版等于把臂 B 的那一步固定下来，再允许模型在它之上追加。
-
-| 这一节的三次改动 | 数字变化 | 依据 |
+| 策略 | 宿主负责 | 要验证的问题 |
 |---|---|---|
-| 原问题直接检索 → 改写一次再检索 | 0/10 → 6.3/10 | 本节实测 |
-| 让模型自己决定查不查 (臂 C) | 3.3/10，调用 18.7 次、输入 5,660 | 本节实测 |
-| 强制第一轮必查 | 未单独测（推断：把臂 B 的那一步固定下来，代价回到 10 次调用量级） | 推断 |
-## 成本：别忘了第 3 章那条规律
+| 固定一次检索 | 规定检索时机、候选数和权限过滤 | query 与固定管线是否覆盖支持证据？ |
+| 单次改写后检索 | 限制改写数与输出协议，查询仍由宿主执行 | 改写对候选覆盖、答案质量和时延的净影响是什么？ |
+| 自适应路由 | 按已验证规则或分类器选择跳过、单次或多步 | 路由误判代价、类别分布与总体收益如何？ |
+| 迭代多跳 | 将经授权的真实证据回送 planner，限制预算与轮数 | 下一步 query 是否确实依赖前一轮证据？ |
 
-臂 C 的输入 token 是臂 B 的 7.5 倍（5,660 对 754）。这个差距不是线性的：**每一轮的检索结果都会留在对话历史里，之后每一轮都要重新发一遍。**
+代码中的去重只按到达次序保留第一个 ID；它不计算 RRF、分数融合或相关性重排。`arm_c` 必须把实际文档正文（而非只有 ID）传回 planner，且解析失败或非正常 API 终态不能记为 DONE。即便 planner 返回 DONE，检索规划结束也不等于回答正确：宿主还要根据任务契约决定回答、澄清或拒答，并验证来源、权限和终态。
 
-这正是第 3 章得出的那条规律：**成本 = 内容 × 装载次数**。多轮检索的代价不只是「多一次工具调用」，而是「多一轮历史」。
+## 成本与评测口径
 
-第 3 章还给过一个**交叉点**，可以直接搬到这里用。这里说的交叉点指的是**两种方案成本相等的那条线**：在它的一侧按需取更便宜，另一侧预加载更便宜。固定 40 篇文档时，需要的占 2 / 8 / 20 / 40 篇，按需取的成本分别是预加载的 0.64 / 0.95 / 2.47 / 3.60 倍 —— **交叉点在「需要的约占 20%」附近**（比值 0.95 那档已经贴着 1）。
+如果客户端每轮重发完整消息历史，前面轮次的内容会再次成为请求输入；累计 input usage 可能随轮数增加。服务端状态、prompt cache 与 endpoint 的计量规则会影响实际处理量和费用，所以不能把“重发”直接等同于“重复付费”，也不能把本节旧表中的 `5,660 / 754` 当成可信倍数。测量时要记录每个 API 请求的原始 usage、缓存读写、输出、费用与延迟，并按目标端点的文档解释。
 
-也就是说：**如果你要的资料占总量的一小部分，按需检索划算；如果你几乎每次都要读一大半，老实预加载更便宜。** 判断依据是「这次任务需要其中的多大比例」，而不是「资料多不多」。
+章 3 的“按需取 vs 预加载”记录也只是一组无法独立复核的单次样本；其中约 20% 的交叉位置是样本点间的插值，不是 agentic retrieval 的阈值。多轮策略与预加载比较时，要用同一任务集、质量门槛和 endpoint，逐题核算端到端成本，不能从“资料比例”单独决定。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["用户提问"] --> B{"问题本身清楚吗？"}
-    B -->|清楚| C["固定管线：改写查询 → 检索一次<br/>实测 6.3/10，10 次调用"]
-    B -->|需要多跳| D["多轮检索<br/>第一轮结果决定下一跳查什么"]
-    C --> E["送进上下文"]
-    D --> E
-    C -.-> F["⚠️ 不要让模型决定「要不要查」<br/>实测 3.3/10 条一次都没查"]
-    D -.-> G["必须设上限<br/>否则轮次与成本都不可预测"]
+    A["任务与数据边界"] --> B{"是否允许无检索回答？"}
+    B -->|允许| C["固定、路由或模型策略"]
+    B -->|不允许| D["宿主强制授权检索"]
+    C --> E{"中间证据会改变下一步吗？"}
+    E -->|否| F["一次检索或已验证的跳过策略"]
+    E -->|是| G["预算内迭代检索"]
+    D --> F
+    D --> G
+    F --> H["来源/权限/终态检查"]
+    G --> H
+    H --> I["按任务契约回答、澄清或拒答"]
 `}
 />
 
 ## 完整可运行代码
 
 ```python
-"""把检索做成工具、让模型自己决定查几次 —— 以及它的失败模式。
+"""用 FakePlanner 演示检索策略控制流；不调用模型或外部检索服务。
 
-只用标准库。这段代码的价值不在「能跑」，而在它的循环上限与日志：
-没有上限的自主检索会一直烧钱，而没有日志你根本不知道它查了几次。
-
-实跑状态：2026-10-08，deepseek-flash，已跑通。
+它验证的是宿主如何区分 DONE、预算终止与协议错误，不验证模型会不会作出好决策，也不生成最终答案。
+实跑状态：Python 3.14.7，本轮离线运行。
 """
 
-import json
-import math
-import os
 import re
-import urllib.request
 
 DOCS = {
-    "确定性": "把温度设为 0 并不保证两次调用完全相同。厂商侧仍存在非确定性。",
-    "缓存": "前缀缓存命中时，未命中的输入会大幅下降。任何一处前缀改动都会让它全部失效。",
-    "切分": "文档被从段落中间切开后，单独看这一块往往看不出它在讲什么。",
-    "重排": "先宽召回再精细排序，两步的目标不同。候选集大小决定了重排的上限。",
+    "cache": "缓存：前缀变化可能影响缓存复用；实际行为依赖 endpoint。",
+    "rerank": "重排：只能重排候选集合中已经存在的证据。",
 }
 
 
-def tokenize(text):
-    text = text.lower()
-    out = re.findall(r"[a-z0-9_]+", text)
-    for run in re.findall(r"[\u4e00-\u9fff]+", text):
-        out.extend(run[i:i + 2] for i in range(len(run) - 1))
-    return out
+def search(query):
+    """本地确定性 fixture；不是 BM25，也不代表真实检索质量。"""
+    q = query.lower()
+    found = []
+    if "缓存" in q or "前缀" in q:
+        found.append("cache")
+    if "重排" in q or "候选" in q:
+        found.append("rerank")
+    return found
 
 
-def search(docs, query, k=2):
-    """工具：按查询词返回最相关的段落。"""
-    toks = {i: tokenize(t) for i, t in docs.items()}
-    avgdl = sum(len(t) for t in toks.values()) / len(toks)
-    df = {}
-    for t in toks.values():
-        for term in set(t):
-            df[term] = df.get(term, 0) + 1
-    k1, b = 1.2, 0.75
-    scored = []
-    for i, t in toks.items():
-        tf = {}
-        for x in t:
-            tf[x] = tf.get(x, 0) + 1
-        s = 0.0
-        for term in set(tokenize(query)):
-            if term not in tf:
-                continue
-            n = df.get(term, 0)
-            idf = math.log(1 + (len(docs) - n + 0.5) / (n + 0.5))
-            f = tf[term]
-            s += idf * (f * (k1 + 1)) / (f + k1 * (1 - b + b * len(t) / avgdl))
-        if s > 0:
-            scored.append((s, i))
-    scored.sort(reverse=True)
-    return [i for _, i in scored[:k]]
+def parse_action(text):
+    """协议错误与 DONE 分开处理，避免把坏输出静默当成正常停止。"""
+    text = text.strip()
+    if text == "DONE":
+        return ("done", None)
+    match = re.fullmatch(r"SEARCH:\s*(.+)", text)
+    if match:
+        return ("search", match.group(1).strip())
+    return ("error", None)
 
 
-def call(system, messages, max_tokens=3000):
-    body = json.dumps({
-        "model": os.environ.get("VERIFY_MODEL", "claude-haiku-4-5"),
-        "max_tokens": max_tokens,
-        "system": system,
-        "messages": messages,
-    }).encode()
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
-        data=body,
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"},
-    )
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read())
-    text = "".join(b["text"] for b in data["content"] if b["type"] == "text")
-    return text, data["stop_reason"]
+class FakePlanner:
+    """只用可预测规则演示状态转移，不模拟模型能力。"""
+    def __init__(self, outputs=None):
+        self.outputs = iter(outputs) if outputs is not None else None
+
+    def decide(self, question, evidence):
+        if self.outputs is not None:
+            return next(self.outputs, "DONE")
+        content = "\n".join(evidence.values())
+        if "缓存" in content and "重排" not in content:
+            return "SEARCH: 重排候选集"
+        return "DONE"
 
 
-def agentic(question, max_rounds=3):
-    """关键：max_rounds 必须有，否则它可能一直查下去。"""
-    system = ("你是一个会主动检索的助手。每次只输出一条指令："
-              "SEARCH: <查询词> 或 DONE。不要输出别的。")
-    messages = [{"role": "user", "content":
-                 "问题：" + question + "。需要查资料就输出 SEARCH: <查询词>，"
-                 "已经能确定答案就输出 DONE。"}]
-    log = []
-    for rnd in range(1, max_rounds + 1):
-        text, stop = call(system, messages)
-        m = re.search(r"SEARCH:\s*(.+)", text)
-        if not m:
-            log.append((rnd, "DONE（未检索）", []))
+def run_retrieval(question, planner, must_retrieve, max_searches=3):
+    if type(max_searches) is not int or max_searches < 1:
+        raise ValueError("max_searches must be a positive integer")
+
+    evidence, events = {}, []
+
+    def execute(query):
+        hits = search(query)
+        for doc_id in hits:
+            evidence.setdefault(doc_id, DOCS[doc_id])
+        events.append({"query": query, "hits": hits})
+
+    if must_retrieve:
+        execute(question)
+
+    status = "search_budget_exhausted"
+    while len(events) < max_searches:
+        action, value = parse_action(planner.decide(question, evidence))
+        if action == "error":
+            status = "protocol_error"
             break
-        q = m.group(1).strip()
-        hits = search(DOCS, q, k=2)
-        log.append((rnd, q, hits))
-        messages.append({"role": "assistant", "content": text})
-        snippet = "\n".join("[%s] %s" % (h, DOCS[h]) for h in hits) or "（无结果）"
-        messages.append({"role": "user", "content":
-                         "检索结果：\n" + snippet + "\n\n继续：输出 SEARCH 或 DONE。"})
-    return log
+        if action == "done":
+            status = "done" if evidence else "done_without_evidence"
+            break
+        execute(value)
+    return {"status": status, "events": events, "evidence": evidence}
 
 
 if __name__ == "__main__":
-    for q in ["同一个问题问两遍结果会一样吗", "温度设成 0 会不会更稳定"]:
-        print("问题:", q)
-        for rnd, query, hits in agentic(q):
-            print("  轮%d  查询=%-34s 命中=%s" % (rnd, query, hits))
-        print()
+    optional = run_retrieval(
+        "同一个问题问两遍结果会一样吗", FakePlanner(), must_retrieve=False
+    )
+    multi_hop = run_retrieval(
+        "缓存失效", FakePlanner(), must_retrieve=True, max_searches=3
+    )
+    malformed = run_retrieval(
+        "未知问题", FakePlanner(["可能不用查"]), must_retrieve=False
+    )
+    print("可跳过检索:", optional["status"], "searches=", len(optional["events"]))
+    print("证据驱动多步:", multi_hop["status"], "searches=", len(multi_hop["events"]),
+          "evidence=", sorted(multi_hop["evidence"]))
+    print("格式错误:", malformed["status"], "searches=", len(malformed["events"]))
 ```
 
-注意两个细节：`max_rounds` 是必须的（没有它，轮次不可预测），以及每一轮都把查询词记进 `log`（没有它，你根本不知道它查了几次 —— 我也是打了日志才发现「一次都没查」这件事）。
+预期离线输出：
+
+```text
+可跳过检索: done_without_evidence searches= 0
+证据驱动多步: done searches= 2 evidence= ['cache', 'rerank']
+格式错误: protocol_error searches= 0
+```
+
+这里 `done_without_evidence` 只说明检索 planner 停止；如果业务要求依据权威资料回答，调用方必须拒绝把它当成功回答。`protocol_error` 应交给宿主做有限重试或安全失败，不能包装成“模型决定不需要检索”。而 `search_budget_exhausted` 表示已达到本地检索次数上限，后续回答是否允许仍由任务契约决定。真实实现还要加入授权过滤、来源版本、模型/API 错误分类、deadline、累计 token/费用预算、审计脱敏和最终答案评测。
 
 ## 常见坑
 
-- **默认「让模型自己决定要不要检索」是更好的设计。** 实测 3.3/10 与 6.3/10 的差距就出在这个决定上，而且它往往选择不查。
-- **不记录每轮的查询词。** 只看最终结果，你会把「一次没查」和「查了但没命中」混为一谈，而这两种失败的修法相反。
-- **不给多轮设上限。** 轮次不可预测意味着成本和延迟都不可预测。
-- **忽略历史累积。** 多轮的输入是 7.5 倍 —— 因为每轮的检索结果都会留在历史里被重复发送。
-- **在「问题本身已清楚」的场景用多轮。** 没有多跳需求时，它只增加轮次和不确定性。
-- **忘了交叉点。** 需要的内容占总量比例高时，预加载比按需取更便宜（第 3 章实测约在 20% 处交叉）。
+- **把一次小样本当成策略定论。** 旧表缺少可复核输入、轨迹与评分，不能证明模型常常跳过检索或多轮普遍较差。按任务风险与来源要求评测是否允许跳过。
+- **把 DONE、协议错误与空结果混成一类。** 记录每轮的查询、候选、来源版本与 API 终态；协议错误不能伪装成正常停机。
+- **只限制轮数。** 还需限制总调用数、token/费用、候选量和 deadline；访问控制与租户过滤要在每次检索时执行。
+- **把请求重发直接当成重复计费。** 按 endpoint 记录原始 usage、缓存字段、输出、账单和延迟，再解释累计成本。
+- **仅凭问题长短决定用单次还是多轮。** 看中间证据是否改变下一步，并在目标任务集上比较最终答案与额外开销。
+- **把别处的交叉点当阈值。** 章 3 的约 20% 是无法独立复核单次样本的插值，不是此策略的通用参数。

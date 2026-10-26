@@ -4,15 +4,15 @@ title: 消融：怎么知道哪个改动真的有用
 status: drafting
 ---
 
-前面几节讲怎么测分数。这一节讲一个更具体的问题：**当分数变了，是哪个改动引起的？**
+前面几节讲怎么测分数。这一节讲一个更具体的问题：**当分数变了，哪些改动与变化相关？** 只有在输入、模型版本、采样参数、工具与评分器等条件受控且实验设计合适时，才能把观察到的差异归因给某个组件。
 
 最直觉的答案是「一次只改一样，看分数动不动」。这个方法叫**消融（ablation）**，
-但它有一个很常见的失败模式 —— 我实测了一次，结果比预想的有意思。
+但它有一个常见局限：组件之间可能有交互。我曾用同一任务做过一轮小样本探索，结果比预想的有意思；原始逐次响应没有归档，因此下面的数字只能作为历史摘要，不能独立复算或推断稳定效果。
 
-## 一、实测：单变量消融会低估
+## 一、历史摘要：组合条件出现差异
 
 我准备了一个有明确组件的提示词，和一个有 8 条可机器校验约束的任务（生成 15 条测试用例）。
-然后逐个去掉组件，每个条件跑 5 次，记录**约束合规得分（满分 8）**：
+每个条件跑 5 次，记录**约束合规得分（满分 8）**：
 
 ```text
 条件                每次得分      均值    相对完整提示词    输出 token 均值
@@ -31,42 +31,40 @@ status: drafting
 5. P1 恰好 5 条
 6. P2 恰好 7 条
 7. 每一行都含「金额」二字
-8. 不含「测试」二字**且没有被 max_tokens 截断**（`stop_reason == "end_turn"`）
+8. 每行有 4 个字段，且**输入字段**不含「测试」二字
 
-注意第 8 条把两个条件绑在一起：**被截断的输出看起来像格式违规，其实是测量故障。** 这是本项目撞过三次的坑（第 2 节也记了一条）。
+这 8 项是任务质量评分；响应完成状态应单独记录。历史脚本使用 Anthropic Messages 兼容请求的 `stop_reason`；`end_turn` 只是该 API 的终态值，不是跨 provider 通用字段。旧脚本曾把“没有出现禁用词”和 `stop_reason == "end_turn"` 合并成一项，无法区分输出违规与截断；它还在整行文本而非输入字段上查找禁用词，并没有检查每行确实具备 4 个字段。因此历史 0–8 分既混入完成状态，也有评分口径偏差。适配其他 provider 时，先把各自的完成、截断、拒绝、错误状态归一成宿主状态；未完成/无效观测不能当作普通质量分参与均值。
 
-先看最反直觉的一行：**去掉角色定义（那句「你是测试工程师」），分数一点没动。**
+先看最反直觉的一行：**这五次样本中，去掉角色定义（那句「你是测试工程师」），记录的分数没有变化。**
 （这部分也和评测集饱和有关，上一节讨论过。）
 
-去掉格式要求（那句「严格按格式逐行输出，不要解释」）也**没有影响正确率**。
+去掉格式要求（那句「严格按格式逐行输出，不要解释」）在这五次样本中也**没有改变这项评分**。这不等于它对所有任务或其他指标都没有影响。
 
 但**两个一起去掉**，分数掉到 7.0 —— 而且掉分的那一次明细是 `8 8 3 8 8`，
 也就是某一次没达标。
 
-**这就是单变量消融的陷阱：**
+**这提示了单因素对照的局限：**
 
-> 两个组件各自都是「可以去掉」的，因为它们**互相冗余**。
-> 只去掉一个时，另一个还在兜底；两个都去掉，兜底没了才暴露出来。
+> 这组小样本与“两个组件作用有重叠”相容：只去掉一个时，另一个仍在；两个都去掉后，某次运行的评分降低。
+> 但仅凭汇总分数，不能证明角色定义确实替格式要求兜底；模型随机性、运行顺序和评分器行为都可能影响这次差异。
 
-如果你只做单变量消融，你会得出「这两个组件都没用」的结论，然后把它们都删掉。
-而实际后果是分数会掉 —— 只是这个后果在你删第二个的时候才出现。
+如果只看这两个单独移除条件，容易把“这五次未观察到变化”误读成“组件没有作用”，再把两个都删掉。组合条件提示了潜在交互，但仍需更多样本和受控复测确认。
 
-## 二、第二个发现：去掉约束，输出反而更长
+## 二、token 记录的差异与可能解释
 
 看最后一列。完整提示词的输出 token 均值是 **2404**；去掉格式要求后是 **2872**，
 去掉两个之后是 **2781**。
 
-**都是变长的。** 这违反直觉 —— 你可能会以为「要求越多，模型说得越多」。
+**这三组的记录均值都高于完整提示词。** 这是这次任务与模型条件下的观测，不足以证明格式约束通常能省 token。
 
-实际机制是：**约束是在收窄输出空间。** 那句「恰好 15 行，不要表头、不要总结」
-不只是格式要求，它同时**禁止了模型加前言与后记**。去掉它之后，模型会把
-「下面是 15 条测试用例」「希望对你有帮助」这类内容也写出来。
+一个可能解释是：**格式约束收窄了输出空间。** 那句「恰好 15 行，不要表头、不要总结」
+也限制前言与后记；但这只是合理假设，历史记录没有逐次原文，不能确认 token 差异由此造成。
 
 这个发现有两个实际用途：
 
-**一、约束不只是为了好解析，它也省钱。** 一次任务多 400 个输出 token，
-在长任务上会累积成可观的成本。这也是第 18 章（成本与延迟）里那条
-「输出预算也是预算」的具体例子。
+**一、约束可能同时影响可解析性、质量与成本。** 这次组间输出 token 均值相差约 468，
+但缺少逐次响应、usage 和独立重复，不能把它当作普遍节省量或账单结论。这也是第 18 章（成本与延迟）里
+“输出预算也是预算”的一个待验证假设。
 
 **二、评估提示词改动时，要把成本一起看。** 如果一次改动让正确率 +1pp 但输出 token +20%，
 那不是免费的改进。
@@ -74,13 +72,13 @@ status: drafting
 <Mermaid
   chart={`
 flowchart TB
-    A["提示词有 N 个组件"] --> B{"怎么做消融"}
-    B -->|"单变量：一次去一个"| C["每个组件看起来都可有可无"]
-    C --> D["因为它们互为兜底"]
-    D --> E["结论错误：都删掉"]
-    B -->|"组合消融：去一个、去一半、去全部"| F["暴露交互效应"]
-    F --> G["正确结论：两者冗余，<br/>删任一个都要补上另一个的职责"]
-    E --> H["上线后分数下降"]
+    A["提示词有 N 个组件"] --> B{"想估计什么"}
+    B -->|"单因素对照"| C["估计当前条件下的主效应"]
+    C --> D["组件效应可能随其他组件变化"]
+    D --> E["不要把无显著/无观察差异解释成无作用"]
+    B -->|"预先指定的组合条件"| F["估计目标交互项"]
+    F --> G["报告效应大小、不确定性与实验边界"]
+    E --> H["补充样本或复测后再决策"]
     style E fill:#fee,stroke:#c33
     style G fill:#efe,stroke:#3a3
 `}
@@ -90,30 +88,33 @@ flowchart TB
 
 知道陷阱之后，设计就有章法了。四条：
 
-**一、单变量是起点，组合是重点。** 保留单变量（它便宜且能发现强依赖），
-但**必须**加上「去掉一半」「去掉全部」这两组。至少要覆盖：每个组件单独去掉、
-以及**全去掉**（建立下界）。
+**一、先确定要估计的效应，再选设计。** 对两个预先选定的组件，可用 2×2 全因子条件估计主效应与交互；
+要估计 N 个二元组件的全部交互，完整设计需要 2^N 个组合。更大规模可考虑筛选/分数因子设计，
+但它会在明确假设下混杂部分效应，不能简单用“超过 5 个组件就抽样”替代设计说明。至少记录因素、水平、
+目标指标、分配/运行顺序、重复与样本单位，以及哪些交互是预先关注的。
 
 **二、预先声明你要看哪个指标。** 上面那次消融里，正确率变化很小，
 但**输出 token 变了 19%**。如果我事先只盯正确率，就会错过真正的影响。
 所以消融前先定好主要指标，同时把所有能自动量的指标都记下来。
 
-**三、重复多次，看分布不看单次。** 上面「两者都去掉」是 `8 8 3 8 8` ——
-**五次里只有一次不合格**。如果你只跑一次恰好抽到 8，就会得出「完全没影响」的结论。
-这是消融实验里最常见的假阴性。
+**三、重复并报告不确定性。** 上面“两个都去掉”的五个记录为 `8 8 3 8 8`，只有一次低于满分；
+这说明小样本可能掩盖波动，但不能由 5 次数据估计可靠的失败概率。应保留每次观测、报告分布/区间，
+并根据任务与期望差异规划样本量；没有统计检验或区间时，不把“未观察到差异”写成“没有影响”。
 
-**四、别把「没有影响」当成「没有价值」。** 角色定义在这组指标上没影响，
+**四、别把「未观察到差异」当成「没有价值」。** 角色定义在这组指标上未见差异，
 但它可能在别的指标上有效（比如语气、拒答率）。
 **消融只回答「在当前指标上有没有影响」这个窄问题。**
 
 ### 什么算「一个组件」
 
-消融的第一步是切组件，而切分的判据只有一条：**去掉它时，提示词在语义上仍然完整。** 按这个标准：
+消融的第一步是定义可操作的因素与水平。一个可移除片段不一定是独立组件：
+如果移除会改变任务含义或让其他组件失效，实验需要明确这代表的产品变化；也可以把耦合改动作为一个组合因素评估。
+“去掉后语义仍完整”是有用的检查，不是唯一判据。按这个标准举例：
 
 - **算一个组件**：角色定义、格式要求、示例（few-shot）、输出字段清单、禁止项 —— 去掉之后任务还成立，只是约束少了。
 - **不算一个组件**：任务本身（「为退款接口生成 15 条用例」）。去掉它任务就不存在了，谈不上消融。
 
-如果两个组件必须一起改才有意义（比如「输出 JSON」必须配「字段清单」），它们就该合成一个组件 —— 否则你测的是两个互相依赖的半成品，结论解释不清。
+如果两个组件必须一起改才有意义（比如「输出 JSON」必须配「字段清单」），应把“单独移除”视为可能不符合产品语义的处理条件；可以合并成一个因素，或保留组合设计并标明该条件只用于诊断、不能作为候选版本。
 
 ## 四、消融回答不了的那一半问题
 
@@ -126,73 +127,116 @@ flowchart TB
 想缩小这个缺口，办法是**让评测集持续吸收线上失败案例**（第 3 节讲过），
 而不是指望消融本身给出普适结论。
 
-**二、回答不了「两个组件合起来有没有协同」。** 上面那次消融恰好是**冗余**（互为兜底），
-但组件之间也可能是**互补**的 —— 两个都需要，去掉任一个分数都掉；
-或者可能是**拮抗**的 —— 两个都在时反而不如只有一个。
-这三种关系的区分，只能靠**全子集**消融（就是上面代码里那个 `combinations` 循环），
-单变量方法在原理上就区分不出来。
+**二、回答不了「两个组件是否有交互」。** 若关注两个因素，可以用 2×2 条件比较交互对比；
+若关注多个因素的全部交互，则需要完整因子组合或说明分数因子设计的混杂关系。单因素测试无法估计未被设计覆盖的交互。
 
-从结果表读关系，是这么读的（第一行来自本次实测，后两行为构造示例，未实跑）：
+第一行是上述历史汇总（不可独立复算），后两行是构造数字（未实跑）。令 `Y11` 表示两个组件都保留，`Y10`/`Y01` 表示只保留其一，`Y00` 表示都移除；
+交互对比为 `Y11 - Y10 - Y01 + Y00`。正负号取决于指标方向，非零值说明观察到非加性模式；样本噪声与饱和效应也会造成表面交互，
+因此不要仅靠一个对比值给组件贴“冗余/互补/拮抗”的因果标签：
 
 | 对比 | 全保留 | 只去掉 X | 只去掉 Y | 都去掉 | 关系 |
 |---|---|---|---|---|---|
-| 角色 × 格式 | 8.0 | 8.0 | 8.0 | 7.0 | **冗余**：各自都能被对方兜住，同时去掉才暴露 |
-| 角色 × 示例 | 8.0 | 5.0 | 6.0 | 2.0 | **互补**：去掉任一个都掉分，一起去掉掉更多 |
-| 角色 × 格式 | 8.0 | 5.0 | 5.0 | 6.0 | **拮抗**：同时在场反而不如只留一个 |
+| 角色 × 格式 | 8.0 | 8.0 | 8.0 | 7.0 | -1.0：边际收益随另一因素变化；可能有重叠/天花板 |
+| 角色 × 示例 | 8.0 | 5.0 | 5.0 | 1.0 | -1.0：两者各自有增益，仍需区间与任务语义解释 |
+| 角色 × 格式 | 5.0 | 7.0 | 7.0 | 6.0 | -3.0：同时保留的分数低于简单加和预期；需排查冲突或噪声 |
 
-读法只有一句：**比较「都去掉」和「只去掉一个」之间的距离。** 距离为零 → 冗余；都掉且「都去掉」掉更多 → 互补；都掉但「都去掉」反而回升 → 拮抗。
+读法是计算预先定义的对比，而不是凭“都去掉”与“只去掉一个”的距离直接分类。上面的构造例子三项交互分别为 -1、-1、-3；这些是描述性算术，不是统计推断。
 
 **三、回答不了「改动是否值得」。** 消融给出的是「有没有影响」，
 而工程决策要的是「影响值不值这个代价」。一个组件让正确率 +0.5pp 但让延迟 +800ms，
 消融只能说前者存在，判断取舍要靠人来定。
 这也是第 20 章（部署）里那条「每个改动都要能说清它买到了什么」的由来。
 
-还有一个常见的混淆值得单独点出来：**消融不是 A/B 测试**。
-消融改的是**系统本身**（去掉一个组件），A/B 测的是**不同用户看到不同版本**。
-消融在同一个环境里做，所以能控制变量；A/B 在真实流量里做，所以能测出
-评测集里没有的长尾。两者互补：**先用消融在离线把候选砍到两三个，再用 A/B 在线上定夺。**
-直接上 A/B 的问题是成本高、周期长，而且如果候选有十个，你不可能全测。
+**离线消融与线上 A/B 的区别主要在评估环境和分配机制。** 离线评测可在固定数据/模拟环境中比较候选，
+覆盖范围受数据集限制；线上随机分流可以测真实用户环境下的结果，但需要满足实验伦理、流量与统计设计要求，
+也不保证自动覆盖所有长尾。两者都可以是受控实验；按成本、风险与目标依次使用，而不是把其中一种说成另一种的必经前置。
 
 ## 五、代码：一个最小消融框架
 
 ```python
+import random
 from itertools import combinations
 from statistics import mean
 
 
 def ablate(components, run_fn, metric_fn, repeats=5):
-    """对组件集合做组合消融。
+    """对二元组件做完整全因子扫描；此示例不含统计推断。
 
     components: {"角色": "...", "格式": "..."}
-    run_fn(sys_prompt) -> 模型输出
-    metric_fn(output) -> 分数（0 到满分）
+    run_fn(sys_prompt) -> {"text": str, "status": str, "stop_reason": str, "output_tokens": int}
+    metric_fn(response) -> {"status": str, "score": int | None}
     """
     names = list(components)
     results = []
-    # 从「全部保留」到「一个不留」，覆盖每个子集
+    conditions = []
     for size in range(len(names), -1, -1):
         for keep in combinations(names, size):
-            sys_prompt = chr(10).join(components[k] for k in keep)
-            scores = [metric_fn(run_fn(sys_prompt)) for _ in range(repeats)]
-            results.append({
-                "keep": keep,
-                "mean": mean(scores),
-                "min": min(scores),
-                "scores": scores,
-            })
-    # 按保留组件数排序，先看全保留与全去掉这两个端点
-    results.sort(key=lambda r: -len(r["keep"]))
+            conditions.append(keep)
+    jobs = [(keep, replicate) for keep in conditions for replicate in range(repeats)]
+    random.Random(0).shuffle(jobs)  # 演示可复现的运行顺序；正式实验应记录种子并按任务/时间分块
+    observations_by_keep = {keep: [] for keep in conditions}
+    for keep, replicate in jobs:
+        sys_prompt = chr(10).join(components[k] for k in keep)
+        response = run_fn(sys_prompt)
+        scored = metric_fn(response)
+        observations_by_keep[keep].append({
+            "replicate": replicate,
+            "status": scored["status"],
+            "score": scored["score"],
+            "output_tokens": response.get("output_tokens"),
+            "provider_stop_reason": response.get("stop_reason"),
+        })
+    for keep, observations in observations_by_keep.items():
+        complete_scores = [item["score"] for item in observations if item["status"] == "complete"]
+        results.append({
+            "keep": keep,
+            "mean": mean(complete_scores) if complete_scores else None,
+            "min": min(complete_scores) if complete_scores else None,
+            "observations": observations,
+        })
     return results
 
 
-def marginal_effect(results, component):
-    """某个组件在「其他组件都在」与「其他组件都不在」两种语境下的边际效应。"""
-    with_it, without_it = [], []
-    for r in results:
-        others = [k for k in r["keep"] if k != component]
-        # 只比较同样「其他组件集合」的两组，这是配对比较的思想
-        (with_it if component in r["keep"] else without_it).append(r["mean"])
-    return (mean(with_it) if with_it else 0) - (mean(without_it) if without_it else 0)
+def factorial_effects(results, components):
+    """返回完整且完成样本数相等的全因子表对比（描述性）。"""
+    means = {frozenset(row["keep"]): row["mean"] for row in results}
+    levels = list(components)
+    expected = [frozenset(combo) for size in range(len(levels) + 1)
+                for combo in combinations(levels, size)]
+    missing = [combo for combo in expected if combo not in means or means[combo] is None]
+    if missing:
+        raise ValueError(f"missing factorial conditions or complete means: {missing}")
+    complete_counts = {
+        frozenset(row["keep"]): sum(
+            observation["status"] == "complete" for observation in row.get("observations", [])
+        )
+        for row in results
+    }
+    if set(complete_counts.values()) == {0} or len(set(complete_counts.values())) != 1:
+        raise ValueError(f"unequal complete sample counts across factorial conditions: {complete_counts}")
+
+    main_effects = {}
+    for factor in levels:
+        other_levels = [name for name in levels if name != factor]
+        contexts = [frozenset(combo) for size in range(len(other_levels) + 1)
+                    for combo in combinations(other_levels, size)]
+        contrasts = [means[context | {factor}] - means[context] for context in contexts]
+        main_effects[factor] = mean(contrasts)
+
+    interactions = {}
+    for first, second in combinations(levels, 2):
+        other_levels = [name for name in levels if name not in (first, second)]
+        contexts = [frozenset(combo) for size in range(len(other_levels) + 1)
+                    for combo in combinations(other_levels, size)]
+        contrasts = [
+            means[context | {first, second}]
+            - means[context | {first}]
+            - means[context | {second}]
+            + means[context]
+            for context in contexts
+        ]
+        interactions[(first, second)] = mean(contrasts)
+    return {"main_effects": main_effects, "interactions": interactions}
 ```
 
 上面框架要能跑，缺的是一个真的 `metric_fn`。下面这份用的就是那 8 条约束 —— **它可以直接复制去用**（正则判前 3 条与另外几条，实际就是完整 8 条）：
@@ -200,70 +244,82 @@ def marginal_effect(results, component):
 ```python
 import re
 
-def metric_fn(txt, stop_reason="end_turn"):
-    """返回 0-8 的合规分。用的是**分级分数**，不是 0/1（理由见下面的报错）。"""
+def metric_fn(response):
+    """质量分与宿主归一后的状态分开；非 complete 响应不进入质量分均值。"""
+    if response.get("status") != "complete":
+        return {"status": response.get("status", "unknown"), "score": None}
+    txt = response.get("text", "")
+    if not isinstance(txt, str):
+        return {"status": "complete", "score": 0}
     lines = [l.strip() for l in txt.split(chr(10)) if l.strip()]
-    nums = [int(m.group(1)) for m in (re.match(r"TC-(\d+)", l) for l in lines) if m]
-    p0 = sum(1 for l in lines if re.search(r"P0\s*$", l))
-    p1 = sum(1 for l in lines if re.search(r"P1\s*$", l))
-    p2 = sum(1 for l in lines if re.search(r"P2\s*$", l))
+    fields = [[part.strip() for part in line.split("|")] for line in lines]
+    ids = [
+        f"TC-{match.group(1)}" if (match := re.fullmatch(r"TC-(\d{2})", parts[0])) else None
+        for parts in fields
+    ]
+    priorities = [parts[3] if len(parts) == 4 else None for parts in fields]
+    p0 = priorities.count("P0")
+    p1 = priorities.count("P1")
+    p2 = priorities.count("P2")
     checks = [
         len(lines) == 15,
-        nums == list(range(1, 16)),
+        ids == [f"TC-{i:02d}" for i in range(1, 16)],
         not re.search(r"^\s*(用例|编号|序号|\|)", txt, re.M),
         p0 == 3,
         p1 == 5,
         p2 == 7,
         all("金额" in l for l in lines) and len(lines) > 0,
-        all("测试" not in l for l in lines) and stop_reason == "end_turn",
+        all(len(parts) == 4 and "测试" not in parts[1] for parts in fields) and len(fields) > 0,
     ]
-    return sum(checks)
+    return {"status": "complete", "score": sum(checks)}
 ```
 
-**最小自检**（不用 API，直接喂两段文本）：把 15 行合规文本喂进去应得 8 分，把少了表头、P0 数量不对的文本喂进去分数要下降。跑一次就知道自己的判据有没有写反 —— **判据本身也要有测试**。
+**最小自检**（不用 API，直接喂两段文本）：把 15 行合规文本连同宿主归一后的 `status="complete"` 喂进去应得 8 分；把字段缺失、错误编号、非枚举优先级或输入字段含禁用词的文本喂进去，分数要下降；非文本 payload 返回 0 分而不抛异常；把 `status="incomplete"` 的响应标记为未完成且不给质量分。provider adapter 负责将各 endpoint 的原始停止原因映射到状态，运行时还应区分拒绝、provider 错误与解析错误，而不是把它们都塞进低分。
 
-本次修复中实跑这段自检（2026-10-12，实跑数据）：合规文本 8 分、带表头且 P0 数量不对的文本 2 分、合规但被 max_tokens 截断的文本 7 分。
+历史记录（2026-10-12）称合规文本得 8 分、带表头且 P0 数量不对得 2 分、被截断文本得 7 分；当前评分器已将完成状态与质量分拆开，因此旧的“截断得 7 分”口径不再作为正确行为示范，历史原始响应未归档，无法重算。
+
+**实跑状态：** 本节两段 Python 示例已在本地 Python 3 下离线执行；只用构造文本与因子表断言，不调用模型 API，也不重放 2026-10-12 的历史请求。
 
 这段代码有三个设计点：
 
-**一、遍历全部子集，而不是只做「去一个」。** 2 的 n 次方在 n 小时完全可接受（3 个组件 8 组），
-超过 5 个组件才需要退化成抽样。
+**一、按目标效应选组合。** 完整扫描需要 2^n 个条件，成本随组件数指数增长。超过预算时，
+先选定少数重点交互，或采用有明确分辨率/混杂结构的分数因子筛选设计；不能把随意抽掉一些组合后得到的结果仍叫作完整全因子结论。
 
-**二、同时记 `mean` 与 `min`。** 上面 `8 8 3 8 8` 那组的均值是 7.0，看起来很轻微，
-但最小值 3 说明**有 20% 的概率严重不合格**。生产上你关心的是尾部的失败，不是均值。
+**二、保留原始逐次值并报告不确定性。** 上面 `8 8 3 8 8` 那组的样本均值是 7.0、样本最小值是 3；
+这只是 5 次观测，不能据此断言生产中有 20% 的失败概率。生产尾部风险需要有代表性的独立样本与相应区间估计。
 
-**三、`marginal_effect` 用「同语境配对」。** 先说它算的是什么：**边际效应 = 在相同的其余组件下，有它和没它的平均分差。** 把「其他组件都在」的结果和「其他组件都不在」的结果直接比，会把交互效应算进去；正确做法是在**相同的其余组件集合**下比较 —— 这正是下一节配对比较的主题。
+**三、`factorial_effects` 用相同其他因素条件计算对比。** 主效应是各个相同背景下“有/无该因素”差值的平均；
+二因素交互对比是 `Y11 - Y10 - Y01 + Y00`。代码要求每个条件的完整样本数相等，遇到差异就停止；
+还应把完成率作为单独结果报告。它只返回描述性对比，不做显著性检验，也不声称各次模型调用是真正的随机数配对。
 
 ### 结果要记成什么
 
-`ablate` 返回的列表 dump 成 JSONL 就够，但每行要带全五样，否则事后无法复核（示例：构造数据，未实跑）：
+`ablate` 返回的每个条件应展开成逐次观测再保存。最少记录任务/样本 ID、因素水平、模型与 endpoint、参数、完成状态、原始评分、usage、运行时间、随机化种子、提示词哈希及评分器版本。下面只是构造数据，未实跑：
 
 ```json
-{"run_at": "2026-10-09", "model": "deepseek-flash", "experiment": "prompt-ablation",
- "keep": ["角色"], "scores": [8, 8, 3, 8, 8], "mean": 7.0, "min": 3,
- "metric": "约束合规(8)", "prompt_sha8": "a1b2c3d4"}
+{"run_at": "2026-10-09", "sample_id": "refund-001", "model": "deepseek-flash", "endpoint": "<记录实际 endpoint>", "experiment": "prompt-ablation",
+ "keep": ["角色"], "replicate": 1, "status": "complete", "provider_stop_reason": "<原始值>", "score": 8, "max_score": 8,
+ "output_tokens": 2510, "scorer_version": "constraints-v2", "seed": 17, "prompt_sha256": "<完整哈希>"}
 ```
 
-带 `prompt_sha8` 是因为**结果必须能追溯到当时那份提示词** —— 提示词一改，这行数据就不可复现了。`scores` 要留原始的那 5 个值，不能只留 `mean`：**`8 8 3 8 8` 和 `7 7 7 7 7` 的均值都是 7.0，但它们是两种完全不同的失败**（见下面的报错）。
+保存逐次记录是为了**结果能追溯到当时那份提示词与评分规则**。汇总均值不能替代原始观测：**`8 8 3 8 8` 和 `7 7 7 7 7` 的分级均值都是 7.0，但波动形态不同**。
 
-### 一个真实的报错
+### 一次历史评分器问题
 
-我第一版把 `metric_fn` 写成返回 0 或 1，然后直接 `mean`。
-看起来没问题，直到我要比较两组「五次里各失败一次」的结果时发现：
-**0/1 的均值丢掉了「失败得有多严重」这个信息。**
+历史排查记录提到，早期版本曾把 `metric_fn` 写成返回 0 或 1，再直接求均值。
+这种指标只表达通过频率，不表达失败严重程度；但是不能把它与 0–8 的分级分数混成同一个均值。
 
 上面那次 `8 8 3 8 8` 和另一次假设的 `7 7 7 7 7`，均值都是 7.0，
 但前者是「四次完美一次崩」、后者是「每次都差一点」。
-**这两种失败在生产里的处理方式完全不同** —— 前者要查那个偶发的坏输入，
-后者要整体调提示词。
+**这两组样本形态不同** —— 前者包含一次低分，后者每次都在中间水平；该如何处理仍取决于失败案例、风险和更多数据。
 
 所以指标至少要有两个层次：**分级分数**（知道差多少）和**合格率**（知道失败频率）。
 
 ## 六、小结
 
-- **单变量消融会低估**：两个组件可以互为兜底，单独去掉都没事，两个都去掉才暴露
-- **要做组合消融**：至少覆盖「每个单独去掉」与「全去掉」
-- **重复多次看分布**：`8 8 3 8 8` 跑一次可能抽到 8，得出「没影响」的假阴性
-- **约束会收窄输出空间**：去掉格式要求后输出 token 从 2404 涨到 2872
+- **单因素结果不能说明组件在所有组合中的效果**：需要按目标问题设计因素与处理条件
+- **全因子估计全部交互的成本为 2^N**；筛选设计必须说明被混杂的效应与假设
+- **保留逐次观测、完成状态和评分器版本**；少量重复的描述统计不等于生产概率或统计显著性
+- **历史 token 变化只是待复测信号**：本次记录中去掉格式要求后均值由 2404 到 2872，缺原始轨迹，不能推出普遍因果
 - **指标要分层**：分级分数看「差多少」，合格率看「多久崩一次」，两者不能互相替代
 - **预先声明主要指标，但把所有能自动量的都记下来**

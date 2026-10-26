@@ -4,47 +4,47 @@ title: 边界上的三种失败模式
 status: drafting
 ---
 
-多智能体的失败几乎全部发生在**边界上** —— 也就是上下文与上下文之间那道缝。单个 agent 内部的问题（幻觉、格式错误）在这里都还在，但多了一类它没有的：**信息在传递中被改变了。**
+多智能体保留了单个 agent 的错误来源（错误判断、格式不符、工具失败），还增加了**跨组件交接**带来的风险：信息遗漏、口径不一致、冲突没有被解决，以及汇总阶段成为资源瓶颈。本节把它们作为需要检查的失败类别，不声称多 agent 的故障都发生在边界上。
 
-这一节讲三种，每一种都有实测支撑或明确的机制解释。
+这一节讨论三类典型风险，并区分可复核的本地机制、历史观察摘要和仍需按任务验证的假设。
 
 ## 失败一：信息在边界上丢失
 
 每个工人通常只把约定的回传结果交给主管，不能假定完整过程会自动进入主管上下文。如果某个细节没有写进当前摘要，主管此刻就看不到它；只要原始材料或工人执行记录仍被保留，就可以通过检索、回查或重跑恢复。若源材料与记录都已丢弃，才可能无法恢复。因此应明确保存策略与可回查路径，而不要把「不在摘要里」说成「永久消失」。
 
-第 3 章第 4 节实测过这个形态：让模型把 8 条要点压缩成摘要，**丢掉的那一条恰好是「不要动生产库」这条硬约束**。摘要保留了 7/8，看起来是一次成功的压缩；但丢的那一条的代价远大于另外七条加起来。
+第 3 章第 4 节的历史记录称：一份摘要把 8 条要点压缩为 7 条，遗漏了「不要动生产库」约束。逐次请求/响应、提示、精确模型快照和判分记录没有归档，因此这里只能把它作为**未独立复核的历史案例摘要**，不能据此估计约束丢失率或认定这类约束更易被丢弃。
 
-而这一章我做的对照实验里，同一条约束**在两边都活下来了**（单 agent 和多智能体都提到了「生产库」）。所以如实记下：**这个失败模式在我的样本里没有复现**，它是低频的、取决于具体表述的。
+本章原对照脚本把最终文本是否含有「生产库」子串当成约束存活判据。这个检查无法区分遵守、否定、误用或只是在解释风险时提到该词；因此原记录中的「两边都存活」没有可靠的语义评分支持，不能据此说失败未复现，更不能称其为低频。
 
-但机制上的风险是确定的：**工人不知道主管需要什么，因为它看不到最终任务。** 它能做的只是「尽量全面地提炼」。而第 3 章那条结论正好说明了这种提炼的危险 —— 它把「看起来像细节」的东西压掉，而硬约束往往长得很像细节。
+在只给工人局部目标、没有传递最终任务或必须保留字段的设计中，工人可能无法按主管的后续决策来优化回传；如果完整目标、证据或共享状态也传给了工人，这个风险会不同。故障机制取决于具体交接契约，而不是 worker 天生看不到主管任务。
 
-缓解办法有三条，按可靠性排序：
+缓解办法可以分为三类，单独使用任何一类都不构成正确性保证：
 
-1. **把必须存活的东西列成清单，写进工人的提示。** 「无论摘要多短，都要保留以下类别的信息：硬约束、例外情况、否定式要求。」
-2. **让工人输出结构化结果，而不是自由文本。** 结构化的字段不会在传递中变形。
-3. **给主管一个回查的通道。** 如果主管能按需再问工人「D2 里有没有约束类的内容」，丢失就可以被补救。这本质上是一个**检索**问题 —— 第 6 章的结论在这里直接适用。
+1. **把必须保留的字段写进交接契约。** 为硬约束、例外与禁止项预留字段或稳定 ID；提示只能提高注意度，仍须检查缺项和错误值。
+2. **使用结构化回传并在宿主侧校验。** schema 能约束字段形状和类型，不能证明事实正确、证据匹配或业务语义完整；无效结果应进入拒绝、回查或人工复核路径。
+3. **保留可回查的来源。** 如果原文、工具结果或 worker 记录仍可访问，主管可按需重新取证；材料已被丢弃、过期或权限撤销时，回查不能恢复原始信息。
 
 ## 失败二：工人之间的结论互相矛盾
 
-工人之间不通信（这是成本可控的前提），所以他们有可能得出互相矛盾的结果 —— 而且**两边都自认为有依据**。
+在 supervisor-worker 的独立任务设计中，worker 可能不直接通信；这是拓扑选择，可减少直接协调路径，但不保证总成本可控。此时 worker 可能得出互相矛盾的结果 —— 而且**两边都自认为有依据**。
 
-一个具体的例子：任务按地区拆给三个工人，每个工人只能看到自己地区的订单。工人 A 得出「退款率在下降」，工人 B 得出「退款率在上升」。两个结论都对，因为它们各自看到了不同的趋势；而整体趋势需要把两个地区的人口权重算进去才能得出。
+一个构造例子：任务按地区拆给工人，给出的比率分别是华东 Q1 12%、Q2 8%，华南 Q1 6%、Q2 11%。一个地区下降、另一个上升；两份分区结论并不矛盾，只是回答了不同子问题。要判断整体方向，还必须拿到每个分区的分子、分母、时间窗口和纳入规则，再按总分子/总分母汇总。仅凭百分比或地区标签，无法推出整体趋势。
 
 主管拿到两份矛盾结论时可能会挑一个、并列呈现，或请求补充证据；哪一种选择都不是必然行为。前者可能漏掉真实趋势，后者可能把未解决的矛盾交给用户。应通过提示、显式裁决规则和测试来约束，而不是把某个行为当作模型固定倾向。
 
 当主管缺少人口权重或原始数据时，不能让它凭空裁决。可以要求补充数据/再查一轮，也可以选择更适合问题的切分维度。按地区切可能需要在汇总时结合权重，按时间切也不自动保证没有混杂因素；这些是拆解启发式，不是普遍定律。
 
-**切分维度决定了会不会产生矛盾。** 这是设计时要问的问题：我这样切，工人会看到同一个事实的不同侧面吗？如果会，矛盾就会发生。
+切分维度决定了每个 worker 能观察到哪些数据，但**换一个维度不保证矛盾消失**。任务若涉及跨分区关联、不同口径、重叠数据或共同原因，仍可能出现结论冲突；应定义共同的指标、时间窗、分母和证据来源，并在冲突时补充数据或交由显式规则裁决。
 
 ## 失败三：主管成为新的瓶颈
 
 这个失败最反直觉，因为它出现在**系统明明跑通了**的时候。
 
-主管要接收所有工人的结论。工人越多、结论越长，主管的上下文就越接近「单 agent 直接做整件事」的规模。到某个点之后，多智能体的收益（每个工人的上下文都小）会被完全抵消 —— 因为所有小上下文最终还是要汇总进一个大的。
+主管要接收工人结论、证据和必要的原始上下文。工人数量、回传长度和重试都会影响汇总阶段的输入规模；系统也可能通过分层汇总、外部存储或多轮处理改变这一形态。主管上下文变大是容量、延迟和成本的一个信号，但不单独证明并行、专门化或覆盖收益已经被抵消。
 
-一个可算的判据：**如果 N 个工人的结论加起来，和「单 agent 直接读全部原始材料」的规模差不多，那这次拆解就是白拆的。** 工人节省的是「每个上下文里的原始材料」，没有节省「汇总后的内容」。
+可先记录一个可计算的诊断量：每个 worker 的输入/输出、主管接收的输入、重试与最终答案的 usage，并与同一任务的单 agent 基线比较。若主管汇总输入已接近单 agent 基线，这提示汇总没有减少输入负担；但是否“白拆”仍要看质量、覆盖、延迟、隔离和全流程成本等结果。
 
-第 3 章第 5 节实测过一个极端版本：8 个子 agent 各自装一遍共享背景，总 token 是 68,548 对 8,430 —— **8.1 倍**。那次的 8 份上下文里有大量重复内容，收益是负的。
+第 3 章第 5 节保留了一组历史摘要：8 个子 agent 路线总 token 68,548，对照路线 8,430（摘要比值 8.1）。逐次请求、准确 endpoint、缓存 usage 与质量评分未留存，不能确认差异由重复背景单独造成，也不能把它称为费用或收益比。
 
 <Mermaid
   chart={`
@@ -58,38 +58,38 @@ flowchart TB
     E --> H["主管汇总"]
     F --> H
     G --> H
-    B -.-> I["⚠️ 失败一：信息在边界丢失<br/>过程带不回来，主管不知道丢了什么"]
+    B -.-> I["⚠️ 风险一：交接遗漏<br/>摘要未覆盖必需字段"]
     E -.-> J["⚠️ 失败二：结论互相矛盾<br/>工人之间不通信，两边都自认有理"]
-    H -.-> K["⚠️ 失败三：主管成为新瓶颈<br/>N 份结论 ≈ 单 agent 读全量"]
+    H -.-> K["⚠️ 风险三：主管汇总可能成为瓶颈<br/>输入规模可能接近单 agent 基线"]
     I -.-> L["缓解：必存清单 / 结构化输出 /<br/>给主管一个回查通道"]
-    J -.-> M["根因是切分维度：<br/>换个切法矛盾就消失了"]
+    J -.-> M["处理：统一指标/分母/时间窗，<br/>保留冲突并补充证据"]
 `}
 />
 
 ## 三种失败背后的同一个结构
 
-把三种放在一起看，会发现它们都来自**同一个结构特征**：多智能体在上下文之间加了边界，而边界**单向、有损、有延迟**。
+在 supervisor-worker 且通过摘要交接的实现中，这几类风险可能同时出现；它们不是所有多智能体拓扑共有的不变量。共享状态、双向消息、引用式证据或分层汇总会改变交接路径，也会带来新的同步和授权问题。
 
-- 单向：工人看不到主管的任务全貌 → 失败一
-- 有损：传过去的只是结论，不是过程 → 失败一
-- 有延迟：工人之间不能实时对齐 → 失败二
+- **信息可见范围**：worker 能看到哪些任务目标、原始资料与其他 worker 的结果？
+- **交接保真度**：哪些字段/证据必须返回，哪些可以省略？
+- **同步方式**：冲突何时被发现，谁有权补查或裁决？
 
-理解了这一点，缓解办法也就有了方向：**要么把边界变窄（少切几份、让信息流过去更多），要么在边界上加校验（结构化输出、回查通道）。** 而这两件事都会让成本上升 —— 所以多智能体的设计本质上是在「隔离的成本」和「边界的损失」之间找平衡。
+理解交接契约后，可以针对具体风险调整切分粒度、数据可见范围、结构校验、来源保留和同步策略；它们的成本与收益依实现而变。设计时应对同一任务比较质量、完整用量、延迟、故障恢复和访问边界，而不是假定增加校验一定增加费用或必然消除信息损失。
 
 
 ## 怎么在运行时发现边界失败
 
-三种失败里有两种是静默的（信息丢失、主管瓶颈），所以需要主动检查。四个可以落地的检查点：
+这些问题未必会自动变成异常，因此可以为关键路径建立观测与验收。四个可落地的检查点：
 
-**一、对比工人结论与原始材料的关键字段。** 如果材料里有一个必须存活的值（金额、硬约束、版本号），写一个断言检查它是否出现在最终输出里。这是本节那个实验的做法 —— 把「埋一个必须存活的东西」变成常规的回归测试。
+**一、对照必需字段与来源。** 为金额、硬约束、版本号等字段分配稳定 ID，检查它们是否在 handoff 与最终结果中保留，并检查来源引用。自由文本的子串命中只能作为候选信号：出现关键词不等于遵守约束，未出现关键词也不必然代表违背约束。
 
-**二、记录每个工人的输出长度分布。** 如果一个工人的输出明显短于其他工人，它可能压缩过头了。这个信号不需要语义理解，只需要统计。
+**二、记录各阶段用量与拒绝/重试情况。** 输出很短可能是提前停止、调用失败、成功压缩或无结果；长度异常只能触发调查，需结合 `stop_reason`、usage、失败状态与任务评分解释。
 
-**三、记录主管上下文的规模。** 如果它接近「单 agent 直接读全量」的规模，说明这次拆解没有产生收益。这是一个可以在运行时算出来的比值。
+**三、比较主管汇总输入与单 agent 基线。** 同时记录全部 worker 输入/输出、主管输入/输出、缓存和重试，并用相同任务验收质量、覆盖和延迟。单看主管上下文大小不能判定架构是否获益。
 
-**四、让主管在矛盾时不要自己裁决。** 如果一个工人说「上升」另一个说「下降」，主管的输出里应该明确保留这个冲突，而不是挑一个。可以在提示里要求它「如果两位工人的结论冲突，必须列出冲突并说明各自依据」。
+**四、显式处理冲突。** 将结论规范化为相同的对象、指标、时间窗口、分母与来源后再比较；无法用数据或预先定义规则解释的冲突，保留双方依据并升级处理。仅靠提示要求报告冲突不是可靠的检测器。
 
-四个检查点里，第一个最有效 —— 它把「信息有没有丢」变成了一个可自动判定的问题。**当你把一个语义问题变成字符串包含问题，你就获得了在 CI 里检查它的能力。**
+对稳定 ID、字段类型、来源链接和显式状态等契约，可以用代码做确定性校验；这只能证明契约条件满足，不能替代语义评分、来源真实性或业务验收。高风险约束还应由可信代码路径检查，而不是只依赖模型自报。
 
 ## 这三种失败和单 agent 的失败怎么区分
 
@@ -97,198 +97,148 @@ flowchart TB
 
 信息丢了，看起来像「模型没注意到」；结论矛盾，看起来像「模型判断力不行」；主管瓶颈，看起来像「模型上下文不够用」。三种都会被误诊成模型能力问题。
 
-区分方法看**失败出现在哪一层**：
+定位时要用相同任务、同一评分标准和可比较的运行记录，逐层检查**第一个出现偏差的位置**：
 
-- 如果单 agent 做同一个任务没问题、拆开反而错了 → 问题在边界
-- 如果工人单独跑那一步是对的、汇总后错了 → 问题在主管的输入
-- 如果每个工人的输出都对、但主管的答案错 → 问题在汇总提示或上下文规模
+- 如果原始材料齐全而 worker 回传缺必需字段 → 检查 worker 目标、提示和回传契约
+- 如果单个 worker 的证据充分而汇总结论与证据不符 → 检查主管输入、冲突规则和聚合代码
+- 如果两条路线都失败 → 检查共同的模型、数据、工具或任务定义，不能把原因预先归到架构边界
 
-三种情况里，**第二种最常见**，也最容易被归因错 —— 因为你会去看主管的提示，而真正的问题在工人交回来的那一份摘要里。
-## 把检查点一写成能在 CI 里跑的断言
+一次对照不足以定位根因；保存可追溯的 stage/worker ID、输入来源、停止原因、工具结果与评分结果，并对代表性任务做重复或配对比较。
+## 把必需交接字段变成可校验契约
 
-检查点一说的「写一个断言检查它是否出现在最终输出里」，具体是这样：
+对必须穿过交接的硬约束，先由宿主定义稳定 ID 与权威来源 ID，再检查 worker 和 supervisor 是否都引用了它。下面的本地 helper 检查“条目/来源是否缺失”；它不判断自然语言有没有正确解释约束，所以不能把 ID 命中当作语义验收。
 
 ```python
-"""把语义约束变成 CI 里能跑的断言。
+"""检查 handoff 是否保留宿主预先登记的必需事实及来源。"""
 
-WORKERS 是三个工人回传的结构化结果（示例：构造数据，未实跑模型）。
-实跑状态：2026-10-12。
-"""
-import statistics
-
-WORKERS = {
-    "w1": {"doc_id": "d1", "key_points": ["订单表在 5 号库", "不要动生产库"]},
-    "w2": {"doc_id": "d2", "key_points": ["退款接口不支持幂等", "不要动生产库"]},
-    "w3": {"doc_id": "d3", "key_points": ["日志保留 7 天"]},
-}
-REQUIRED = "不要动生产库"
+REQUIRED_SOURCES = {"no-production-write": "d2"}
+WORKER_RESULTS = [
+    {"fact_id": "no-production-write", "source_id": "d2", "summary": "仅在预发环境验证"},
+    {"fact_id": "pool-limit", "source_id": "d2", "summary": "连接池上限为 20"},
+]
+FINAL_FACTS = [
+    {"fact_id": "no-production-write", "source_id": "d2", "summary": "生产环境不得写入"},
+]
 
 
-def check_constraint(workers, required):
-    """把「这条约束有没有被传下去」变成字符串包含判断。"""
-    hit = [wid for wid, r in workers.items() if any(required in p for p in r["key_points"])]
-    final = "；".join(p for r in workers.values() for p in r["key_points"])
-    assert required in final, (
-        "硬约束 %r 没有出现在最终产物里；工人回传里命中它的有：%s，其余 %s 需要检查"
-        % (required, hit, sorted(set(workers) - set(hit))))
-    return hit
+def handoff_gaps(records, required_sources):
+    """返回缺失或来源不匹配的 required IDs；不做语义/真实性判定。"""
+    observed = {}
+    for record in records:
+        fact_id = record.get("fact_id")
+        source_id = record.get("source_id")
+        if not isinstance(fact_id, str) or not isinstance(source_id, str):
+            raise ValueError("fact_id 与 source_id 必须是字符串")
+        observed.setdefault(fact_id, set()).add(source_id)
+    return {
+        fact_id: {
+            "expected_source": expected_source,
+            "observed_sources": sorted(observed.get(fact_id, set())),
+        }
+        for fact_id, expected_source in required_sources.items()
+        if observed.get(fact_id, set()) != {expected_source}
+    }
 
 
-def length_outliers(workers, k=2.0):
-    """中位数 + 绝对偏差：找出异常短的工人 —— 它多半是没查到就糊过去了。"""
-    lens = {wid: len(r["key_points"]) for wid, r in workers.items()}
-    med = statistics.median(lens.values())
-    mad = statistics.median([abs(v - med) for v in lens.values()]) or 1
-    return {wid: v for wid, v in lens.items() if (med - v) / mad > k}
-
-
-if __name__ == "__main__":
-    hit = check_constraint(WORKERS, REQUIRED)
-    print("硬约束命中的工人：%s → 断言通过" % hit)
-    print("长度分布：%s" % {wid: len(r["key_points"]) for wid, r in WORKERS.items()})
-    print("异常短的工人：%s" % (length_outliers(WORKERS) or "无"))
-    print()
-    print("== 故意漏掉约束时 ==")
-    try:
-        check_constraint({"w1": {"key_points": ["订单表在 5 号库"]}}, REQUIRED)
-    except AssertionError as e:
-        print("AssertionError: %s" % e)
+assert not handoff_gaps(WORKER_RESULTS, REQUIRED_SOURCES)
+assert not handoff_gaps(FINAL_FACTS, REQUIRED_SOURCES)
+assert handoff_gaps(
+    [{"fact_id": "no-production-write", "source_id": "d1"}], REQUIRED_SOURCES
+) == {"no-production-write": {
+    "expected_source": "d2", "observed_sources": ["d1"]
+}}
+print("worker and supervisor handoff IDs/sources: valid")
+print("wrong source fixture: rejected")
+print("semantic meaning and source truth: not evaluated")
 ```
 
-实跑输出（2026-10-12）：
-
-```text
-硬约束命中的工人：['w1', 'w2'] → 断言通过
-长度分布：{'w1': 2, 'w2': 2, 'w3': 1}
-异常短的工人：无
-
-== 故意漏掉约束时 ==
-AssertionError: 硬约束 '不要动生产库' 没有出现在最终产物里；工人回传里命中它的有：[]，其余 ['w1'] 需要检查
-```
-
-这段代码把检查点一和检查点二放在一起：`check_constraint` 是前者（字符串包含），`length_outliers` 是后者（长度分布，判据是「中位数 + 绝对偏差」，偏短超过 k 倍就圈出来，不需要语义理解）。
-
-注意断言失败时的措辞：它不止说「丢了」，还说「命中的是哪些工人、其余还需要检查谁」。**没有这后半句，CI 红了你还是不知道该看哪里。**
+这个校验适合挡住缺字段、拼错 ID 或错误来源引用。即使 ID 与 source_id 都匹配，`summary` 仍可能误述原文；高风险约束需进一步与权威材料核验，并由宿主授权逻辑执行。自然语言子串检测、输出长度或模型自报的“已保留”都只能作为排查线索。
 
 ### 第二个失败的切分维度对照
 
-「按地区切会让趋势互相矛盾，按时间切就不会」—— 用一组构造数据看这个差别（示例：构造数据，未实跑）：
+用有分子和分母的构造数据，可以区分分区发现与整体趋势（示例：构造数据，未实跑）：
 
-| 切分维度 | 工人看到的 | 各自的结论 | 汇总时 |
-|---|---|---|---|
-| 按地区 | 华东：退款率 12% → 8% | 在下降 | 与兄弟结论矛盾 |
-| 按地区 | 华南：退款率 6% → 11% | 在上升 | 与兄弟结论矛盾 |
-| 按时间 | Q1：华东 12% + 华南 6% | Q1 整体约 9% | 趋势可拼起来 |
-| 按时间 | Q2：华东 8% + 华南 11% | Q2 整体约 9.5% | 趋势可拼起来 |
+| 期间 | 地区 | 退款数 / 订单数 | 分区退款率 |
+|---|---|---:|---:|
+| Q1 | 华东 | 120 / 1,000 | 12% |
+| Q1 | 华南 | 60 / 1,000 | 6% |
+| Q2 | 华东 | 80 / 1,000 | 8% |
+| Q2 | 华南 | 110 / 1,000 | 11% |
 
-按地区切时，两个工人的结论都「对」，却方向相反 —— 因为每人只看到一半的人口，而整体趋势需要两部分一起算。按时间切时，每个工人都看到全地区、只是时间段不同，两段一拼就是完整趋势。**判据一句话：如果答案依赖两份材料之间的关系，就不能按材料切分。**
+按地区切分，华东 worker 报告 Q1→Q2 下降，华南 worker 报告上升，两个局部结论都与表中数据一致。整体退款率应按总退款数/总订单数计算：Q1 为 180/2,000 = 9%，Q2 为 190/2,000 = 9.5%，因此整体上升。把任务按期间切分时，每个 worker 也必须拿到该期间所有地区的分子/分母，否则仍然不能重建整体值。**判据不是“按哪个维度切”，而是每个结论的口径能否对齐、聚合是否保留必要的分母与证据。**
 
-## 完整可运行代码
+## 完整可运行示例：汇总分区数据并检查 handoff
 
-下面这段代码实现了单 agent 与主管 + 工人两条路线，并在材料里埋了一条硬约束，用来检验它能不能穿过工人的摘要活到最后。
+**实跑状态：** 下方数据是构造样例；两个 Python 片段已在本机编译并运行，没有调用模型或 provider。
+
+下面的本地脚本演示两个确定性动作：按分子/分母计算整体指标，并检查宿主预先定义的必需事实 ID 与来源是否经过 worker 和 supervisor。它用构造数据，不调用模型；`refunds` 与 `orders` 必须是非布尔整数，因为 Python 的 `bool` 是 `int` 的子类型，单用 `isinstance(value, int)` 会把 `True` 当作 1 接受。不能验证模型摘要准确率、并行收益或生产权限。
 
 ```python
-"""单 agent vs 主管 + 工人：成本模型与边界信息损失。
+"""用构造的地区数据演示口径对齐和必需事实的交接检查。"""
 
-设计要点：
-  1. 文档 D2 里埋了一条**硬约束**（不要动生产库），看它能不能穿过多层摘要活到最后。
-  2. 共享背景做成两种规模 —— 因为成本倍数主要由「共享内容相对单份内容有多大」决定。
+from collections import defaultdict
 
-实跑状态：2026-10-09，deepseek-flash。
-"""
-import os
-import json, os, urllib.request
-
-BG_SMALL = ("团队规范：所有对外输出用简体中文；数值保留两位小数；"
-            "不允许编造未在材料中出现的数字；每条结论必须标注来源文档编号。")
-
-# 大背景：模拟「团队规范 + 代码库约定 + 历史模板」这类真实共享上下文
-BG_LARGE = BG_SMALL + "\n\n" + "\n".join(
-    "约定 %d：服务命名用 kebab-case；配置项放 config/ 下；日志必须带 trace_id；"
-    "所有对外接口要有超时与重试；数据库变更走迁移脚本；异常不得吞掉。" % i
-    for i in range(1, 41))
-
-DOCS = {
-    "D1": "订单服务本周 P99 延迟 820ms，上周 610ms。排查发现新增的推荐调用占用了 34% 的时间。",
-    "D2": "数据库连接池上限为 20。注意：任何扩容操作都必须避开生产库，只能先在预发环境验证。",
-    "D3": "推荐服务的内存占用从 1.2GB 增长到 2.8GB，主要来自缓存未设上限。",
-}
-
-TASK = "根据三份材料写一份技术复盘，指出三个最需要优先处理的问题，并说明理由。"
+ROWS = [
+    {"period": "Q1", "region": "华东", "refunds": 120, "orders": 1000},
+    {"period": "Q1", "region": "华南", "refunds": 60, "orders": 1000},
+    {"period": "Q2", "region": "华东", "refunds": 80, "orders": 1000},
+    {"period": "Q2", "region": "华南", "refunds": 110, "orders": 1000},
+]
+REQUIRED_SOURCES = {"no-production-write": "d2"}
+WORKER_HANDOFF = [{"fact_id": "no-production-write", "source_id": "d2"}]
+SUPERVISOR_HANDOFF = [{"fact_id": "no-production-write", "source_id": "d2"}]
 
 
-def call(messages, system, max_tokens=8000):
-    body = json.dumps({"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
-                       "system": system, "messages": messages}).encode()
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        d = json.loads(resp.read())
-    u = d.get("usage", {})
-    tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-           + u.get("cache_creation_input_tokens", 0))
-    text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    if not text.strip() and d.get("stop_reason") == "max_tokens":
-        raise RuntimeError("测量故障：空输出 + max_tokens，需调大预算，不是模型失败")
-    return text, tin + u.get("output_tokens", 0)
+def aggregate_rate(rows):
+    grouped = defaultdict(lambda: {"refunds": 0, "orders": 0})
+    for row in rows:
+        refunds, orders = row["refunds"], row["orders"]
+        invalid_count_type = any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in (refunds, orders)
+        )
+        if invalid_count_type:
+            raise ValueError("refunds and orders must be integers")
+        if orders <= 0 or refunds < 0 or refunds > orders:
+            raise ValueError("invalid count data")
+        grouped[row["period"]]["refunds"] += refunds
+        grouped[row["period"]]["orders"] += orders
+    return {
+        period: counts["refunds"] / counts["orders"]
+        for period, counts in grouped.items()
+    }
 
 
-def arm_single(bg):
-    """一个 agent 读完三份材料，直接产出复盘。"""
-    material = "\n\n".join("%s：%s" % (k, v) for k, v in DOCS.items())
-    return call([{"role": "user", "content": bg + "\n\n" + material + "\n\n" + TASK}],
-                "你是一个严谨的技术分析助手。")
+def missing_required_sources(records, required_sources):
+    seen = defaultdict(set)
+    for record in records:
+        seen[record["fact_id"]].add(record["source_id"])
+    return {
+        fact_id: sorted(seen[fact_id])
+        for fact_id, expected_source in required_sources.items()
+        if seen[fact_id] != {expected_source}
+    }
 
 
-def arm_multi(bg):
-    """三个工人各读一份（每人都要装一遍共享背景），主管汇总。"""
-    tok, partials = 0, []
-    for k, v in DOCS.items():
-        text, t = call([{"role": "user", "content":
-                         bg + "\n\n材料 %s：%s\n\n请提炼这份材料里对复盘有用的要点。" % (k, v)}],
-                        "你是一个提炼助手，只输出要点。")
-        tok += t
-        partials.append("%s 的要点：%s" % (k, text.strip()))
-    merged, t2 = call([{"role": "user", "content":
-                        bg + "\n\n" + TASK + "\n\n各工人的提炼：\n" + "\n".join(partials)}],
-                       "你是一个严谨的技术分析助手。")
-    tok += t2
-    return merged, tok, len(partials)
+overall = aggregate_rate(ROWS)
+assert overall == {"Q1": 0.09, "Q2": 0.095}
+assert not missing_required_sources(WORKER_HANDOFF, REQUIRED_SOURCES)
+assert not missing_required_sources(SUPERVISOR_HANDOFF, REQUIRED_SOURCES)
+assert missing_required_sources(
+    [{"fact_id": "no-production-write", "source_id": "d1"}], REQUIRED_SOURCES
+) == {"no-production-write": ["d1"]}
 
-
-def run_pair(label, bg):
-    single, t1 = arm_single(bg)
-    multi, t2, n = arm_multi(bg)
-    alive = ("✅" if "生产库" in single else "❌") + " / " + ("✅" if "生产库" in multi else "❌")
-    print("%-14s %-10d %-12d %-9.2fx %s" % (label, t1, t2, t2 / t1, alive))
-    return single, multi
-
-
-if __name__ == "__main__":
-    print("任务：%s" % TASK)
-    print("三份材料共 %d 字" % sum(len(v) for v in DOCS.values()))
-    print()
-    print("%-14s %-10s %-12s %-10s %s" % ("共享背景", "单 agent", "主管+3 工人", "倍数", "硬约束存活"))
-    s1, m1 = run_pair("小（%d 字）" % len(BG_SMALL), BG_SMALL)
-    s2, m2 = run_pair("大（%d 字）" % len(BG_LARGE), BG_LARGE)
-    print()
-    print("看点：两次的倍数很接近（见上表），并没有随背景变大而明显升高。")
-    print("机制解释：多智能体只把【输入】乘以份数，【输出】不乘 ——")
-    print("  3 个工人的输出很小，主管的输出与单 agent 相当。")
-    print("所以背景越大、输入占比越高时，倍数才会趋近「份数」（这里是 4）。")
-    print("本次两个规模都还没到那个区间（输出仍与输入同量级），所以看不出差异。")
-    print()
-    print("=== 大背景下的单 agent 输出（前 400 字）===")
-    print(s2.strip()[:400])
+print("区域趋势：华东 12%→8%，华南 6%→11%")
+print("整体趋势：Q1 9.0%，Q2 9.5%（按总退款数/总订单数计算）")
+print("required handoff：缺失或来源错误会被检测")
+print("semantic correctness、模型行为与业务授权：本例未测试")
 ```
 
 ## 常见坑
 
-- **以为工人会把「重要的东西」带回来。** 它不知道什么是重要的 —— 它看不到最终任务。第 3 章实测过摘要丢掉的恰好是硬约束。
-- **按会导致矛盾的维度切分。** 按地区切会让趋势互相矛盾。切之前问：这样切，工人会看到同一事实的不同侧面吗？
-- **让主管在矛盾结论之间「挑一个」。** 它缺的正是做这个判断所需的信息。要么给它回查能力，要么换个切法。
-- **忽略主管上下文的上限。** N 份结论加起来可能和单 agent 读全量差不多 —— 那时拆解就是白拆。
-- **把「跑通了」当成「拆对了」。** 失败三恰恰发生在系统正常运行时，只是收益被抵消了，没有任何错误信号。
+- **把摘要没提到等同于信息永久丢失。** 先确认原文、工具结果、worker state 和日志是否仍在、是否有权回查。
+- **把 prompt 或 JSON Schema 当成语义保证。** 结构有效不等于来源可信、约束被正确解释或最终动作获准；用宿主策略和业务验收兜底。
+- **按各 worker 的百分比直接平均。** 率类指标应先核对时间窗与分母，再从总分子/总分母计算；分区权重变化可能反转整体趋势。
+- **把局部结论冲突交给主管自由选边。** 先核对指标定义、范围和证据；规则无法裁决时应补数或升级，不要编造共识。
+- **只看主管上下文大小。** 把全链路 usage、延迟和同任务结果与单 agent 基线配对比较，避免用代理指标替代收益。
+- **把代码检查通过当作语义/模型测试通过。** 本节脚本只验证构造记录的计数和 ID/source 字段，不测试模型是否遵守约束。

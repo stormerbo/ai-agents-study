@@ -4,7 +4,7 @@ title: 执行策略与审计
 status: drafting
 ---
 
-第 9 章给过四道闸门（活动范围、预算、熔断、不可逆确认）。第 3 节讲了最小权限。这一节讲把两者落成**一套可维护、可审计的策略**。
+[权限与活动范围](/chapters/computer-use/safety-and-scope)讨论了活动范围、预算、熔断和高影响动作授权；本章的[最小权限](/chapters/sandboxing/least-privilege)一节讨论了权限边界。这一节讲把两者落成**一套可维护、可审计的策略**。
 
 核心问题很简单：**那些检查写在哪儿？**
 
@@ -26,7 +26,7 @@ def read_file(path):
 - **分散。** 20 个工具里就有 20 处检查，改一条规则要翻 20 个文件。
 - **不可 review。** 安全评审时你要读完整份代码才知道策略是什么。
 - **不可测试。** 想验证「/etc/passwd 会不会被拦住」，你得构造一个工具调用跑一遍。
-- **容易漏。** 新加一个工具时，很容易忘了加检查 —— 而**忘加**和**加错**的表现是一样的：都能跑通。
+- **容易漏。** 新加工具时可能忘记增加对应规则；如果执行入口统一且默认拒绝，这个工具会因没有允许规则而不可用。若存在未经过该入口的旁路，则规则表无法保护它。
 
 把策略抽成数据之后，这四点都会改善：
 
@@ -42,7 +42,7 @@ POLICY = {
 }
 ```
 
-策略变成一份**可以单独 review、单独测试、单独改**的东西，而且改动留在 git 里。
+策略变成一份**可以单独 review、单独测试、单独改**的东西，而且改动留在 git 里。授权仍需逐请求执行并默认拒绝，这是 OWASP 的基线建议；规则数据化是实现组织方式，不是安全性证明（[OWASP Authorization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)）。
 
 ## 第一条规则：默认拒绝
 
@@ -54,7 +54,7 @@ POLICY = {
 
 它的含义是：**没有匹配到任何规则时，拒绝。**
 
-为什么这条最重要？因为它决定了「漏掉一个工具」的后果。我实测的输出里有这么一行：
+为什么它重要？在所有执行路径都经过同一个策略入口、策略解析失败也拒绝的前提下，未配置允许规则的工具不会被这个入口放行。我实测的输出里有这么一行：
 
 ```text
 delete_everything    DENY  default
@@ -62,13 +62,13 @@ delete_everything    DENY  default
 
 **delete_everything 是个我不认识的工具名** —— 策略里根本没有它的规则。但因为默认是拒绝，它自动被拦住了。
 
-如果默认是允许，同一个调用会显示 ALLOW。而现实里「新加了一个工具忘了配策略」是必然会发生的 —— 关键只在于它的默认后果是安全还是危险。
+如果默认是允许，同一个调用会显示 ALLOW。新工具漏配规则是可能发生的配置错误；默认拒绝能让缺少允许规则的调用在这条执行路径上失败关闭，但不能发现旁路，也不能保证测试一定覆盖它。
 
-**默认拒绝把「忘记配置」从一个安全事故变成了一个功能缺失。** 后者会在测试时被发现，前者不会。
+因此默认拒绝降低了“新增工具被意外放行”的风险，代价是配置遗漏会表现为功能不可用；仍需用覆盖率检查和集成测试确认每个工具都经过策略入口。
 
 ## 第二条规则：被拒的也要审计
 
-一个常见做法是只记录成功的调用。那是错的，理由和第 9 节讲审计时一样：
+只记录成功调用会丢失拒绝事件。拒绝事件可以帮助发现访问模式和排查误拒，但拒绝记录本身不能证明策略整体有效，也不能单独证明存在攻击。
 
 ```text
 DENY  read_file          R2      ← 想读 /etc/passwd，被拦住
@@ -76,13 +76,13 @@ DENY  http_get           default ← 想访问元数据端点，被拦住
 DENY  exec_shell         R4      ← 想执行 shell，未开放
 ```
 
-这三行记录的是**谁想做但被拦住了**，而它和「谁没想做」是两件完全不同的事：
+如果这些事件可靠关联到可信主体、动作与时间窗口，它们可以提供“有请求被该策略拒绝”的证据；它们和“没有收到请求”不同，但审计范围仍取决于事件是否完整采集：
 
-- 只有前者说明策略在工作
-- 只有前者能帮你**调阈值** —— 如果一个合法操作被频繁拒绝，那是策略太严的信号
-- 出于安全考虑，持续的被拒尝试本身就是一个值得告警的信号（可能是注入在试探）
+- 拒绝比例与成功流量一起看，可帮助发现误拒；不能只凭拒绝数量就调宽权限。
+- 重复拒绝可能值得调查或告警；应结合主体、目标、任务上下文、请求频率和已知合法流量设阈值，避免把正常失败都当攻击。
+- 若工具可绕过此入口，拒绝日志也不能证明未记录的路径同样受到控制。
 
-如果只记成功的调用，你会得到一份「一切正常」的日志，而系统正在被反复试探。
+因此审计应同时记录允许、拒绝和执行结果，并监控日志接收端本身；日志缺口必须有明确处理策略。
 
 ## 第三条：策略本身要能被攻击测试
 
@@ -96,14 +96,14 @@ DENY  exec_shell         R4      ← 想执行 shell，未开放
 
 结果：**ALLOW（R1）**。
 
-因为它的字符串**确实以 /workspace/ 开头** —— 和第 3 节那个前缀检查是**同一个漏洞**，只是发生在了策略层而不是工具实现层。
+因为它的字符串**确实以 /workspace/ 开头** —— 和[最小权限](/chapters/sandboxing/least-privilege)一节中的前缀检查是**同一个漏洞**，只是发生在了策略层而不是工具实现层。
 
 这件事说明一个很重要的问题：**把策略抽成数据不会自动让它变安全。** 数据化的收益是可维护、可 review、可测试；而**正确性**要靠另外两件事：
 
-1. **策略的判据要检查解析后的值**（第 3 节的 realpath），而不是原始字符串
+1. **策略的判据要检查解析后的值**（[最小权限](/chapters/sandboxing/least-privilege)中的路径规范化），而不是原始字符串
 2. **策略要有攻击测试** —— 上面那行输入就该是一条固定的测试用例
 
-而第二点正是数据化的额外收益：**策略是数据，所以测试用例是数据，所以它可以被穷举。** 一堆 if 散在 20 个文件里时，你没法系统地测它们。
+规则表能让有限规则集合更容易枚举，也更方便做边界与冲突测试；这不等于能穷尽所有输入。路径、身份、并发和环境状态通常有很大的输入域，应结合等价类、性质测试、模糊测试与专门的集成测试。分散的 if 则需要先找到并纳入同一测试面。
 
 <Mermaid
   chart={`
@@ -117,9 +117,9 @@ flowchart TB
     E --> G
     F --> H["审计：ALLOW + 规则 id"]
     G --> I["审计：DENY + 规则 id"]
-    I --> J["用途一：证明策略在工作"]
-    I --> K["用途二：调阈值（频繁拒绝 = 太严）"]
-    I --> L["用途三：持续被拒 = 可能在被试探"]
+    I --> J["用途一：发现拒绝行为"]
+    I --> K["用途二：结合合法流量分析误拒"]
+    I --> L["用途三：结合上下文研判可疑试探"]
     M["策略是数据"] --> N["可 review / 可测试 / 可 diff"]
     N --> O["但它不会自动变安全 ——<br/>判据仍要检查解析后的值"]
 `}
@@ -131,47 +131,60 @@ flowchart TB
 
 | 层 | 管什么 | 在哪里实现 |
 |---|---|---|
-| 权限 | 能不能调这个工具 | 第 9 章的四道闸门 / 本节策略的 tool 匹配 |
+| 权限 | 能不能调这个工具 | [权限与活动范围](/chapters/computer-use/safety-and-scope) / 本节策略的 tool 匹配 |
 | 隔离 | 调了之后够得着什么 | 第 2 节的层级选择 |
 | 最小权限 | 边界内的具体范围 | 第 3 节的路径与网络白名单 |
 | 审计 | 出了事能不能复盘 | 本节（**包括被拒的**） |
 
-四层里，**最容易漏的是最后一层**。因为它不影响功能 —— 没记日志的系统跑起来一切正常，直到你需要复盘的那一天。
+审计常被忽略，因为缺少日志不一定影响功能；但“记了日志”也不自动等于可复盘。日志需要足够的主体/动作/结果关联、字段最小化、访问控制、保留策略和故障处理。规则表便于评审，但不能证明覆盖所有执行路径；应从公开入口追踪到 handler，并验证每条路径是否经过授权和审计。OWASP 建议避免直接记录访问令牌、密钥和敏感个人信息，并对来自不可信区域的日志字段做校验与安全编码（[OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)）。
 
+## 执行上限要落在能强制它的那一层
+
+上面的策略引擎回答“这个主体能否调用这个工具”；它**没有**限制获准代码会跑多久、占多少资源、产出多少数据。`execution-limits` 检查点提到的限制，必须分别放到实际能实施它们的层：
+
+| 上限 | 适合的执行层 | 需要验证的失败形态 |
+|---|---|---|
+| 单次工具与整个任务的墙钟期限 | 宿主为请求设 deadline；执行器可取消并终止对应进程组/容器 | 协作式取消不能打断任意阻塞代码；只杀父进程可能留下子进程；超时不代表副作用没有发生 |
+| CPU、内存、进程数、磁盘 | OS/container/sandbox 的资源控制器 | 应确认目标主机实际启用并配置控制器；在应用层检查 `ps` 数字不能阻止下一瞬间资源继续增长 |
+| 单任务调用次数/花费额度 | 宿主账本在执行前原子预留，再记录实际用量 | 并行调用中的“先读计数再加一”有竞态；重试、恢复与多 worker 必须共享同一任务额度 |
+| 工具返回与文件输出字节数 | 输出产生时限流；临时目录配磁盘配额；返回前再按字节截断 | 先把任意大输出读进内存再截断，只限制模型看到的文本，不限制内存或磁盘消耗 |
+
+Linux cgroup v2 提供 CPU、memory、pids 等 controller；其是否可用取决于内核支持、是否绑定到 v1 层级等条件，可用项列在 `cgroup.controllers`；controller 默认不会全部启用，还受父级 `cgroup.subtree_control` 层级约束。部署时应读取并验证目标 cgroup 的实际配置，不能仅凭应用声明了 limit 就认为生效（[Linux cgroup v2 文档](https://docs.kernel.org/admin-guide/cgroup-v2.html)）。Python `Popen.communicate(timeout=...)` 在等待超时时会抛出 `TimeoutExpired`；该用法下子进程不会自动被杀，调用方应显式 `kill()` 后再次 `communicate()` 完成收尾。若捕获 stdout/stderr，`communicate()` 会将数据缓存在内存，因此不适合无界输出。直接 `kill()` 也不等于清理整个进程树；应由执行器用进程组、容器或 sandbox 做整体终止（[Python subprocess 文档](https://docs.python.org/3/library/subprocess.html)）。
+
+落地时先为任务原子预留可用额度，再启动执行器；执行期间以 OS 控制器限制资源和输出；超时/强杀后保存终止原因，但把已开始的外部操作标为**结果未知**，经幂等键或下游查询对账后再决定是否恢复。对照测试至少覆盖：死循环、递归/进程派生、无限输出、并发同时耗尽额度，以及“下游已提交但本地超时”五种情况。预算检查通过只能证明策略分支选择正确；只有在真实执行边界验证了 kill、resource cap 与输出上限，才能声称运行受限。
 
 ## 策略和提示词的关系
 
 一个常见误解是把执行策略当成提示词的一部分 —— 在 system 里写「不要访问 /etc 目录」。
 
-**那不是策略，那是请求。** 它和真实策略的区别在于：请求可以被说服，策略不能。
+**那不是执行策略，那是给模型的指令。** 指令可能降低无意越界，但不能代替宿主授权。执行策略由模型之外的代码决定是否调用工具；不过，策略实现本身仍可能有旁路、错误规则、身份混淆、竞态或日志缺失，不能仅因它在模型之外就假定不可绕过。
 
-第 2 章实测过提示注入的效果：内容操纵类的注入在加了 XML 标签之后仍然 6/6 成功。所以一条写在提示词里的约束，在注入面前基本不构成障碍。
+[提示结构与边界](/chapters/prompt-engineering/structure-and-separation)记录过一次本地提示注入对照：内容操纵类样本在加 XML 标签之后仍有 6/6 成功。那是该小样本与当时提示模板的观察，不能外推成所有注入都有效或标签普遍无效；这里的设计结论只在于提示词不是授权机制。
 
-正确的分工是：
-
-| 放在哪 | 作用 | 能不能被绕过 |
+| 控制 | 作用 | 主要失效方式 |
 |---|---|---|
-| **system 提示** | 让模型知道边界，减少无意的越界 | 能（注入） |
-| **执行策略** | 真正的边界 | 不能（在模型之外） |
+| **system 提示** | 让模型知道边界，减少无意越界 | 注入、模型误解或输出偏离 |
+| **宿主执行策略** | 在工具执行前实施授权决定 | 旁路、错误策略、伪造身份、实现缺陷或错误部署 |
 
-两者都要有，但**只有后者是安全边界**。前者降低发生频率，后者决定发生之后会怎样。
-
-把这一点讲清楚很重要，因为它决定了评审时的判断：**如果一个系统的「安全措施」全部写在提示词里，那它没有安全措施。**
+两者都需要，但只有经过每条工具路径强制执行、基于可信身份和资源属性的授权检查，才构成应用层控制。再配合 OS sandbox、出口策略和可验证审计，才能形成纵深防御。若安全措施只有提示词，系统就缺少应用层执行控制。
 
 ## 一个检查：策略能不能被非作者读懂
 
 数据化的最后一个收益值得单独说：**它可以被 non-author 读懂。**
 
-把策略写成一份规则表之后，做安全评审的人不需要读工具实现，只需要读那份表。他能问出好问题：
+把策略写成规则表后，评审者更容易先看权限授予与拒绝；但仍要检查条件解释器、可信身份来源、所有 handler 路径及部署配置，单看规则表不足以证明边界有效。他能问出好问题：
 
 - 为什么 read_file 允许 /workspace/ 下的任何路径？
 - http_get 的白名单里有几个域名，它们都是必需的吗？
 - 默认是 deny 还是 allow？
+- 每一种工具是否都经过同一个授权入口？
+- 主体和资源归属来自哪里，是否能被模型参数伪造？
+- 审计接收端失败时，动作会拒绝、重试还是进入结果未知？
 
 如果这些检查散在 20 个工具的 if 里，这些问题就没人问得出来 —— 因为答案要先读 20 个文件才能拼出来。**而没人问，就不会被发现。**
 ## 完整可运行代码
 
-下面这段代码实现一套声明式的执行策略：默认拒绝、规则匹配、以及包含被拒调用的审计日志。
+下面这段代码是一个**故意保留路径前缀漏洞的本地教学反例**，用于复现“把策略写成数据也可能出错”；它不是可直接部署的授权实现。它的审计结构也仅供展示，后面的入口代码才示范参数脱敏与身份分离。
 
 ```python
 """执行策略与审计：默认拒绝 + 规则表 + 审计日志。
@@ -213,7 +226,7 @@ def check(tool, args):
 
 def execute(tool, args):
     decision, rule, why = check(tool, args)
-    rec = {"t": round(time.time() % 1000, 3), "tool": tool, "args": args,
+    rec = {"t": time.time(), "tool": str(tool)[:80],
            "decision": decision, "rule": rule}
     AUDIT.append(rec)
     if decision == "deny":
@@ -244,7 +257,7 @@ if __name__ == "__main__":
     print("     可以单独 review、单独测试、单独改；改动留在 git 里。")
     print("  3. 每一次判定都进审计（包括被拒的）")
     print("     「谁想做但被拦住了」和「谁没想做」是两件不同的事 ——")
-    print("     只有前者说明策略在工作，也只有它能帮你调阈值。")
+    print("     这只说明本次判定返回拒绝；覆盖所有路径仍需单独验证。")
     print()
     print("=== 审计日志（%d 条）===" % len(AUDIT))
     for r in AUDIT:
@@ -255,36 +268,54 @@ if __name__ == "__main__":
     print("  这正是第 3 节要讲的：策略层的前缀检查必须配合真实路径规范化。")
 ```
 
-实跑输出（2026-10-09）：
+本地运行输出：
 
 ```text
-  read_file     {"path": "/workspace/notes.md"}               允许（R1：只读工作区）
-  read_file     {"path": "/etc/passwd"}                       拒绝（R2：系统目录一律拒绝）
-  read_file     {"path": "/workspace/../../../etc/passwd"}    允许（R1：只读工作区）
-  http_get      {"host": "api.example.com"}                   允许（R3：白名单域名）
-  http_get      {"host": "169.254.169.254"}                  拒绝（default：没有匹配的规则）
-  exec_shell    {"cmd": "rm -rf /"}                           拒绝（R4：未开放）
-  delete_everything {}                                        拒绝（default：没有匹配的规则）
+策略：default = deny（默认拒绝）
+
+  read_file              {"path": "/workspace/notes.md"}        ✅ 允许（R1：只读工作区）
+  read_file              {"path": "/etc/passwd"}                ⛔ 拒绝（R2：系统目录一律拒绝）
+  read_file              {"path": "/workspace/../../../etc/pa   ✅ 允许（R1：只读工作区）
+  http_get               {"host": "api.example.com"}            ✅ 允许（R3：白名单域名）
+  http_get               {"host": "169.254.169.254"}            ⛔ 拒绝（default：没有匹配的规则，按默认拒绝）
+  exec_shell             {"cmd": "rm -rf /"}                    ⛔ 拒绝（R4：未开放）
+  delete_everything      {}                                     ⛔ 拒绝（default：没有匹配的规则，按默认拒绝）
+
+=== 三条设计要点 ===
+  1. default = deny
+     未列出的工具（delete_everything）自动被拒 —— 不需要有人记得去加规则。
+  2. 规则是数据，不是代码里的 if
+     可以单独 review、单独测试、单独改；改动留在 git 里。
+  3. 每一次判定都进审计（包括被拒的）
+     「谁想做但被拦住了」和「谁没想做」是两件不同的事 ——
+     这只说明本次判定返回拒绝；覆盖所有路径仍需单独验证。
+
+=== 审计日志（7 条）===
+  ALLOW read_file            R1
+  DENY  read_file            R2
+  ALLOW read_file            R1
+  ALLOW http_get             R3
+  DENY  http_get             default
+  DENY  exec_shell           R4
+  DENY  delete_everything    default
+
+  注意第三条：'/workspace/../../../etc/passwd' 以 /workspace/ 开头，
+  所以 R1 **会**匹配它 —— 这条策略在这里漏了。
+  这正是第 3 节要讲的：策略层的前缀检查必须配合真实路径规范化。
 ```
 
 第三行就是那个漏洞：它以 /workspace/ 开头，所以 R1 匹配了它。**这条策略在这里漏了。**
 
 
-## 策略和提示词的关系
+## 策略评估与唯一执行入口
 
-一个常见误解是把执行策略当成提示词的一部分 —— 在 system 里写「不要访问 /etc 目录」。
+上面的 `check()` 在演示里被手工调用。真实循环应让所有工具经过同一个执行入口，并在 handler 前做授权。这个入口是应用内的**策略执行点**（PEP）；策略判定本身只是决定，不会自动保护绕过该入口的其他代码路径。模型返回的 tool name 和 arguments 都是不可信输入；用户、租户、角色等身份属性必须由认证宿主从可信会话构造，不能从模型参数读取。
 
-**那不是策略，那是请求。** 区别在于：请求可以被说服，策略不能。第 2 章实测过提示注入的效果：内容操纵类的注入在加了标签之后仍然 6/6 成功。所以写在提示词里的约束，在注入面前基本不构成障碍。
-
-正确分工是两者都要有，但**只有后者是安全边界**：提示词让模型知道边界、减少无意越界；执行策略在模型之外，决定越界发生之后会怎样。这也决定了安全评审时的判断 —— **如果一个系统的「安全措施」全部写在提示词里，那它没有安全措施。**
-## 把策略接进 agent 循环：唯一的执行入口
-
-上面的 `check()` 在演示里被手工调用。真实循环里它必须接在**唯一一个**地方：工具真正执行之前。做法是让所有工具都经过一个 `dispatch()`，而不是让每个工具自己记得检查。
-
-新的策略引擎（保存为 `policy.py`）：把 L103 那条判据修好 —— R1 从 `path_prefix` 换成 `path_under`（内部先 `realpath` 再比），并把条件类型做成注册表，加新条件不用改引擎：
+下面的版本刻意把**策略决策**和**工具执行**分开：默认拒绝、先验证整份策略、所有匹配规则中拒绝优先；未知条件、策略格式错误、无效身份均拒绝。`path_under` 适用于静态教学夹具，真实文件操作仍有第 3 节说明的 TOCTOU 风险；它不是操作系统隔离。
 
 ```python
-import os, time
+from datetime import datetime, timezone
+import os
 
 POLICY = {
     "default": "deny",
@@ -292,107 +323,208 @@ POLICY = {
         {"id": "R1", "tool": "read_file", "allow": True,
          "when": {"path_under": "/workspace"}, "why": "只读工作区"},
         {"id": "R2", "tool": "read_file", "allow": False,
-         "when": {"path_prefix": "/etc/"}, "why": "系统目录一律拒绝"},
+         "when": {"path_prefix": "/etc/"}, "why": "拒绝系统目录"},
         {"id": "R3", "tool": "http_get", "allow": True,
-         "when": {"host_in": ["api.example.com", "docs.example.com"]}, "why": "白名单域名"},
-        {"id": "R4", "tool": "exec_shell", "allow": False, "when": {}, "why": "未开放"},
+         "when": {"host_in": ["api.example.com", "docs.example.com"]}, "why": "示例域名白名单"},
     ],
 }
 
-def _path_under(base, raw):
-    b = os.path.realpath(base)
-    full = os.path.realpath(os.path.join(b, raw))   # 先解析 .. 与符号链接
-    return full == b or full.startswith(b + os.sep)
 
-# 条件类型的注册表：加一种新条件 = 在这里加一行，不改引擎
+def _path_under(base, raw):
+    if not isinstance(raw, str) or not raw or "\x00" in raw:
+        return False
+    root = os.path.realpath(base)
+    target = os.path.realpath(os.path.join(root, raw))
+    return target == root or target.startswith(root + os.sep)
+
+
 CONDITIONS = {
-    "path_prefix": lambda v, args: str(args.get("path", "")).startswith(v),
-    "path_under": lambda v, args: _path_under(v, str(args.get("path", ""))),
-    "host_in": lambda v, args: args.get("host") in v,
+    "path_prefix": lambda value, args, principal: (
+        isinstance(args.get("path"), str) and args["path"].startswith(value)
+    ),
+    "path_under": lambda value, args, principal: _path_under(value, args.get("path")),
+    "host_in": lambda value, args, principal: args.get("host") in value,
+    # 角色只从认证宿主构造的 principal 读取，不读模型提供的 args。
+    "principal_role_in": lambda value, args, principal: bool(
+        set(principal["roles"]) & set(value)
+    ),
 }
 
-AUDIT = []
 
-def check(tool, args, policy=POLICY):
-    for r in policy["rules"]:
-        if r["tool"] != tool:
-            continue
-        if all(CONDITIONS[k](v, args) for k, v in r["when"].items()):
-            return ("allow" if r["allow"] else "deny"), r["id"], r["why"]
-    return "deny", "default", "没有匹配的规则，按默认拒绝"
+def _valid_policy(policy):
+    if not isinstance(policy, dict) or policy.get("default") != "deny":
+        return False
+    rules = policy.get("rules")
+    if not isinstance(rules, list):
+        return False
+    seen = set()
+    for rule in rules:
+        if not isinstance(rule, dict):
+            return False
+        rule_id, tool, allow, when = (rule.get("id"), rule.get("tool"),
+                                      rule.get("allow"), rule.get("when"))
+        if (not isinstance(rule_id, str) or not rule_id or rule_id in seen
+                or not isinstance(tool, str) or not tool
+                or not isinstance(allow, bool) or not isinstance(when, dict)):
+            return False
+        seen.add(rule_id)
+        if allow and not when:  # 防止误配成无条件放行
+            return False
+        for key, value in when.items():
+            if key not in CONDITIONS:
+                return False
+            if key in ("path_prefix", "path_under"):
+                if not isinstance(value, str) or not value:
+                    return False
+            elif (not isinstance(value, (list, tuple, set)) or not value
+                  or any(not isinstance(item, str) or not item for item in value)):
+                return False
+    return True
 
-HANDLERS = {"read_file": lambda path: {"ok": True}, "http_get": lambda host: {"ok": True}}
 
-def dispatch(tool, args):
-    """所有工具调用的唯一入口：先过策略，再执行，无论结果都写审计。"""
-    decision, rule, why = check(tool, args)
-    AUDIT.append({"ts": round(time.time() % 1000, 3), "tool": tool, "args": args,
-                  "decision": decision, "rule": rule})
+def check(tool, args, principal, policy=POLICY):
+    """返回决定与命中规则；principal 必须由可信宿主提供。"""
+    if (not isinstance(tool, str) or not isinstance(args, dict)
+            or not isinstance(principal, dict)
+            or not isinstance(principal.get("subject_id"), str)
+            or not principal["subject_id"]
+            or not isinstance(principal.get("roles"), (list, tuple, set))
+            or not _valid_policy(policy)):
+        return "deny", "invalid-request-or-policy", "请求、身份或策略格式无效"
+
+    matches = []
+    try:
+        for rule in policy["rules"]:
+            if rule["tool"] != tool:
+                continue
+            if all(CONDITIONS[key](value, args, principal)
+                   for key, value in rule["when"].items()):
+                matches.append(rule)
+    except (TypeError, ValueError, KeyError):
+        return "deny", "invalid-request-or-policy", "规则条件无法安全求值"
+
+    denied = [rule for rule in matches if not rule["allow"]]
+    if denied:
+        return "deny", ",".join(rule["id"] for rule in denied), denied[0]["why"]
+    allowed = [rule for rule in matches if rule["allow"]]
+    if allowed:
+        return "allow", ",".join(rule["id"] for rule in allowed), allowed[0]["why"]
+    return "deny", "default", "没有匹配的允许规则"
+
+
+HANDLERS = {
+    "read_file": lambda path: {"ok": True},
+    "http_get": lambda host: {"ok": True},
+}
+
+
+def dispatch(tool, args, principal, audit_sink):
+    """所有工具调用的入口。audit_sink 是宿主提供的日志写入函数。"""
+    if not isinstance(tool, str) or tool not in HANDLERS:
+        decision, rule, why = "deny", "unknown-tool", "没有注册该工具"
+    else:
+        decision, rule, why = check(tool, args, principal)
+
+    subject_id = principal.get("subject_id") if isinstance(principal, dict) else None
+    safe_tool = tool[:80] if isinstance(tool, str) else "<invalid>"
+
+    def emit(status):
+        audit_sink({
+            "time": datetime.now(timezone.utc).isoformat(),
+            "subject_id": subject_id,
+            "tool": safe_tool,
+            "decision": decision,
+            "rule": rule,
+            "status": status,
+        })
+
+    # 先交给宿主的审计接收端；不记录原始参数、密钥或异常文本。写入失败时不执行工具。
+    try:
+        emit("authorized" if decision == "allow" else "denied")
+    except Exception:
+        return {"status": "denied", "reason": "audit-unavailable"}
+
     if decision == "deny":
-        return {"blocked": True, "rule": rule, "reason": why}
-    handler = HANDLERS.get(tool)
-    if handler is None:
-        return {"blocked": True, "rule": "default", "reason": "没有注册该工具"}
-    return handler(**args)
+        # 不向模型披露内部规则 id/why，减少策略枚举；细节只进入受控审计。
+        return {"status": "denied", "reason": "not_authorized"}
+    try:
+        result = HANDLERS[tool](**args)
+    except Exception:
+        # 有外部副作用的 handler 抛错时，效果可能未知；不要把异常文本回传或记日志。
+        try:
+            emit("unknown")
+        except Exception:
+            pass
+        return {"status": "unknown", "rule": rule}
+    try:
+        emit("completed")
+    except Exception:
+        # 动作可能已完成，但无法确认结果已审计；调用方应按未知处理并对账。
+        return {"status": "unknown", "rule": rule}
+    return {"status": "completed", "rule": rule, "result": result}
 ```
 
-**工具名从哪来。** 就是模型返回的 `tool_use` 块里的 `name`（第 11 章那个循环，在查 `tools` 注册表之前先过 `dispatch`）。**在哪一步调用。** 解析出 `name / input` 之后、真正执行 handler 之前 —— 不是执行完再记，那样拦不住任何东西。
+**注意这个教学入口的边界。** 它演示授权决定与结果状态事件，不是防篡改日志，也没有证明持久化、告警、保留期、跨事件关联或日志后端的可靠性。生产系统应按威胁模型选择可靠日志接收端、设置字段与大小限制、处理 CR/LF 等日志注入，并测试日志接收失败时的动作策略。不要把完整 `args` 或原始异常写入审计；按白名单记录主体、动作、决策、规则、目标的安全摘要和结果状态。`audit_sink` 本身以及所有工具执行路径也必须纳入可信边界。拒绝结果返回给模型时应使用稳定、通用的错误，不回显内部规则 ID 或判定理由；诊断细节留在受控审计与运维界面。
 
-## 一条固定的攻击测试用例
+策略评估只解决“这个可信主体能否请求此动作”的一部分。多租户应用还必须校验资源归属和对象级权限；路径校验不能替代 OS sandbox；HTTP host allowlist 也不能替代经验证 IP 的连接、TLS 主机名验证、redirect 控制和出口策略（见第 3 节）。
 
-L104 说那行输入「就该是一条固定的测试用例」，写法就是这样。测试文件（保存为 `test_policy.py`，与 `policy.py` 同目录）：
+## 固定攻击测试
+
+将下面测试保存为 `test_policy.py`，与 `policy.py` 同目录。它同时覆盖路径穿越、模型伪造角色、拒绝优先、无条件放行误配、未知条件、默认拒绝、未知工具与日志脱敏边界。
 
 ```python
 import policy
 
-def test_path_prefix_attack_is_denied():
-    # 这条路径的字符串前缀是 /workspace/，但真实路径是 /etc/passwd
-    decision, rule, why = policy.check("read_file", {"path": "/workspace/../../../etc/passwd"})
-    assert decision == "deny", "前缀合法不等于路径合法：%s %s" % (decision, rule)
+TRUSTED = {"subject_id": "user-1", "roles": []}
 
-def test_normal_workspace_read_is_allowed():
-    decision, rule, why = policy.check("read_file", {"path": "/workspace/notes.md"})
-    assert decision == "allow" and rule == "R1"
 
-def test_unknown_tool_defaults_to_deny():
-    decision, rule, why = policy.check("delete_everything", {})
-    assert decision == "deny" and rule == "default"
-
-def test_metadata_endpoint_is_denied():
-    decision, rule, why = policy.check("http_get", {"host": "169.254.169.254"})
+def test_path_traversal_is_denied():
+    decision, _, _ = policy.check(
+        "read_file", {"path": "/workspace/../../../etc/passwd"}, TRUSTED
+    )
     assert decision == "deny"
+
+
+def test_model_cannot_grant_itself_admin_role():
+    admin_only = {"default": "deny", "rules": [{
+        "id": "admin", "tool": "delete", "allow": True,
+        "when": {"principal_role_in": ["admin"]}, "why": "admin only"
+    }]}
+    decision, _, _ = policy.check(
+        "delete", {"role": "admin"}, TRUSTED, admin_only
+    )
+    assert decision == "deny"
+
+
+def test_deny_overrides_allow_and_unknown_tool_is_denied():
+    conflicted = {"default": "deny", "rules": [
+        {"id": "allow", "tool": "read_file", "allow": True,
+         "when": {"path_under": "/workspace"}, "why": "allow"},
+        {"id": "deny", "tool": "read_file", "allow": False,
+         "when": {"path_prefix": "/workspace/secret"}, "why": "deny"},
+    ]}
+    decision, _, _ = policy.check(
+        "read_file", {"path": "/workspace/secret/a"}, TRUSTED, conflicted
+    )
+    assert decision == "deny"
+    assert policy.check("delete_everything", {}, TRUSTED)[0] == "deny"
+
+
+def test_audit_does_not_store_raw_arguments():
+    events = []
+    policy.dispatch("read_file", {"path": "/workspace/a", "token": "fake-secret"},
+                    TRUSTED, events.append)
+    assert "fake-secret" not in repr(events)
 ```
 
-跑 `python3 -m pytest -q`（实跑数据 2026-10-12）：
-
-```text
-....                                                                     [100%]
-4 passed in 0.01s
-```
-
-**这四条覆盖了三种失效模式**：前缀绕过（第一条）、误拦正常操作（第二条）、默认值方向错误（第三条）。它们都是**数据**（一段路径、一个 host），所以可以穷举、可以回归 —— 这正是把策略数据化的额外收益。
-
-## 怎么加第三种条件
-
-需求变了，比如要加「只允许访问这些 IP 段」，不需要动 `check()`，只加两处：
-
-```python
-import ipaddress
-CONDITIONS["ip_in_cidrs"] = lambda v, args: any(
-    ipaddress.ip_address(args.get("ip", "0.0.0.0")) in ipaddress.ip_network(c) for c in v)
-
-# 然后规则里直接用：
-{"id": "R5", "tool": "connect", "allow": True,
- "when": {"ip_in_cidrs": ["203.0.113.0/24"]}, "why": "只允许指定网段"}
-```
-
-**为什么这样安全**：`check()` 对所有条件一视同仁（`all(...)`），新条件只影响匹配结果，不影响默认拒绝与审计。**失败形态**：如果把新条件写成「匹配不上就放行」的否定逻辑，默认拒绝就被绕过了 —— 条件的语义必须是「满足才命中规则」，而不是「满足就跳过检查」。
+代码的 `read_file`/`http_get` handler 是本地占位，不访问文件或网络。历史代码片段里的 2026-10-12 `4 passed` 只对应当时那四个测试，并未覆盖策略冲突、伪造身份、审计脱敏或日志故障；本轮离线检查结果见实验记录。测试不能证明真实身份系统、日志管道、OS 隔离或生产网络策略安全。
 
 ## 常见坑
 
-- **把检查写成散落的 if。** 分散、不可 review、不可测试，而且新加工具时容易漏。
-- **默认允许。** 「忘记配置」的后果从功能缺失变成安全事故 —— 前者测试能发现，后者不能。
-- **只审计成功的调用。** 被拒的记录才说明策略在工作，也才能帮你调阈值。
-- **以为策略数据化就安全了。** 实测里 R1 的前缀检查放过了 /workspace/../../../etc/passwd —— 和第 3 节是同一个漏洞。
-- **策略没有攻击测试用例。** 数据化的额外收益正是「测试用例也能穷举」。
-- **忘了审计这层。** 它不影响功能，所以最容易漏 —— 直到你需要复盘的那一天。
+- **把检查写成散落的 if。** 统一策略入口便于 review，但必须确认没有旁路。
+- **默认允许或条件解析失败后放行。** 新工具、未知条件和格式错误应拒绝。
+- **依赖规则顺序隐式解决冲突。** 明确冲突语义并测试；本例采用拒绝优先。
+- **把模型传来的用户、租户、角色当可信身份。** 身份上下文应由认证宿主提供，并做对象级授权。
+- **把所有调用参数写入审计。** 参数可能含凭据、个人信息或攻击者控制的换行；只记录最小字段并编码/限制长度。
+- **把内存列表或应用日志叫作完整审计。** 持久性、篡改防护、访问控制、告警、保留期和故障处理需要单独设计。
+- **把 `realpath` 当成并发安全的文件边界。** 检查与打开之间仍可能发生路径替换，见[最小权限](/chapters/sandboxing/least-privilege)。

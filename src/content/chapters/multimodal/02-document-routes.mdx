@@ -4,35 +4,45 @@ title: PDF 与表格的三条路线
 status: drafting
 ---
 
-拿到一份 PDF 时，你有三条路：直接把 PDF 交给模型、把它渲染成图片、或者自己先把文本抽出来。
+拿到一份 PDF 时，常见做法有三种：按目标 API 的 `document` 格式提交 PDF、把 PDF 页面渲染成图像，或者先抽取文本再处理。**这三种表示的支持情况由具体 provider、模型和 API endpoint 决定**；“Anthropic 兼容”也不自动意味着支持 Anthropic 的所有 content block。
 
-三条路都能写出来，而且都「能跑」。但它们**在同一个端点上的实际行为差别巨大**，其中一条会给你一个看起来成功、实际什么都没做的响应。
+## 一组无法独立复核的历史对比
 
-## 实测：同一份 PDF，三条路线
+正文保留了 2026-10-08 的三路历史摘要，称输入是手写发票 PDF、问题相同，记录了如下 token 和回答。但逐次请求、原始响应、准确 endpoint 与模型后端指纹、完整 usage 及评分器没有归档，无法独立复核这些数字或确认三路输入处理完全等价。它们只代表当时记下的观察，不足以证明某 provider 静默丢弃了 PDF，也不能推出文本/图像路线的一般准确率或成本。
 
-我手写了一份最小合法 PDF（一张 8 行的发票表格，含 Widget A/B/C 与合计 119.50），然后用三条路线问同一个问题。答案键是构造出来的，可以逐字比对：
-
-| 路线 | 输入 token | 回答正确 | 模型实际说了什么 |
+| 路线 | 历史摘要记录的 input tokens | 当时的判分记录 | 历史摘要的回答片段 |
 |---|---:|---|---|
 | A 直接发 PDF（document 块） | **59** | ❌ | 「无法确定（文档不受支持，未提供可读取的表格内容）」 |
 | B 渲染成 PNG 发（image 块） | 337 | ✅ | 逐行读出了 A/B/C 的数量、单价与金额 |
 | C 自己抽文本发（text 块） | 123 | ✅ | 「37.50,119.50」 |
 
-（实跑数据，2026-10-08，`deepseek-flash`。三路线用同一份内容、同一个问题。）
+（未独立复核的历史摘要，2026-10-08，模型别名 `deepseek-flash`；不能唯一确定模型快照。）
 
-先把三种「路线」的确切形态摆出来 —— 它们不是三个 API，只是同一次请求里 `content` 数组装的东西不同：
+下面的 JSON 展示 Anthropic Messages API 的示意形态。其他 provider 可能不支持 `document` block、PDF URL 或同一 MIME 组合；上线前查目标 endpoint 的文档，并对请求错误、`stop_reason`、非文本/空响应和 usage 做显式处理。[Anthropic PDF 支持文档](https://platform.claude.com/docs/en/build-with-claude/pdf-support) 展示了该 API 支持 base64、URL 与 Files API 的 PDF 输入（查阅日期：2026-10-22）。
 
 路线 A，`document` 块（把 PDF 本身交给模型）：
 
 ```json
-{ "type": "document",
-  "source": { "type": "base64", "media_type": "application/pdf", "data": "<PDF 的 base64>" } }
+{
+  "type": "document",
+  "source": {
+    "type": "base64",
+    "media_type": "application/pdf",
+    "data": "<PDF 的 base64>"
+  }
+}
 ```
 
 它也可以直接给 URL（是否支持取决于厂商与端点）：
 
 ```json
-{ "type": "document", "source": { "type": "url", "url": "https://example.com/invoice.pdf" } }
+{
+  "type": "document",
+  "source": {
+    "type": "url",
+    "url": "https://example.com/invoice.pdf"
+  }
+}
 ```
 
 路线 B，`image` 块（你先把 PDF 渲染成 PNG，再按第 1 节的方式发）：
@@ -48,48 +58,39 @@ status: drafting
 { "type": "text", "text": "Invoice INV-2026-1008\nItem  Qty  Amount\n..." }
 ```
 
-`media_type` 是这份内容的 MIME 类型（Multipurpose Internet Mail Extensions，就是 HTTP 请求头里 `Content-Type` 用的那套类型名），它告诉服务端怎么解码 `data`：PDF 填 `application/pdf`，PNG 填 `image/png`。**填错不会自动纠正** —— 好的情况是一次解析失败，坏的情况就是下面这种静默丢弃。
+`media_type` 是内容的 MIME 类型（Multipurpose Internet Mail Extensions），用于描述 `data` 的格式：PDF 通常标为 `application/pdf`，PNG 通常标为 `image/png`。格式或内容块不符合 endpoint 契约时，应检查 API 错误与响应；不能假设服务端会自动转换，也不能在没有证据时断言它静默丢弃。
 
-> **边界声明（重要）**：本节所有结论都来自**当前这个 Anthropic 兼容端点**。A 路线在这里 200 静默，**不等于「PDF 协议不支持」** —— 官方文档明确写了原生 API 支持 `document` 块。换供应商必须自己重跑本节脚本，不要照搬结论，更不要把「本端点不行」写成「不能用」。
+> **边界声明**：官方资料说明 Anthropic Messages API 支持文档/PDF 输入；这不能证明其他 Anthropic 兼容 endpoint 支持同样的内容块，也不能反推历史别名 `deepseek-flash` 的行为。针对实际 endpoint，应核对其文档并分别记录请求错误、终止原因、输出内容与 usage。
 
-## 路线 A 的问题不是「不支持」，是「静默」
+## 不要从 token 数反推 PDF 被丢弃
 
-先看最关键的地方：**路线 A 返回的是 HTTP 200，不是错误。**
+历史摘要写的是 59 个输入 token，回答文本提到“文档不受支持”。由于原始请求和完整响应没有留存，**不能从 59 这个数字推出 PDF 字节未被解析或被丢弃**。PDF 的 token 用量可能包含抽取文本、页面图像或供应商特有计数；不能按文件字节大小推算 token，也不能拿一条摘要与问题本身的估算量直接相减得出服务端行为。
 
-59 个输入 token 也说明了问题 —— 那份 PDF 有 874 字节，如果真的被解析，输入 token 不可能只有 59（那只够装下提问本身）。也就是说：**PDF 的字节被收下了，然后被丢掉了。**
+能给出的窄结论是：这份历史摘要记录了一次 PDF 路线回答“不受支持”；若应用收到相同响应，应将结果标记为未完成或 unsupported，并使用明确支持的备用路径。HTTP 成功仅代表请求被处理到某个 HTTP 响应状态，不能证明文档内容被完整理解。模型说“读不出”也不应作为唯一质量门禁：应用需检查终态、必要字段、来源引用与业务约束，无法验证时返回待处理状态。
 
-这件事比「不支持 PDF」严重得多：
+## 文本路线要验证抽取产物
 
-- 如果是 400，你的代码会立刻报错，你会知道要换方案
-- 现在是 200 + 一句「文档不受支持」，如果提示词里没有明确要求「读不出就说读不出」，模型完全可能**开始编**
-
-换句话说，**这条路线把「我读不到」这件事从「HTTP 层」降级到了「模型自觉性」层**，而后者不是可靠的保障。
-
-这也解释了为什么第 5 章那条规律在这里又出现一次：**凡是有静默降级的地方，都要有代码层的守卫。** 就本条而言，守卫是：拿到 PDF 之后不要盲发，先自己判断这份文档该怎么走。
-
-## 路线 C 是可行的，而且便宜
-
-我用 `pdfplumber` 从**同一份 PDF** 里抽文本：
+旧记录称 `pdfplumber` 从生成的 PDF 抽出了 159 个字符：
 
 ```text
 pdfplumber 从同一份 PDF 抽出 159 字符，含 37.50: True
 ```
 
-（实跑数据，2026-10-08。）
+（历史本地摘要，2026-10-08；旧 API harness 的 C 路线直接从 `ROWS` 常量构造文本请求，而非把 `pdfplumber` 的提取结果发送给模型，所以这不是完整端到端的“抽取后总结”对比。）
 
-文本层的 PDF 是**结构化数据**，抽取是确定性的、可以单元测试、不需要任何模型。而且它最便宜：123 token，是图片路线（337）的 2.7 分之一。
+文本抽取通常比发送整页图像更容易检查、记录和测试；但抽取器输出的顺序与表格结构取决于 PDF 编码、布局和工具配置。历史表里的 123 与 337 token 不可当作稳定价格比：样本只有一份，逐次 usage 缺失，而且旧脚本的图像路线由 `ROWS` 直接用 Pillow 绘制，并非从 PDF 渲染，文本路线也直接发送 `ROWS` 常量。两种变换不是从同一个 PDF 端到端得到的。
 
 但它有一个前提，而且这个前提经常不成立：**PDF 里得有文本层。** 扫描件、截图导出的 PDF、以及很多「打印成 PDF」的报表，里面只有整页的图片，没有可抽取的文字。这种情况下 pdfplumber 会抽出空字符串，而路线 C 直接失效。
 
-所以真正的决策不是「哪条路线更好」，而是**先判断你手上这份 PDF 属于哪一类**：
+因此决策要看**下游字段与可验证性**，而不能只看抽取到多少字符：
 
 | PDF 类型 | 判断方法 | 该走哪条路 |
 |---|---|---|
-| 文本层 PDF | 抽取能拿到足够字符 | **C**（便宜、确定、可测） |
-| 扫描 / 图片 PDF | 抽取几乎为空 | **B**（渲染成图） |
-| 版面即信息（表格、表单） | 抽取出来的字符**顺序全乱** | **B**，或者 C + 版面重建 |
+| 文本层 PDF | 提取出目标字段，并通过应用定义的结构与业务校验 | **C**（便于程序检查；成本需实测） |
+| 扫描 / 图片 PDF | 无文本层或抽取缺少必需字段 | OCR 或 **B**（渲染成图，依目标 API 支持） |
+| 版面即信息（表格、表单） | 行列关系不满足 schema/算术或业务约束 | **B**，或使用保留坐标的解析并复核 |
 
-第三行是最容易被忽略的：文本层 PDF 抽出来的字符流，**不保留二维位置**。一张三列表格抽出来常常变成「所有第一列、所有第二列、所有第三列」这样的顺序，行列关系全丢。这种情况下「抽取成功」是个假象 —— 字符是拿到了，但结构没了。
+不要把第三行简化为“抽取文本必然丢位置”：许多工具保留词坐标或能返回表格结构，但列重建仍会受跨列、合并单元格、重复表头、阅读顺序、旋转页面和字体编码影响。应检查产物是否符合该业务的 schema，并用独立约束（例如行金额之和是否等于总额）判定是否可自动采纳。
 
 <Mermaid
   chart={`
@@ -99,15 +100,16 @@ flowchart TB
     B -->|"抽到了"| D{"行列关系还成立吗？"}
     C --> E["渲染成图片<br/>走 image 块（路线 B）"]
     D -->|"顺序乱了"| E
-    D -->|"结构完整"| F["直接用文本<br/>路线 C（最便宜）"]
-    A -.-> G["❌ 直接发 document 块<br/>实测：HTTP 200 但内容被丢弃"]
-    G -.-> H["⚠️ 静默失效：代码以为成功<br/>模型只能自己说「读不到」"]
+    D -->|"结构完整"| F["先评估文本<br/>路线 C（成本需实测）"]
+    A --> G["按目标 API 验证 PDF block 支持"]
+    G --> H["检查终态、抽取字段与业务不变量"]
+    H --> I["不满足约束时转 OCR / 图像 / 人工复核"]
 `}
 />
 
 ## 路线 B 的代价与收益
 
-图片路线贵 2.7 倍，但它换来的是**版面**。
+图像路线保留页面的视觉版面，但其 token、延迟和总成本需在目标 endpoint 与代表性文档上测量；本节的单份历史摘要不足以比较成本。
 
 「渲染成 PNG」具体用什么？最小路径是 `pypdfium2`（BSD 许可、pip 可装、不依赖外部 poppler）：
 
@@ -122,239 +124,294 @@ def render_pdf(pdf_bytes, page_index=0, scale=2):
     return page.render(scale=scale).to_pil()
 ```
 
-多页文档对 `range(len(pdf))` 循环即可。**注意 `scale` 不是越大越好**：第 1 节实测 1,280 以上服务端会自己缩小，多出来的像素只是白传。本次实跑（2026-10-12）用上面这份 874 字节的发票 PDF，`scale=2` 渲染出 1224×1584 的 PNG、42,547 字节 —— 比原 PDF 大了 48 倍，而这些字节并不换来更多 token。
+多页文档可按页循环；`scale` 表示渲染分辨率取舍，像素增多可能提高细节，也会增大请求体。服务端是否缩放及图像 token 用量取决于目标 provider/model，须查对应文档并实测。PNG 字节数与模型 token 用量不是同一个指标，不能从文件字节大小推断 token 成本。
 
-表格的对齐、跨行单元格、印章、手写批注、复选框的勾选状态 —— 这些在文本层里要么丢失，要么变形。第 4 节会看到视觉提取的准确率实测，这里先记住结论的一半：**它相当准，但错误是偶发且静默的。**
+表格对齐、跨行单元格、印章、手写批注与复选框状态可能不在文本层中，图像路由则可能保留可视布局；这不代表视觉提取必然更准确。模型可能漏读、误读或幻觉，结构化字段必须另做 schema 和业务校验。第 4 节的实验也要按其样本和判分范围理解。
 
 另一个实际差别是**可验证性**。路线 C 的结果可以和源文件逐字符 diff；路线 B 的结果只能和「你以为图里写了什么」比 —— 而那个「以为」本身可能来自同一张图。所以走视觉路线时，交叉校验不是可选项（第 5 节展开）。
 
-## 怎么用代码判断该走哪条路
+## 用业务约束验证提取结果
 
-判断不该靠人看，要写成函数。三个可测的判据：
+不建议只凭“每页多少字符”或一组通用坐标阈值自动选择路线。文本存在不代表字段齐全，坐标聚类成功也不代表行列解析正确；阈值须用你的文档族校准。更实用的门禁是：抽取必需字段后，检查类型、必填项、标识符和业务不变量。校验失败时转 OCR/图像处理或人工复核，并保留失败原因。
 
-**一，字符密度。** 抽出字符数 ÷ 页数。文本层 PDF 通常每页几百到几千字符，扫描件接近 0。设一个下限（比如每页 100 字符）就能把两类分开。
-
-**二，字符的可读性。** 有些 PDF 能抽出字符，但抽出来是乱码（字体缺少正确的 ToUnicode 映射）。判据是「可打印 ASCII + 常用中文字符」的占比，低于阈值就按扫描件处理。
-
-**三，版面结构。** 这一条最容易被跳过。抽取时保留每个词的坐标（`pdfplumber` 的 `extract_words()` 会给出每个词的 x0 / x1 / top），然后检查：按 top 分组能不能形成稳定的行？每行的词块数量是否一致？
-
-如果一份三列表格抽出来的词块都堆在同一个 x 区间里，说明行列关系已经丢了 —— 这时该走图片路线，而不是硬解析。
-
-三个判据都是确定性的、可单元测试的。这一点很重要：**「该走哪条路」这个判断本身不该交给模型**，否则你只是把一次静默失效换成了另一次。
-
-把它写出来就是下面这个函数（三个判据的阈值都放在参数里，方便按业务调）：
+下面是发票例子的纯 Python 校验器。它只校验已解析出的行与金额，不负责 PDF 抽取，也不证明供应商输出忠实；PDF parser 或模型输出都应先被视为不可信输入。
 
 ```python
-import io
-import pdfplumber
+from decimal import Decimal, DecimalException, InvalidOperation
 
 
-def layout(words, tol=8.0):
-    """x0 聚成列中心；再看每个多词行能否整行对齐到这些列。"""
-    centers = []
-    for w in sorted(words, key=lambda w: w["x0"]):
-        if not any(abs(w["x0"] - c) <= tol for c in centers):
-            centers.append(w["x0"])
-    rows = {}
-    for w in words:
-        rows.setdefault(round(w["top"]), []).append(w)
-    multi = [ws for ws in rows.values() if len(ws) >= 2]
-    if not multi:
-        return len(centers), 1.0
-    aligned = sum(1 for ws in multi
-                  if all(any(abs(w["x0"] - c) <= tol for c in centers) for w in ws))
-    return len(centers), aligned / len(multi)
+def validate_invoice_rows(rows: list[dict], reported_total: str) -> tuple[bool, str]:
+    """检查必需字段、有限非负金额和合计；返回可审计的失败原因。"""
+    required = {"item", "quantity", "unit_price", "amount"}
+    if not isinstance(rows, list):
+        return False, "rows_type"
+    if not rows:
+        return False, "no_rows"
+    amounts = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or set(row) != required:
+            return False, f"row_{index}_schema"
+        if not isinstance(row["item"], str) or not row["item"].strip():
+            return False, f"row_{index}_item"
+        raw_numbers = (row["quantity"], row["unit_price"], row["amount"])
+        if not all(isinstance(value, str) for value in raw_numbers):
+            return False, f"row_{index}_number"
+        try:
+            quantity, unit_price, amount = (Decimal(value) for value in raw_numbers)
+        except (InvalidOperation, ValueError):
+            return False, f"row_{index}_number"
+        if not all(value.is_finite() for value in (quantity, unit_price, amount)):
+            return False, f"row_{index}_number"
+        try:
+            if quantity < 0 or unit_price < 0 or amount < 0:
+                return False, f"row_{index}_negative"
+            product = quantity * unit_price
+        except DecimalException:
+            return False, f"row_{index}_number"
+        if not product.is_finite():
+            return False, f"row_{index}_number"
+        if product != amount:
+            return False, f"row_{index}_arithmetic"
+        amounts.append(amount)
+    if not isinstance(reported_total, str):
+        return False, "total_number"
+    try:
+        total = Decimal(reported_total)
+    except (InvalidOperation, ValueError):
+        return False, "total_number"
+    if not total.is_finite():
+        return False, "total_number"
+    try:
+        matches = sum(amounts, Decimal("0")) == total
+    except DecimalException:
+        return False, "total_number"
+    return matches, "ok" if matches else "total_mismatch"
 
 
-def classify(pdf_bytes, min_chars_per_page=100, min_printable=0.9):
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as d:
-        pages = d.pages
-        texts = [(p.extract_text() or "") for p in pages]
-        per_page = sum(len(t) for t in texts) / max(len(pages), 1)
-        text = "".join(texts)
-        printable = sum(c.isprintable() for c in text) / max(len(text), 1)
-        ncol, align = layout(pages[0].extract_words())
-    if per_page < min_chars_per_page or printable < min_printable:
-        return "B"                      # 扫描件 / 乱码 → 渲染成图
-    if ncol >= 2 and align < 0.8:
-        return "B"                      # 列对不齐 = 版面已丢 → 渲染成图
-    return "C"                          # 文本层可用 → 直接抽文本
+assert validate_invoice_rows(
+    [
+        {"item": "Widget A", "quantity": "12", "unit_price": "3.50", "amount": "42.00"},
+        {"item": "Widget B", "quantity": "5", "unit_price": "8.00", "amount": "40.00"},
+        {"item": "Widget C", "quantity": "3", "unit_price": "12.50", "amount": "37.50"},
+    ],
+    "119.50",
+) == (True, "ok")
 ```
 
-拿本节那份 874 字节的发票 PDF 与一份抽不出文字的 PDF 各跑一次：
+当前样例假设每行金额等于数量乘单价，且总额等于行金额之和；真实发票可能包含税费、折扣、舍入规则或其他费用，必须按业务规则调整不变量与精度策略。金额守恒只能发现部分错误：例如模型把一个商品金额同时改成 35.00、并相应伪造总额时，算术仍可能自洽。生产核验还要与可信业务系统、原始订单/账本或人工审批交叉校验，并记录来源页码与原始片段。
 
-```text
-文本层发票（874 字节）          -> C   （每页 159 字符，可打印率 0.962）
-抽不出文字的 PDF（扫描件模拟）  -> B   （每页 0 字符，触发下限）
-```
+## 多页文档的用量要按页实测
 
-（本次真跑，2026-10-12。第二行用一份不含文本的 PDF 模拟扫描件。）
+不能把一页的历史 token 数乘以页数当作稳定成本：页面文本密度、图像尺寸、视觉内容、渲染 scale、重复表头、prompt、缓存和 provider 的 PDF 预处理都会改变用量。可记录每个请求的 provider/model、文档版本、页数、每种路由、完整 usage 字段、终态、延迟与判分结果，再对目标文档族统计分布。
 
-## 多页文档的成本怎么算
-
-单页的差距看起来不大（337 对 123），但多页会把它放大：
-
-| 页数 | 图片路线 | 文本路线 | 倍数 |
-|---:|---:|---:|---:|
-| 1 | 337 | 123 | 2.7x |
-| 10 | 3,370 | 1,230 | 2.7x |
-| 50 | 16,850 | 6,150 | 2.7x |
-
-（按本节实测的单页数字线性外推。）
-
-倍数是固定的，但绝对量不是 —— **50 页走图片路线要 16,850 token 一次**。如果这份文档还要在 agent 循环里反复看，按第 1 节的账还要再乘轮次：20 轮的累计会到 35 万 token 量级。
-
-所以对多页文档，**「只渲染相关页」比「选哪条路线」更重要**。分页策略的正确性依赖第 6 章的检索能力（先定位到页，再决定渲染哪几页），这也是为什么这一章放在检索与记忆之后。
+对大文档，先定位相关页再处理可以减少不必要输入，但页检索本身会有漏召回风险。上线应评估“检索页召回 + 下游字段准确率”的联合结果，并为重要字段提供页码/片段证据；不能只看节省的 token 或检索分数。这与第 6 章的检索评测相连。
 ## 完整可运行代码
 
+下面的脚本从同一份 PDF 生成三种输入：PDF document block、由该 PDF 实际渲染得到的 PNG、以及 `pdfplumber` 从同一 PDF 提取的文本。它调用一次每条路线并把逐次响应写入 JSONL；这只是目标 endpoint 的小型 smoke test，不是可靠性或成本评测。**实跑状态：本轮仅用 fake SDK 与 fake PDF 库做离线 harness 检查，没有调用 provider，也没有验证真实 PDF 库。** 用户运行会发送 3 次 API 请求并可能产生费用。
+
+安装并锁定 `anthropic`、`pdfplumber`、`pypdfium2` 版本后，设置 `ANTHROPIC_API_KEY` 与 `VERIFY_MODEL`。如使用兼容 endpoint，需显式配置该 provider 支持的 base URL、认证和内容块；兼容 Messages API 不表示支持相同 PDF 能力。运行前请用合成文档并确认 endpoint 文档允许该输入方式。
+
 ```python
-"""PDF 的三条路线：直接发 PDF / 渲染成图发 / 自己抽文本发。
+"""同一份 PDF 的三种表示；只做目标 endpoint 的单次 smoke test。"""
 
-含一个手写的最小合法 PDF 生成器（环境里没有 reportlab）。
-
-实跑状态：2026-10-08，deepseek-flash。
-"""
-
+import anthropic
 import base64
 import json
 import os
-import urllib.request
+import pdfplumber
+import pypdfium2 as pdfium
+import re
 from io import BytesIO
-from PIL import Image, ImageDraw
+from pathlib import Path
 
+client = anthropic.Anthropic()
+MODEL = os.environ["VERIFY_MODEL"]
+QUESTION = (
+    '从发票中读取 Widget C 的 amount 和总额。'
+    '只返回 JSON：{"amount":"...","total":"..."}。'
+)
+EXPECTED = {"amount": "37.50", "total": "119.50"}
 ROWS = [
     "Invoice INV-2026-1008",
-    "",
     "Item        Qty    Unit     Amount",
     "Widget A     12    3.50      42.00",
     "Widget B      5    8.00      40.00",
     "Widget C      3   12.50      37.50",
-    "-----------------------------------",
     "Total                       119.50",
 ]
 
 
-def make_pdf(lines):
-    """手写最小单页 PDF：Helvetica 12pt，纯 ASCII，文本可被抽取。"""
+def make_pdf(lines: list[str]) -> bytes:
+    """Generate a tiny text-layer PDF fixture using only the standard library."""
     parts = ["BT", "/F1 12 Tf", "60 720 Td", "16 TL"]
-    for ln in lines:
-        esc = ln.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
-        parts.append("(%s) Tj T*" % esc)
+    for line in lines:
+        escaped = line.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+        parts.append(f"({escaped}) Tj T*")
     parts.append("ET")
     stream = "\n".join(parts).encode("latin-1")
-
-    objs = [
+    objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+        ),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+        (
+            b"<< /Length "
+            + str(len(stream)).encode()
+            + b" >>\nstream\n"
+            + stream
+            + b"\nendstream"
+        ),
     ]
-    out = bytearray(b"%PDF-1.4\n")
+    output = bytearray(b"%PDF-1.4\n")
     offsets = []
-    for i, body in enumerate(objs, start=1):
-        offsets.append(len(out))
-        out += str(i).encode() + b" 0 obj\n" + body + b"\nendobj\n"
-    xref = len(out)
-    out += b"xref\n0 " + str(len(objs) + 1).encode() + b"\n"
-    out += b"0000000000 65535 f \n"
-    for off in offsets:
-        out += ("%010d 00000 n \n" % off).encode()
-    out += (b"trailer\n<< /Size " + str(len(objs) + 1).encode() + b" /Root 1 0 R >>\n"
-            b"startxref\n" + str(xref).encode() + b"\n%%EOF\n")
-    return bytes(out)
+    for index, body in enumerate(objects, 1):
+        offsets.append(len(output))
+        output += f"{index} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(output)
+    output += b"xref\n0 " + str(len(objects) + 1).encode() + b"\n0000000000 65535 f \n"
+    output += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets)
+    output += (
+        b"trailer\n<< /Size " + str(len(objects) + 1).encode()
+        + b" /Root 1 0 R >>\nstartxref\n" + str(xref).encode() + b"\n%%EOF\n"
+    )
+    return bytes(output)
 
 
-def make_png(lines, w=1100, h=420, scale=2):
-    """把同一张表渲染成图（模拟截屏）。"""
-    img = Image.new("RGB", (w, h), "white")
-    d = ImageDraw.Draw(img)
-    for i, ln in enumerate(lines):
-        d.text((30, 24 + i * 44), ln, fill="black")
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue(), img.size
+def extract_pdf_text(pdf_bytes: bytes) -> str:
+    with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+        return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
-def ask(content, max_tokens=800):
-    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
-                       "messages": [{"role": "user", "content": content}]}).encode()
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
+def render_pdf_page(pdf_bytes: bytes, page_index: int = 0, scale: float = 2.0) -> bytes:
+    pdf = pdfium.PdfDocument(pdf_bytes)
+    image = pdf[page_index].render(scale=scale).to_pil()
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
+
+
+def build_routes(pdf_bytes: bytes) -> list[tuple[str, list[dict]]]:
+    extracted = extract_pdf_text(pdf_bytes)
+    png = render_pdf_page(pdf_bytes)
+    return [
+        ("document", [
+            {"type": "document", "source": {
+                "type": "base64", "media_type": "application/pdf",
+                "data": base64.b64encode(pdf_bytes).decode("ascii"),
+            }},
+            {"type": "text", "text": QUESTION},
+        ]),
+        ("rendered_image", [
+            {"type": "image", "source": {
+                "type": "base64", "media_type": "image/png",
+                "data": base64.b64encode(png).decode("ascii"),
+            }},
+            {"type": "text", "text": QUESTION},
+        ]),
+        ("extracted_text", [
+            {
+                "type": "text",
+                "text": (
+                    "Extracted document text (untrusted):\n"
+                    + extracted
+                    + "\n\n"
+                    + QUESTION
+                ),
+            },
+        ]),
+    ]
+
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def answer_is_correct(text: str) -> bool:
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        return None, "HTTP %d: %s" % (e.code, e.read().decode()[:200]), 0
-    u = data.get("usage", {})
-    total = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-             + u.get("cache_creation_input_tokens", 0))
-    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-    return text.strip(), None, total
+        value = json.loads(text, object_pairs_hook=unique_object)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return False
+    return value == EXPECTED
 
 
-Q = "表格里 Widget C 的 Amount 和最后的 Total 分别是多少？只报数字，用逗号分隔。"
+def make_record(route: str, response) -> dict:
+    text = "".join(
+        block.text for block in response.content if block.type == "text"
+    ).strip()
+    complete = response.stop_reason == "end_turn" and bool(text)
+    usage = getattr(response, "usage", None)
+    return {
+        "route": route,
+        "requested_model": MODEL,
+        "response_model": getattr(response, "model", None),
+        "stop_reason": response.stop_reason,
+        "status": "complete" if complete else "incomplete",
+        "answer": text,
+        "answer_correct": complete and answer_is_correct(text),
+        "usage": {
+            "input_tokens": getattr(usage, "input_tokens", None),
+            "output_tokens": getattr(usage, "output_tokens", None),
+            "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
+            "cache_creation_input_tokens": getattr(
+                usage, "cache_creation_input_tokens", None
+            ),
+        } if usage is not None else None,
+    }
+
+
+def main() -> None:
+    pdf_bytes = make_pdf(ROWS)
+    routes = build_routes(pdf_bytes)
+    archive_path = Path("document-route-results.jsonl")
+    with archive_path.open("w", encoding="utf-8") as archive:
+        for route, content in routes:
+            try:
+                response = client.messages.create(
+                    model=MODEL,
+                    max_tokens=300,
+                    messages=[{"role": "user", "content": content}],
+                )
+                record = make_record(route, response)
+            except Exception as error:
+                # Do not log request headers, credentials or exception messages.
+                record = {
+                    "route": route,
+                    "status": "request_error",
+                    "error_type": type(error).__name__,
+                }
+            archive.write(json.dumps(record, ensure_ascii=False) + "\n")
+            archive.flush()
+            print(
+                route,
+                record["status"],
+                record.get("answer_correct"),
+                record.get("usage"),
+            )
+    print(
+        f"Per-route records saved to {archive_path}; "
+        "inspect them before drawing conclusions."
+    )
+
 
 if __name__ == "__main__":
-    pdf = make_pdf(ROWS)
-    png, size = make_png(ROWS)
-    print("素材：PDF %d 字节，PNG %d 字节（%dx%d）" % (len(pdf), len(png), size[0], size[1]))
-    print()
-    routes = [
-        ("A 直接发 PDF（document block）", [
-            {"type": "document", "source": {"type": "base64",
-             "media_type": "application/pdf", "data": base64.b64encode(pdf).decode()}},
-            {"type": "text", "text": Q}]),
-        ("B 渲染成 PNG 发（image block）", [
-            {"type": "image", "source": {"type": "base64",
-             "media_type": "image/png", "data": base64.b64encode(png).decode()}},
-            {"type": "text", "text": Q}]),
-        ("C 自己抽文本发（text block）", [
-            {"type": "text", "text": "以下是发票内容：\n" + "\n".join(ROWS) + "\n\n" + Q}]),
-    ]
-    for label, content in routes:
-        text, err, tok = ask(content)
-        if err:
-            print("[%s] 失败 %s" % (label, err))
-        else:
-            ok = "37.50" in text and "119.50" in text
-            print("[%s] 输入 %d token | 正确 %s | 回答：%s" % (label, tok, "✅" if ok else "❌", text[:90]))
-    print()
-    # 抽取路线用 pdfplumber 验证「PDF 里的文本到底能不能被抽出来」
-    try:
-        import pdfplumber
-        with pdfplumber.open(BytesIO(pdf)) as doc:
-            got = doc.pages[0].extract_text() or ""
-        print("pdfplumber 从同一份 PDF 抽出 %d 字符，含 37.50: %s" % (len(got), "37.50" in got))
-    except Exception as e:
-        print("pdfplumber 抽取失败：", e)
+    main()
 ```
 
-实跑输出（2026-10-08）：
-
-```text
-素材：PDF 874 字节，PNG 10351 字节（1100x420）
-
-[A 直接发 PDF（document block）] 输入 59 token | 正确 ❌ | 回答：无法确定（文档不受支持，未提供可读取的表格内容）。
-[B 渲染成 PNG 发（image block）] 输入 337 token | 正确 ✅ | 回答：观察图片中的发票表格：
-
-- Widget A：数量 12，单价 3.50，Amount 42.00
-- Widget B：数量 5，单价 8.00，Amount 40.00
-- 
-[C 自己抽文本发（text block）] 输入 123 token | 正确 ✅ | 回答：37.50,119.50
-
-pdfplumber 从同一份 PDF 抽出 159 字符，含 37.50: True
-```
+> **结果解释边界**：这段脚本对每条路线只调用一次，回答正确只说明这个合成样本在该次配置下命中。`usage` 缺字段会保留为 `null`，不能读成 0。完整评测需加入代表性 PDF、错误/模糊样本、重复运行、逐字段评分和独立复核，并记录 SDK/provider/model 与文档版本。
 
 ## 常见坑
 
-- **直接发 document 块就当成了。** 实测返回 HTTP 200、输入只有 59 token —— 内容被静默丢弃，模型只能说「读不到」。
-- **把「200」当成「读到了」。** 这条路线把失败从协议层降级到了模型自觉性层，而模型完全可能开始编。
-- **以为 PDF 一定有文本层。** 扫描件、截图导出的 PDF 抽出来是空的，这时候路线 C 直接失效。
-- **抽到了文本就以为结构也对。** 三列表格抽出来的字符流往往按列堆叠，行列关系全丢 —— 那是假象，不是成功。
-- **只用一条路线就上线。** 正确做法是先判断 PDF 类型再选路线，而且把判断写成代码（可测），而不是写进提示词（不可测）。
-- **忘了图片路线也要按第 1 节的账算。** 337 token 是单次的两倍多，在循环里会按轮放大。
+- **把 HTTP 成功当成内容已读懂。** 成功状态只说明请求得到响应；仍需检查模型终态、必要字段、结构化校验、来源片段和业务约束。无法验证时应保留为待处理。
+- **把模型说“读不出”当成唯一保护。** 应用要显式处理拒绝、截断、空文本和请求错误，并在字段缺失或校验失败时 fail closed。
+- **以为 PDF 一定有文本层。** 扫描件可能需要 OCR 或页面图像处理；在处理前检查抽取产物是否覆盖目标字段。
+- **抽到了文本就以为结构也对。** 阅读顺序和表格关系依 PDF 编码与抽取器而变；用字段 schema、算术约束、页码/片段证据及可信业务数据交叉校验。
+- **把单个样本的 token 比例当成本模型。** 不能线性外推历史摘要的 token 数；按目标 provider/model、文档族和 route 实测完整 usage 与任务质量。
+- **只凭字符数选择路线。** 路由应围绕下游字段、版面依赖、可验证性和失败处理设计；先用代表性样本评估，再决定是否组合文本、OCR、视觉或人工复核。

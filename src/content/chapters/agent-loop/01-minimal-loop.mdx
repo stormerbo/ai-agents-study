@@ -8,6 +8,12 @@ status: drafting
 
 写一遍的价值不在于「省一个依赖」，而在于你会知道哪些部分是必须的、哪些是框架替你补的。第 5 节会把两者对照起来看。
 
+## 短路径前置与边界
+
+从第 0 章「第一轮动手路径」跳来的读者，先确认自己已经读过消息 API、指令与数据边界，以及工具调用的真实过程。短路径只用一个只读订单 fixture、有限轮数和固定输出上限，目的是看清宿主如何把 `tool_use` 变成本地查询，再把 `tool_result` 交回模型。
+
+这个练习不包含身份认证、持久化恢复或写工具，也不验证模型在所有输入上的选择质量。完整状态恢复见本章后续小节；真实业务接入还需要在工具执行前做身份、资源和参数授权。短路径不改变本章的前置章节，也不代表已经完成阶段 3 的编排项目。
+
 这一节先写出最小的那个版本，并画出它的边界。
 
 ## 一个循环只有三个组成部分
@@ -20,7 +26,9 @@ status: drafting
 2. **一个工具注册表**（能做什么）
 3. **一个停止判据**（什么时候结束）
 
-除此之外都是可选的。界面、日志、重试、并发、持久化都是围着这三样长出来的。
+从**控制流骨架**看，界面、日志、重试、并发和持久化不是这个最小循环的组成部分，而是按需求加在外围的能力。但“骨架之外”不等于“生产环境可省”：身份与授权、参数校验、预算与轮数限制、错误处理、持久化恢复等，是否必需取决于风险和运行要求；面向真实用户的系统必须逐项做出明确设计，不能把这段教学代码直接上线。
+
+本节只讲由宿主执行的 **client-side tools**。示例将 `tool_use` 交给本地注册表执行；Anthropic 的 server-side tools 可能以 `server_tool_use` / `mcp_tool_use` 和 `pause_turn` 等形式出现，服务端调用的继续协议不同，不能把响应中的每个调用块都当作本地函数处理。若启用 server tools，应按对应 API 流程单独处理（见 [Anthropic stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons) 与[工具调用概览](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview)）。
 
 最小实现长这样：
 
@@ -29,8 +37,13 @@ messages = [{"role": "user", "content": task}]
 
 while True:
     resp = call_model(messages, tools=registry.specs())
-    if resp.stop_reason != "tool_use":   # stop_reason 是响应里的停止原因字段
-        return text_of(resp)
+    if resp.stop_reason == "end_turn":
+        answer = text_of(resp)
+        if not answer.strip():
+            raise RuntimeError("end_turn 但没有可展示文本；不能据此认定任务成功")
+        return answer
+    if resp.stop_reason != "tool_use":
+        raise RuntimeError(f"未处理的 stop_reason: {resp.stop_reason}")
 
     messages.append({"role": "assistant", "content": resp.content})
     results = []
@@ -40,7 +53,7 @@ while True:
     messages.append({"role": "user", "content": results})
 ```
 
-**十七行。** 这就是全部。后面四节讲的每一件事，都是往这十七行上加的。
+这就是最小骨架。后面四节讲的每一件事，都是往这几行上加的。
 
 这段代码里有三个不是标准库的函数，它们是循环和外界的三个接口点：
 
@@ -53,6 +66,8 @@ while True:
 ## 真模型那一侧：`call_model` 发什么、收到什么
 
 真实调用只依赖标准库 `urllib`，需要两个环境变量：
+
+> **历史记录的复现边界：** 下方 DeepSeek `deepseek-flash` 的两次响应和两条 400 报文是 2026-10-12 保存进正文的历史摘录；这次审计没有找到配套的原始 HTTP 请求/响应归档、精确端点快照或可复跑脚本，不能独立复现这些具体报文。它们只用于展示当时记录的字段形状，不证明当前 DeepSeek 兼容性、错误文案或模型行为；协议规则以当前 provider 官方文档核对。
 
 - `ANTHROPIC_BASE_URL`：API 的基础地址（厂商官方端点或中转平台给的地址）。
 - `ANTHROPIC_AUTH_TOKEN`：调用凭据，在平台控制台生成；本项目放在 `.env.local`，已被 `.gitignore` 覆盖，不会进仓库。
@@ -91,7 +106,7 @@ def call_model(messages):
         return json.loads(r.read().decode())
 ```
 
-任务「帮我查一下北京明天的最高气温。」第一次调用返回的原始响应（本次实跑，`deepseek-flash`，2026-10-12）：
+任务「帮我查一下北京明天的最高气温。」第一次调用在历史记录中返回如下响应摘录（`deepseek-flash`，2026-10-12，未独立复核）：
 
 ```json
 {
@@ -124,7 +139,7 @@ def call_model(messages):
 - `content` 是**块数组**，不是字符串。块靠 `type` 区分：`thinking` 是推理、`tool_use` 是要调工具、`text` 是回答。
 - `tool_use.id` 是这次调用的**配对凭证**，回填结果时必须原样带回去。
 - `tool_use.input` 已经是**解析好的对象**，不需要再 `json.loads`。
-- `stop_reason` 是「模型为什么停下」：`tool_use` 表示它在等工具结果，`end_turn` 表示它说完了；还有一个取值 `max_tokens`，它是输出预算字段，表示输出被截断，不是正常结束。
+- `stop_reason` 是「模型为什么停下」：在本节的 client-side tool 路径中，`tool_use` 表示需要宿主执行工具并回填结果；`end_turn` 表示模型这一轮自然结束，不等于业务任务成功。Anthropic 当前文档还记录了 `end_turn` 携带空 `content` 的情况；因此不能只看 stop reason 就交付结果，要检查是否存在可展示文本，并由业务闸门判断是否满足任务要求。`max_tokens` 表示达到输出上限，响应可能不完整，不能当作答案成功。Messages API 还有其他停止原因和 server-side tool 流程；这个最小例子只处理客户端 `tool_use` 和非空 `end_turn`，其余一律失败关闭，真实宿主应按所用 API 的完整状态集合分别处理（参见 [Anthropic stop-reason 文档](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)）。
 
 把结果回填之后，第二次请求里的 `messages` 数组长这样 —— 注意 `tool_use.id` 和 `tool_result.tool_use_id` 是同一个字符串：
 
@@ -141,7 +156,7 @@ def call_model(messages):
 ]
 ```
 
-那条 `tool_result` 是**一条新的 user 消息**，不是 assistant 消息的一部分 —— 这是最容易写错的地方。第二次调用返回（本次实跑，2026-10-12）：
+那条 `tool_result` 是**一条新的 user 消息**，不是 assistant 消息的一部分 —— 这是最容易写错的地方。第二次调用的历史响应摘录如下（`deepseek-flash`，2026-10-12，未独立复核）：
 
 ```json
 {
@@ -154,7 +169,7 @@ def call_model(messages):
 }
 ```
 
-这次 `stop_reason` 是 `end_turn`，循环据此取 `content` 里 `type=="text"` 的文本返回。注意 `usage` 里出现了 `cache_read_input_tokens: 256` —— 前缀命中缓存的部分计价更低，但它仍然占上下文；第 3 节算预算时会用到这两个字段。
+这条历史响应的 `stop_reason` 是 `end_turn`。注意 `usage` 里出现 `cache_read_input_tokens: 256`：缓存读 token 仍属于输入上下文；缓存的具体计价由 provider、模型和当前价格表决定，字段本身不证明当前单价。预算示例应分别保留 provider usage 字段，并在计算费用时核对适用的价格表。
 
 ### 假模型字段对照真实字段
 
@@ -171,19 +186,19 @@ def call_model(messages):
 
 ### 写错配对关系会怎样
 
-判据一句话：`tool_result.tool_use_id` 必须等于请求里某个 `tool_use.id`。写错一个字符就是 400（本次实跑，2026-10-12）：
+判据一句话：每个 `tool_result.tool_use_id` 必须对应前一条 assistant 消息里的某个 `tool_use.id`。当时记录的 DeepSeek 兼容端点错误摘录如下（2026-10-12，未独立复核；确切 HTTP 状态与文案应按目标端点验证）：
 
 ```json
 {"error":{"message":"unexpected `messages.2.content.0: tool_use_id` found in `tool_result` blocks: call_00_WRONG_ID. Each `tool_result` block must have a corresponding `tool_use` block in the previous message.","type":"invalid_request_error"}}
 ```
 
-漏掉整条 `tool_result` 同样是 400，报文会指出是哪条消息缺的：
+另一条历史错误摘录报告了缺少 `tool_result` 的情况（2026-10-12，未独立复核）：
 
 ```json
 {"error":{"message":"messages.2: `tool_use` ids were found without `tool_result` blocks immediately after: call_00_ABC123. Each `tool_use` block must have a corresponding `tool_result` block in the next message.","type":"invalid_request_error"}}
 ```
 
-这两条错误本身就是好消息：**协议不给你「假装调用过了」这个选项**。
+这两类 400 能拦截缺少 `tool_result` 或 ID 配错的消息结构；但协议只验证对话格式，无法证明宿主真的执行过工具。`tool_result` 是调用方提交的内容，可能来自成功结果、执行错误，也可能是不可信或错误的数据。是否执行、执行结果是否可信、调用者是否有权限，都必须由宿主与工具后端负责（参见 [Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)）。
 
 ## 边界在哪
 
@@ -191,7 +206,8 @@ def call_model(messages):
 
 | 省略的东西 | 会出什么事 |
 |---|---|
-| 步数上限 | 模型绕圈子时循环永不结束（第 9 章实测过这种卡死） |
+| 模型调用轮次上限 | 模型绕圈子时循环永不结束（第 9 章实测过这种卡死）；它不等于工具调用次数上限 |
+| 停止原因分支 | 把 `max_tokens`、拒绝或未知原因当作正常答案，导致截断或错误状态被误报成功 |
 | 工具参数校验 | 模型给出不存在的工具名或越界参数，直接抛异常 |
 | 工具错误标记 | 错误被当正常数据回填，后面每一步都建在它上面（第 4 章实测） |
 | 状态持久化 | 进程一挂，整轮任务从头再来 |
@@ -200,9 +216,11 @@ def call_model(messages):
 
 所以「最小实现」是一个**用来理解结构的东西**，不是一个用来上线的东西。它的价值在于：你知道后面加进来的每一块是在补哪个洞。
 
+预算还要按动作分别计数：本节完整代码的 `max_steps` 统计模型响应轮次；一个模型响应可以包含多个 `tool_use`，所以模型调用次数不等于工具调用次数。示例在最后一个可用模型轮次收到 `tool_use` 时会拒绝执行这批工具，因为没有剩余轮次接收结果；生产宿主仍需另设工具调用/副作用预算，并在每次 dispatch 前检查。`end_turn` 但没有文本时也不能返回空字符串冒充成功。
+
 ## 循环的边界其实不在代码里
 
-有一个容易被忽略的观察：**上面那十七行没有一行是业务逻辑。**
+有一个容易被忽略的观察：**上面那段骨架没有一行是业务逻辑。**
 
 任务描述、工具定义、停止判据 —— 它们都在循环之外。循环本身只做一件事：**在「模型决策」和「执行动作」之间来回搬运。** 这也解释了为什么这一章讲的东西可以跨任务复用：它是骨架，不是内容。
 
@@ -216,30 +234,30 @@ if "订单" in task and step > 3:
 
 这段代码一出现，循环就不再是骨架了 —— 它变成了一段只对某一类任务有效的流程，而且这段流程的判据藏在循环内部，改任务时你会忘记它。
 
-正确的做法是把这类信息放进 **system 提示**（对话最前面那条 `role: "system"` 的消息：它定义模型的角色与规则，不在滚动的 `messages` 历史里）或**工具描述**里，让循环保持无知。第 2 节的工具注册表和第 3 节的闸门都遵守这条。
+正确的做法是把这类信息放进 **system 提示**或**工具描述**里，让循环保持无知。对本节使用的 Anthropic Messages API，首轮 system 提示通过请求体顶层 `system` 参数传入，不是 `messages` 数组里的第一条 `role: "system"` 消息。Anthropic 当前文档另列了部分模型支持的 beta 中途 system message，但这不改变首轮写法；其他 API 的消息格式要按各自文档核对（见 [Messages API 参考](https://platform.claude.com/docs/en/api/messages) 与[中途 system messages 文档](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages)）。本节前面的最小请求没有设置 system prompt，所以它的 `messages` 历史不含该字段。第 2 节的工具注册表和第 3 节的闸门都遵守这条。
 
 ## 循环边界的一个具体判据
 
-最后给一条实践判据：**如果循环里出现了任务相关的常量（某个工具名、某个字段名、某句提示），那它就写错地方了。**
+最后给一条代码审查启发：如果通用循环里出现任务相关常量（某个工具名、某个业务字段、某句任务提示），先检查这段逻辑是否该交给注册表、schema、提示模板或业务闸门。少数协议适配器确实需要处理 provider-specific 字段；关键是不要把业务规则藏进通用控制流。
 
 - 工具名 → 应该在注册表里
 - 字段名 → 应该在 schema 里（schema 指的是工具参数的 JSON 结构定义：有哪些字段、类型是什么、哪些必填）
 - 提示语 → 应该在 system 或工具描述里
 - 完成判据 → 应该在闸门里
 
-循环本身只应该认三样东西：**消息、工具调用块、停止原因。** 这三样都是**协议层**的概念 —— 协议指的是模型 API 规定的消息格式：消息怎么排、工具调用块长什么样、停止原因有哪些取值，这些由 API 一方定义，不是你的业务说了算。所以它们与你的业务无关。
+循环本身只应该认三样东西：**消息、工具调用块、停止原因。** 消息、工具调用块和停止原因的**外层结构**由 API 协议定义；但消息内容、工具名和参数承载着业务语义。通用循环不应自行解释这些业务值，而应按协议解析后交给工具注册表和业务闸门。因此它能复用的是控制流骨架，不是与业务完全无关。
 
 ## 三种边界情况
 
 最小循环能跑通正常路径，但真实系统里最先遇到的是这三种边界。它们都是我在实现这一章的代码时实际撞到的。
 
-**一、模型调用了不存在的工具。** 它可能拼错名字，也可能用一个你在旧版本里删掉的工具。最小实现里的 `registry.execute(name, ...)` 会直接抛 `KeyError`，循环当场终止。而模型其实完全有能力换一个工具 —— 只要你告诉它「没有这个工具」。
+**一、模型调用了不存在的工具。** 它可能拼错名字，也可能用一个你在旧版本里删掉的工具。若注册表直接用字典索引且没有捕获异常（如 `registry[name]`），就会抛 `KeyError` 并终止循环；也可以把它转换为带 `is_error: true` 的 `tool_result`，让模型看到具体失败原因后再尝试。是否能改正取决于模型与任务，不能保证。下面的可运行示例采用后一种教学策略；生产实现还需限制错误重试次数。
 
-**二、同一轮里重复调用同一个工具。** 模型可以在一次回复里发出两个内容相同的工具调用块。第 1 章讲过，工具调用是并发的（多个块在一次回复里），所以这会变成两次真实执行。如果你的工具是幂等的（查数据），无所谓；如果它有副作用，就是一个隐藏的重复。
+**二、同一轮里重复调用同一个工具。** 模型可以在一次回复里发出两个内容相同的 `tool_use` 块。多个块出现在同一回复，只说明模型一次提出了多个调用；由宿主决定串行还是并发执行。Anthropic 文档明确由宿主选择串行、并行或混合执行（见[Parallel tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use)）；本节的 `for` 循环按返回顺序串行执行，但相同副作用调用仍会真实执行两次。如果工具是幂等的（如纯查询），重复的影响较小；如果它有副作用，就是一个隐藏的重复。
 
-**三、在没有工具结果的情况下直接给答案。** 这是最隐蔽的一种：模型跳过了工具，基于自己的记忆回答了。循环会正常结束、返回一段合理的文本，而**你没有任何信号知道它没查数据**。第 5 章实测过这种幻觉（schema 强制要一个状态字段，模型 5/5 编了一个），在循环里它的表现是「跑完了，答案看起来也对」。
+**三、在没有工具结果的情况下直接给答案。** 通用循环不知道某个任务是否必须先查数据；模型可以跳过工具、凭已有知识回答，而 `end_turn` 只表示这一轮结束，不表示任务事实已经核验。若宿主既不强制必要工具调用，也不记录并检查工具轨迹，答案可能看起来正常。第 5 章实测过这种幻觉（schema 强制要一个状态字段，模型 5/5 编了一个）；生产系统应按任务需要添加业务闸门和可审计轨迹。
 
-三个边界里，第三个最危险 —— 因为前两个会报错或留下痕迹，第三个什么都没发生。
+从可观测性看，第三种尤其容易漏掉：前两种通常留下错误或工具调用记录，而跳过工具后直接回答可能看起来正常。是否最危险仍取决于任务的业务后果。
 
 <Mermaid
   chart={`
@@ -248,16 +266,19 @@ flowchart TB
     B --> C{"stop_reason"}
     C -->|"tool_use"| D["遍历工具调用块"]
     D --> E{"工具名在注册表里？"}
-    E -->|否| F["⚠️ 边界一：KeyError<br/>循环当场终止"]
+    E -->|否| F["⚠️ 未捕获异常：KeyError，循环终止"]
+    E -->|否| F2["或回填 is_error=true 的 tool_result"]
+    F2 --> J
     E -->|是| G["执行"]
     G --> H{"有副作用吗？"}
     H -->|"有"| I["⚠️ 边界二：同一轮重复调用<br/>就会真的执行两次"]
     H -->|"没有"| J["回填结果"]
     I --> J
     J --> B
-    C -->|"end_turn"| K["返回文本"]
-    K --> L{"它真的查过数据吗？"}
-    L -->|"没查"| M["⚠️ 边界三：幻觉<br/>跑完了，看不出问题"]
+    C -->|"end_turn"| K["模型结束本轮"]
+    K --> L{"宿主是否强制要求查询？"}
+    L -->|"是"| M["检查工具轨迹；未查到就拒绝完成"]
+    L -->|"否"| N["正常返回，但不能证明事实已核验"]
 `}
 />
 
@@ -267,13 +288,13 @@ flowchart TB
 
 **记录步数是必须的**（预算、日志、熔断都要用它）。但**把步数告诉模型**是另一件事，而且通常不该做。
 
-第一，它会被当成进度暗示。如果你在消息里写「这是第 3 步，最多 10 步」，模型会开始「节省步数」——表现为跳过验证、合并操作、提前给答案。**你在教它偷工减料。**
+第一，它可能变成进度信号。如果你把「这是第 3 步，最多 10 步」放进上下文，模型可能据此调整规划或更早收敛；是否跳过验证、合并操作取决于模型与任务，不能当成必然结果。把步数限制留在宿主侧，是一种减少无关运行细节、避免提示改变行为的工程选择。
 
-第二，它会泄漏你的实现细节。步数上限是运维参数，不是任务信息；把它写进上下文，等于让模型知道你的预算结构。
+第二，它会把运维状态带入模型上下文。步数上限通常属于宿主的运行控制信息；只有当任务规划确实需要知道剩余预算时才提供。它不是安全边界，不能靠不告诉模型来替代服务端预算强制。
 
 第三，它不稳定。改了上限，模型的行为就变了 —— 而这两件事本该无关。
 
-那如果需要让它知道「还有多少余量」怎么办？答案是**通过工具反馈，而不是通过系统提示**。比如当步数接近上限时，闸门可以往最后一条工具结果里追加一句「本次任务剩余步骤不多，请优先给出阶段性结论」。这比一开始就把预算摊开更有效 —— 因为它出现在真正需要收敛的时刻。
+如果任务需要模型知道「还剩多少余量」，可以把经过筛选的剩余预算作为动态上下文或工具结果提供，同时仍由宿主强制执行上限。放在工具反馈里不天然比放进 system prompt 更有效；应按任务比较提前告知、临近上限告知和完全不告知时的质量、成本与违规率。
 
 一个例外：**长任务的检查点**。如果任务跨越几十步，把「已完成步骤的摘要」给模型是有价值的（这就是第 3 章讲的压缩）。但那是**业务状态**，不是**步数计数器** —— 两者容易混，要注意区分。
 
@@ -282,7 +303,7 @@ flowchart TB
 下面是一个最小的、能真正跑起来的循环。它用脚本化的动作策略代替模型，所以不需要凭据也能跑 —— 这样你能专注在骨架本身。
 
 ```python
-"""最小的 agent 循环：十七行的骨架。
+"""最小的 agent 循环：最小循环骨架。
 
 用脚本化的动作策略代替模型，所以不需要凭据也能跑 ——
 你能专注在骨架本身，而不是模型的输出。
@@ -290,12 +311,14 @@ flowchart TB
 实跑状态：2026-10-09，已跑通。
 """
 
+import json
+
 
 class FakeModel:
     """代替真模型的确定性策略：按脚本产出「工具调用」或「最终答案」。
 
-    真模型返回的是 content blocks 和 stop_reason，这里用同样的形状，
-    只是内容是预先写好的。
+    为便于阅读，它把真实响应的 content/text 摘成 blocks/text 字段；
+    回填的 tool_result 则保留 Messages API 的消息字段。
     """
 
     def __init__(self, script):
@@ -303,6 +326,7 @@ class FakeModel:
         self.i = 0
 
     def __call__(self, messages):
+        self.last_messages = messages
         if self.i >= len(self.script):
             return {"stop_reason": "end_turn", "text": "完成了。"}
         step = self.script[self.i]
@@ -323,22 +347,33 @@ REGISTRY = {
 def execute(name, args):
     """分发。真实实现里这里还要做参数校验（见第 2 节）。"""
     if name not in REGISTRY:
-        return {"error": "没有名为 %s 的工具" % name}
-    return REGISTRY[name](**args)
+        return "Error: 未知工具 %r" % name, True
+    value = REGISTRY[name](**args)
+    return json.dumps(value, ensure_ascii=False), False
 
 
 def run(task, model, max_steps=8):
-    """十七行的骨架。后面几节加的东西都挂在它上面。"""
+    """最小骨架。后面几节加的东西都挂在它上面。"""
     messages = [{"role": "user", "content": task}]
     for step in range(1, max_steps + 1):
         resp = model(messages)
+        if resp["stop_reason"] == "end_turn":
+            answer = resp.get("text")
+            if not isinstance(answer, str) or not answer.strip():
+                raise RuntimeError("end_turn 但没有可展示文本；不能据此认定任务成功")
+            return answer, step
         if resp["stop_reason"] != "tool_use":
-            return resp["text"], step
+            raise RuntimeError("未处理的 stop_reason: %s" % resp["stop_reason"])
+        if step == max_steps:
+            return "（达到步数上限；最后一轮的 tool_use 不执行）", step
         messages.append({"role": "assistant", "content": resp["blocks"]})
         results = []
         for b in resp["blocks"]:
-            out = execute(b["name"], b["input"])
-            results.append({"type": "tool_result", "tool_use_id": b["id"], "content": out})
+            out, is_error = execute(b["name"], b["input"])
+            result = {"type": "tool_result", "tool_use_id": b["id"], "content": out}
+            if is_error:
+                result["is_error"] = True
+            results.append(result)
         messages.append({"role": "user", "content": results})
     return "（达到步数上限）", max_steps
 
@@ -351,10 +386,11 @@ if __name__ == "__main__":
     text, steps = run("算 (3+4)*2", m)
     print("正常路径：%s（%d 步）" % (text, steps))
 
-    # 边界一：工具名不存在 —— 看错误怎么被翻译
-    m2 = FakeModel([("tool", "add_two", {"a": 1, "b": 2}), ("final", "换个工具重试。")])
+    # 边界一：工具名不存在 —— 观察宿主如何把错误回填给模型
+    m2 = FakeModel([("tool", "add_two", {"a": 1, "b": 2}), ("final", "收到工具错误。")])
     text2, steps2 = run("算 1+2", m2)
-    print("工具名错：%s（%d 步）" % (text2, steps2))
+    print("工具错误回填：%s" % m2.last_messages[-1]["content"])
+    print("模型结束：%s（%d 步）" % (text2, steps2))
 
     # 边界二：绕圈子 —— 最小循环无法自救，只能撞上限
     m3 = FakeModel([("tool", "add", {"a": 1, "b": 1})] * 20)
@@ -373,13 +409,13 @@ if __name__ == "__main__":
 
 **骨架层用假的模型。** 把「调模型」也做成一个可注入的依赖，测试时注入一个脚本化的策略（就是本节代码里用的那种）。这样能确定性地覆盖所有边界：工具名错、参数越界、绕圈子、中途崩溃。**循环的 bug 几乎都在这层**，而这层不需要花一分钱 API 费。
 
-**端到端层用真模型，只测少量路径。** 三条就够：一个正常任务、一个需要多步的任务、一个必然失败的任务（比如工具永远返回错误）。这一层测的是「模型和骨架配合得对不对」，不是骨架本身。
+**端到端层用真模型，先跑少量 smoke case。** 可以从正常任务、多步任务和预期失败任务各选一个，检查模型与骨架能否完成基本交互；这只是冒烟覆盖，不是普遍充分的回归集。是否增加用例，要按风险、任务分布和成本来定。
 
 两层分开的价值：**骨架的回归测试要能跑在 CI 里、不花钱、不抖动。** 如果你的循环测试依赖真模型，它就会变成「偶尔红」的那种测试 —— 然后所有人开始忽略它。
 
 ## 常见坑
 
-- **把最小的十七行直接上线。** 它省掉的六样东西每一样都会变成事故，其中幂等和步数上限是最常见的两个。
+- **把最小循环直接上线。** 它省略的这些保护每一样都可能造成事故，其中幂等和步数上限是最常见的两个。
 - **把业务判断写进循环。** 判据是：循环里出现任务相关的常量就写错了地方。
 - **用「文本里有没有工具名」判断该不该执行工具。** 判据应该是停止原因，那是协议层的事实。
 - **忘记把工具结果追加成一条新消息。** 只记进日志的话，模型下一轮看不到，会重复调用同一个工具。

@@ -6,22 +6,22 @@ status: drafting
 
 前四节讲了怎么读。这一节讲一个更容易被忽略的问题：**读完留下什么。**
 
-因为源码阅读有一个特点：**不产出就等于没读。** 三个月后你只会记得"我看过 LangChain 的 tool 模块"，而那时你连 `parse_docstring` 这个参数都不记得了。
+因为源码阅读有一个特点：**不产出时，读过的源码很容易只剩模糊印象。** 三个月后你只会记得"我看过 LangChain 的 tool 模块"，而那时你连 `parse_docstring` 这个参数都不记得了。
 
-## 四种产出，价值递增
+## 四种可能的产出
 
 | 产出 | 例子 | 三个月后还有用吗 |
 |---|---|---|
-| **笔记** | 摘抄代码片段 | 很少 —— 片段脱离上下文没意义 |
-| **调用链图** | 第 3 节那张 file:line 链 | 有一点 —— 位置会变，但结构还在 |
-| **可执行的判据** | "约束要写进类型标注" | **有** —— 它指导写代码 |
-| **可复现的实验** | 第 3 节那个三种写法对照脚本 | **最有** —— 换版本后重跑就能验证结论还成不成立 |
+| **笔记** | 摘抄代码片段 | 取决于有没有问题、来源和适用范围；孤立片段难复用 |
+| **调用链图** | 第 3 节那张 file:line 链 | 结构可能有复用价值；文件位置会随版本变化 |
+| **可执行的判据** | "把需要的约束写进最终工具 schema（可由类型推断，也可显式提供 args_schema）" | **有** —— 它指导写代码 |
+| **可复现的实验** | 第 3 节那个三种写法对照脚本 | 适合检查特定版本行为 —— 需固定依赖并断言目标行为 |
 
-最后一行的价值值得展开：**它把一个"结论"变成了一个"可以重新验证的过程"。**
+这四类产出的复用价值取决于你要解决的问题：定位线上问题时调用链图可能最有用；要把发现变成团队习惯时，可执行判据更直接；要核对版本变化时，带断言和固定环境的复现脚本更合适。脚本可以把结论变成可重跑的检查，但它不会因为“能运行”就自动证明结论。
 
-源码是会变的。第 3 节那些行号（`convert.py:71`、`base.py:95`）在下一个版本里可能全变了。但那个脚本不会失效 —— 它会在新版本上重新跑一遍，然后告诉你"结论还成立"或者"变了"。
+源码会变。第 3 节的行号（`convert.py:71`、`base.py:95`）随版本变化，不能当成稳定标识。脚本也可能因 API、依赖或运行环境变化而报错；即使运行成功，若没有断言关键行为，它也不能自动判断结论是否仍成立。要复核时，应记录包版本和环境、让断言覆盖具体结论，并把输出与限制一起保存。
 
-**所以最强的一种产出是：一个脚本 + 一句结论。** 脚本负责可复现，结论负责可执行。而这个项目自己的做法就是这个 —— `verify-output/` 目录里每一个实测脚本对应的正是这个模式。
+在能固定环境并写出明确断言时，一种有用的产出是“脚本 + 一句结论”：脚本重跑已声明的检查，结论说明证据支持到哪里。本站 `verify-output/` 是本地验证产物目录，已被 Git 忽略；其中的脚本不会随仓库交付。可复用的课程示例应放在受版本控制的 `experiments/` 或 `examples/` 中，并记录依赖快照。
 
 ## 这份产出要放在哪
 
@@ -34,9 +34,9 @@ status: drafting
 | 调用链图 | **设计文档** | 讲结构时用 |
 | 笔记 | 自己的地方 | 只对你有用 |
 
-第一行最容易被忽略。**一条"约束要写进类型标注"的结论，如果只写在笔记里，那它三个月后不会影响任何人**；写进团队的代码规范或者工具定义的模板注释里，它才会。
+第一行最容易被忽略。**一条"约束要进入最终工具 schema"的结论，如果只写在笔记里，那它三个月后不会影响任何人**；写进团队的代码规范或者工具定义模板里，它才会。
 
-本项目自己做了一次这件事：第 3 节那个发现（`parse_docstring` 默认关、散文变不成 enum）在**第 13 章的正文里补了一条修正**。因为那一章正是当时写下"抽象泄漏"这个说法的地方 —— **结论要回到它该更新的位置**，而不是只留在新写的那一章。
+本项目自己做了一次这件事：第 3 节那个发现（`parse_docstring` 默认关、文档说明不会变成 enum）在**第 13 章的正文里补了一条修正**。因为那一章正是当时写下"抽象泄漏"这个说法的地方 —— **结论要回到它该更新的位置**，而不是只留在新写的那一章。固定在 langchain-core 0.3.63 的源代码中，[`@tool` 的 parse_docstring 默认值](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/convert.py)为 `False`；[schema 生成与字段提取](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/base.py)说明自然语言说明与类型约束由不同机制处理。可复现断言见 `experiments/scripts/verify_reading_source_tool_063.py`，依赖锁见 `experiments/locks/reading-source-compare-py314-macos-arm64-20261021.txt`。该脚本在 `langchain-core==0.3.63` 下用六项断言核对参数说明、`Literal` schema 与 inspect 位置；输出不代表其他版本。
 
 ## 一个具体的模板
 
@@ -53,7 +53,7 @@ status: drafting
 
 第三行是价值。而第一行是**筛选器**：如果你写不出这个"问题"那一行，那说明这次阅读没有目标 —— 按第 2 节那条，它可能根本就不该发生。
 
-**归档到哪里、叫什么名字**——这是模板之外读者最容易自己发明一套的地方，所以给一个约定：脚本放进仓库的 `scripts/` 目录，文件名用 `read-source-<主题>.py`（例如本节这条就对应 `read-source-tool.py`）；同一主题的四行笔记用**同名**的 `.md` 放在它旁边。同名的好处是"结论"和"能重跑的证据"永远捆在一起，换版本时不会只更新一半。**位置（第 2 行）必须指向脚本里的函数对象，不是文件路径** —— 写成路径，下一次重命名就失效了。
+**归档到哪里、叫什么名字**取决于团队现有目录约定。可复用的验证脚本应放在版本控制内、文件名能说明检查对象，并与依赖快照、运行命令和结果相互关联。四行笔记中的“位置”应由函数对象经 `inspect` 生成文件路径与起始行，不要手抄；若要跨版本追踪，还要记录包版本、模块和符号名，因为行号会移动。对 C 扩展、动态生成或源码不可用的对象，`inspect` 可能无法给出位置，需改用官方文档、仓库版本和符号引用。
 
 ## 一个反过来的判断：什么时候不该产出
 
@@ -70,13 +70,13 @@ status: drafting
 <Mermaid
   chart={`
 flowchart TB
-    A["读完源码"] --> B["四种产出（价值递增）"]
-    B --> B1["笔记：摘抄片段 —— 三个月后基本没用"]
-    B --> B2["调用链图：结构还在，位置会变"]
-    B --> B3["可执行判据：指导写代码"]
-    B --> B4["可复现实验：换版本能重跑验证"]
-    B4 --> C["最强产出 = 脚本 + 一句结论"]
-    C --> D["脚本负责可复现<br/>结论负责可执行"]
+    A["读完源码"] --> B["四类产出（按目标选择）"]
+    B --> B1["笔记：保留问题、来源和范围"]
+    B --> B2["调用链图：结构与决策点"]
+    B --> B3["可执行判据：约束进入团队实践"]
+    B --> B4["可复现实验：固定环境并断言行为"]
+    B4 --> C["复现材料 = 脚本 + 结论 + 限制"]
+    C --> D["脚本检查已覆盖的行为<br/>结论说明证据边界"]
     E["放对位置"] --> E1["判据 → 代码规范 / 模板注释"]
     E --> E2["实验 → 仓库脚本"]
     E --> E3["链图 → 设计文档"]
@@ -109,7 +109,7 @@ flowchart TB
 
 ```text
 > 修正（2026-10-09）：这里当时记成了「抽象泄漏」。读源码后的准确说法见第 22 章第 3 节 ——
-> 机制是 parse_docstring 默认关闭，且约束只能由类型标注产生。
+> 机制是 parse_docstring 默认关闭；infer schema 会读取类型标注，而显式 args_schema 也能提供字段约束。
 ```
 
 两行字，但它解决了三个问题：读者知道该信哪个、知道去哪看细节、而且能看到"结论是被修正过的"—— 后者本身就是一种可信度信号。
@@ -122,7 +122,7 @@ flowchart TB
 
 两种过期形态：
 
-**一、行号变了。** 下一版本 base.py:95 可能变成 base.py:120。这是为什么第 3 节强调「用 inspect 取」，也是为什么最强的产出形式是**脚本**（它会在新版本上重新跑，自动发现结论是否还成立）。
+**一、行号变了。** 下一版本 base.py:95 可能变成 base.py:120。这是为什么第 3 节强调「用 inspect 取」，也是为什么最强的产出形式是**脚本**可以在固定依赖版本中重复同一检查；若要判断新版本是否仍符合结论，需要在目标版本环境中更新依赖快照并重跑断言。原封不动地重跑固定在旧版本的脚本，只能复现旧环境，不能自动发现上游行为变化。
 
 **二、结论变了。** 更麻烦的一种。比如「parse_docstring 默认关闭」这条 —— 如果某个版本改成默认开启，那你的产出就从「正确」直接变成「错误」，而且**没有任何提示**。
 
@@ -133,36 +133,50 @@ flowchart TB
 assert summary(a) == {"title": "Day", "type": "string"}, "parse_docstring 默认值可能变了"
 ```
 
-**这条断言就是你的「过期检测器」。** 它不需要你记得回来检查 —— 脚本重跑时会自己告诉你。而这也回到了本节开头那个判断：**最强产出 = 脚本 + 一句结论**，因为脚本负责的可复现性，恰好也是防过期的那一层。## 完整可运行代码
+这条断言可以充当一个有限的“过期检测器”：当断言覆盖目标行为且测试仍运行在记录的环境中，它能发现部分变化；它不能证明未测试的行为，也不能代替重新核对来源与适用范围。
+
+## 完整可运行代码
 
 下面这段代码生成上面那个四行模板：给定问题、位置、结论，输出一份可存档的产出，并检查"位置"是不是用 inspect 取的（而不是手写的）。
 
 脚本里 `split("site-packages/")[-1]` 的用意第 1 节解释过：把冗长的安装路径截短；**如果函数来自你自己的项目（路径里没有 `site-packages`），`split` 找不到分隔符就原样返回完整路径**，这正是下面第 3 条"手写位置"反例要对照的情形。
 
 ```python
-"""读完要产出什么：四行模板 + 位置校验。纯本地。实跑状态：2026-10-09。"""
+"""读完要产出什么：四行模板 + 位置校验。纯本地。
+实跑状态：2026-10-21。langchain-core 0.3.63；见依赖快照。"""
 import inspect
 
 
 def make_note(question, target, conclusion, script):
     """生成一份产出。target 传函数对象时自动取 file:line。"""
     if callable(target):
-        src = inspect.getsourcefile(target).split("site-packages/")[-1]
-        line = inspect.getsourcelines(target)[1]
+        try:
+            source_file = inspect.getsourcefile(target)
+            line = inspect.getsourcelines(target)[1]
+        except (OSError, TypeError) as exc:
+            raise ValueError("inspect 无法定位这个对象的源码") from exc
+        if source_file is None:
+            raise ValueError("inspect 没有返回源码文件")
+        src = source_file.split("site-packages/")[-1]
         loc = "%s:%d" % (src, line)
         loc_verified = True
     else:
         loc = str(target)
         loc_verified = False
-    return {"问题": question, "位置": loc, "结论": conclusion, "复现": script,
-            "位置已校验": loc_verified}
+    return {
+        "问题": question,
+        "位置": loc,
+        "结论": conclusion,
+        "复现": script,
+        "位置由 inspect 取得": loc_verified,
+    }
 
 
 def render(note):
     out = []
     for k in ("问题", "位置", "结论", "复现"):
         out.append("%-6s%s" % (k, note[k]))
-    if not note["位置已校验"]:
+    if not note["位置由 inspect 取得"]:
         out.append("      ⚠️ 位置是手写的 —— 应该传函数对象让 inspect 取")
     return chr(10).join(out)
 
@@ -171,17 +185,25 @@ if __name__ == "__main__":
     from langchain_core.tools import base as base_mod
     from langchain_core.tools import convert as convert_mod
 
+    script = "experiments/scripts/verify_reading_source_tool_063.py"
     notes = [
         make_note("约束是从哪一层产生的？",
                   base_mod._get_filtered_args,
-                  "schema 来自 pydantic 的 model_json_schema()，约束只能由类型标注产生",
-                  "read-source-tool.py"),
+                  (
+                      "schema 来自 pydantic 的 model_json_schema()；"
+                      "约束可来自类型推断，也可由 args_schema 提供。"
+                  ),
+                  script),
         make_note("参数说明为什么没进 schema？",
                   convert_mod.tool,
-                  "parse_docstring 默认 False；开启后进 description，但仍不会变成 enum",
-                  "read-source-tool.py"),
+                  (
+                      "parse_docstring 默认 False；开启后进入 description，"
+                      "但仍不会变成 enum"
+                  ),
+                  script),
         make_note("手写行号会怎样？",
-                  "langchain_core/tools/base.py:95",
+                  "langchain_core/tools/base.py:999",
+                  # 虚构行号：展示手写位置不会被自动校验
                   "反面示例：手写的位置无法自动校验",
                   "-"),
     ]

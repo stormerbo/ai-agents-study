@@ -2,10 +2,8 @@
  * 审批界面 + 进度展示的最小实现（第 19 章结论的落地）。
  *
  * 两个设计决定：
- * 1. **是 server component** —— 用原生 <details> 折叠，零客户端 JS。
- *    审批界面不需要状态：选项是链接/表单，不是内存里的开关。
- * 2. **进度按「动作」而不是百分比** —— 因为 agent 的步数不可预知（第 10 章实测过计划 0/3），
- *    百分比是虚假精度。「正在读第 3 份文档」既具体又不会跳。
+ * 这是静态界面示意：审批按钮不提交，进度不代表任务成功率。
+ * 按动作显示示例进展；动态流程的总量未知时不伪造精确百分比。
  */
 
 const APPROVAL = {
@@ -50,7 +48,7 @@ export function ApprovalDemo() {
           ))}
         </ol>
         <p className="mt-3 text-xs text-muted-foreground/70">
-          注意这里没有「60%」—— 步数事前不知道，百分比是虚假精度。
+          这里展示已发生的动作；动态任务总量未知时，不给出精确百分比。
         </p>
       </div>
 
@@ -90,6 +88,7 @@ export function ApprovalDemo() {
             <button
               key={o.label}
               type="button"
+              disabled
               title={o.hint}
               className={
                 i === 0
@@ -104,8 +103,7 @@ export function ApprovalDemo() {
         </div>
 
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground/70">
-          四个选项而不是两个 —— 「修改后同意」和「换个方式」是最常见的真实需求。
-          只给同意/拒绝时，用户的反应通常是拒绝然后重说一遍， 而那会浪费 agent 已经做好的部分。
+          选项应由任务决定；修改参数或提出替代方案后，新提案仍需用户核对。
         </p>
       </div>
     </div>

@@ -1,0 +1,113 @@
+# 检索权限过滤：先授权，再让模型看见
+
+## 本节要解决什么
+
+RAG 不只是“搜到相关内容”。检索结果常常包含订单、合同、内部政策或个人数据；模型能看到一段文本，就可能总结、引用、改写它，或把它带进后续工具参数。把越权内容先放进 prompt，再要求模型“忽略它”，等于把访问控制交给一个会生成文本、不会强制执行权限规则的组件。
+
+本节的交付物是从已认证身份到检索上下文的授权链，以及一组跨用户、跨租户的负向测试。定义：principal 是服务端从已验证的登录凭据解析出的主体与授权上下文；它不是请求 JSON 里的 `tenant_id`，也不是模型猜出的用户身份。判据：只有通过当前 ACL 的文档正文才能被水合并加入模型上下文；越权候选应在内容读取前被过滤，权限撤销后下一次请求不能命中旧缓存内容。
+
+## 权限链必须从可信身份开始
+
+一条常见链路是：身份提供方验证 token → 服务端解析 subject 与租户 → 应用构造不可变 principal → 检索层生成候选文档 ID → 权威 ACL 检查 → 读取获准文档正文 → 组装上下文。每一跳都要说清数据来源。用户可以在请求里提供查询词、文档 ID 或排序偏好；这些输入可以影响“找哪些候选”，不能决定“允许读哪些文档”。
+
+如果用户传入 `tenant_id=tenant-b`，这只能被视为未经验证的筛选建议。服务端必须用认证上下文中的 tenant 和 user 做最终过滤，忽略或拒绝请求中试图改变身份范围的字段。类似地，模型提出的 `user_id`、角色、文档 ID、工具参数都只是候选值；模型不能签发 principal，也不能为自己扩权。
+
+<Mermaid
+  chart={`
+flowchart LR
+    U[用户请求] -->|query / filters| A[API]
+    T[已验证身份凭据] --> V[认证与主体解析]
+    V --> P[可信 principal]
+    A --> S[候选 ID 检索]
+    P --> F{权威 tenant + ACL 过滤}
+    S --> F
+    F -->|允许| H[读取正文并组装上下文]
+    F -->|拒绝| N[丢弃候选，不返回正文]
+    H --> M[模型]
+    U -. tenant_id 不建立身份 .-> A
+`}
+/>
+
+关键顺序是先用搜索找到候选，再在正文交给模型前，依据可信 principal 和当前授权数据筛选。若向量服务支持服务端 tenant/ACL filter，可以把它用作第一道缩小候选的条件；但当索引元数据可能落后于权限变更时，仍应在权威存储或授权服务中做最终检查。让向量库先返回候选 ID、再从受保护存储中按 ACL 水合正文，可以避免越权文本进入模型上下文。仅在答案生成之后过滤输出太晚了。
+
+## 租户边界和用户 ACL 是两层条件
+
+`tenant_id` 解决的是租户隔离，不代表租户里的每个人都能看每份材料。多租户系统一般至少要同时匹配 principal 的租户与文档权限；文档可能对租户内所有人可见，也可能只对 owner、指定用户或某个组可见。授权策略要覆盖读取、修改、删除、检索、缓存和工具调用中实际暴露的对象，而不是只在首页或 API 路由上检查一次。
+
+索引中的 ACL 元数据可用于预过滤、减少越权候选和节省查询预算，但它是派生数据。权限撤销后，如果向量索引稍后才更新，旧的 ACL 标签仍可能允许候选进入结果。应从权威授权存储检查最新版本，或用可验证的 ACL 版本/权限水位确认索引足够新；过期时失败关闭，或只返回已确认有效的部分。不要在 ACL 服务不可用时退回“只按相似度搜”。
+
+缓存是授权链的一部分。若缓存键只有 query hash，Alice 的上下文可能被 Bob 复用；键至少要绑定租户、主体或权限集合版本，以及相关文档版本。权限撤销要使缓存失效，或者命中时重新做 ACL 检查。对权限特别敏感的内容，可选择不缓存最终文本。日志、trace、评估样本和人工标注集也可能复制检索内容，必须沿用相同的数据访问和留存约束。
+
+即使数据库开启了 PostgreSQL Row-Level Security（RLS），也不能假设权限自动安全。官方文档说明：RLS 启用后，无匹配策略的普通查询默认拒绝；但 superuser 与 `BYPASSRLS` 角色始终绕过，表所有者通常也绕过，除非设置 `FORCE ROW LEVEL SECURITY`。应用连接通常使用共享数据库角色，RLS 中的 `current_user` 可能只是服务账号；必须确认策略实际取得的是经验证的终端用户上下文，并测试连接池复用、事务回滚和异常清理。[PostgreSQL Row Security Policies](https://www.postgresql.org/docs/18/ddl-rowsecurity.html)
+
+若 RLS 策略需要通过子查询读取另一张 ACL 表，竞态与权限更新的并发时序也要一起评估。PostgreSQL 文档明确展示了这类策略在并发更新下可能读取旧权限快照。可用的防护方式取决于 schema、隔离级别和锁策略；不要只把一条 policy SQL 粘进项目就宣称跨租户安全。RLS 是数据库访问的一层，向量服务、应用缓存和外部工具仍须各自守住边界。
+
+## 可运行的 SQLite 查询模型
+
+配套示例位于 `examples/permission-filtering/`。它把候选 ID 与正文分开：模拟向量检索只给出 ID，SQLite 查询同时校验 principal 的租户与显式 grant，只有授权行才返回正文。为控制单条 SQL 的参数数量，示例每次最多接受 500 个去重候选；超过时显式抛出 `ValueError`，不会静默截掉后面的候选。这是示例的输入上限，不是推荐的生产 top-k；生产系统要按检索预算设置上游候选数，若需分批，必须保持授权检查和最终排序语义。运行命令：
+
+```bash
+python3 -m unittest discover -s examples/permission-filtering -v
+```
+
+实跑状态：Python 标准库离线 fixture，5 个单元测试全部通过；覆盖只有 ACL 的材料、同租户无权限、跨租户候选、权限撤销、请求体伪造租户字段，以及超过 500 个去重候选时显式拒绝。核心调用片段也在本地实际执行。它没有真实身份提供方、PostgreSQL RLS、向量数据库或并发权限变更，不能作为生产授权系统的通过证明。
+
+核心调用如下。示例代码可在 `examples/permission-filtering/` 目录内运行；Web 服务应只用已验证的认证上下文创建 `Principal`，不得直接用请求体构造它。
+
+```python
+import tempfile
+from pathlib import Path
+
+from retrieval_access import Principal, RetrievalStore
+
+with tempfile.TemporaryDirectory() as temp_dir:
+    store = RetrievalStore(str(Path(temp_dir) / "retrieval.db"))
+    store.add_document("policy-a", "tenant-a", "租户 A 的退货政策")
+    store.add_document("policy-b", "tenant-b", "租户 B 的内部政策")
+    store.grant("alice", "policy-a")
+
+    # 这两个值来自经过验证的登录身份，不来自用户请求 JSON。
+    principal = Principal(user_id="alice", tenant_id="tenant-a")
+    candidate_ids = ["policy-a", "policy-b"]
+    context_chunks = store.retrieve_for_context(principal, candidate_ids, limit=5)
+
+    assert [chunk["doc_id"] for chunk in context_chunks] == ["policy-a"]
+    assert all("tenant B" not in chunk["content"] for chunk in context_chunks)
+    store.close()
+```
+
+这段 `Principal` 只是教学代码里的类型，不是密码学凭据。真实系统的可信边界在调用它的身份认证中间件；如果应用任何内部路由都能传入任意 user/tenant 来构造它，过滤函数写得再正确也挡不住上游伪造身份。生产接口可以把 principal 类型限制在认证模块生成，并只向业务处理函数传入该值。
+
+## 故障案例：客户端改租户字段就读到别人的资料
+
+本地 SQLite fixture 复现了一种典型错误：接口从请求体取 `tenant_id`，然后直接用它查文档，没有把已登录 Alice 的租户约束加入查询。运行反例时得到：
+
+```text
+authenticated principal=alice/tenant-a
+request tenant_id=tenant-b
+unsafe result=[('policy-b', 'tenant B policy')]
+```
+
+从仓库根目录运行 `python3 examples/permission-filtering/unsafe_retrieval_demo.py` 可复现这段输出。该 fixture 故意用请求体的 `tenant_id` 查询正文，只用于展示漏洞形状；正确实现仍应把候选 ID 交给 `retrieve_for_context(principal, ...)`，由可信 principal 限定租户和用户 ACL。
+
+这不是生产事故统计，而是可重复的权限绕过模型。排查时先比较可信 principal 与请求筛选字段，再追踪候选 ID 如何变成正文、正文何时进入 prompt、上下文缓存如何命中。修复后，候选查询仍可由用户的 query 影响，但授权查询必须使用 `principal.tenant_id` 与 `principal.user_id`；拒绝结果不得包含正文、标题、摘要、embedding 元数据或其他可侧信道暴露的敏感字段。
+
+配套负向用例从 Alice 的 principal 出发，即使候选列表中包含 `policy-b`，安全方法也必须返回空集；即使请求对象声称 `tenant-b`，传给查询的仍是已认证 principal。撤销 grant 后的下一次查询立即拒绝该材料。若系统为了性能缓存授权结果，需要把权限版本加入缓存键，并通过撤销事件清理或在读取时复核。
+
+## 验收步骤
+
+1. 画出用户、认证服务、检索服务、向量库、正文存储、ACL、缓存和模型之间的信任边界。
+2. 定义 `Principal` 字段及唯一构造点，明确哪些字段来自已验证 token、服务端租户映射或数据库授权记录。
+3. 让向量搜索返回候选 ID；在正文水合前做 tenant 与资源 ACL 检查，并显式处理候选上限，超限不能静默截断；限制返回的候选数和上下文量。
+4. 测试不同租户、同租户未授权用户、权限撤销、旧 ACL 索引、缓存复用和模型伪造身份参数。
+5. 检查数据库角色：确认应用不能绕过 RLS，owner、migration、backup、superuser 连接分别有明确用途；若使用连接池，验证每个事务的身份上下文不会串到下个请求。
+6. 对授权服务不可用、ACL 版本过期、索引 filter 失败定义失败关闭行为，并记录会影响召回的可用性取舍。
+7. 对模型工具和副作用再次授权：检索可见权限不自动等于退款、改订单或发消息的执行权限。
+
+成功判据不是“正常用户能搜到答案”，而是负向用例证明没有一条请求路径能让用户控制身份范围；撤销和跨租户测试针对召回正文、缓存、日志和工具回填全部生效。还要有可审计证据说明 principal 是怎样建立、权限在哪一层读取、何时失效。
+
+## 后端经验与失效直觉
+
+可迁移的是身份认证、角色/资源 ACL、参数化 SQL、最小权限、数据库 RLS、缓存隔离与负向测试。会失效的直觉是“检索只读所以没危险”：读越权数据本身就是信息泄露；“模型看见后会听指令”：检索文本和用户输入一样是不可信内容；“tenant_id 是过滤字段所以可信”：字段名不赋予可信度；“向量服务已经过滤所以下游无需再验”：索引元数据可能落后于撤权。
+
+权限过滤的核心产物是由可信身份派生的 principal、以该 principal 执行的权威访问判定、以及进入模型上下文前的最终正文集合。把候选召回和正文授权拆开后，检索可以继续优化 recall/latency，授权始终由代码和数据策略决定。**被召回不等于可读；可读也不等于可执行。**

@@ -36,24 +36,40 @@ export const chapter = {
           basis: 'inferred',
           question: 'agent 该部署成同步接口还是异步任务？',
           answer:
-            '按**执行时长与是否需要人介入**来分。**同步**适合秒级以内、不需要审批、结果直接返回的任务（分类、抽取、单轮问答）—— 它的好处是简单，调用方拿到就是结果。**异步任务**适合分钟级以上、可能暂停等审批、或者要跑很多轮的任务 —— 这时同步请求会超时，长连接也不可靠，必须改成「提交任务 → 轮询或回调」的形态。判断的分界线不是「技术偏好」，而是：**这个任务的最坏耗时会不会超过你基础设施允许的单请求时长。** 会，就必须异步，而且要在设计阶段就定下来 —— 把同步流程改成异步，几乎等于重写交互层与状态管理。',
+            '部署形态应按调用时限、断连后是否继续、是否等待审批、结果取回方式、任务恢复与副作用语义共同决定。同步接口适用于调用方可持续等待且失败边界可接受的工作；异步任务适用于需要在请求断开后继续、等待人工或跨较长运行窗口的工作。网关时限是重要约束，但不是唯一判据；用同一 task id 支持短暂同步等待和后续查询，可以减少两套执行路径。',
         },
         {
           id: 'cancellation-semantics',
           basis: 'inferred',
           question: '为什么「取消」的语义必须在部署阶段就想清楚？',
           answer:
-            '因为取消在 agent 里**不是一个瞬时动作**，至少涉及三种情况：任务还没开始（直接从队列移除）、正在调用模型（要中断请求，已产生的 token 仍会计费）、以及正在执行有副作用的工具（**不能撤销**，只能等它结束再决定要不要补偿）。如果接口只提供一个「取消」而没有区分这三者，调用方会以为已经停下来了，而实际上某个转账可能正在进行。所以取消语义要显式设计：**能取消什么、取消后已完成的部分怎么处理、以及不可取消的步骤如何告知调用方。** 这和第 9 章那几道上限是同一种思路 —— 边界要在设计阶段写清楚，因为它一定会被用到。',
+            '取消不是一个瞬时动作，至少要区分：任务还未领取、执行中的模型/工具请求，以及已经提交的外部副作用。队列任务能否撤回取决于调度状态；请求取消能否停止上游工作、取消后的用量如何计费，取决于具体 API/SDK 与计费契约；已经提交的副作用不能靠本地取消撤销，但业务可能提供补偿操作。接口应报告取消请求是否已受理、任务终态、已提交步骤与未知结果，并用对账或补偿处理不确定的外部效果。',
+        },
+        {
+          id: 'provider-managed-conversation-state',
+          basis: 'documented',
+          question: 'provider 托管的 conversation id 能否替代应用任务记录、deadline、授权与副作用账本？',
+          answer:
+            '不能直接等同。OpenAI Conversations API 可持久化对话 items 并跨 session/device/job 继续使用；应用仍需管理业务任务状态、租户访问、deadline、审批和外部效果对账。',
+          sourceIds: ['openai-conversation-state'],
+        },
+        {
+          id: 'provider-cache-contracts',
+          basis: 'documented',
+          question: '能否把某一家模型提供方的 prompt cache 前缀匹配、TTL、计费和命中效果推广到其他接口？',
+          answer:
+            '不能。缓存断点、可匹配单元、TTL、usage 字段与计费规则要按提供方、API 和模型版本分别核对。',
+          sourceIds: ['claude-prompt-caching', 'openai-prompt-caching', 'deepseek-context-caching'],
         },
       ],
-      resourceIds: ['twelve-factor-agents', 'claude-agent-sdk'],
+      resourceIds: ['twelve-factor-agents', 'claude-agent-sdk', 'claude-prompt-caching', 'openai-prompt-caching', 'deepseek-context-caching', 'openai-conversation-state'],
     },
     {
       id: 'agent-deployment/versioning',
       chapterId: 'agent-deployment',
       slug: 'versioning',
       title: '版本与灰度',
-      summary: 'agent 的行为由三样东西共同决定，它们都得能单独回滚。',
+      summary: '发布输入要能追踪，灰度结论要有设计，回滚还要处理已写状态与外部副作用。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
       hasBody: true,
@@ -65,17 +81,26 @@ export const chapter = {
           basis: 'inferred',
           question: 'agent 系统里，哪些东西需要版本化？',
           answer:
-            '至少四样，而且它们**各自独立变化**：**prompt 与 system 指令**（改一句话就可能改变行为）、**工具定义**（描述、schema、以及它的实现）、**模型与模型版本**（上游会静默更新）、以及**编排逻辑**（循环、预算、重试策略）。四样里最容易失控的是第二和第三 —— 工具定义常常散在代码里没有版本概念，模型版本则可能只写了一个会漂移的别名。实践上的最低要求是：**每次任务轨迹都记录这四样的标识**。没有它，一次「变差了」的排查就只能靠猜时间点。第 1 章的模型迁移指南里列的那些破坏性变更，正是因为模型侧也会变。',
+            '至少记录所有会改变行为的发布输入：**应用/编排与运行环境**、**prompt 与上下文组装**、**工具集合/schema/实现/授权策略**、**provider/endpoint/model ID 与请求参数**，以及影响安全、检索和验收的配置。模型 ID 的固定或别名语义因 provider/API 而异；每条任务轨迹关联不可变 release manifest，并记录该次请求可取得的实际模型元数据。记录它们提供追踪能力，不保证模型输出完全可复现。第 1 章模型迁移资料说明要按 provider 迁移契约核对行为变化。',
         },
         {
           id: 'graderollout',
           basis: 'inferred',
           question: 'agent 的灰度发布和普通服务有什么不同？',
           answer:
-            '难点是**评估指标不如传统服务即时**。延迟、错误率这些可以按流量切开对比，但「agent 效果好不好」往往要等更久才能看出来（甚至需要人工判断）。所以灰度的做法要调整为：**先离线对照，再小流量上线**。离线对照就是评估那一章的做法 —— 同一份评测集跑新旧两版，看逐条差异；确认没有退化再放量。放量后要盯的不只是错误率，还有几个 agent 特有的信号：**平均轮次、工具调用分布、以及「需要人工介入」的比例**。这几个指标的移动往往早于用户投诉出现。',
+            'agent 输出可能非确定且业务质量不一定有即时指标；应按任务设计离线评测与线上观测。错误率、延迟、轮次、工具分布和人工介入率是诊断信号，不自动等于质量退化或因果证据。固定流量比例、放量速度与阈值不是通用值；扩量和停止规则要预先定义，并结合安全护栏、用户影响与统计设计。',
+        },
+        {
+          id: 'provider-model-version-contracts',
+          basis: 'documented',
+          question: '记录一个 model ID 就能保证它固定、可用且输出可复现吗？',
+          answer:
+            '不能。ID/alias 的固定语义和退役策略依 provider/API 而异；使用目标接口支持的 pinned ID，记录请求的 model ID 与响应可得的实际 model 元数据，并为退役迁移做准备。版本记录提升可追踪性，不保证随机模型输出完全相同。',
+          sourceIds: ['claude-model-deprecations', 'openai-api-overview-versioning'],
         },
       ],
-      resourceIds: ['claude-model-migration', 'ai-engineering-huyen'],
+      resourceIds: ['claude-model-migration', 'claude-model-deprecations', 'openai-api-overview-versioning', 'openai-model-selection', 'ai-engineering-huyen'],
+
     },
     {
       id: 'agent-deployment/incident-response',
@@ -94,17 +119,45 @@ export const chapter = {
           basis: 'inferred',
           question: 'agent 服务有哪几类典型故障？各自该降级成什么？',
           answer:
-            '四类。**上游模型不可用或限流** —— 降级成重试加退避，超过阈值后回退到更小/更便宜的模型，或者直接返回「稍后再试」，而不是无限重试把队列堆满。**工具故障** —— 降级成把失败如实回填给模型（第 4 章实测过：标 is_error 并说明原因时，模型会正确处理），让它绕过这一步继续。**成本或轮次超限** —— 按预算那一章的收口策略，返回部分结果而不是抛异常。**效果退化**（模型更新或数据漂移）—— 这一类最难，因为没有硬错误信号；唯一可靠的发现手段是持续跑评测，以及监控前面提到的轮次与介入率。',
+            '常见情况包括：**上游模型不可用或限流** —— 按 endpoint 的 retry-after/限流契约有限重试并退避，超过预算后使用已验证的备用路径或明确返回稍后再试，避免无限重试堆积队列。**工具故障** —— 按工具/API 契约记录失败与可恢复状态；错误标记不证明外部副作用没有发生，也不保证模型一定安全地绕过该步骤。DeepSeek 当前 Anthropic 兼容表将 `tool_result.is_error` 列为忽略，不能依赖它传递失败；宿主应限制后续副作用，并在必要时对账。**成本或轮次超限** —— 只有部分结果已经通过业务校验且接口明确表达“不完整”时才返回部分结果；否则应拒绝或转人工，不能伪装成功。**效果退化**（模型、提示、数据或任务构成变化）—— 通常没有单一硬错误信号；可结合版本化评测、任务构成、轨迹和人工反馈定位，不能将任一单指标当作唯一可靠手段。',
         },
         {
           id: 'rollback-readiness',
           basis: 'inferred',
           question: '「能回滚」具体要准备什么？',
           answer:
-            '三件事：**版本可切换**（前面那四样都有标识，且能独立回退 —— 只回退 prompt 而保留新工具，往往比整体回退更有用）；**旧版本仍然可用**（模型版本尤其要注意，很多平台会下线下线旧模型，所以「回滚到上一个模型」这条路径要在平时就验证过，而不是在事故中第一次尝试）；以及**回滚不需要改代码**（如果回滚要走一次发版流程，那它在事故中的作用就很有限）。判断标准可以很直接：**凌晨三点，值班的人能不能在不改代码、不问原作者的条件下把一个变量切回去。** 做不到，就不算能回滚。',
+            '先确认目标 release 的应用、prompt、工具实现与依赖仍可部署，回滚动作可由值班流程触发，并验证旧版本能读取当前持久化状态、且外部副作用有对账/补偿方案。只切换 prompt 或模型不一定安全；旧 model ID 也可能已退役。是否能不发应用代码、即时切回某一个变量，取决于部署架构和版本耦合，不能作为所有服务的定义。',
+        },
+        {
+          id: 'provider-specific-telemetry-contracts',
+          basis: 'documented',
+          question: '为什么不能把 stop reason 和缓存 usage 字段当成跨 provider 的统一协议？',
+          answer:
+            '字段形状和语义由 API 决定：Anthropic Messages 使用 stop_reason 与其 cache_read_input_tokens/cache_creation_input_tokens；OpenAI Chat Completions、Responses 和 DeepSeek 的响应终态及 usage 字段各有自己的契约。监控平台可以归一成内部指标，但要保留原始字段、API/model 版本和映射规则，并按各 API 的输入/缓存/输出口径计算；不能复制一家厂商的分子分母公式。',
+          sourceIds: [
+            'anthropic-stop-reasons',
+            'anthropic-messages-api',
+            'openai-chat-api',
+            'openai-responses-reference',
+            'claude-prompt-caching',
+            'openai-prompt-caching',
+            'deepseek-anthropic-api',
+            'deepseek-context-caching',
+          ],
         },
       ],
-      resourceIds: ['twelve-factor-agents', 'claude-agent-sdk'],
+      resourceIds: [
+        'twelve-factor-agents',
+        'claude-agent-sdk',
+        'anthropic-stop-reasons',
+        'anthropic-messages-api',
+        'openai-chat-api',
+        'openai-responses-reference',
+        'claude-prompt-caching',
+        'openai-prompt-caching',
+        'deepseek-anthropic-api',
+        'deepseek-context-caching',
+      ],
     },
     {
       id: 'agent-deployment/ops-loop',
@@ -123,7 +176,7 @@ export const chapter = {
           basis: 'inferred',
           question: '「轨迹 → 评测 → 改进」这个循环具体怎么转？',
           answer:
-            '四步。**一，从轨迹里找失败**：按失败类型聚类（工具选错、参数非法、检索没召回、被注入带偏……），而不是逐个看 —— 逐条看会让你只修最显眼的那个。**二，把代表案例固化进评测集**，带上正确答案。**三，改一处并跑离线对照**：一次只改一个变量（prompt、工具描述、检索策略、模型档位），否则你无法归因。**四，确认没退化后放量，继续观察**。这个循环的价值在于它把「感觉效果不好」变成了可执行的步骤；而它的每一次迭代都会让评测集变大变准，形成一个正向积累 —— 这也正是为什么评测那章说「真实失败案例最值钱」。',
+            '四步。**一，从轨迹找候选问题**：按失败类型聚类，并核对任务终态与证据。**二，脱敏、去重并裁决**：确认预期行为和评分规则，再将合格案例放入开发回归集；受控留出集独立维护，不把每条用户报告都当真值。**三，改一处并跑对照**：记录模型、提示词、工具和编排版本，避免同时改多个变量。**四，检查逐项退化、决定灰度或回滚**。新增案例不必然让评测集更准确；评分规则和覆盖面也要定期复审。',
         },
         {
           id: 'what-not-to-do',
@@ -133,22 +186,78 @@ export const chapter = {
             '**一，同时改多个变量。** 一次性调 prompt、换模型、又改工具描述，然后「感觉好多了」—— 这是最贵的错误，因为它让你无法知道哪个改动起了作用，下次也不敢回退其中任何一个。**二，只改不测。** 直接从轨迹里挑几条看起来失败的，改完就上线；没有对照，你无法知道改动是否真的有效，也不知道它有没有弄坏别的输入。这两个错误的共同点是**它们跳过了「可验证性」**：前者放弃了归因，后者放弃了验证。而要把它们做好并不需要额外工具，只需要坚持一次一个变量、每次都有对照 —— 这正是第 0 章那条贯穿全站的原则在运维阶段的形态。',
         },
       ],
-      resourceIds: ['ai-engineering-huyen', 'twelve-factor-agents'],
+      resourceIds: ['ai-engineering-huyen', 'twelve-factor-agents', 'openai-evaluation-best-practices', 'anthropic-demystifying-evals'],
+    },
+    {
+      id: 'agent-deployment/recovery-drills',
+      chapterId: 'agent-deployment',
+      slug: 'recovery-drills',
+      title: '恢复演练：证明备份和副作用能接上',
+      summary: '在可控故障下验证任务、数据库和外部动作的恢复边界。',
+      estimatedMinutes: 35,
+      difficulty: 'advanced',
+      hasBody: true,
+      status: 'drafting',
+      keywords: ['recovery', 'fault-injection', 'backup', 'reconciliation'],
+      checkpoints: [
+        {
+          id: 'backup-verification-is-not-restore',
+          question: '备份 manifest 校验通过，能否证明数据库恢复成功？',
+          answer: '不能。pg_verifybackup 检查通过 pg_basebackup 获取的集群 base backup 与 manifest，但不能覆盖运行服务器恢复时的全部检查；WAL 检查使用对应版本工具且当前只支持 plain 格式。仍须实际恢复并核验数据。',
+          basis: 'documented',
+          sourceIds: ['postgres-pg-verifybackup'],
+        },
+        {
+          id: 'custom-dump-restore-contract',
+          question: 'PostgreSQL 的 custom-format dump 应由哪个工具恢复？它是否覆盖整个集群？',
+          answer: '用 pg_restore 恢复 pg_dump -Fc 生成的归档；pg_dump 只导出单个数据库，集群级对象和 PITR 需要另外设计与验证。',
+          basis: 'documented',
+          sourceIds: ['postgres-pg-dump-restore', 'postgres-pitr'],
+        },
+        {
+          id: 'restore-untrusted-dump',
+          question: '为什么恢复外部提供的 PostgreSQL archive 前要核实来源？',
+          answer: '恢复会执行 dump 中由源 superuser 选择的代码。只恢复可信来源；来源不可信时先用 pg_restore --file 导出 SQL 检查。',
+          basis: 'documented',
+          sourceIds: ['postgres-pg-dump-restore'],
+        },
+        {
+          id: 'unknown-external-outcome',
+          question: '外部动作可能已成功，但本地回执丢失时，恢复器应做什么？',
+          answer: '先用稳定 operation key 查询接收方并对账；已执行则补写回执，未执行才按安全契约继续，结果仍未知时停止自动重发并转人工。',
+          basis: 'inferred',
+          note: '此行为取决于接收方是否提供稳定幂等键或状态查询；没有该契约时不能承诺恰好一次。',
+          resourceIds: ['twelve-factor-agents'],
+        },
+        {
+          id: 'unpersisted-result-is-not-resumable',
+          question: '结果已收到但尚未持久化，恢复进程是否可以从该结果继续？',
+          answer: '不可以，因为恢复后没有可读取的 durable result；必须按未知结果处理并对账。只有结果已持久化后，才能从它继续。',
+          basis: 'inferred',
+          note: '这是对本地持久化边界的工程推论；如果调用可能触发外部副作用，是否可安全重试还取决于接收方的幂等与查询契约。',
+        },
+      ],
+      resourceIds: ['postgres-pg-verifybackup', 'postgres-pg-dump-restore', 'postgres-pitr'],
     },
   ],
   resourceIds: [
     'twelve-factor-agents',
     'claude-agent-sdk',
     'claude-model-migration',
+    'claude-model-deprecations',
+    'openai-api-overview-versioning',
     'ai-engineering-huyen',
     'openai-agents-sdk-python',
+    'postgres-pg-verifybackup',
+    'postgres-pg-dump-restore',
+    'postgres-pitr',
   ],
   backendMapping: {
     analogy:
       '交付一个 agent ≈ 交付一个调用链很长、依赖外部不确定服务、且有副作用的新服务：灰度、回滚、降级、审计一样都不能省',
     transferable: [
       '同步/异步的选型经验，以及取消语义的设计',
-      '版本化与灰度：把 prompt 与工具也当制品来管',
+      '版本化与灰度：把会影响行为的应用、prompt、工具和模型请求都作为可追踪输入',
       '事故响应的分级降级：从你在微服务里做的那些降级策略直接迁移',
     ],
     pitfalls: [
@@ -162,6 +271,7 @@ export const chapter = {
     cost: 'medium',
   },
   status: 'published',
-  updatedAt: '2026-10-08',
-  verifiedAt: '2026-10-08',
+  updatedAt: '2026-10-22',
+  verifiedAt: '2026-10-22',
+  projectIds: ['p4-durable-support'],
 } satisfies Chapter;

@@ -4,7 +4,19 @@ title: prompt caching
 status: drafting
 ---
 
-假设一个 API 在重复请求中支持复用 prompt/context cache，稳定内容可能减少重复计算或降低费用。启用方式、可复用区间、缓存键、TTL 与计费单位均由 provider 和 endpoint 决定；本文先记录 DeepSeek Anthropic 兼容端点的一组历史观测，再用 Anthropic 官方文档解释一个特定缓存契约。
+假设一个 API 在重复请求中支持复用 prompt/context cache，稳定内容可能减少重复计算或降低费用。启用方式、可复用区间、缓存键、TTL 与计费单位均由 provider 和 endpoint 决定；相同的“缓存命中”概念，在不同 API 上可能对应显式断点、隐式前缀匹配或自动持久化。本文先记录 DeepSeek Anthropic 兼容端点的一组历史观测，再对照三家当前公开 API 契约（核对日期：2026-10-22）；旧兼容 endpoint 的观测不能替代 DeepSeek 原生 API 文档。
+
+## 先区分三种 API 契约
+
+下面是截至 **2026-10-22** 对三家官方 API 文档的核对摘要。模型、接口版本和云平台会改变细节，部署时应重新查原文；字段名相似也不代表计费含义相同。
+
+| API 契约 | 启用 / 匹配方式 | 响应中可观察的缓存字段 | 需要特别记住 |
+|---|---|---|---|
+| [Anthropic Messages API](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) | `cache_control` 可请求自动缓存或指定显式断点；按缓存前缀匹配 | `cache_creation_input_tokens`、`cache_read_input_tokens`、`input_tokens` | 当前文档写明 5 分钟默认 TTL，可选 1 小时；断点、最小长度和读价按模型/平台核对 |
+| [OpenAI API](https://developers.openai.com/api/docs/guides/prompt-caching) | 依模型使用隐式缓存；当前 Responses API 的部分新模型还支持显式断点与 TTL 选项 | `usage.input_tokens_details.cached_tokens`、`cache_write_tokens` | 文档把 GPT-5.6 及以后与较早模型分开说明；`prompt_cache_key` 在新模型用于分组计量、旧模型用于缓存路由，都不保证命中 |
+| [DeepSeek 原生 API](https://api-docs.deepseek.com/guides/kv_cache/) | 默认启用，按已持久化的完整前缀单元尽力匹配 | `prompt_cache_hit_tokens`、`prompt_cache_miss_tokens` | 官方称磁盘缓存是 best effort、不保证命中；缓存单元和清理时间不应当作稳定 TTL 契约 |
+
+因此，观测缓存至少要同时记下 **provider、API/endpoint、模型、请求形态、日期、usage 字段与账单费率版本**。DeepSeek 原生 API 的当前文档描述磁盘前缀缓存；下文的 `cache_control` 历史样例来自 Anthropic 兼容 endpoint，不能据此判断 DeepSeek 原生 API 是否生效，也不能把该兼容 endpoint 的行为外推为所有 DeepSeek 接口。
 
 ## 实测：缓存到底能省多少
 
@@ -103,14 +115,25 @@ system 规模            | 第一次 input | 第二次 input | 第二次 cacheRe
 | 4. 断点是否符合契约 | 仅在 API 支持显式断点时核对其位置和数量 |
 | 5. 是否达到预期账单收益 | 分别计算普通输入、缓存写入和缓存读取的费用 |
 
-**怎么确认？** 看响应的 usage 字段：
+**Anthropic Messages API 怎么确认？** 先确认这次请求确实通过顶层或显式断点请求了缓存，再查看响应 usage。两个字段为零只表示本次响应没有报告缓存写入/读取；若没有启用缓存，它并不是一次“缓存未命中”：
 
 ```python
-if response.usage.cache_creation_input_tokens == 0 and \
-   response.usage.cache_read_input_tokens == 0:
-    # 两个都是 0 → 这次没有发生任何缓存
-    print("警告：缓存未生效（可能是前缀太短，或内容有变化）")
+def report_anthropic_cache_usage(usage, *, cache_requested: bool) -> None:
+    if not cache_requested:
+        print("本次请求没有请求缓存；不要把它记作缓存未命中")
+        return
+
+    cache_writes = getattr(usage, "cache_creation_input_tokens", None)
+    cache_reads = getattr(usage, "cache_read_input_tokens", None)
+    if cache_writes is None or cache_reads is None:
+        print("请求了缓存，但响应缺少缓存 usage 字段；不能据此判断命中或未命中")
+    elif cache_writes == 0 and cache_reads == 0:
+        print("请求了缓存，但本次响应未报告缓存写入或读取；检查模型门槛、断点和前缀")
+    else:
+        print(f"cache writes={cache_writes}, reads={cache_reads}")
 ```
+
+调用方应从自己构造的 request 确定 `cache_requested`，不能从两个 usage 字段反推请求是否启用了缓存。
 
 ### 第 3 项怎么查：前缀哈希比对
 
@@ -151,31 +174,75 @@ if __name__ == "__main__":
 
 ### 工具定义怎么缓存：可复制的写法
 
-下面的写法展示 Anthropic Messages API 的一种显式工具缓存断点；其他 API 的工具缓存接口可能不同：
+下面是一个可直接运行的 Anthropic Messages API 示例：在最后一个工具定义上设置显式缓存断点。安装 `anthropic` SDK，并设置 `VERIFY_MODEL` 为当前账号支持的模型 ID：
 
 ```python
+# tool_cache_breakpoint.py
+"""请求 Anthropic Messages API，并观察显式工具缓存断点的 usage。"""
+
+import os
+
+import anthropic
+
+client = anthropic.Anthropic()
+MODEL = os.environ["VERIFY_MODEL"]
+LONG_SYSTEM_PROMPT = (
+    "你是订单支持助手。只能依据工具返回的数据回答。"
+    "每次回复都要说明订单状态来源；如果信息不足，明确说明需要补充什么。"
+)
+
 TOOLS = [
-    {"name": "get_order",  "description": "按订单号查询订单状态", "input_schema": {...}},
-    {"name": "get_refund", "description": "发起退款",             "input_schema": {...}},
+    {
+        "name": "get_order",
+        "description": "按订单号查询订单状态",
+        "input_schema": {
+            "type": "object",
+            "properties": {"order_id": {"type": "string"}},
+            "required": ["order_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_refund",
+        "description": "查询订单退款状态",
+        "input_schema": {
+            "type": "object",
+            "properties": {"order_id": {"type": "string"}},
+            "required": ["order_id"],
+            "additionalProperties": False,
+        },
+    },
     {
         "name": "search_docs",
-        "description": "按关键词检索内部文档",
-        "input_schema": {...},
-        # Anthropic API 示例：断点标在最后一个工具上，缓存此前工具定义前缀
+        "description": "按关键词检索支持文档",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        # Anthropic 示例：该断点缓存截至这个工具的工具定义前缀
         "cache_control": {"type": "ephemeral"},
     },
 ]
 
-resp = client.messages.create(
-    model=MODEL,
-    max_tokens=2048,
-    tools=TOOLS,                      # Anthropic API 示例；工具变化会影响对应断点覆盖的前缀
-    system=LONG_SYSTEM_PROMPT,        # 想连 system 一起缓存，就在 system 的最后一个 text 块上也标一个断点
-    messages=[{"role": "user", "content": user_question}],
-)
+
+def main() -> None:
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=1024,
+        tools=TOOLS,
+        system=LONG_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": "查询订单 A-1001 的状态"}],
+    )
+    print(response.usage.model_dump_json(indent=2))
+
+
+if __name__ == "__main__":
+    main()
 ```
 
-（示例：构造数据，未实跑。此为 Anthropic Messages API 的文档形态；DeepSeek 兼容端点在 2026-09-24 的这组实验中显式 `cache_control` 未改变 usage，但不能据此认定其所有版本和请求都忽略该字段。对兼容服务需查其自身文档并实测。）
+> **实跑状态**：Python 语法和 request 结构由本节的离线 mock 验证；本轮没有调用 Anthropic provider。真实缓存命中需满足目标模型的最小长度等条件，并以 provider usage 为准。DeepSeek 兼容 endpoint 在 2026-09-24 的历史观测不能说明其所有版本或请求都忽略 `cache_control`。
 
 两个容易踩的细节：
 
@@ -184,7 +251,7 @@ resp = client.messages.create(
 
 ## 怎么用
 
-**方式一：Anthropic API 的自动缓存。** 按其当前文档，在请求顶层加入 `cache_control` 后，API 会按对应规则选择缓存断点；其他 provider 不一定支持此字段或自动断点：
+**方式一：Anthropic API 的自动缓存。** 按其当前文档，在请求顶层加入 `cache_control` 后，API 会按对应规则选择缓存断点；其他 provider 不一定支持此字段或自动断点。下方是请求片段，假设 `client`、`LONG_SYSTEM_PROMPT` 和 `user_question` 已在调用方定义：
 
 ```python
 response = client.messages.create(
@@ -196,7 +263,7 @@ response = client.messages.create(
 )
 ```
 
-**方式二：Anthropic API 的显式断点。** 把静态内容放在前面，在可复用部分末尾标上 `cache_control`：
+**方式二：Anthropic API 的显式断点。** 把静态内容放在前面，在可复用部分末尾标上 `cache_control`。下面仅展示 `system` 参数的内容形状，不是完整脚本；`REFERENCE_DOCUMENT` 需由调用方提供：
 
 ```python
 system = [
@@ -217,13 +284,7 @@ Anthropic API 当前文档说明每个请求最多 4 个断点，断点本身不
 
 ## 定价与 TTL
 
-下面的价格和 TTL **仅说明 Anthropic API 当前文档所列的定价示例**；具体模型、云平台和计费版本可能不同，部署前应重查官方定价与缓存文档：
-
-| 操作 | 相对基础输入价 |
-|---|---|
-| 缓存写入（5 分钟 TTL） | 1.25 倍 |
-| 缓存写入（1 小时 TTL） | 2 倍 |
-| 缓存读取 | 0.1 倍（部分新模型更低，见[定价页](https://platform.claude.com/docs/en/about-claude/pricing)） |
+下面只记录 **Anthropic API 文档于 2026-10-22 核对到的定价规则**；这不是跨模型的固定倍率。该文档当前将 5 分钟缓存写入标为基础输入价的 1.25 倍、1 小时写入标为 2 倍；读取费率依模型而变，不能用一个统一倍率概括。OpenAI 与 DeepSeek 使用各自的费率和 usage 类别。上线前应按 [Anthropic 当前缓存文档](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) 与[定价页](https://platform.claude.com/docs/en/about-claude/pricing)复查目标模型、区域和平台的具体价格。
 
 Anthropic API 文档描述的默认 TTL 为 **5 分钟**，读取时会刷新缓存寿命；此 TTL 不是跨 provider 的默认值。
 

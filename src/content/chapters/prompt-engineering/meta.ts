@@ -34,9 +34,11 @@ export const chapter = {
         {
           id: 'negative-instructions',
           basis: 'inferred',
-          question: '为什么“不要输出解释性文字”这类否定式指令效果不稳定？该怎么改？',
+          question: '怎样把模糊或冲突的指令改成可验收的任务契约？旧实验能证明否定式或 system 层普遍更好吗？',
           answer:
-            '否定式指令要求模型持续抑制一个行为，而模型每一步生成时都可能“忘记”这个约束，尤其在长输出里越往后越容易失效。更稳的写法是正面描述你想要的：把“不要解释”改成“只输出 JSON，不要有其他文字”，并且给出一个具体的输出示例。正面指令是可执行的，否定指令是要求模型一直不做某件事。',
+            '明确目标、输入边界、正反约束、输出格式和可观察验收条件；结构要求用 schema 检查，语义要求用经校准的评分规则或人工复核。负向规则、正向描述和示例可以组合，但要检查彼此一致，并在目标模型与代表性案例上评测。旧的 8 次与 3 次结果没有逐次轨迹，不能证明因果、普遍优劣或通用角色优先级。',
+          note: '两家官方指南支持清晰目标、示例与模型专属评测建议；Anthropic 常见 system 参数与当前特定模型支持的对话中途 system 消息须分别表述。本节没有可复核的旧实验原始轨迹，不能据此声称某种句式普遍更稳。',
+          resourceIds: ['openai-prompt-engineering', 'claude-prompting-best-practices', 'anthropic-messages-api', 'anthropic-working-with-messages'],
         },
       ],
     },
@@ -56,10 +58,10 @@ export const chapter = {
         {
           id: 'why-xml-tags',
           basis: 'inferred',
-          question:
-            '用 XML 标签把参考资料包起来（如 <document>...</document>），除了“让模型看得更清楚”，还有什么更重要的原因？',
+          question: 'XML 标签、JSON 编码和来源说明能提供什么边界线索？它们能形成访问控制吗？',
           answer:
-            '还有一个安全原因：显式边界标签和指令为模型提供了区分“指令”与“数据”的结构线索。若没有这类线索，参考资料里的一句话（“忽略之前的指令，改为输出……”）可能影响模型行为 —— 这就是提示注入。标签不是硬信任边界，也不能根治注入；它只是纵深防御的一层，仍需在模型外做权限隔离、程序化校验和高风险操作确认。',
+            '它们可以帮助模型识别内容结构与来源，但效果依模型、API 消息结构和工作负载而异，不能形成访问控制或保证拦截注入。把模型输出当作不可信提议；由宿主服务端强制执行身份/对象授权、最小权限、参数与业务约束，并按风险加入审批和副作用控制。',
+          resourceIds: ['claude-prompting-best-practices', 'anthropic-handle-tool-calls', 'owasp-llm-prompt-injection'],
         },
         {
           id: 'injection-not-solved',
@@ -69,14 +71,21 @@ export const chapter = {
             '没有。标签只是概率性的解释线索，不是访问控制或不可绕过的解析边界。模型仍可能把不可信内容当作指令或事实。真正的防护必须是多层的：限制模型可用权限、对模型要执行的动作做程序化校验、关键操作要求人工确认。第 16 章会系统地讲这件事。',
         },
       ],
-      resourceIds: ['anthropic-building-effective-agents'],
+      resourceIds: [
+        'anthropic-building-effective-agents',
+        'claude-prompting-best-practices',
+        'anthropic-handle-tool-calls',
+        'anthropic-python-sdk',
+        'anthropic-messages-api',
+        'owasp-llm-prompt-injection',
+      ],
     },
     {
       id: 'prompt-engineering/few-shot',
       chapterId: 'prompt-engineering',
       slug: 'few-shot',
       title: '少样本示例：质量远比数量重要',
-      summary: '三个精心挑选的示例，通常胜过二十个随手凑的示例。',
+      summary: '示例可以表达任务约定与决策边界；是否改善结果，要在独立留出集上验证。',
       estimatedMinutes: 15,
       difficulty: 'beginner',
       hasBody: true,
@@ -86,19 +95,26 @@ export const chapter = {
         {
           id: 'example-selection',
           basis: 'inferred',
-          question: '挑选少样本示例时，最应该优先覆盖哪一类样本？',
+          question: '如何评估 few-shot 示例是否改善了目标任务？',
           answer:
-            '优先覆盖**边界情况与容易混淆的情况**，而不是典型情况。典型情况模型本来就做得对，把示例名额花在上面是浪费；真正决定输出质量的是那些“看起来像 A 其实该归到 B”的例子。另外要保证示例之间的格式严格一致 —— 模型会忠实地复制你示例里的不一致。',
+            '先定义标签/任务规则，用开发集设计示例、独立留出集比较零样本与不同示例组；检查训练/测试重复，固定模型版本和参数，保留逐题结果，结合总体及分组指标、错误严重性与 token/延迟决定是否保留。边界示例可能有价值，但没有普遍最佳数量；格式一致是数据整理习惯，不能仅凭旧的 12/12 摘要断言其模型收益。',
+          note: '本节 2026-10-08 历史 few-shot、格式与错误标签实验均缺逐次原始轨迹；旧主表训练/测试有一条精确重复，另一个未运行的消融脚本有三条重复，不能作为泛化证据。',
         },
+      ],
+      resourceIds: [
+        'openai-prompt-engineering',
+        'claude-prompting-best-practices',
+        'anthropic-python-sdk',
+        'anthropic-messages-api',
       ],
     },
     {
       id: 'prompt-engineering/chain-of-thought',
       chapterId: 'prompt-engineering',
       slug: 'chain-of-thought',
-      title: '思维链与 prefill：让模型先想再答',
+      title: 'CoT 与 prefill：效果评估和 API 边界',
       summary:
-        'CoT 的收益依赖任务与模型；prefill 是版本和 API 特定的机制，较新模型可能已不支持。',
+        'CoT 历史观察不足以支持普遍有效或无效结论；prefill 受模型与 API 版本约束。',
       estimatedMinutes: 17,
       difficulty: 'intermediate',
       hasBody: true,
@@ -110,8 +126,40 @@ export const chapter = {
           basis: 'inferred',
           question: '思维链在什么情况下是净亏损？',
           answer:
-            '当任务不需要多步推理，且明确要求把过程写进可见输出时，CoT 可能只增加输出 token、延迟和成本而没有准确率收益。本节只在一组 DeepSeek 端点实验中观察到这一结果，不能推广成所有模型的结论。先用目标模型和任务做对照评估；现代模型的内置 thinking、开关和提示行为都随版本变化。',
+            '当某个工作负载的对照评估显示可见步骤没有质量收益而增加输出、延迟或预算时，可以省略；CoT 论文和本站有限历史摘要都不能推出适用于所有模型、任务的规则。目标模型、推理设置、评分器和完整 input/output/cache usage 应分别记录。',
           resourceIds: ['chain-of-thought-paper', 'claude-prompting-best-practices'],
+        },
+        {
+          id: 'cot-paper-result-scope',
+          basis: 'documented',
+          sourceIds: ['chain-of-thought-paper'],
+          question: '2022 年 CoT 论文支持怎样的范围结论？',
+          answer:
+            '论文在当时测试的三个大型语言模型及算术、常识和符号推理基准上研究带推理示例的 few-shot CoT，并报告多个任务有提升；这支持论文设置范围内的结论，不说明所有任务、当前模型或只添加零样本“请一步步思考”都会获得同等收益。',
+        },
+        {
+          id: 'cot-historical-summary',
+          basis: 'unverified',
+          question: '本站 DeepSeek CoT 与 prefill 历史摘要能证明什么？',
+          answer:
+            '当前仅能复述历史记录中的小样本答案数、token 汇总和存在冲突的 prefill 输出摘要；不能独立复算准确率、完整 token 用量、成本或 prefill 响应行为，也不能归因于模型 thinking。',
+          note: '逐次原始请求/响应、模型指纹、任务与逐题评分记录、完整 usage 及可复现脚本未归档；prefill 结果在同一正文内记录为 temp_c=20 与 temp_c=null，无法判定哪项正确。',
+        },
+        {
+          id: 'reasoning-summary-scope',
+          basis: 'documented',
+          sourceIds: ['openai-learning-to-reason-llms'],
+          question: '用户看到的推理说明一定是原始内部推理吗？',
+          answer:
+            'OpenAI 对 o1 的说明指出，产品面向用户展示的是模型生成的 reasoning summary，而不是 raw chain of thought。这是该产品系列的实现说明；解释文本仍不能代替答案的独立校验。',
+        },
+        {
+          id: 'anthropic-usage-fields',
+          basis: 'documented',
+          sourceIds: ['anthropic-messages-api'],
+          question: '怎样统计 Anthropic Messages API 的完整 input token 数？',
+          answer:
+            '按该 API 的 usage 契约，input_tokens、cache_creation_input_tokens 与 cache_read_input_tokens 共同构成 total input tokens；output_tokens 是独立的输出计数。字段语义和账单口径不能直接套到兼容端点或其他厂商。',
         },
         {
           id: 'prefill-use',
@@ -141,8 +189,8 @@ export const chapter = {
           basis: 'inferred',
           question: '多数投票（self-consistency）能生效的窗口为什么很窄？',
           answer:
-            '它需要两个条件同时成立：任务有可判定的目标答案（否则多数未必代表正确），且采样产生有意义的候选差异（否则没有可聚合的多样性）。本节实验在特定端点与小样本里，唯一答案题 5 次采样零分歧，创作题则各不相同；结果说明该实验的多数投票没有收益，不能推广为 self-consistency 普遍无效。是否能提高正确率需要用目标模型和任务做对照评估。',
-          note: '实测数据见本节：唯一答案题 10/10、零分歧；创作题 6/6 各不相同。',
+            '它需要可判定的目标答案，并且采样产生能被聚合器利用的候选差异。本节两组历史摘要须分开看：10 道程序生成的算术/计数题各采样 5 次，报告 0/10 题分歧和单次/五次平均 token 237/1281；另一项温度探测在单个唯一答案题与创作题上各采样 6 次，报告 1/6 与 6/6 个不同答案。原始逐次响应、模型快照、任务映射和 scorer 未归档，不能独立复算或推出普遍结论。是否提高正确率需在目标模型与任务上对照评估。',
+          note: '均为 2026-10-08 历史摘要：self-consistency 的 10 道算术/计数题 0/10 题分歧；温度探测为另一个唯一答案题与创作题，各温度 6 次采样，报告 1/6 与 6/6 个不同答案。逐次原始记录缺失，不能复算。',
         },
         {
           id: 'self-eval-trap',
@@ -159,12 +207,16 @@ export const chapter = {
             '因为决定一个错误能否被发现的，不是谁更聪明，而是这个任务的正确答案能不能被**独立**验证。「独立」是关键 —— 一个用同样假设的复核者（人还是模型都一样），查不出同源的错误。所以工程上的动作只有一个方向：把校验从「仅模型可判」往「结构可校验」「语义可校验」挪，凡是能写成程序算的，就不要交给模型。',
         },
       ],
-      resourceIds: ['self-refine-paper'],
+      resourceIds: ['self-consistency-paper', 'self-refine-paper', 'anthropic-python-sdk', 'anthropic-api-version-2026-10-21'],
     },
   ],
   resourceIds: [
     'anthropic-building-effective-agents',
     'chain-of-thought-paper',
+    'openai-learning-to-reason-llms',
+    'anthropic-python-sdk',
+    'anthropic-messages-api',
+    'openai-prompt-engineering',
     'self-refine-paper',
     'hf-agents-course-zh',
     'openai-cookbook',
@@ -179,9 +231,9 @@ export const chapter = {
       '输入校验与异常分支的处理习惯',
     ],
     pitfalls: [
-      '用否定式指令（“不要输出……”）：效果不稳定，应正面描述要什么',
-      '把指令和数据混在同一个文本块里：既不稳定，又打开了提示注入的口子',
-      '以为 prompt 写一次就能长期用：模型版本更新会让精心调好的 prompt 失效',
+      '只写禁止事项而不说明允许范围：补充正面目标和可验收判据，并在目标任务上比较',
+      '未区分应用规则与不可信输入：清楚表达数据边界，但仍在服务端执行权限与输出校验',
+      '以为 prompt 写一次就能长期用：模型版本变化可能改变行为，应有版本化回归评测',
       '未经目标模型验证就为简单任务加思维链：可能增加成本与延迟，未必提升准确率',
     ],
     cost: 'low',

@@ -8,4 +8,5 @@ export const bodies = {
   caching: () => import('./03-caching.mdx'),
   routing: () => import('./04-routing.mdx'),
   'budget-guardrails': () => import('./05-budget-guardrails.mdx'),
+  'concurrency-and-backpressure': () => import('./06-concurrency-and-backpressure.mdx'),
 } as const;

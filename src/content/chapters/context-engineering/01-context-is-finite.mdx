@@ -7,7 +7,7 @@ status: drafting
 上下文工程里常被引用的两个经验现象是：
 
 1. **Lost in the Middle** —— 在论文所测的模型、任务和上下文长度中，关键信息的位置会影响表现；部分设置呈 U 形
-2. **context rot** —— 某些任务与模型中，随着上下文变长，任务表现可能下降
+2. **context rot** —— Chroma Research 用这个术语描述某些任务与模型中，输入变长伴随任务表现下降的现象；不是窗口已满，也不是所有任务必然退化。
 
 先把词说清楚，否则这两条只是口号。
 
@@ -15,7 +15,7 @@ status: drafting
 
 **Lost in the Middle 讲的是什么。** 那篇论文在其受测模型、检索任务和长度范围内观察到位置敏感的任务表现，部分设置呈现开头与结尾较好、中间较差的 U 形。它是一个**有适用边界的经验观察**，不是所有模型和任务都必然呈现的规律，也不是已确立的内部机制。所以本节的重点不是「背下 U 形」，而是「在你的模型、任务和语料上测一遍」。
 
-**context rot 不是「窗口满了」。** 窗口超限通常会由接口拒绝或报错；context rot 是对一种可能的性能变化的概括：在特定模型与任务中，即使未达到容量上限，上下文变长也可能使任务表现下降。它不一定报错，也不能从 usage 直接读出；需要控制任务与材料，对比不同上下文规模下的表现。下降幅度、是否出现以及原因都依赖具体设置，不能概括成内容每增加一点、每条信息就必然少被利用一点。
+**context rot 不是「窗口满了」。** 上下文上限的表现由 provider 决定：有的请求会被拒绝，有的会返回专门的停止状态；Anthropic Messages API 当前还定义了 `model_context_window_exceeded`；Chroma Research 在 2025 年的报告中用 `context rot` 指输入 token 增长时部分模型/任务的任务表现退化，并通过固定任务复杂度、改变输入长度来测量。这个术语描述的是外部表现，不是注意力权重或内部状态的直接读数。它不一定报错，也不能从 usage 直接读出；需要控制任务与材料，对比不同上下文规模下的表现。下降幅度、是否出现以及原因都依赖具体设置，不能概括成内容每增加一点、每条信息就必然少被利用一点。
 
 **语义 needle。** needle（针）指在一份长文档里埋一条**全文唯一**的信息（比如某个项目被标为「已停用」），问题要求把它读出来。它与第 0 章那种机械标记的区别是：机械标记靠一个字形奇特的串就能定位，不需要理解；而语义 needle 要求模型真的读懂那一段在说什么，还能和问题对上。
 
@@ -25,19 +25,19 @@ status: drafting
 
 这一节就是把那句话兑现 —— 我换了四种更强的设计重测，**结果全都没复现**。而且过程中有一次「失败」其实是我自己的测量 bug，那一段可能是本节最值得读的部分。
 
-## 实测：五次设计，都没复现
+## 历史记录：四种重测设计与一条历史基线
 
-任务都要求**真的读懂文档**才能回答（不是照抄一个标记）。设计从弱到强：
+任务都要求**真的读懂文档**才能回答（不是照抄一个标记）。本节报告的四种重测设计从弱到强；表中另列第 0 章的机械标记结果，作为历史基线，不属于本节重跑：
 
 | # | 设计 | 文档规模 | 位置扫描 | 容量扫描 |
 |---|---|---|---|---:|
-| ① | 机械标记（第 0 章做的） | 12k 字符 | 3 位置全遵守 | — |
-| ② | 两跳 lookup（先找到设备，再查规格表） | 150 段 ≈ 6.4k token | 5 位置 **15/15** | 10→260 段全对 |
-| ③ | 语义 needle（全文只有一段「已停用」） | 150 段 ≈ 5k token | 5 位置 **15/15** | — |
-| ④ | 语义 needle，放大到 600 段 | 600 段 ≈ 22.8k token | 5 位置 **15/15** | — |
-| ⑤ | 异质段落 + 复合条件 | 400 段 ≈ 15.8k token | 5 位置 **15/15** | 40→400 段全对 |
+| ① 历史基线 | 第 0 章的机械标记（本节未重测） | 12k 字符 | 3 位置全遵守 | — |
+| ② | 两跳 lookup（先找到设备，再查规格表） | 150 段 ≈ 6.4k token | 5 位置 **15/15（历史摘要）** | 10→260 段均记录为正确 |
+| ③ | 语义 needle（全文只有一段「已停用」） | 150 段 ≈ 5k token | 5 位置 **15/15（历史摘要）** | — |
+| ④ | 语义 needle，放大到 600 段 | 600 段 ≈ 22.8k token | 5 位置 **15/15（历史摘要）** | — |
+| ⑤ | 异质段落 + 复合条件 | 400 段 ≈ 15.8k token | 5 位置 **15/15（历史摘要）** | 40→400 段均记录为正确 |
 
-（实测数据，`deepseek-flash`，2026-10-08。位置扫描取开头 / 前 1/4 / 正中 / 后 1/4 / 结尾五个点，每点 3 次。）
+②–⑤ 是 `deepseek-flash`、2026-10-08 的历史运行摘要。原始逐次请求/响应、精确模型版本、样本与 scorer 未归档，表内计数不能独立复核；模型名是可变别名，也不代表固定权重版本。位置扫描记录为开头 / 前 1/4 / 正中 / 后 1/4 / 结尾五个点、每点 3 次。①来自第 0 章的旧实验，只能作背景，不能和本节四组重测合并成「五次都重测过」。
 
 设计 ⑤ 是最接近论文设定的一次，值得展开说：
 
@@ -58,7 +58,7 @@ P-0388｜负责人：陈迟｜阶段：已上线｜预算：310万元｜风险�
 
 **怎么造干扰项。** 先写下你要证明「模型真的读懂了」的那个联合条件（这里是两个字段同时成立），然后**为每个单独条件各造一批只满足它的条目** —— 它们的作用就是让「只匹配一个关键字」的策略失败。句式不能复制粘贴：负责人、阶段、预算、风险四个字段都要变化，否则模型可以靠位置或格式猜出答案。
 
-**结果：无论把答案那条放在开头、正中还是结尾，都是 3/3 全对。**
+**留存的结果摘要需要分开读。** 提高 `max_tokens` 后，同一文档与问题的一组三次调用记录为 3/3；后续五个位置、每处三次的扫描记录为 15/15。原始逐次日志和两组样本映射未留存，不能确认前一组三次是否已包含在 15 次里，因此不相加，也不把汇总当作可独立复核的正确率。
 
 <Mermaid
   chart={`
@@ -75,37 +75,39 @@ flowchart TB
 
 ## 唯一一次「失败」，是我自己的 bug
 
-上面那张表里，设计 ⑤ 在 400 段规模下**一度是 0/3 全错**。我差点把它写成「容量效应复现了」。
+上面那张表里，设计 ⑤ 在 400 段规模下的早期摘要记为 **0/3 且输出为空**。这不能直接算作三次检索答错，也不能证明容量效应；正文保留的是运行摘要，不是完整 provider 响应体。
 
-先说两个字段：`max_tokens` 是请求里「最多生成多少 token」的上限，`stop_reason` 是响应里「这次为什么停下来」的字段 —— 两者合起来才能判断一次调用是被截断还是正常结束。
+先说两个字段：在 Anthropic Messages API 里，`max_tokens` 是本次响应的生成上限，`stop_reason=max_tokens` 表示输出触及该上限；这不等于上下文窗口超限，也不能直接说明可见文本为什么为空。DeepSeek 当前文档确认它支持 Anthropic API 格式，但不能据此确认这组 2026-10-08 历史响应的全部语义。
 
-但我看了一眼原始输出，是这样：
-
-```text
-文档 400 段，max_tokens = 800
-
-#1  stop_reason=max_tokens   输出文本：（空）
-#2  stop_reason=max_tokens   输出文本：（空）
-#3  stop_reason=max_tokens   输出文本：（空）
-```
-
-**输出是空的。** 不是答错，是**什么都没输出**。
-
-原因：这类模型会先思考再回答（第 2 章讲过），而**长上下文会让它思考得更久**。我把 `max_tokens` 设成了 800 —— 思考过程就把输出预算吃光了，模型还没开始写答案就被截断。
-
-把 `max_tokens` 提到 6000，同一份文档、同一个问题：
+正文保留的运行摘要是：
 
 ```text
-#1  stop_reason=end_turn   输出：P-0302
-#2  stop_reason=end_turn   输出：P-0302
-#3  stop_reason=end_turn   输出：P-0302
+正文保留的控制台摘要：400 段，`max_tokens = 800`
+
+#1  stop_reason=max_tokens   可见文本：（空）
+#2  stop_reason=max_tokens   可见文本：（空）
+#3  stop_reason=max_tokens   可见文本：（空）
 ```
 
-**15/15 全对**（五个位置各 3 次）。
+**可见文本为空。** 这次调用没有形成可评分的答案；它是一次未完成样本，不能记为检索错误，也不能记为成功。
 
-> 这正是第 0 章「截断不报错」那条直觉的实例。注意 `stop_reason` 在这里的价值 —— 如果我只统计「输出里有没有正确答案」，我会得到「模型在长上下文下失败了」这个**完全错误**的结论。
+`stop_reason=max_tokens` 表明这次生成触及了设置的输出上限；可见文本为空，说明这次没有得到可评分的答案。历史解释是模型先生成思考内容、预算耗尽后未留下可见文本，但由于原始 content blocks、`usage.output_tokens` 与思考 token 明细没有归档，这个因果解释无法独立确认。对 Anthropic Messages API，`output_tokens` 可包含 thinking tokens；其他 provider/兼容端点的 usage 语义要单独核实。
+
+把 `max_tokens` 提到 6000 后，同一文档和问题的正文摘要记录为：
+
+```text
+#1  stop_reason=end_turn   可见文本：P-0302
+#2  stop_reason=end_turn   可见文本：P-0302
+#3  stop_reason=end_turn   可见文本：P-0302
+```
+
+这是留存在正文里的运行摘要，不是可供独立审查的逐次响应 JSON。
+
+**五个位置的后续扫描记录为 15/15**（每个位置 3 次）；原始逐次响应与 scorer 未归档，因此保留为历史摘要，不作为可重放的模型准确率证据。
+
+> 这次的有效结论是：`max_tokens` 状态应单独统计，不能把无可见答案的未完成样本直接判成检索错误。由于历史逐次响应、usage 和评分器缺失，不能据此确认思考 token 是唯一原因，也不能复核 3/3 与 15/15 的样本是否重叠。
 >
-> **先怀疑测量方法，再怀疑被测对象。** 这条已经在本站出现过两次了（另一次是第 0 章的缓存污染）。
+> **先检查测量与响应状态，再解释模型表现。**
 
 ## 那这两个结论还成立吗
 
@@ -132,9 +134,9 @@ flowchart TB
 
 它们和「模型读不读得到」无关：
 
-**① 成本按轮次重复计费。** 多塞 1000 token 不是一次性的 —— agent 每跑一轮，这 1000 token 都要重新计费一次（第 1 章的 prompt caching 能省一部分，但缓存有失效条件）。一个 20 轮的循环里，这 1000 token 的实际成本是 20000 token。
+**① 输入体积会随轮次累积。** 如果每轮都完整重发额外 1000 个 input token，20 轮合计是 20000 个 input token 的请求体积；这不是金额，实际费用要按目标 provider 对未缓存、缓存读写等 usage 的定义和单价分别计算。
 
-**② 延迟。** 输入越长，首字节延迟越高。对交互式应用，这是用户直接感知的东西。
+**② 延迟。** 未缓存输入变长通常会增加 prefill 工作量，首 token 延迟可能上升；缓存命中、模型与服务负载会改变结果，应在目标 endpoint 测量端到端延迟。
 
 **③ 你的真实文档比我的合成文档脏得多。** 我的 400 段句式整齐、无矛盾、无歧义；真实语料里有相互矛盾的说法、有过期信息、有和问题无关的长篇大论。**我在干净数据上看不到效应，不代表你在脏数据上也看不到。**
 
@@ -167,10 +169,6 @@ import re
 import anthropic
 
 client = anthropic.Anthropic(
-    api_key=(
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    ),
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
 MODEL = os.environ["VERIFY_MODEL"]
@@ -217,8 +215,8 @@ def check_criterion() -> None:
     both = set(high) & set(rich)
     assert both == {DOCS[NEEDLE_INDEX]}, "干扰项与正确条目的联合条件重叠了"
 
-# ⚠️ 关键：给思考留足预算。设小了会得到**空输出 + stop_reason=max_tokens**，
-#    让你误判成「模型在长上下文下失败了」（本节就踩过）。
+# ⚠️ 6000 是本历史样本中记录的请求上限，不是通用默认值。
+#    按目标模型文档设置有效上限，并对所有对照条件使用同一预算。
 MAX_TOKENS = 6000
 TRIALS = 3
 
@@ -230,8 +228,8 @@ def build_doc(needle_pos: int) -> str:
     return "\n\n".join(lines)
 
 
-def ask(doc: str) -> tuple[str, str]:
-    """返回 (文本输出, stop_reason)。"""
+def ask(doc: str) -> tuple[str, str, int | None, list[str]]:
+    """返回可见文本、停止原因、usage 输出 token 数和内容块类型。"""
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
@@ -244,7 +242,22 @@ def ask(doc: str) -> tuple[str, str]:
         ],
     )
     text = "".join(b.text for b in response.content if b.type == "text")
-    return text, response.stop_reason
+    usage = getattr(response, "usage", None)
+    output_tokens = getattr(usage, "output_tokens", None)
+    block_types = [getattr(block, "type", "unknown") for block in response.content]
+    return text, response.stop_reason, output_tokens, block_types
+
+
+def score_answer(text: str, stop: str) -> str:
+    """只有 end_turn 且全文恰为目标编号才算正确；不猜测或补全答案。"""
+    if stop in {"max_tokens", "model_context_window_exceeded"}:
+        return "incomplete"
+    if stop != "end_turn":
+        return "nonfinal"
+    match = re.fullmatch(r"\s*(P-\d{4})[。.!]?\s*", text)
+    if match is None:
+        return "format_or_extra_text"
+    return "correct" if match.group(1) == ANSWER else "wrong"
 
 
 if __name__ == "__main__":
@@ -255,45 +268,49 @@ if __name__ == "__main__":
         "后 1/4": n * 3 // 4, "结尾": n - 1,
     }
 
-    print(f"{'位置':<8} {'正确':>6} {'截断':>6}   模型答的")
-    print("-" * 52)
+    print(f"{'位置':<8} {'正确':>6} {'未完成':>6} {'其他':>6}   响应摘要")
+    print("-" * 76)
 
     for label, pos in positions.items():
         doc = build_doc(pos)
-        ok = cut = 0
-        said = []
+        ok = incomplete = other = 0
+        summaries = []
         for _ in range(TRIALS):
-            text, stop = ask(doc)
-            if stop == "max_tokens":
-                # 截断不是「答错」—— 必须单独统计，否则结论会完全跑偏
-                cut += 1
-                said.append("截断")
-                continue
-            if ANSWER in text:
+            text, stop, output_tokens, block_types = ask(doc)
+            score = score_answer(text, stop)
+            if score == "correct":
                 ok += 1
-            said.append(text.strip()[:12] or "空")
+            elif score == "incomplete":
+                incomplete += 1
+            else:
+                other += 1
+            # 记录判断所需的最小信息；不打印用户文档或完整模型输出。
+            summaries.append(
+                f"{score}/stop={stop}/output={output_tokens}/blocks={','.join(block_types)}"
+            )
 
-        print(f"{label:<8} {ok}/{TRIALS:>3} {cut}/{TRIALS:>3}   {','.join(said)}")
+        print(
+            f"{label:<8} {ok}/{TRIALS:>3} {incomplete}/{TRIALS:>3} "
+            f"{other}/{TRIALS:>3}   {'; '.join(summaries)}"
+        )
 ```
 
 > **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
 
-## `max_tokens` 到底该给多少
+## `max_tokens` 与有效响应
 
-本节踩的那个坑值得再补一句可操作的做法，因为它每次都会以「模型不行」的面目出现。
+`max_tokens` 是请求级输出上限，不是模型上下文窗口大小。按目标模型和 API 文档选择合法上限，并在不同实验条件间保持一致；不要把 8000 或「观测值的两倍」当成通用配方。若 provider 提供 `usage.output_tokens`、内容块类型或 thinking token 分项，应一并记录；Anthropic Messages API 的文档说明其输出 token 可包含 thinking token，兼容端点是否沿用相同口径需单独验证。
 
-**别凭感觉设。** 先用一个明显过大的值（比如 8000）跑一次，读响应里的 `usage.output_tokens` —— 那个数字包含了思考过程，它才是你的真实下限。之后把预算定在它的 2 倍左右：留出思考长度随输入变化的余量，又不至于让一次跑飞的调用烧掉太多。
+收到 `stop_reason=max_tokens` 或 Anthropic 的 `model_context_window_exceeded` 时，将本次调用记为**未完成**，并把它同时计入请求总数与未完成数；不同 provider 的停止状态需按各自契约映射，质量得分可以另报为已完成调用中的条件结果，但不能静默丢弃未完成样本。不要在评分循环里自动重试：若实验方案允许增加预算后重跑，应事先声明、单独标识重跑并记录额外费用。若响应看起来是空文本，先检查响应内容块和 usage；仅凭空字符串不能断言预算被 thinking 消耗。
 
-**并且把「空输出 + `stop_reason=max_tokens`」当成一个独立分支处理**：它不是失败，是**预算不足**。正确的反应是带着更大的预算重试一次，而不是记一条「模型没答出来」的日志 —— 后者会让你在几周后基于一个错误的统计做出架构决策。
-
-**判据只有一条：没确认 `stop_reason` 之前，不要解释任何「模型没答出来」的结果。**
+成功判据至少应包含目标 API 的正常完成状态和严格答案校验。本节脚本只接受 `stop_reason=end_turn` 且全文恰好是唯一项目编号；零/多答案、额外解释、截断及其它停止状态都不会记为正确。
 
 ## 常见坑
 
-**把「截断」当成「答错」。** 本节最贵的一课：长上下文会让思考变长，`max_tokens` 不够时返回**空输出**。必须单独统计 `stop_reason == "max_tokens"`。
+**把「截断」当成检索答错，或默默重试。** Anthropic Messages API 的 `max_tokens` 表示响应触及输出上限；将其分类为未完成，并记录 usage 和内容块类型。历史样本里 thinking 消耗预算只是一个无法用缺失的原始 usage 复核的解释。
 
 **因为没复现就断言「效应不存在」。** 我测的是定位类任务，论文测的是多文档综合。规模也差一个量级。**没复现 ≠ 被推翻。**
 
 **以为「窗口还有空间」就等于「可以继续塞」。** 即使模型真的能读全，还有成本和延迟两条硬约束，而且它们随轮次放大。
 
-**拿别人的结论（包括本文的表格）直接套。** 位置效应依赖模型、任务、数据三者的组合。上面的脚本跑一遍你自己的数据，成本不到十分钟。
+**拿别人的结论（包括本文的表格）直接套。** 位置效应依赖模型、任务、数据三者的组合。上面的脚本可作为小规模起点；调用数量、费用和耗时取决于语料长度、模型与 provider 限制，先设请求上限和预算，再扩大样本。

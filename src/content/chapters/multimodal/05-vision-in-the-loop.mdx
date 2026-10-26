@@ -4,15 +4,13 @@ title: 把视觉接进循环
 status: drafting
 ---
 
-上一节留了一个不舒服的结论：视觉的错误是单字符替换、结构上不可发现、而且没有独立信源可比对。
+上一节的单字符替换、校验失败与识别错误率来自不可独立复核的历史摘要；不能据此断言它们是当前模型的典型错误。本节保留旧的多次提取观察作为示例，并给出如何按自己的任务验证一致性策略、独立校验和恢复流程。
 
-这一节给出一套**可测的**校验办法，并且测出其中哪一种真的有用。
-
-## 实测：跑多次比对差异，能抓住多少错
+## 历史摘要：重复提取差异能发现什么
 
 最直觉的校验策略是「同一张图多跑几次，不一致的地方就是可疑的」。这个说法听起来合理，但没人告诉你它能抓住多少。
 
-我用 120 行的密集表跑了三次独立提取（360 个单元格），然后逐格比对：
+历史摘要称曾对一张 120 行合成表做三次提取并逐格比对（360 个答案键单元格）；但请求/响应、精确 endpoint/model、完整 scorer 和随机性参数未归档，以下比例不能独立复算或代表当前模型：
 
 | 指标 | 数值 |
 |---|---:|
@@ -23,17 +21,17 @@ status: drafting
 | **召回率**（抓到多少真错） | **67%** |
 | **精确率**（标记出来的有多少是真错） | **100%** |
 
-（实跑数据，2026-10-08，deepseek-flash。逐格比对，答案键由代码生成。）
+（2026-10-08 历史摘要，标记为 deepseek-flash；未归档逐次原始响应/模型快照/scorer，不能独立复核。）
 
-这两个数字要分开看，因为它们对设计的影响完全不同。
+这两个历史指标的定义不同，但原始记录缺失，不能据此比较策略效果。
 
-**精确率 100% 是这条策略最有价值的部分：它一次误报都没有。** 也就是说，只要两次结果不一致，那一格**一定**有问题 —— 你可以放心把它标出来送人工或重读，不必担心白跑一遍。
+这组历史摘要里，8 个被标记的格子恰好都在答案键比较中判错，但样本很小、评分与逐次响应未归档，不能证明策略在其他图像上也有 100% 精确率。实际系统应把不一致视为复核信号，而不是已确认错误；还要用独立信源检查一致但错误的结果。
 
-**召回率 67% 是它的天花板所在。** 12 格错误里只抓到 8 格，剩下的 4 格漏了。而漏掉的那 4 格有一个共同特征 —— 它们**每次都以同样的方式错**。
+历史摘要称，12 个错误格中有 4 个三次都以同样方式出错；因原始轨迹缺失，这一比例也不可复核。它只能用来说明一种可能的失效模式：稳定偏差会通过重复一致性检查。
 
 ## 为什么会有「每次都错成一样」
 
-这一条比 67% 这个数字重要得多。
+这一失效模式比不可复核的历史比例更值得纳入设计考虑。
 
 想象某个单元格的字形在渲染或缩放时正好落在一个临界点上：那一笔的闭合被抹掉了，于是「8」稳定地看起来像「6」。这种情况下：
 
@@ -45,66 +43,114 @@ status: drafting
 
 所以必须把这句话写进任何用视觉做数据提取的设计里：**一致 ≠ 正确。** 一致性校验能发现「不稳定的错」，发现不了「稳定的错」。
 
-## 四种校验，按代价排序
+## 组合校验策略
 
-综合本节与上一节的实测，可以排出这个顺序：
+可以按信源独立性与错误影响来设计校验；以下是工程决策顺序，不是经本节实验验证的效果排名：
 
-**一，先问「这份信息有没有非视觉的来源」。** 如果答案是「有」（数据库、API、原始文本），那就别用视觉做主信源 —— 这是唯一能同时做到高召回与高精确的办法，因为它引入了**真正独立**的信源。视觉在这里只做补充。
+**一，先问「这份信息有没有非视觉的来源」。** 如果有可信且语义匹配的数据库、API 或原始文本，优先将它作为校验依据；视觉可用于补充版面和图像特有的信息。所谓“独立”要检查来源链，复制自同一错误记录的数据不构成独立证据。
 
-**二，加可计算的内部一致性。** 表格里的合计、行数、字段和、编号连续性 —— 这些都是代码能算的，而错一个数就会破坏它们。注意上一节那条实测：**合计本身也可能被读错**，所以它降低了风险但没有消除风险。
+**二，加可计算的内部一致性。** 表格里的合计、行数、字段和、编号连续性 —— 这些都是代码能算的，而错一个数就会破坏它们。注意合计本身也可能被读错，所以它降低了风险但没有消除风险。
 
 写成函数是这样（合计一栏必须来自**独立信源**，理由见下）：
 
 ```python
+from decimal import Decimal, InvalidOperation
+
+
+def nonnegative_int(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    return None
+
+
+def finite_decimal(value):
+    if isinstance(value, (bool, float)) or value is None:
+        return None
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return amount if amount.is_finite() else None
+
+
 def check_consistency(rows, id_start=101, expect_rows=120,
                      total_qty=None, total_amount=None):
-    """rows: [(item, qty, amount), ...]，来自视觉提取。
-    合计来自独立信源（数据库/ERP），不是从同一张图读的。"""
+    """rows: [(item, qty, amount), ...]；合计必须来自独立信源。"""
     errs = []
-    if len(rows) != expect_rows:
-        errs.append("行数 %d != %d" % (len(rows), expect_rows))
-    for i, r in enumerate(rows):                    # 编号连续性
-        want = "ITM-%03d" % (id_start + i)
-        if r[0] != want:
-            errs.append("第 %d 行编号是 %s，应为 %s" % (i + 1, r[0], want))
-    if total_qty is not None:                       # 列合计
-        got = sum(int(r[1]) for r in rows)
-        if got != total_qty:
-            errs.append("qty 合计 %d != %d（差 %d）" % (got, total_qty, got - total_qty))
+    expected_count = nonnegative_int(expect_rows)
+    start = nonnegative_int(id_start)
+    if expected_count is None:
+        return ["expect_rows 必须是非负整数"]
+    if start is None:
+        return ["id_start 必须是非负整数"]
+    if not isinstance(rows, (list, tuple)):
+        return ["rows 必须是列表或元组"]
+    if len(rows) != expected_count:
+        errs.append("行数 %d != %d" % (len(rows), expected_count))
+
+    parsed = []
+    for i, row in enumerate(rows):
+        row_number = i + 1
+        if not isinstance(row, (list, tuple)) or len(row) != 3:
+            errs.append("第 %d 行必须包含 3 个字段" % row_number)
+            continue
+        item, raw_qty, raw_amount = row
+        expected_id = "ITM-%03d" % (start + i)
+        if item != expected_id:
+            errs.append("第 %d 行编号是 %s，应为 %s" % (
+                row_number, item, expected_id
+            ))
+
+        qty = nonnegative_int(raw_qty)
+        if qty is None:
+            errs.append("第 %d 行 qty 必须是非负整数" % row_number)
+        amount = finite_decimal(raw_amount)
+        if amount is None:
+            errs.append("第 %d 行 amount 必须是有限十进制数" % row_number)
+        elif amount.quantize(Decimal("0.01")) != amount:
+            errs.append("第 %d 行 amount 最多保留两位小数" % row_number)
+        if qty is not None and amount is not None:
+            parsed.append((qty, amount))
+
+    all_rows_valid = len(parsed) == len(rows)
+    if total_qty is not None:
+        expected_qty = nonnegative_int(total_qty)
+        if expected_qty is None:
+            errs.append("total_qty 必须是非负整数")
+        elif all_rows_valid:
+            actual_qty = sum(qty for qty, _ in parsed)
+            if actual_qty != expected_qty:
+                errs.append("qty 合计 %d != %d（差 %d）" % (
+                    actual_qty, expected_qty, actual_qty - expected_qty
+                ))
     if total_amount is not None:
-        got = sum(round(float(r[2]), 2) for r in rows)
-        if abs(got - total_amount) > 0.005:
-            errs.append("amount 合计 %.2f != %.2f" % (got, total_amount))
+        expected_amount = finite_decimal(total_amount)
+        if expected_amount is None:
+            errs.append("total_amount 必须是有限十进制数")
+        elif expected_amount.quantize(Decimal("0.01")) != expected_amount:
+            errs.append("total_amount 最多保留两位小数")
+        elif all_rows_valid:
+            actual_amount = sum(
+                (amount for _, amount in parsed), Decimal("0.00")
+            )
+            if actual_amount != expected_amount:
+                errs.append("amount 合计 %.2f != %.2f" % (
+                    actual_amount, expected_amount
+                ))
     return errs
 ```
 
-拿第 4 节那份 120 行答案键，注入它实测到的 8 处错值，三种校验各自能报出什么：
+内部一致性规则能发现部分错误，但存在盲区：行数和编号检查不能发现合法范围内的错值；合计比较可能发现部分数值错误，却无法定位单元格，且不同错误可能相互抵消。金额汇总应使用十进制定点运算，并先验证字段形状、类型和范围。旧档案曾记录 2026-10-12 的答案键与错误注入汇总，但对应 fixture 与逐项运行记录不完整，本节不再把该汇总呈现为可复核结果。
 
-```text
-独立信源（答案键）的合计：qty=60069, amount=5870.57
+**三，跑多次比对差异。** 历史摘要报告召回 67%、精确率 100%，但不能独立复核，也不代表新任务的表现。重复调用可能增加延迟与计费用量，实际影响取决于 provider 的状态、缓存和计费规则；先在代表性样本上记录每次请求与 usage，再决定是否只用于高风险字段。
 
-[只有行数 + 编号]           报错 0 条
-[加上来自独立信源的合计]     报错 2 条
-    qty 合计 59694 != 60069（差 -375）
-    amount 合计 5880.57 != 5870.57
-[对照：未注入错误的输出]     报错 0 条
-```
+**四，抽样人工复核。** 抽样可以发现部分系统性问题，但没有一个通用的 5% 比例能保证发现某类错误。按字段风险、预期错误率、分层结构和可接受漏检风险确定样本量；高影响记录应设置逐条复核或独立信源核验。
 
-（本次真跑，2026-10-12。120 行答案键按第 4 节代码里同一个随机种子 `random.seed(4242)` 重建，并逐条核对了 8 处错值的真值与实测输出一致。）
-
-这张输出里有两个容易被忽略的结论：
-
-**第一，合计校验能抓住「稳定错」。** 第 4 节实测里最危险的一类，是「每次都错成同一个值」—— 跑三次比对差异抓不到它。但错值会**改变列合计**，所以只要合计来自独立信源，它照样能被发现。**这正是「独立信源」四个字的份量**：一致性校验（本节第三种）比的是自己跟自己，合计校验比的是自己跟外部。
-
-**第二，编号连续性和行数在这批错误上是 0 条。** 不是它们没用，而是这 8 处错**全落在数值列** —— 两个校验保护的列恰好没出错。它们防的是另一类故障：漏行、重复行、编号串位。
-
-**合起来看**：校验要按「你怕哪种错」来选，而不是挑一个最强的。合计校验能报警但**只到列级**（它说不清是 836 那一格错了还是别的格），定位到具体单元格还得靠多次比对或人工。所以这套东西的用法是：**合计先当警报，多次比对定位，人工复核兜底。**
-
-**三，跑多次比对差异。** 实测召回 67%、精确 100%，成本是 N 倍。它适合**高风险字段**（金额、编号），不适合全表 —— 全表跑三遍的收益不值那个成本。
-
-**四，随机抽样人工复核。** 一致性抓不到稳定的错，人工能。抽 5% 通常就足以发现「这一类图有问题」，因为稳定的错往往成片出现。
-
-**这四条的强度是递减的，代价也是递减的。** 从下往上选：先抽 5%、不够就加多次提取、还不够就必须回头找独立信源。反过来，直接跳到第四条而不做第一条，通常是在花大力气验证一个本来可以直接读到的数据。
+**这几种措施要按任务组合。** 先确认是否存在可信的非视觉信源，再根据业务风险组合结构校验、重复提取和人工复核；各措施能发现的错误类型不同，不能仅按一个固定比例或成本顺序替代设计。
 
 <Mermaid
   chart={`
@@ -113,8 +159,8 @@ flowchart TB
     B -->|有| C["用非视觉做主信源<br/>视觉只做补充"]
     B -->|没有| D["加内部一致性校验<br/>合计 / 行数 / 编号连续性"]
     D --> E{"字段有多关键？"}
-    E -->|"高风险（金额、编号）"| F["跑多次比对差异<br/>实测召回 67% / 精确 100%"]
-    E -->|一般| G["随机抽样人工复核<br/>抽 5%"]
+    E -->|"高风险（金额、编号）"| F["跑多次比对差异<br/>历史摘要：召回 67% / 精确率 100%（未复核）"]
+    E -->|一般| G["随机抽样人工复核<br/>按风险设计抽样"]
     F --> H["仍有漏网"]
     G --> H
     H -.-> I["⚠️ 一致 ≠ 正确<br/>稳定错成同一个值的格子，一致性校验完全失明"]
@@ -123,15 +169,15 @@ flowchart TB
 
 ## 接进循环时要注意的两件事
 
-**第一，控制输出预算并检查 stop_reason。** 120 行的表要输出上千个 token 的 JSON。本次三跑里有一次第一次尝试就被截断 —— 输出停在半条记录上，JSON 不合法。这类失败看起来像「模型提取能力不行」，其实是预算不够。判据还是那句话：**没确认 stop_reason 之前，不要解释任何「没答出来」的结果。**
+**第一，控制输出预算并检查 stop_reason。** 大表输出可能被截断。处理每次响应时都要检查终止原因、JSON 完整性、精确行数和字段 schema；缺字段或终止状态不完整时应进入失败/复核路径。旧摘要记载曾遇到截断，但原始响应未归档，不能据此判断原因就是预算不足。
 
-**第二，把校验放在代码里，不要放在提示词里。** 「请你仔细核对每个数字」这类指令无法验证是否被执行；而「三次结果不一致就标记」只有几行代码，可以单元测试，而且精确率实测 100%。第 5 章那条规律在这里同样成立：**能由代码算的，不要让模型保证。**
+**第二，把校验放在代码里，不要放在提示词里。** 「请你仔细核对每个数字」这类指令无法验证是否被执行；而「三次结果不一致就送复核」可以用代码实现并单元测试；本地测试能验证标记逻辑，不能验证模型输出的准确率。第 5 章那条规律在这里同样成立：**能由代码算的，不要让模型保证。**
 
 ## 本节小结
 
-1. **一致性校验的精确率是 100%** —— 不一致就是有问题，可以放心标出来。
-2. **但召回率只有 67%** —— 稳定错成同一个值的格子它抓不到。**一致 ≠ 正确。**
-3. **最强的校验是引入独立信源**，而不是把视觉跑更多遍。
+1. **历史摘要报告精确率 100%，但不可独立复核。** 不一致应作为复核信号，不能直接判定错误。
+2. **历史摘要报告召回率 67%，同样不可独立复核。** 稳定错成同一个值的格子可能漏过一致性检查。**一致 ≠ 正确。**
+3. **可信的独立信源通常能提供更直接的交叉核验**；仍需验证其来源、字段映射和时效性。
 4. **校验必须写在代码里**，并且要检查 stop_reason —— 截断的 JSON 会被误读成提取失败。
 
 ## 什么时候该用视觉
@@ -140,166 +186,58 @@ flowchart TB
 
 **第一个问题：这份信息能不能用文本拿到？**
 
-能拿到（数据库字段、API、有文本层的 PDF、HTML）就用文本。它便宜（第 2 节实测 123 对 337 token）、确定（可逐字符 diff）、可单元测试。**视觉是拿不到文本时的退路，不是默认选项。**
+能从数据库、API、HTML 或 PDF 抽取与任务相符的字段时，先评估可验证的文本/结构化路线；是否更省 token 或费用取决于具体 provider、抽取结果和 usage，不能用第 2 节未归档的 123/337 token 摘要作通用对比。图像路线适合文本抽取无法提供的版面信息，但输出仍需字段级校验与可信证据。
 
 拿不到（截图、扫描件、照片、只有版面才携带信息的表格）才进入下一步。
 
 **第二个问题：视觉的结果会被用来做什么？**
 
-如果只是「看个大概」—— 界面上有没有报错、这张图大致是什么内容 —— 单次视觉就够了，成本也低。
+如果只是「看个大概」—— 界面上有没有报错、这张图大致是什么内容 —— 单次视觉可能足够；是否满足质量门槛、成本是否可接受，应按目标任务与 provider 用量判断。
 
-如果要进入计算或写进数据库（金额、数量、编号），就必须有校验，而且**优先去找非视觉信源**。第 4 节实测的单次错误率在密集内容上是 2% 量级，而第 5 节实测「多次比对」只能抓住其中 67% —— 这两个数字决定了「裸用视觉写库」是不可接受的做法。
+如果要进入计算或写进数据库（金额、数量、编号），就必须有校验，而且**优先去找非视觉信源**。进入数据库或触发业务动作前，应按错误影响设置验收门槛，并使用可审计的字段校验、可信来源核对或人工审批。第 4 节的历史错误率与本节多次比对比例均缺少可复核记录，不能用来量化当前风险。
 
 **第三个问题：一次要看多少、要看几遍？**
 
-单张、低频 → 基本可以忽略成本。多张、或者每轮都要看 → 回到第 1 节的账：每张 186 到 996 token，而且会随对话轮次被反复计费。
+单张、低频与多图/循环观察应按目标 API 的图像估算器和响应 usage 评估；第 1 节 186–996 token 是缺少逐次原始记录的历史摘要，不能当当前固定区间。客户端若每轮重发完整历史，历史内容可能反复计入请求上下文；文件引用、缓存和服务端会话会改变字节传输与费用，需分别核对。OpenAI Responses API 支持 `previous_response_id` 链接对话状态，但[当前文档](https://developers.openai.com/api/docs/guides/conversation-state)明确说明，响应链中先前的输入 token 仍按 input tokens 计费。这个规则只说明 OpenAI API 的行为，不能直接推断其他 provider 的图像处理、上下文或账单。
 
 三句话可以记成：**能用文本就别用视觉；用了视觉就别把它当唯一信源；要反复看就先算成本。**
 
-这三条也是本章全部实测数据的收束 —— 它们不是经验之谈，每一条背后都有本节点名的那个数字。如果只能记住一句，就记第 4 节那条：**视觉最危险的地方不是它读不出来，而是它读错了却看不出来** —— 实测 360 格里错了 8 格，而格式、类型、范围三重结构校验全部通过。
+这三条是本章的工程建议；相关历史数字缺少可复核的原始记录，不能用于量化当前模型或业务的错误率。如果只能记住一句，就记住：**格式正确不等于内容正确，重复一致也不等于有独立证据。** 本章历史摘要不足以量化当前模型的错误率；生产流程应保留原始输入、逐字段证据、校验结果与人工处置记录。
 ## 完整可运行代码
 
+**实跑状态：** 2026-10-21 由 `verify_multimodal_vision_loop_review_20261021.py` 执行本节两个 Python 示例；9/9 断言通过，均为本地确定性逻辑，不调用模型 provider，也不验证历史视觉质量。
+
+下面的离线例子只验证“不同结果会被标记”这段确定性逻辑。它使用构造数据，不调用模型，也不估计真实视觉错误率。
+
 ```python
-"""二次独立提取能不能抓出视觉错误？
+expected = {"A": "18", "B": "42", "C": "105"}
+runs = [
+    {"A": "18", "B": "42", "C": "105"},
+    {"A": "18", "B": "47", "C": "105"},
+    {"A": "18", "B": "42", "C": "105"},
+]
 
-对同一张图跑三次，比较「三次结果是否一致」与「是否真的错了」。
+def disagreements(records):
+    keys = set().union(*(record.keys() for record in records))
+    return {key for key in keys if len({r.get(key) for r in records}) > 1}
 
-实跑状态：2026-10-08，deepseek-flash。
-"""
-import os
+flagged = disagreements(runs)
+print("需复核:", sorted(flagged))
+# -> 需复核: ['B']
 
-import base64, json, os, random, re, urllib.request
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
-
-FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
-random.seed(4242)
-ROWS = [("ITM-%03d" % (101 + i), str(random.randint(10, 990)),
-         "%d.%02d" % (random.randint(1, 99), random.randint(0, 99))) for i in range(120)]
-
-
-def render(rows, width=1000):
-    fs = max(8, round(width * 0.022))
-    font = ImageFont.truetype(FONT, fs)
-    lh = round(fs * 2.1)
-    h = lh * (len(rows) + 2) + 30
-    img = Image.new("RGB", (width, h), "white")
-    d = ImageDraw.Draw(img)
-    cols = [round(width * 0.08), round(width * 0.52), round(width * 0.72)]
-    for r, row in enumerate([["Item", "Qty", "Amount"]] + rows):
-        y = 15 + r * lh
-        for c, cell in enumerate(row):
-            d.text((cols[c], y), cell, fill="black", font=font)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def ask(content, max_tokens=8000):
-    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
-                       "messages": [{"role": "user", "content": content}]}).encode()
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=300) as resp:
-        data = json.loads(resp.read())
-    return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-
-
-PROMPT = ("把表格每一行提取成 JSON 数组，每项 "
-          "{\"item\":\"...\",\"qty\":\"...\",\"amount\":\"...\"}，数字逐字准确，只输出 JSON。")
-
-
-def parse(text):
-    """用 raw_decode 从第一个 [ 开始解析 —— 贪婪正则会把尾部文字一起吃进来。"""
-    i = text.find("[")
-    if i < 0:
-        return None
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(text[i:])
-        return obj
-    except Exception:
-        return None
-
-
-if __name__ == "__main__":
-    b64 = base64.b64encode(render(ROWS)).decode()
-    runs = []
-    for n in range(3):
-        for attempt in range(3):
-            raw = ask([{"type": "image", "source": {"type": "base64",
-                        "media_type": "image/png", "data": b64}},
-                       {"type": "text", "text": PROMPT}])
-            got = parse(raw)
-            if got is not None and len(got) == len(ROWS):
-                break
-            print("  第 %d 次尝试 %d 解析异常：长度 %s，尾部 %r" % (n + 1, attempt + 1,
-                  len(got) if got is not None else None, raw[-90:]))
-        runs.append(got)
-
-    # 逐格取值
-    def cell(run, i, k):
-        if run is None or i >= len(run):
-            return "<缺>"
-        return str(run[i].get(k, "")).strip()
-
-    keys = ("item", "qty", "amount")
-    total = wrong = flagged = hit = false_alarm = 0
-    for i, truth in enumerate(ROWS):
-        for k, want in zip(keys, truth):
-            total += 1
-            vals = [cell(r, i, k) for r in runs]
-            is_wrong = any(v != want for v in vals)
-            disagree = len(set(vals)) > 1
-            if is_wrong:
-                wrong += 1
-            if disagree:
-                flagged += 1
-                if is_wrong:
-                    hit += 1
-                else:
-                    false_alarm += 1
-
-    print("表格：%d 行 × 3 列 = %d 格，同一张图独立提取 3 次" % (len(ROWS), total))
-    for n, r in enumerate(runs, 1):
-        bad = sum(1 for i, t in enumerate(ROWS)
-                  for k, w in zip(keys, t) if cell(r, i, k) != w)
-        print("  第 %d 次：标准答案 %d 格，实际错 %d 格" % (n, total, bad))
-    print()
-    print("三次里出过错的总格数：%d / %d（%.1f%%）" % (wrong, total, wrong * 100.0 / total))
-    print("«三次结果不一致» 标记出的格数：%d" % flagged)
-    print("  其中真的错了：%d" % hit)
-    if wrong:
-        print("  所以这个策略的召回率（抓到多少真错）：%d / %d = %.0f%%" % (hit, wrong, hit * 100.0 / wrong))
-    if flagged:
-        print("  误报（不一致但其实全对）：%d，精确率 %.0f%%" % (false_alarm, hit * 100.0 / flagged))
-    print()
-    print("结论：不一致是「可疑」的强信号，但从不一致到「确认有错」还需要独立信源。")
+# 若三次稳定地读错为同一值，差异检测不会标记它。
+stable_wrong = [{"A": "16"}] * 3
+print("稳定错误需复核:", sorted(disagreements(stable_wrong)))
+# -> 稳定错误需复核: []
 ```
 
-实跑输出（2026-10-08）：
-
-```text
-  第 3 次尝试 1 解析异常：长度 None，尾部 ITM-177","qty":"142","amount":"3.83"},\n  {"item":"ITM-178"...
-表格：120 行 × 3 列 = 360 格，同一张图独立提取 3 次
-  第 1 次：标准答案 360 格，实际错 6 格
-  第 2 次：标准答案 360 格，实际错 9 格
-  第 3 次：标准答案 360 格，实际错 8 格
-
-三次里出过错的总格数：12 / 360（3.3%）
-«三次结果不一致» 标记出的格数：8
-  其中真的错了：8
-  所以这个策略的召回率（抓到多少真错）：8 / 12 = 67%
-  误报（不一致但其实全对）：0，精确率 100%
-```
+这个 fixture 的输出是代码逻辑的演示，不是模型实验。真实任务还应校验缺失键、额外键、类型、范围、终止状态和来源证据，并将无效或截断响应送入失败处理。
 
 ## 常见坑
 
-- **把「跑多次结果一致」当成「读对了」。** 实测 12 格错误里有 4 格每次错得一模一样，一致性校验完全抓不到。
-- **全表跑三遍。** 召回只有 67%，成本却是 3 倍。这个手段该只用在关键字段上。
+- **把「跑多次结果一致」当成「读对了」。** 历史摘要称 12 格错误里有 4 格每次错得一模一样；这一数字未独立复核，一致性校验完全抓不到。
+- **全表机械地增加重复调用。** 历史摘要的召回值不能外推，且调用次数不等同于实际计费倍数；先在本环境测 usage、延迟和错误类型，再决定是否重复提取。
 - **用提示词要求模型「仔细核对」。** 无法验证是否执行。校验要写成代码。
-- **忘了查 stop_reason。** 密集表格的 JSON 输出很长，被截断时看起来像提取失败。本次三跑里出现过一次。
+- **忘了查 stop_reason。** 密集表格的 JSON 输出可能被截断；每次调用都应先检查终止原因与 schema 完整性。旧历史摘要称曾遇到截断，但原始响应未归档。
 - **直接跳到人工复核而不先问「有没有独立信源」。** 多数情况下那份数据本来就在数据库里 —— 先问这一句，能省掉整套校验。
-- **把视觉当唯一信源还要求高准确率。** 单次提取的错误率在密集内容上是 2% 量级（第 4 节实测），这个量级决定了它只能做补充或需要校验。
+- **把视觉当唯一信源还要求高准确率。** 第 4 节的错误率是不可独立复核的历史摘要，不能作为当前任务的风险估计。应按业务后果设定字段级验收和复核策略。

@@ -8,4 +8,6 @@ export const bodies = {
   'vector-limits': () => import('./03-vector-limits.mdx'),
   'evaluating-retrieval': () => import('./04-evaluating-retrieval.mdx'),
   'agentic-retrieval': () => import('./05-agentic-retrieval.mdx'),
+  'index-lifecycle': () => import('./06-index-lifecycle.mdx'),
+  'permission-filtering': () => import('./07-permission-filtering.mdx'),
 } as const;

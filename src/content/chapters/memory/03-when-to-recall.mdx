@@ -8,99 +8,95 @@ status: drafting
 
 这个问题看起来比写入简单 —— 相关就取，不相关就不取。但「相关」是一个判断，而任何判断都会有错。这一节要看的是：判断错的代价有多大。
 
-## 实测：一条不相关的记忆，会悄悄改写输出
+## 历史观察：一条不相关的记忆，可能改变输出
 
-任务很简单：**写一段部署脚本，把服务发到服务器上**。三种条件下各跑一遍（2026-10-08）：
+任务很简单：**写一段部署脚本，把服务发到服务器上**。现存历史摘要记录了 2026-10-08 的三种条件各一次：
 
-| 条件 | 输出 | 是否用到注入的记忆 |
+| 条件 | 历史摘要中的输出 | 摘要记录的记忆使用情况 |
 |---|---|---|
 | A 不注入记忆 | npm ci && npm run build，再 scp 与 systemctl restart | — |
 | B 注入**不相关**记忆：「用户的脚本必须用 Python 2.7」 | python2.7 -m pip install -r requirements.txt …… | ⚠️ **跟随了** |
 | C 注入**相关**记忆：「目标是 k8s，走 kubectl」 | kubectl apply / kubectl set image / rollout status | ✅ 正确采纳 |
 
-条件 B 是关键。那条记忆和「部署脚本」这个任务并没有关系 —— 它是很久以前观测到的一条环境约束。但模型**照做了**：输出里出现了 python2.7 -m pip install，而条件 A 里根本没有这一句。
+历史摘要把条件 B 记为一次“输出包含 Python 2.7 安装命令”的观察，A 与 B 的差异据称是一条记忆。它提供了一个值得调查的失效假设：无关信息可能影响生成。但原始逐次请求、响应、评分器、模型路由与运行参数未归档，本轮无法独立复核；这条记录不能证明普遍因果关系，也不能估计误召回发生率。
 
-而且注意：**没有任何东西提示你这件事发生了。** 输出格式正常、命令合法、语法正确。它不是「错误」，只是「被一条不该出现的记忆带偏了」。
+如果一条过期或无关记忆导致模型生成语法正常但不适用的命令，常规格式校验未必能发现。不过这份历史摘要没有保留原始回复、运行日志或检测结果，无法验证当时是否有提示、告警或人工发现；“静默失败”在这里是待评估的风险假设。
 
-## 为什么误召回比召回不到更糟
+## 为什么误召回可能更难发现
 
 这是本节最重要的一个判断，值得说清楚推理链条。
 
-**召回不到的时候**，模型面对的是信息缺失。它至少有机会说「我不确定」或者「资料里没有提到」—— 第 5 章实测过，只要指令明确，模型会如实承认不知道。
+**召回不到**可能让模型缺少完成任务所需的信息；它可能拒答、追问，也可能用先验补全甚至产生幻觉。不能假设“没召回就会说不知道”。
 
-**误召回的时候**，模型拿到的是一条**看起来可信、但与当前情境无关**的信息。它没有理由怀疑它（记忆库本来就是「可信来源」），于是会把它当作前提使用。结果是带着错误前提产出一个逻辑自洽的答案。
+**误召回**则可能把一个与当前情境无关的事实放进输入；如果模型把它当成可信前提，输出就可能被带偏。它也不必然被采纳，模型可能忽略或识别冲突。
 
-两者的差别不在严重程度，而在**可发现性**：前者常常会暴露（模型说不知道、或者答得很虚），后者在日志里完全看不出来。
-
-所以召回的门槛应该比检索更高 —— 检索误召回一段无关文本，模型可能直接忽略；而记忆带着「这是关于用户的已知事实」这个身份，权重完全不同。
+所以不能把“误召回一定比漏召回更严重”当作通用规律。对一条特定记忆，应比较误注入与漏注入对任务成功、安全和可发现性的影响；尤其当无关记忆会被当成用户约束或授权依据时，误召回可能静默地改变行为。当前保留下来的 2026-10-08 摘要不足以证明这类效应的普遍性。
 
 ## 三道闸门
 
-好在召回可以通过几道**确定性的**闸门来控制，而且它们的可靠程度差别很大。
+可以把召回决策拆成来源、时效和相关性几项检查。固定来源/TTL 策略的执行可做到确定性；相关性阈值的选择和适用性仍需用目标数据评估。
 
-**来源闸门。** 只注入「用户明说」的记忆，把「模型推断」与「系统观测」整体挡在外面。它是纯规则，行为完全可预测 —— 本次实验里它稳定地拦下 2 条。
+**来源闸门。** 按记录的来源字段执行一项明确策略。本节代码使用一个偏保守的示例策略：只允许“用户明说”，把模型推断和系统观测先拦下；这不是适用于所有产品的通则。系统观测可否使用，取决于它的证据来源、校验方式和权限语义。
 
-**时效闸门。** 超过一定天数没更新的记忆降权或排除。同样是纯规则。上面图里的 **TTL** 指的就是这个天数 —— 它是**记录上的一个字段**（`ttl_days`，见第 2 节的 schema），不是某个定时任务的时长；`updated_at` 加 `ttl_days` 早于今天，这条就该降权。它防的是那种「三年前观测到、早就过期」的约束 —— 上面条件 B 里的那条正属于这类。
+**时效闸门。** 超过记录自身有效期时降权或排除。上面图里的 **TTL** 指记录的 `ttl_days`（见第 2 节 schema），不是定时任务的运行时长；示例用时区明确的 `updated_at + ttl_days` 与当前时刻比较。具体边界应写进策略并测试。原 Python 2.7 记忆摘要没有保存可供检查的更新时间或 TTL，因此不能说历史实验验证了时效闸门；后面的本地构造样例会单独覆盖它。
 
-**相关度闸门。** 这一道最难，因为「相关」需要语义判断。本节末尾的代码会展示它的局限：用词面重合打分时，同一个问题里该注入的那条可能得 0.000，而不该注入的也是 0.000 —— **它只能排序，不能按阈值过滤**。
-
-这也解释了为什么记忆的召回必须建立在第 6 章那套检索能力之上：相关性判断是一个检索问题，而纯词法解决不了它。
+**相关度闸门。** 相关性取决于当前任务，不能只看记忆文本本身。本节的词面重合示例中，部署问题下“表格输出偏好”和“PostgreSQL 项目约束”都得 0.000；若产品策略要求保留前者、排除后者，这个分数无法把它们分开。这说明该评分器在此样例上区分力不足，不等于所有词法方法都不能设阈值。实际系统要对目标问题与记忆对标注、校准并验证相关性判据。
 
 ### 相关度闸门换成向量之后，阈值怎么定
 
-纯词法「只能排序不能过滤」，向量可以 —— 因为余弦相似度的取值范围固定（-1 到 1），而 BM25 的分数是无界的。但**具体阈值不能从别处抄**，它由你的嵌入模型和记忆文本共同决定。三步定它（**构造示例，未实跑**，这段不依赖真实模型）：
+相似度阈值可以用于向量或词法检索；分数的尺度和方向取决于具体算法，某个分数范围本身不会给出通用阈值。**阈值必须在目标任务和数据上校准**。可以先构造标注好的“问题—记忆”对，标出哪些应作为候选；20+20 对只能算小规模试点，不是充分样本。下面代码中的 4+4 个分数只是演示阈值计算，不是效果评估。查看正负分布和误判成本后再选候选阈值。随后用独立留出集验证精确率、召回率和任务影响，避免在同一小批样本上调参又报效果。换嵌入模型、记忆类型或任务分布时应重新校准。
 
-1. **造两组标注**：20 组「同一件事、两种说法」（应合并）与 20 组「相邻主题」（不应合并）。
-2. **算两批分数的分布**，找重叠区。
-3. **阈值取在重叠区的中间**，同时定一条保底规则：**分数低于阈值的候选不注入，而不是「凑够 k 条」。**
+无论选哪种算法，保底规则都应明确：低于阈值的候选不注入，而不是为了凑够 k 条而放行。分数相同也不意味着语义等价；生产判据要结合标注和任务后果。以下是**构造的离线示例，未实跑模型**。**实跑状态：** 2026-10-21 使用 Python 3.14 执行了本地评分 fixture；它只验证示例逻辑，不代表模型检索效果。
 
 ```python
 # vector_gate.py
-"""相关度闸门的阈值定法：看两批分布的重叠区，不猜一个数。"""
+"""Higher score means more similar; this is a threshold fixture, not a universal metric."""
 
 
 def gate(similarities, threshold):
-    """低于阈值的不注入 —— 宁缺毋滥，这是与检索最大的不同。"""
-    return [(i, s) for i, s in similarities if s >= threshold]
+    """Keep only candidates whose higher-is-better score meets the configured threshold."""
+    return [(memory_id, score) for memory_id, score in similarities if score >= threshold]
 
 
 def summarize(positive, negative):
-    """positive: 应该合并的相似度；negative: 不应该合并的。"""
-    lo_p, hi_n = min(positive), max(negative)
-    if lo_p > hi_n:
-        return "可分：阈值取在 %.2f 到 %.2f 之间" % (hi_n, lo_p)
-    mid = (lo_p + hi_n) / 2
-    return "重叠区 %.2f~%.2f，阈值取 %.2f，并接受一部分误判" % (hi_n, lo_p, mid)
+    """Compare labeled positive and negative calibration scores; empty labels are invalid."""
+    if not positive or not negative:
+        raise ValueError("positive and negative calibration sets must both be non-empty")
+    lowest_positive = min(positive)
+    highest_negative = max(negative)
+    if lowest_positive > highest_negative:
+        return "校准样本可分：候选阈值位于 %.2f 到 %.2f 之间" % (
+            highest_negative, lowest_positive
+        )
+    candidate = (lowest_positive + highest_negative) / 2
+    return "校准样本边界重叠：折中候选 %.2f；需用独立集评估误判" % candidate
 
 
 if __name__ == "__main__":
-    same_thing = [0.91, 0.88, 0.93, 0.85]      # 同一件事的两种说法
-    neighbors = [0.62, 0.71, 0.58, 0.44]       # 相邻主题
-    print(summarize(same_thing, neighbors))
-    # 闸门本身：注意它可能一条都不留 —— 那正是「宁缺毋滥」
+    relevant = [0.91, 0.88, 0.93, 0.85]       # 构造的相关候选分数
+    irrelevant = [0.62, 0.71, 0.58, 0.44]     # 构造的不相关候选分数
+    print(summarize(relevant, irrelevant))
     print(gate([("m1", 0.31), ("m2", 0.28)], threshold=0.30))
 ```
 
 ```text
-可分：阈值取在 0.71 到 0.85 之间
+校准样本可分：候选阈值位于 0.71 到 0.85 之间
 [('m1', 0.31)]
 ```
 
-这一步的产物是一条**可回归的规则**：阈值写进配置、两组标注样本进测试集。之后换嵌入模型时，先跑一遍这两组，看阈值要不要跟着调 —— 这是第 4 节那句「如果换了模型」在召回侧的具体动作。
-
-注意保底行为与检索相反：**检索宁多勿漏（召回决定上限），记忆注入宁缺勿滥（误召回是静默的）。** 同一个相似度，在两处的用法必须不同。
+校准的产物应包含候选阈值、标注集、独立验证集、误判代价，以及低于阈值时的拒绝策略。向量相似度与 BM25 等检索分数采用什么方向和范围，要按具体实现确认；本节代码只处理“分数越高越相似”的输入。换模型或任务分布后，应重新评估阈值，而不能沿用旧分数。
 
 <Mermaid
   chart={`
 flowchart TB
     A["一条记忆"] --> B{"来源是可归因的吗？"}
-    B -->|"模型推断"| X["拦截（确定性规则）"]
-    B -->|"用户明说 / 系统观测"| C{"够新吗？"}
+    B -->|"本例策略允许的来源"| C{"仍在记录有效期内吗？"}
+    B -->|"其他来源"| X["本例保守策略先拦截<br/>生产策略需按来源类型定义"]
     C -->|"超过 TTL"| Y["拦截（确定性规则）"]
     C -->|"在有效期内"| D{"与当前问题相关吗？"}
-    D -->|"不相关"| E["拦截 —— 但这一步不可靠<br/>纯词法只能排序，不能定阈值"]
+    D -->|"不相关"| E["按已验证的相关性策略拦截<br/>本例的词法分数不足以区分部分候选"]
     D -->|"相关"| F["注入上下文"]
-    E -.-> G["⚠️ 漏过去的那条会静默改变输出<br/>实测：无关记忆让部署脚本变成了 python2.7 流程"]
+    E -.-> G["⚠️ 未经验证的候选若被注入，可能静默影响输出<br/>历史摘要不是可复现证据"]
 `}
 />
 
@@ -114,34 +110,33 @@ flowchart TB
 
 **条件相关**（「这个项目上次用的部署环境」）适合做成工具按需查。自动注入的代价是：不相关的记忆会影响行为，而且失败是静默的。
 
-一个务实的中间形态：**常驻注入只保留 2 到 3 条最稳定的偏好，其余全部走工具。** 这样把静默失败的面积压到最小，同时保留了按需取回的能力。
+可以把“常驻少量高频偏好、条件相关信息按需查询”作为待验证的起始设计。文中的“2 到 3 条”只是预算示例，不是通用最优数量；应按每轮 token 成本、实际使用率、错误影响和任务评测结果决定。
 
 ## 完整可运行代码
 
+**实跑状态：** 2026-10-21 使用 Python 3.14 抽取并执行本节完整示例；32 项本地断言通过，不含 provider 调用。
+
 ```python
-"""召回闸门：把「不该注入的记忆」拦在上下文之外。
-
-三道闸门分开看，因为它们的可靠程度完全不同：
-  - 来源闸门：确定性规则，最可靠
-  - 时效闸门：确定性规则，可靠
-  - 相关度闸门：需要语义判断，纯词法基本不可用（见第 6 章）
-
-实跑状态：2026-10-08，已跑通。
-"""
+"""本地构造样例：来源、时效与词面候选分开处理。"""
 
 import math
 import re
+from datetime import datetime, timedelta
 
-TODAY = "2026-10-08"
-MAX_AGE_DAYS = 180
+# 固定回放时刻，保证示例可重复；在线服务应注入当前可信时钟。
+TODAY = datetime.fromisoformat("2026-10-08T00:00:00+08:00")
 
 MEMORIES = [
-    {"id": "m1", "text": "用户偏好表格形式的输出。", "source": "用户明说", "at": "2026-09-20"},
-    {"id": "m2", "text": "用户团队使用 PostgreSQL，不要给 MySQL 方案。", "source": "用户明说", "at": "2026-09-28"},
-    {"id": "m3", "text": "用户的所有脚本必须用 Python 2.7 编写。", "source": "系统观测", "at": "2025-01-05"},
-    {"id": "m4", "text": "用户可能对价格比较敏感。", "source": "模型推断", "at": "2026-10-01"},
+    {"id": "m1", "text": "用户偏好表格形式的输出。", "source": "用户明说", "updated_at": "2026-09-20T10:00:00+08:00", "ttl_days": 90},
+    {"id": "m2", "text": "用户团队使用 PostgreSQL，不要给 MySQL 方案。", "source": "用户明说", "updated_at": "2026-09-28T10:00:00+08:00", "ttl_days": 90},
+    {"id": "m3", "text": "用户的所有脚本必须用 Python 2.7 编写。", "source": "系统观测", "updated_at": "2025-01-05T10:00:00+08:00", "ttl_days": 180},
+    {"id": "m4", "text": "用户可能对价格比较敏感。", "source": "模型推断", "updated_at": "2026-10-01T10:00:00+08:00", "ttl_days": 30},
+    # 独立的过期用户陈述，专门验证时效闸门；不是历史 provider 实验的记录。
+    {"id": "m5", "text": "用户旧项目曾使用 Python 2.7，旧环境已退役。", "source": "用户明说", "updated_at": "2025-01-05T10:00:00+08:00", "ttl_days": 180},
 ]
-ALLOWED_SOURCES = ("用户明说",)   # 只有用户明确说过的才允许长期注入
+
+# 这只是一个保守策略样例，生产系统应按来源类型定义信任和授权规则。
+ALLOWED_SOURCES = ("用户明说",)
 
 
 def tokenize(text):
@@ -159,70 +154,87 @@ def lexical_score(query, text):
     return len(a & b) / math.sqrt(len(a) * len(b))
 
 
-def age_days(at):
-    y1, m1, d1 = (int(x) for x in at.split("-"))
-    y2, m2, d2 = (int(x) for x in TODAY.split("-"))
-    return (y2 - y1) * 365 + (m2 - m1) * 30 + (d2 - d1)
+def is_expired(memory):
+    ttl_days = memory.get("ttl_days")
+    if isinstance(ttl_days, bool) or not isinstance(ttl_days, int) or ttl_days < 0:
+        raise ValueError("ttl_days must be a non-negative integer")
+    updated_value = memory.get("updated_at")
+    if not isinstance(updated_value, str) or not updated_value.strip():
+        raise ValueError("updated_at must be a non-empty ISO timestamp")
+    updated_at = datetime.fromisoformat(updated_value)
+    if updated_at.utcoffset() is None:
+        raise ValueError("updated_at must include a timezone")
+    return updated_at + timedelta(days=ttl_days) <= TODAY
 
 
 def recall(query):
-    kept, blocked = [], []
-    for m in MEMORIES:
-        if m["source"] not in ALLOWED_SOURCES:
-            blocked.append((m, "来源闸门：%s（非用户明说）" % m["source"]))
-        elif age_days(m["at"]) > MAX_AGE_DAYS:
-            blocked.append((m, "时效闸门：已 %d 天未更新" % age_days(m["at"])))
+    candidates, blocked = [], []
+    for memory in MEMORIES:
+        if memory["source"] not in ALLOWED_SOURCES:
+            blocked.append((memory, "来源闸门：本例策略不允许 %s" % memory["source"]))
+        elif is_expired(memory):
+            blocked.append((memory, "时效闸门：记录已过期"))
         else:
-            kept.append((m, lexical_score(query, m["text"])))
-    return kept, blocked
+            # 这里仅形成候选，不等于已经决定注入。
+            candidates.append((memory, lexical_score(query, memory["text"])))
+    return candidates, blocked
+
+
+def self_test():
+    assert not is_expired(MEMORIES[0])
+    assert is_expired(MEMORIES[4])
+    candidates, blocked = recall("帮我写一段部署脚本，把服务发到服务器上")
+    assert [memory["id"] for memory, _ in candidates] == ["m1", "m2"]
+    assert [(memory["id"], reason.split("：")[0]) for memory, reason in blocked] == [
+        ("m3", "来源闸门"), ("m4", "来源闸门"), ("m5", "时效闸门")
+    ]
+    return 4
 
 
 if __name__ == "__main__":
-    for q in ["帮我写一段部署脚本，把服务发到服务器上", "我比较喜欢什么样的输出格式"]:
-        print("问题:", q)
-        kept, blocked = recall(q)
-        for m, s in kept:
-            print("  ✅ 候选 [%s] %s（词面相关度 %.3f）" % (m["id"], m["text"], s))
-        for m, why in blocked:
-            print("  ⛔ %s 拦下 [%s] %s" % (why.split("：")[0], m["id"], why.split("：", 1)[1]))
-        print("  → 拦截了 %d 条，候选剩 %d 条" % (len(blocked), len(kept)))
+    print("本地闸门测试：%d 项通过" % self_test())
+    for query in ["帮我写一段部署脚本，把服务发到服务器上", "我比较喜欢什么样的输出格式"]:
+        print("问题:", query)
+        candidates, blocked = recall(query)
+        for memory, score in candidates:
+            print("  ✅ 候选 [%s] %s（词面相关度 %.3f）" % (memory["id"], memory["text"], score))
+        for memory, reason in blocked:
+            print("  ⛔ %s 拦下 [%s]" % (reason.split("：")[0], memory["id"]))
+        print("  → 拦截 %d 条，保留 %d 条候选" % (len(blocked), len(candidates)))
         print()
-    print("两个观察：")
-    print("1) 来源与时效是确定性规则 —— 每次都拦下同样两条，行为可预测。")
-    print("2) 词面相关度只能排序、不能按阈值过滤：m1 在第二个问题里是 0.183，")
-    print("   在第一个问题里是 0.000；而 m2 两次都是 0.000 却也没被排除。")
-    print("   给一个统一阈值，要么全留要么全砍 —— 这就是纯词法闸门的局限。")
+    print("来源策略拦下系统观测与模型推断；时效策略单独拦下 m5。")
+    print("词面分数只供排序参考；候选是否注入仍须经过相关性与任务策略校验。")
 ```
 
-实跑输出（2026-10-08）：
+复核版本地构造示例的输出（逻辑时钟固定为 2026-10-08；代码于 2026-10-21 复跑）：
 
 ```text
+本地闸门测试：4 项通过
 问题: 帮我写一段部署脚本，把服务发到服务器上
   ✅ 候选 [m1] 用户偏好表格形式的输出。（词面相关度 0.000）
-  ✅ 候选 [m2] 用户团队使用 PostgreSQL，不要给 MySQL 的方案。（词面相关度 0.000）
-  ⛔ 来源闸门 拦下 [m3] 系统观测（非用户明说）
-  ⛔ 来源闸门 拦下 [m4] 模型推断（非用户明说）
-  → 拦截了 2 条，候选剩 2 条
+  ✅ 候选 [m2] 用户团队使用 PostgreSQL，不要给 MySQL 方案。（词面相关度 0.000）
+  ⛔ 来源闸门 拦下 [m3]
+  ⛔ 来源闸门 拦下 [m4]
+  ⛔ 时效闸门 拦下 [m5]
+  → 拦截 3 条，保留 2 条候选
 
 问题: 我比较喜欢什么样的输出格式
   ✅ 候选 [m1] 用户偏好表格形式的输出。（词面相关度 0.183）
-  ✅ 候选 [m2] 用户团队使用 PostgreSQL，不要给 MySQL 的方案。（词面相关度 0.000）
-  ⛔ 来源闸门 拦下 [m3] 系统观测（非用户明说）
-  ⛔ 来源闸门 拦下 [m4] 模型推断（非用户明说）
-  → 拦截了 2 条，候选剩 2 条
+  ✅ 候选 [m2] 用户团队使用 PostgreSQL，不要给 MySQL 方案。（词面相关度 0.000）
+  ⛔ 来源闸门 拦下 [m3]
+  ⛔ 来源闸门 拦下 [m4]
+  ⛔ 时效闸门 拦下 [m5]
+  → 拦截 3 条，保留 2 条候选
 
-两个观察：
-1) 来源与时效是确定性规则 —— 每次都拦下同样两条，行为可预测。
-2) 词面相关度只能排序、不能按阈值过滤：m1 在第二个问题里是 0.183，
-   在第一个问题里是 0.000；而 m2 两次都是 0.000 却也没被排除。
-   给一个统一阈值，要么全留要么全砍 —— 这就是纯词法闸门的局限。
+来源策略拦下系统观测与模型推断；时效策略单独拦下 m5。
+词面分数只供排序参考；候选是否注入仍须经过相关性与任务策略校验。
 ```
 
 ## 注入几条才合适
 
-常驻注入的记忆是**每一轮都要重付**的内容，所以它的条数应该按预算来定，而不是按「可能有用」来定。
+常驻注入的记忆可能在每轮重复进入输入，因此应测量请求形态、缓存计费与使用频率，再按预算决定数量；具体账单规则依 provider 契约而定。
 
-一个粗算：假设每条记忆平均 40 token，注入 10 条就是 400 token 一轮；一段 20 轮的对话因此多付 8,000 token。而第 1 节那张表的结论是 —— 这部分成本随轮次累积，不是一次性的。
+一个纯算术示例：若每条平均 40 token，注入 10 条就是 400 token/轮；20 轮合计 8,000 token。这里不含 provider 缓存、计费折扣或请求格式差异，不能直接换算成费用。
 
 反过来，注入太少也不行，那等于记忆白做了。建议的做法是按「这条记忆在这一轮真的会被用到吗」分级：
 
@@ -254,92 +266,86 @@ if __name__ == "__main__":
 
 先定义**轨迹**这个词：它是**对话之外的一份持久记录**（写日志文件或一张表），记的是「这一轮系统做了什么决定」，而不是对话内容本身。它和 messages 是两回事 —— messages 会随会话消失，轨迹要留下来供事后回查。
 
-一行一条，字段固定成四列：
+一条检索决策写一条结构化轨迹。示例记录七项：时间、request ID、轮次、实际注入的记忆 ID、被拦截的 ID 与原因、阈值、已注入项的分数。request ID 用来关联受控的请求日志，不把查询正文直接复制进记忆审计日志。
 
-```text
-turn  memory_ids        gate                            scores
-1     m1,m2             来源+时效                        0.183,0.000
-2     m1               来源+时效                        0.412
-3     m1,m2,m5          来源+时效+相关度(阈值0.30)         0.512,0.301,0.288
-```
+**实跑状态：** 2026-10-21 使用 Python 3.14 执行了本地轨迹序列化示例；不连接生产日志系统。
 
-（**示例：构造数据，未实跑** —— 上面的分数形态取自本节代码的实跑输出。）
+| ts | request_id | turn | injected_ids | blocked | threshold | scores |
+|---|---|---:|---|---|---:|---|
+| 2026-10-21T15:55:08+08:00 | req-demo-001 | 1 | m1,m2 | m3:source; m4:source; m5:ttl | — | 0.183,0.000 |
 
-四列各有用途：`turn` 让你定位到具体是哪一轮；`memory_ids` 是回查的主键；`gate` 说明「为什么是这几条」（是相关度闸门挑的，还是来源闸门漏了）；`scores` 让你事后能重新校准阈值。缺了 `gate` 这一列，你只知道注入了什么，不知道**是谁放它进来的**。
+这样既能查到哪些记忆真正注入，也能查到候选为何被拦。生产日志仍需设置权限、脱敏和保留期限；request ID 应为不含用户文本的引用标识。
 
 ```python
 # recall_trace.py
-"""把每轮注入的决策落成一行轨迹。
-
-自包含：用一个内存列表代替日志文件/表。
-实跑状态：本机 Python 3.10 实跑（2026-10-12）。"""
+"""记录实际注入与拦截决策；不保存查询正文。"""
 
 import json
-from datetime import datetime, timezone, timedelta
-
-CN = timezone(timedelta(hours=8))
-
-TRACE_FIELDS = ("ts", "turn", "query", "memory_ids", "gate", "scores")
 
 
-def record_trace(turn, query, kept, blocked, threshold=None):
-    """kept: [(id, score)]；blocked: [(id, 原因)]。返回一行 dict。"""
-    gates = [why.split("：")[0] for _, why in blocked]
-    if threshold is not None and not any(g.startswith("相关度") for g in gates):
-        gates.append("相关度(阈值%.2f)" % threshold)
+def record_trace(ts, request_id, turn, injected, blocked, threshold=None):
+    """injected: [(memory_id, score)]；blocked: [(memory_id, reason)]。"""
     return {
-        "ts": datetime.now(CN).isoformat(timespec="seconds"),
+        "ts": ts,
+        "request_id": request_id,
         "turn": turn,
-        "query": query,
-        "memory_ids": [mid for mid, _ in kept],
-        "gate": "+".join(dict.fromkeys(gates)) or "无拦截",
-        "scores": [round(score, 3) for _, score in kept],
+        "injected_ids": [memory_id for memory_id, _ in injected],
+        "blocked": [{"id": memory_id, "reason": reason} for memory_id, reason in blocked],
+        "threshold": threshold,
+        "scores": [round(score, 3) for _, score in injected],
     }
 
 
 def trace_line(row):
-    """写进日志文件的那一行。字段顺序固定，方便 grep 与解析。"""
-    return " ".join(str(row[f]) for f in TRACE_FIELDS)
+    """返回单行 JSON，便于写入受控的 append-only 日志。"""
+    return json.dumps(row, ensure_ascii=False, separators=(",", ":"))
 
 
 if __name__ == "__main__":
-    lines = []
-    kept = [("m1", 0.183), ("m2", 0.0)]
-    blocked = [("m3", "来源闸门：系统观测"), ("m4", "来源闸门：模型推断")]
-    row = record_trace(1, "帮我写一段部署脚本", kept, blocked)
-    lines.append(trace_line(row))
-    print(json.dumps(row, ensure_ascii=False))
-    print("日志行:", lines[0])
-    kept2, blocked2 = [("m5", 0.512)], [("m2", "相关度闸门：0.288 < 0.30")]
-    row2 = record_trace(2, "上次那个项目用什么部署", kept2, blocked2, threshold=0.30)
-    lines.append(trace_line(row2))
-    print("日志行:", lines[1])
-    print("两行轨迹已写:", len(lines))
+    timestamp = "2026-10-21T15:55:08+08:00"  # 固定示例时间，保证输出可复现
+    first = record_trace(
+        timestamp,
+        "req-demo-001",
+        1,
+        [("m1", 0.183), ("m2", 0.0)],
+        [("m3", "source_policy"), ("m4", "source_policy"), ("m5", "expired")],
+    )
+    second = record_trace(
+        timestamp,
+        "req-demo-002",
+        2,
+        [("m5", 0.512)],
+        [("m2", "below_similarity_threshold")],
+        threshold=0.30,
+    )
+    lines = [trace_line(first), trace_line(second)]
+    print(lines[0])
+    print(lines[1])
+    print("两条结构化轨迹；没有写入查询正文。")
 ```
 
 ```text
-{"ts": "2026-10-12T15:55:08+08:00", "turn": 1, "query": "帮我写一段部署脚本", "memory_ids": ["m1", "m2"], "gate": "来源闸门", "scores": [0.183, 0.0]}
-日志行: 2026-10-12T15:55:08+08:00 1 帮我写一段部署脚本 ['m1', 'm2'] 来源闸门 [0.183, 0.0]
-日志行: 2026-10-12T15:55:08+08:00 2 上次那个项目用什么部署 ['m5'] 相关度闸门 [0.512]
-两行轨迹已写: 2
+{"ts":"2026-10-21T15:55:08+08:00","request_id":"req-demo-001","turn":1,"injected_ids":["m1","m2"],"blocked":[{"id":"m3","reason":"source_policy"},{"id":"m4","reason":"source_policy"},{"id":"m5","reason":"expired"}],"threshold":null,"scores":[0.183,0.0]}
+{"ts":"2026-10-21T15:55:08+08:00","request_id":"req-demo-002","turn":2,"injected_ids":["m5"],"blocked":[{"id":"m2","reason":"below_similarity_threshold"}],"threshold":0.3,"scores":[0.512]}
+两条结构化轨迹；没有写入查询正文。
 ```
 
-两个工程细节：**轨迹要写「被拦下的」而不只是「注入的」** —— 拦截记录才是你调阈值时的唯一依据；以及**每行都带 query**，否则你无法事后判断「当时的上下文里该不该有这条」。
+轨迹同时保存实际注入项与被拦截项，才足以排查候选评分和策略决策。不要为了回溯而默认记录完整查询文本；若确需关联查询，应使用 request ID 连接到单独受控的日志，并按数据最小化策略管理。
 
-**二，做一次「关掉记忆」的对照。** 同一个任务，一次带记忆、一次不带，比较输出差异。本次实验正是这么做的：条件 A 与条件 B 的差别只有一条记忆，而输出从 npm 流程变成了 python2.7 流程。这个对照不需要评测集，跑两次就能看出来。
+**二，做「关闭记忆」的诊断对照。** 固定同一任务，分别运行带记忆与不带记忆的版本，可以帮助定位输出差异；它本身不能证明普遍因果，也无法从单次对照估计效果。要评估质量，应使用多条代表性任务，固定模型/API/提示与记忆快照，配对运行并按预先定义的任务判据评分，同时保存原始响应、usage 和注入轨迹。历史 A/B 记录缺这些材料，故只作为待验证的观察。
 
-这两个做法合起来，能把「静默失败」转成「可回查的事实」。第 4 阶段会把它们扩成完整的可观测性体系，但记忆系统的门槛其实就这么低 —— **记下注入了什么，并且偶尔关掉它试试。**
+轨迹能把决策变成可回查数据，但日志也可能包含敏感查询。示例只保存 request ID，不记录查询正文；生产环境应按最小化原则设置访问控制、脱敏与保留期限。
 ## 本节小结
 
 三句话：
 
-1. **误召回的代价高于召回不到**，因为它是静默的 —— 实测里一条无关记忆把部署流程改成了 Python 2.7，而输出看起来完全正常。
-2. **来源与时效可以写成确定性规则**，相关度不行 —— 后者本质上是一个检索问题，得靠第 6 章那套能力，而不是一个阈值。
-3. **注入条数按预算定，不按「可能有用」定**，并且记录每一轮到底注入了什么。
+1. 误召回与漏召回都可能伤害任务；要比较目标任务的影响和可发现性，不能把一条历史摘要推广成普遍规律。
+2. 来源与 TTL 可按明确定义的策略执行；相关性阈值也可以程序化，但它的选择和适用性必须经过校准与独立验证。
+3. 常驻记忆数量按预算和任务证据决定，记录实际注入与拦截决策，并为日志设定隐私边界。
 ## 常见坑
 
-- **把召回当成「越全越好」。** 实测里一条不相关的记忆就把部署流程改成了 Python 2.7 流程，而且没有任何提示。
-- **用同一个阈值同时管来源、时效与相关度。** 它们应该分开 —— 来源和时效是可写死的规则，相关度不是。
-- **指望词面重合做相关度闸门。** 本次代码里它只能排序：该注入的与不该注入的都可能得 0.000。
-- **忽略「误召回是静默的」这一性质。** 它不会报错、不会让输出格式异常，只会在某天让你发现行为被一条陈年记忆带偏了。
-- **常驻注入一大串记忆。** 每一轮都要重发，而且每一条都是一个静默失败的机会。
+- **把候选命中当成应该注入。** 检索分数只生成候选；来源、时效、相关性和任务策略仍需分别判定。
+- **用同一分数阈值替代来源、TTL 与相关性策略。** 它们应分别定义；相关性阈值需用目标数据校准。
+- **把一个词面分数当成普遍相关性判据。** 本例中有一组需要区分的候选同为 0.000；这暴露了该评分器的区分能力不足。
+- **把历史单次观察当作普遍规律。** 对照差异可提示风险，但要估计发生率或任务影响，仍需固定任务、保存原始轨迹并运行有重复的配对评测。
+- **把「常驻 2–3 条」当作标准答案。** 这只是设计起点，需按 token 成本、实际使用率和错误代价评估。

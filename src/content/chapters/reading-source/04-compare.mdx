@@ -16,7 +16,7 @@ status: drafting
 |---|---|---|
 | A | LangChain `@tool` | Python 类型标注 |
 | B | 手写 JSON Schema（第 4 章） | 手写 |
-| C | MCP server 定义（第 14 章） | 手写 |
+| C | MCP server `inputSchema`（此例手写） | 协议规定线上字段形状；生成方式由 server/SDK 实现决定 |
 
 跑出来的参数 schema：
 
@@ -37,11 +37,11 @@ C  {"city": {"type": "string", "enum": ["北京","上海"]}, ...}
 
 ## 三个读数
 
-**第一，表达约束的能力三者相同。** 都能给出 `enum`。所以"用哪个框架"不影响你能不能约束参数 —— 影响的是**约束从哪来**。
+**第一，表达约束的能力三者都具备。** 都能在 schema 中给出 `enum`。所以"用哪个框架"不决定能不能表达参数约束 —— 影响的是**约束从哪来、由谁维护**。
 
-**第二，差别在"约束源"和"签名源"是不是同一个。** A 里类型标注同时是签名和约束源，改一处两边都变；B、C 里它们是两份手写的数据，改了一处不会同步另一处。
+**第二，差别在"约束源"和"签名源"是不是同一个。** A 里类型标注同时是签名和约束源，改一处 schema 会随之生成；B 是本例手写的 JSON Schema。C 也只是本例手写的 MCP `inputSchema` fixture，改 handler 不会自动同步它。MCP 协议定义 server 在线上提供什么字段，不规定 server 必须手写 schema；例如官方 Python SDK 的 `@mcp.tool()` 会从函数类型标注生成 schema。具体项目要检查所用 SDK 和版本，不能把本例的手写方式推广到所有 server。
 
-**第三，`required` 揭示了一个 schema 表达差异。** A 和 B 都有明确的 required 列表，**C 的示例没有声明** —— 而那不是我的笔误。这里描述的是示例中 server 交付的 JSON Schema，不应误读为 MCP JSON-RPC 本身对参数必填校验的保证或豁免。
+**第三，`required` 揭示了一个 schema 表达差异。** A 和 B 都有明确的 required 列表，**C 的示例没有声明** —— 而那不是我的笔误。这里描述的是示例中 server 交付的 JSON Schema；它说明 schema 本身没有标出必填字段，不代表 server 的业务逻辑一定接受缺参。MCP 规范要求 server 校验工具输入，客户端也应按任务契约处理可能的执行错误。
 
 第三条值得展开，因为它是"横向对比"这一类读法最典型的产出。
 
@@ -49,13 +49,11 @@ C  {"city": {"type": "string", "enum": ["北京","上海"]}, ...}
 
 先把两个 MCP 名词说清，因为这条结论全靠它们：`tools/list` 是 MCP 协议里的一个**请求方法** —— 调用方向 server 要「你能提供哪些工具」；`inputSchema` 是它响应里每个工具的一个**字段**，装的就是参数 schema（JSON Schema 格式），和前面 A/B 的那份 schema 是同一个东西，只是换了传输协议。
 
-MCP 的 `tools/list` 规范只要求 server 提供 `inputSchema`（第 14 章实测过：返回的字段只有 name、description、inputSchema 三样），**它不要求里面有 `required`**。
+MCP 的 `tools/list` 返回 tool definition，其中 `name` 与合法的 `inputSchema` 是核心字段。`inputSchema` 遵循 JSON Schema；object 的 `required` 是可选关键字，缺省时 `properties` 中的字段不会因此成为必填，所以 server 可以提供一个没有 `required` 的合法 schema。MCP 2026-07-28 工具规范同时要求 server 校验工具输入；schema 没写某字段必填，并不代表 server 的业务逻辑一定接受缺省值。缺参可能按 schema 通过，也可能作为工具执行错误被拒绝。参见 [JSON Schema object 说明](https://json-schema.org/understanding-json-schema/reference/object) 与 [MCP 2026-07-28 Tools 规范](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)。
 
-所以：**在跨进程的场景里，「参数是不是必填」不可保证。** 调用方拿到一个工具定义，不能假设"没列出来的参数就是可选的"—— 因为可能只是没写。
+因此，更准确的结论是：**调用方不能只凭工具名、描述或缺省的 `required` 列表推断业务必填规则。** 客户端应按声明的 schema 检查自己构造的参数，并准备处理 server 的校验/业务错误；server 仍负责执行规范要求的输入校验与业务规则。
 
-这条结论的来源不是读 MCP 的文档，而是**把三种实现并排放**：一个本地的、一个手写的、一个跨协议的，`required` 的有无立刻显出差别。
-
-**这就是横向对比的价值：单个实现看不出"什么是约定，什么只是这个实现的选择"，并排看就清楚了。**
+这条结论来自两部分证据：MCP 规范确定协议字段与校验责任；三种实现并排则展示同一约束在类型标注、手写 schema 和 server 提供的 schema 中分别由谁维护。**横向对比的价值是找出这种边界，不是把一个实现的遗漏推广成协议保证。**
 
 ## 怎么选对比对象
 
@@ -89,7 +87,7 @@ flowchart TB
     C --> F["产出：协议层 vs 实现层的边界"]
     D --> F
     E --> F
-    F --> G["例：MCP 不要求 required<br/>→ 跨进程时「必填」不可保证"]
+    F --> G["例：schema 省略 required<br/>→ 协议不能表达未声明的业务必填"]
     H["失效情形"] --> H1["两个实现目标不同"]
     H --> H2["版本差太远"]
 `}
@@ -106,12 +104,12 @@ flowchart TB
 | B 手写 JSON Schema | 应用层（你自己发的请求体） | 你自己 |
 | C MCP server 定义 | 协议层（跨进程） | server 提供方 |
 
-第三列的差别解释了一个现象：**为什么 C 里没有 `required` 值得警惕** —— 因为那一层的"正确"由**对方**负责，而协议不强制他写。
+第三列的差别解释了一个现象：**为什么 C 里没有 `required` 值得警惕** —— 它表示对方提供的 schema 没声明哪些字段必填。MCP 仍要求 server 校验输入；客户端不能从这个 schema 推断额外的业务要求，也不能把 server 的错误当成协议漏洞。
 
-而在 A 里，`required` 由"参数有没有默认值"自动推出 —— **负责的是类型系统，不是你。** 这个差别在出问题时表现完全不同：
+而在 A 里，`required` 通常由"参数有没有默认值"自动生成。LangChain/Pydantic 会按生成的 schema 做结构校验，但业务规则和校验失败后的处理仍由应用负责。这个差别在出问题时表现完全不同：
 
-- A 少了 required → 你写错了函数签名（在你控制内）
-- C 少了 required → 对方没写（你控制不了，只能自己校验）
+- A 的 schema 没有预期的 required → 检查函数签名、默认值和生成器行为；LangChain/Pydantic 会做结构校验，但调用方仍需处理校验错误与业务约束。
+- C 的 schema 未列 `required` → 客户端无法从 schema 得知某字段在业务上是否必填；MCP server 仍须校验声明的 schema，并可能按业务规则拒绝缺参。客户端可按自己的任务契约预检并处理错误。
 
 **横向对比的产出就是这条"谁负责保证正确"的边界。** 它比"谁更好用"有用得多，因为它直接决定你该在哪里加校验。
 
@@ -137,11 +135,13 @@ flowchart TB
 |---|---|---|
 | 工具就在你的 Python 进程里 | A 类型标注 | 签名和约束是同一个源，改一处两边都变 |
 | 你要发原始 API 请求 | B 手写 | 没有中间层，但你得自己保证 required 正确 |
-| 工具来自第三方进程 | C 加自己校验 | 协议不保证 required，只能自己补 |
+| 工具来自第三方进程 | C 读取 schema、客户端预检并处理错误 | server 必须校验已声明的 schema；若业务必填字段未写入 schema，客户端不能仅靠协议得知 |
 
-第二行和第三行的共同点是：**它们都要求「你自己校验」。** 而第一行不需要 —— 因为类型系统替你保证了。
+B 和 C 都需要应用处理输入契约：B 的 schema 由调用方维护，C 的调用方按 server 声明的 schema 构造参数，同时准备处理 server 的校验或业务错误。A 会自动生成并校验结构，但仍需处理运行时错误与业务约束。
 
-**这条结论比「用哪个框架」有用**，因为它直接告诉你在哪里加代码：A 不用加；B 加一个 schema 校验；C 加一个参数完整性检查。## 完整可运行代码
+**这条结论比「用哪个框架」有用**，因为它直接告诉你校验在哪一层维护、错误在哪一层处理。
+
+## 完整可运行代码
 
 下面这段代码就是上面那张对照表的实现：同一个工具，三种声明方式，并排看 schema 的差别。
 
@@ -182,8 +182,16 @@ B_HAND = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "city": {"type": "string", "enum": ["北京", "上海"], "description": "出发城市"},
-            "day": {"type": "string", "enum": ["明天", "后天"], "description": "出发日期"},
+            "city": {
+                "type": "string",
+                "enum": ["北京", "上海"],
+                "description": "出发城市",
+            },
+            "day": {
+                "type": "string",
+                "enum": ["明天", "后天"],
+                "description": "出发日期",
+            },
             "passengers": {"type": "integer", "description": "乘客人数"},
         },
         "required": ["city", "day", "passengers"],
@@ -207,8 +215,11 @@ C_MCP = {
 
 
 def norm_props(props):
-    return {k: {kk: vv for kk, vv in v.items() if kk in ("type", "enum", "description")}
-            for k, v in props.items()}
+    fields = ("type", "enum", "description")
+    return {
+        key: {field: value for field, value in prop.items() if field in fields}
+        for key, prop in props.items()
+    }
 
 
 if __name__ == "__main__":
@@ -218,25 +229,29 @@ if __name__ == "__main__":
     print("  required: %s" % a.get("required"))
     print()
     print("=== B. 手写 JSON Schema ===")
-    print("  " + json.dumps(norm_props(B_HAND["input_schema"]["properties"]), ensure_ascii=False))
+    print("  " + json.dumps(
+        norm_props(B_HAND["input_schema"]["properties"]), ensure_ascii=False
+    ))
     print("  required: %s" % B_HAND["input_schema"].get("required"))
     print()
     print("=== C. MCP server 定义 ===")
-    print("  " + json.dumps(norm_props(C_MCP["inputSchema"]["properties"]), ensure_ascii=False))
+    print("  " + json.dumps(
+        norm_props(C_MCP["inputSchema"]["properties"]), ensure_ascii=False
+    ))
     print("  required: %s" % C_MCP["inputSchema"].get("required", "（未声明）"))
     print()
     print("=== 对比 ===")
     print("  三者表达**约束**的能力相同（都能给出 enum），差别在**约束从哪来**：")
     print("    A：约束由类型标注承载 —— 改了类型，schema 自动跟着变")
-    print("    B/C：约束是手写的 —— 改了函数，schema 不会自动跟着变")
+    print("    B/C：本例的 schema 是手写的 —— 改实现不会自动同步")
     print()
     print("  而三者表达**结构**的能力差别很大：")
     print("    A：required 由无默认值的参数自动推出")
     print("    B：required 要手写，写错不会有任何提示")
-    print("    C：这份 MCP 定义里**没有 required** —— 所有参数都是可选的")
+    print("    C：这份 JSON Schema 没有 required；按 schema 字面，properties 中字段并非必填")
     print()
-    print("  最后一条值得注意：C 的示例没有 required；它表示 server 给出的 JSON Schema 长什么样。")
-    print("    MCP tools/list 的 JSON-RPC result 携带 inputSchema；调用方应读取 schema 并按约定校验参数。")
+    print("  最后一条值得注意：这只说明声明的 schema 没列 required，不代表业务一定接受缺参。")
+    print("    MCP server 必须校验工具输入；客户端应读取 inputSchema 并处理 server 返回的校验/业务错误。")
     print("    JSON-RPC 结果与 HTTP transport status 属于不同层次，stdio 没有 HTTP 状态码。")
 ```
 

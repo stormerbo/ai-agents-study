@@ -10,97 +10,83 @@ status: drafting
 
 ## N×M 问题
 
-假设有 N 个 AI 应用（编码助手、客服机器人、数据分析工具），M 个数据源（GitHub、数据库、内部工单系统、Slack）。如果每一对都要单独对接，你需要写 N×M 个集成。
+假设有 N 个 AI 应用（编码助手、客服机器人、数据分析工具），M 个能力提供方（GitHub、数据库、内部工单系统、Slack）。没有共享接口时，每个应用都可能要为每个提供方维护一套专用适配，最多形成 N×M 个成对集成。
 
-这就是 MCP 要解决的问题：**定义一个中间层协议，让 N 个应用和 M 个工具源各自实现一次，得到 N+M 个实现。**
+MCP 统一的是**双方交换能力和调用结果的协议接口**：每个 host 接入一次 MCP client 能力，每个提供方实现一次 MCP server 适配，概念上的接口实现数从 N×M 变成 N+M。它不会自动生成业务适配器，也不会消除 host 的配置、授权、模型 API 转换或 server 对下游系统的封装。N+M 是集成边界的计数模型，不等于工程工时必然按同一比例下降。
 
-这个模式在工程史上出现过很多次 —— 打印机驱动、数据库驱动（ODBC/JDBC）、编辑器插件、LSP（语言服务器协议）。它们的共同结构是：
+这个模式在工程史上出现过很多次 —— 打印机驱动、数据库驱动（ODBC/JDBC）、编辑器协议（LSP）。它们的共同结构是：
 
-**把「谁提供能力」和「谁消费能力」解耦，中间用一个双方都实现一次的协议连接。**
+**把「谁提供能力」和「谁消费能力」解耦，让双方分别实现同一套接口。**
 
-MCP 的定位就是工具生态里的这一层。而它的直接参照物就是 LSP —— 都是「编辑器/宿主 + 能力提供方」的形态，都选择 JSON-RPC 作为消息格式。
+MCP 的定位是 AI 应用与外部能力之间的协议层。它和 LSP 一样采用 JSON-RPC，但两者的生命周期并不相同：MCP 2026-07-28 路径移除了旧版 initialize 握手，LSP 仍有自己的初始化流程。类比用于理解解耦，不代表两种协议可以互换。
+
+
 
 ## 但协议能解决的问题有边界
 
-这是本节最重要的一部分：**说清楚 MCP 不负责什么。**
+本节要划清的是**协议边界与应用决策边界**。MCP 规定 host、client、server 如何交换上下文和能力；它本身不是完整的 agent runtime。
 
-MCP **不负责**：
+MCP 核心协议不会替应用决定：
 
-- **不负责模型怎么选工具。** 那是第 4 章讲的事 —— 工具描述怎么写、schema 怎么设计，MCP 只负责把描述和 schema 从 server 传到 host。
-- **不负责工具做什么。** 协议传的是「调用请求」和「返回结果」，中间的执行是 server 自己的事。
-- **不负责安全。** 它规定了怎么连、怎么调，没有规定「你能调什么」。第 5 节会展开：接入一个第三方 server 意味着什么。
-- **不负责编排。** 循环、预算、闸门 —— 那是第 10、11 章的事，MCP 不参与。
+- **模型如何选择工具。** host 把 server 的工具定义交给模型，模型如何选择还受提示、模型行为和应用策略影响。
+- **工具如何实现、是否安全。** 协议定义调用和结果的结构；server 仍负责输入校验、访问控制、限流和输出处理，host 仍负责哪些调用获准执行。协议还规定了相关安全控制与建议，不能说它“完全不负责安全”。
+- **应用级 agent 如何编排。** 模型调用循环、预算、重试和业务状态由应用负责。协议的 Tasks 等扩展能提供特定的长任务交互机制，但不会替应用定义整个 agent 工作流。
+- **业务授权与副作用策略。** MCP 授权规范和安全建议是协议层机制；具体用户、租户、数据范围与动作授权仍需 host/server 结合应用落实。
 
-**这个边界为什么重要？** 因为它决定了你该在哪里找问题。
+这些边界决定了排查位置。工具选择不理想时，检查 host 暴露给模型的工具集、工具说明与模型策略；连接、协议版本、传输头或 JSON-RPC 报文不匹配时，检查协议和 transport；工具有未授权副作用时，检查 host/server 的授权执行路径，而不是期待协议替你决定业务规则。
 
-一个常见的误判是：接了一个 MCP server，模型开始乱调工具，于是怀疑协议。但协议只搬运消息，不乱调工具的是模型，描述写得不好的是 server —— 该查的地方在第 4 章和第 2 章，不在协议层。
-
-反过来也成立：如果连接建立失败、版本对不上、方法名不存在，那就是协议层的问题，查第 3 节那张变更清单。
+可对照 [MCP 架构与规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/index) 和 [安全最佳实践](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices)。
 
 ## 一个具体的判断：什么时候值得上协议
 
-不是所有场景都需要 MCP。判断方法和第 13 章选框架一样 —— 看**你换不换**。
+判断时看**复用对象、现有生态和边界成本**，不要只数 host 和 server：
 
-- **工具由你写、给一个应用用** → 不需要协议。直接按第 4 章写工具，几十行就够。
-- **同一批工具要给多个应用用** → 值得。这时 N×M 的成本是真实的。
-- **要用别人写的工具** → 需要。别人只提供 MCP 接口，你没有别的选择。
-- **工具源会频繁更换** → 值得。协议让更换成本从「重写集成」降到「改配置」。
+- **工具由你写，只给一个应用使用** → 直接写本地工具通常更简单；如果你预期未来要给多个 host 复用，标准接口可能值得提前采用。
+- **同一能力要被多个 host 使用，或多个 server 要接入同一 host** → MCP 能减少每一对组合都单独实现协议适配的需要，但每个 server 的业务封装、host 授权和运行配置仍要维护。
+- **服务只提供 MCP 接口** → host 需要 MCP client 或兼容层；若同一服务也有 REST/SDK，需把互操作、运维和授权成本一起比较。
+- **host/server 会变更** → 标准协议能降低接口耦合，但切换仍要验证工具语义、身份授权、错误处理和行为兼容，不能只改一个配置就假设等价。
 
-一个更简单的判据：**如果你这辈子只会有一个 host 和一个 server，协议是多余的。** 协议的价值全部来自「多方」。
-
-## 为什么是 JSON-RPC
-
-值得注意一个设计选择：MCP 用的是 **JSON-RPC 2.0**，一种很老的、很朴素的 RPC 格式。它只有四样东西：请求（method + params）、响应（result 或 error）、通知（没有 id）、错误码。
-
-这个选择带来几个实际好处：
-
-- **实现成本极低。** 第 4 节的 server 主体只有一百行左右，不需要任何 SDK。
-- **传输可以换。** 同一套消息格式既能走 stdio（标准输入输出：两个进程之间最朴素的传输，一方往 stdin 写一行，另一方从 stdout 读一行），也能走 HTTP（远程）。所谓「换传输」只换管道，消息格式一个字不动。
-- **容易调试。** 一条消息就是一行 JSON，你可以直接打印、直接手写。
-
-而它的代价是**没有类型系统**。所有参数都是 JSON，schema 要单独声明。这也是第 3 节那个设计能成立的原因 —— 协议本身不携带任何隐含状态。
-
-顺带解释一个后面会反复出现的词：`_meta`。它是每个请求 `params` 里的一个保留字段，用来放「这个请求自己的元信息」——2026-07-28 版把协议版本与客户端能力都塞在这里，让它跟着**每一个请求**走，而不是在握手时协商一次（第 3 节展开）。
-
-
-## 协议层的历史参照
-
-MCP 不是新发明，它复用了一个很成熟的模式。看几个先例有助于理解它该做什么、不该做什么。
-
-**ODBC / JDBC。** 数据库驱动层。没有它时，每个应用要为每种数据库写一套访问代码；有了它之后，应用面向 API 编程、数据库厂商提供驱动。注意这个类比的边界：ODBC 定义的是**怎么发 SQL、怎么取结果**，它不定义 SQL 该怎么写 —— 对应到 MCP，就是它定义怎么调工具，不定义工具该怎么设计。
-
-**LSP（语言服务器协议）。** 编辑器和语言服务之间。VS Code 不必为每种语言写补全逻辑，语言服务也不必为每个编辑器写插件。MCP 和它的形态几乎一样：都是「宿主 + 能力提供方」，都用 JSON-RPC，都区分「初始化」与「平时调用」两个阶段 —— 只不过 MCP 在 2026-07-28 那版把前者去掉了（第 3 节）。
-
-**打印机驱动 / 图像格式解码器。** 更早的同构模式：把 M 种输入和 N 种输出解耦。
-
-四个先例的共同点是：**协议层一旦稳定，上层的生态就开始长。** 而它们的共同风险也一样 —— 协议本身不保证对端行为，只保证消息能被理解。LSP 的服务器可以返回错误结果，数据库驱动可以给你错的数据。**这是协议层的固有边界，不是 MCP 的缺陷。**
+一个粗略判据：当两端都可能被多个实现复用，且双方能遵循兼容的 MCP 版本和能力范围，协议的标准化收益更容易摊薄额外运维成本。单个 host 连单个 server 也可能因现成 SDK、治理要求或未来复用而值得使用；它并非天然“多余”。
 
 ## 一个具体的前后对比
 
-把「没有协议」和「有协议」的成本摆在具体数字上。
+把接口数量摆到一个小例子里。假设有 3 个 host（编码助手、数据分析、客服）和 4 个能力提供方（GitHub、工单、数据库、Slack）：
 
-假设你有 3 个应用（编码助手、数据分析、客服机器人）和 4 个数据源（GitHub、Jira、内部数据库、Slack）。
+| 方式 | 需要维护的集成边界 | 说明 |
+|---|---:|---|
+| 每对系统专用对接 | 最多 3 × 4 = 12 | 每个 host-provider 组合各自处理认证、参数、错误和结果 |
+| 统一为 MCP | 3 个 host 侧接入 + 4 个 server 适配 = 7 | host 按 MCP 接入；每个 provider 暴露 MCP server |
 
-**没有协议**：每个应用为每个数据源写一套适配。3 × 4 = **12 套**。每套包含认证、参数转换、错误映射、分页处理 —— 而其中绝大部分逻辑是重复的。
+这张表只数接口边界，不声称 12 份和 7 份代码具有相同复杂度。一个 MCP client SDK 可以由多个 host 复用，但每个 host 仍须处理产品配置、授权、展示和模型 API；每个 server 仍要实现它自己的业务适配。协议减少的是成对接口的重复，不会消除业务逻辑或运行成本。若 N、M 都很小，运维和安全边界的成本可能超过接口复用收益。
 
-**有协议**：每个数据源实现一次 server（4 个），每个应用实现一次 client（3 个，而且 client 通常在框架里已经有了）。总共 **4 个 server + 1 套 client 代码**。
+## 为什么是 JSON-RPC
 
-从 12 套降到 4 套，而且**新增一个数据源的成本从「改 3 个应用」变成「加 1 个 server」。** 这就是 N×M 变成 N+M 的实际含义。
+MCP 采用 **JSON-RPC 2.0** 表达请求、通知和响应。请求有 method、params 与 id；通知没有 id；响应携带 result 或 error。这个通用 envelope 让不同实现能围绕相同的消息结构互通。
 
-注意这个账里有一个前提：**M 和 N 都不小。** 如果 M=1、N=1，那 12 变成 4 的收益不存在，你只是多了一层间接。这也是本节前面那条判据说「只有一个 host 和一个 server 时协议多余」的原因。
+它的工程取舍可以这样理解：
+
+- **结构容易检查。** JSON 易于日志化和调试，但生产实现仍要正确处理版本、schema 校验、错误语义、取消和权限。stdio 下 stdout 是协议通道，日志应走 stderr。
+- **协议与 transport 分层。** stdio 在进程间交换 JSON-RPC 消息；Streamable HTTP 还规定 HTTP 请求头、状态码、响应体与 SSE 行为。两种 transport 可承载同一类协议操作，但 HTTP 封装并非“只换管道”。
+- **动态 schema，缺少静态类型保证。** MCP 工具定义可用 JSON Schema 描述输入与输出；运行时仍需验证，且不同 SDK 的类型映射要按版本核对。
+
+2026-07-28 的现代 MCP 把协议版本与客户端能力放进每个请求的 `params._meta`，并移除了旧版协议级 initialize/session。这个变化不等于业务应用不能保存状态；需要跨请求状态时，应用可通过显式 handle 或扩展管理。参见[官方规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/index)。
+
+## 协议层的历史参照
+
+**ODBC / JDBC** 展示了数据库驱动的解耦方式：应用面向统一 API，数据库提供对应驱动。这个类比只说明接口复用，不表示 MCP 提供 SQL、事务或数据库一致性语义。
+
+**LSP（语言服务器协议）** 则更接近 MCP 的“宿主 + 能力提供方”形态；二者都使用 JSON-RPC。生命周期仍有差异：LSP 的 initialize 流程并未因 MCP 2026-07-28 移除握手而改变，不能把某一方的版本变化套到另一方。
+
+**协议的一般边界**是：它定义参与方如何表达与交换消息，不保证对端实现正确、结果真实或调用安全。使用协议减少了接口耦合，同时也要求你验证版本、能力、实现和权限。
 
 ## 它和函数调用的关系
 
-最后澄清一个最容易混的地方：**MCP 不是「另一种函数调用」，它是函数调用的搬运层。**
+最后澄清一个最容易混的地方：**MCP 与模型厂商提供的 tool calling 是不同层次的接口。** 对 tools 场景，host 把 MCP server 的工具定义映射到模型 API 的工具 schema，再把模型提出的调用转成 MCP `tools/call`。模型通常不直接发送 MCP 报文；它看到的工具名、schema 和结果由 host 按模型 API 适配。
 
-第 4 章讲过工具调用的往返结构：模型输出 tool_use 块、代码执行、把 tool_result 回填。MCP 不改变这个结构 —— 它改变的是**执行那一步怎么发生**。
+- 工具由应用本地实现：host 直接调用本地函数。
+- 工具由 MCP server 提供：host/client 通过 MCP 协议调用 server。
 
-- 工具是你写的：直接调函数
-- 工具在 MCP server 里：把调用请求编码成 JSON-RPC 发给 server，等它返回
-
-对模型来说，两者没有区别 —— 它看到的都是「工具定义 + 调用结果」。**MCP 对上完全透明**，这是它设计得好的地方：模型不需要知道工具从哪来。
-
-所以第 4 章那些结论（工具描述怎么写、错误怎么回填、工具数量影响成本）在 MCP 场景下**一条都不用改**。变的只是执行路径多了一跳，以及那一跳带来的新问题：连接失败、版本不匹配、server 挂了。
+因此，第 4 章关于工具 schema、模型提出调用、host 执行并回填结果的基本概念仍适用；但具体 schema 映射、错误结构、内容块和结果格式由模型 API 与 MCP 版本共同决定，不能认为“一条都不用改”。增加的边界还包括协议版本、transport、server 掉线、授权以及 MRTR 的交互处理。
 
 ### 那一跳具体长什么样
 
@@ -109,106 +95,121 @@ MCP 不是新发明，它复用了一个很成熟的模式。看几个先例有�
 - **tool_use 块**：模型返回的结构化「我要调这个工具」请求，里面有工具名和参数 —— 注意它只有请求，没有结果。
 - **tool_result 回填**：你的代码执行完，把结果按工具调用 id 包成一个 tool_result 块放回消息列表，模型下一轮才能看到。
 
-**没有 MCP 时**，你的代码在这两者之间直接调自己的函数。**有 MCP 时**，同一段代码改成把 tool_use 编码成 JSON-RPC 发给 server，再把返回的 result 填回 tool_result。对模型来说这完全一样。如果 server 需要补充输入，它也不主动发请求，而是返回一个 `input_required` 结果 —— 这套机制叫 **MRTR（多轮往返请求，Multi Round-Trip Requests）**，第 3 节展开。
+**没有 MCP 时**，host 直接调用本地函数；**有 MCP 时**，host/client 把模型 API 的调用映射成 JSON-RPC `tools/call`。MCP 报文通常由 host/client 与 server 交换，模型不直接发送这套报文。若 server 需要 client 侧输入，现代协议会返回 `input_required`；SDK 可能自动处理，也可以交由 host 的交互层决定如何满足，再用新 JSON-RPC id 重试原请求。这是 **MRTR（多轮往返请求，Multi Round-Trip Requests）**，第 3 节展开。
 
-下面这一对报文就是这一跳的两端（示例：构造数据，未实跑；字段形态按本节 server 的实现）。第一段是 host 把模型的 tool_use 转成 `tools/call`：
+下面两条报文说明 host/client 与 MCP server 的协议边界（示例数据，非真实 API 响应）。第一段是一个现代请求；JSON-RPC id 与上层模型的 tool_use id 分属不同协议，host 需要分别保存它们的关联：
 
 ```json
 {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
- "params": {"_meta": {"protocolVersion": "2026-07-28",
-                      "clientCapabilities": {"elicitation": {}}},
+ "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                      "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}},
             "name": "get_weather",
             "arguments": {"city": "北京", "day": "明天"}}}
 ```
 
-第二段是 server 的返回，host 把它填回模型那次的 tool_result（`tool_use_id` 用来和模型那次的调用对应）：
+第二段是一次完成响应。server 的 `_meta` 身份字段供诊断显示，不能作为安全凭据；host 再把 MCP 结果转换成当前模型 API 要求的 tool result：
 
 ```json
 {"jsonrpc": "2.0", "id": 7,
  "result": {"resultType": "complete",
-            "content": [{"type": "text", "text": "{\"北京明天\": 31}"}]}}
+            "content": [{"type": "text", "text": "{\"北京明天\": 31}"}],
+            "_meta": {"io.modelcontextprotocol/serverInfo":
+                      {"name": "demo-server", "version": "1.0.0"}}}}
 ```
 
-host 侧的适配函数只有十几行（依赖第 4 节那个 `Client`）：
+host 侧适配必须把 MCP 中间交互和模型工具结果分开。下面示例返回 Anthropic Messages 风格的 `tool_result`；其他模型 API 的字段结构需按其文档转换。假设使用第 4 节的 `Client.send`，它每次请求都会分配新的 JSON-RPC id；`collect_inputs` 由 host/SDK 按自己的交互策略实现：
 
 ```python
-def handle_tool_use(tool_use, client):
-    """模型返回的 tool_use → JSON-RPC tools/call → 回填 tool_result。
+import json
 
-    这是本章和第 4 章之间的接缝：模型看到的东西不变，
-    变的是「执行」这一步从本地函数调用换成了跨进程的一次往返。
-    """
-    resp = client.send("tools/call", {
-        "name": tool_use["name"],
-        "arguments": tool_use["input"],
-    })
-    if "error" in resp:
-        # 协议层错误翻成 is_error 的 tool_result，而不是抛异常 ——
-        # 模型需要看到失败才能换一条路径
-        return {"type": "tool_result", "tool_use_id": tool_use["id"],
+
+def handle_tool_use(tool_use, client, collect_inputs, max_rounds=5):
+    """仅当 MCP 调用完成后，才返回模型侧 tool_result。"""
+    params = {"name": tool_use["name"], "arguments": tool_use["input"]}
+
+    for _ in range(max_rounds):
+        # Client.send 每次调用都会生成新的 JSON-RPC id。
+        resp = client.send("tools/call", params)
+        if "error" in resp:
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_use["id"],
                 "is_error": True,
-                "content": json.dumps(resp["error"], ensure_ascii=False)}
-    out = resp["result"]
-    if out.get("resultType") == "input_required":
-        # MRTR：不是错误。把「还需要什么输入」交回上层去问用户（第 3 节）
-        return {"type": "tool_result", "tool_use_id": tool_use["id"],
-                "content": "需要用户补充输入：" + json.dumps(out["inputRequests"], ensure_ascii=False)}
-    return {"type": "tool_result", "tool_use_id": tool_use["id"],
-            "content": out["content"][0]["text"]}
+                "content": json.dumps(resp["error"], ensure_ascii=False),
+            }
+
+        out = resp["result"]
+        result_type = out.get("resultType")
+        if result_type == "input_required":
+            requests = out.get("inputRequests")
+            if not isinstance(requests, dict) or not requests:
+                raise ValueError("input_required 缺少可处理的 inputRequests")
+            # 返回值按 server 分配的 request key 映射；具体是询问用户还是自动处理，
+            # 由 host/SDK 决定。MRTR 自身不等于审批。
+            params["inputResponses"] = collect_inputs(requests)
+            if "requestState" in out:
+                params["requestState"] = out["requestState"]
+            continue
+
+        if result_type != "complete":
+            raise ValueError("未知 MCP resultType: %r" % result_type)
+
+        blocks = out.get("content", [])
+        if any(block.get("type") != "text" for block in blocks):
+            raise NotImplementedError("本示例只映射 MCP text 内容块")
+        text = "\n".join(block.get("text", "") for block in blocks)
+        tool_result = {
+            "type": "tool_result",
+            "tool_use_id": tool_use["id"],
+            "content": text or json.dumps(out.get("structuredContent", {}), ensure_ascii=False),
+        }
+        # MCP 的 isError 是成功 JSON-RPC 响应里的工具结果标记，与顶层协议 error 不同。
+        if out.get("isError"):
+            tool_result["is_error"] = True
+        return tool_result
+
+    raise RuntimeError("MRTR 超过 host 配置的最大往返次数")
 ```
 
-三个判据说明为什么这样写：请求要**原样带回同一个 `tool_use_id`**（回填时才能对上模型那次调用）；协议层错误要翻成 `is_error` 的 tool_result 而不是抛异常（模型需要看到失败才能换路子）；`input_required` 不是错误，回填成一条普通结果、交给上层去问用户（第 3 节）。
+这里有几个可检查的不变量：模型的 `tool_use_id` 要关联到最终回填；MCP 每次重试都用新 JSON-RPC id，但原始工具名和参数保持一致；`input_required` 必须留在协议交互层，只有 `complete` 才进入模型的 tool result。顶层 JSON-RPC `error` 与完成结果里的 MCP `isError` 是两种不同错误形态，host 都要映射到模型 API 支持的错误表示。上面没有演示非文本内容块，生产 host 必须按其模型 API 映射图片、音频等内容，不能静默丢弃。
 
 ## 一张图看它在哪一层
 
 <Mermaid
   chart={`
-flowchart TB
-    subgraph 没有协议
-      A1["应用 1"] --> X1["GitHub 适配"]
-      A1 --> X2["Jira 适配"]
-      A2["应用 2"] --> X3["GitHub 适配"]
-      A2 --> X4["Jira 适配"]
-      A3["应用 3"] --> X5["GitHub 适配"]
-      A3 --> X6["Jira 适配"]
-    end
-    N["N × M 套集成"] -.-> 没有协议
-    subgraph 有协议
-      B1["应用 1"] --> C["MCP client"]
-      B2["应用 2"] --> C
-      B3["应用 3"] --> C
-      C <--> P["MCP 协议<br/>JSON-RPC 2.0"]
-      P <--> S1["GitHub server"]
-      P <--> S2["Jira server"]
-    end
-    M["N + M 个实现"] -.-> 有协议
-    有协议 -.-> Y["模型看到的仍是<br/>「工具定义 + 调用结果」<br/>MCP 对上完全透明"]
-    Y -.-> Z["所以第 4 章的结论<br/>在这里一条都不用改"]
+flowchart LR
+  subgraph direct["没有共享协议：最多 N × M 对接"]
+    H["N 个 host"] --> A["每对组合一份专用适配"]
+    A --> S["M 个能力提供方"]
+  end
+  subgraph standard["MCP：N 个 host 接入 + M 个 server 适配"]
+    H2["host 应用"] --> C["host 产品策略<br/>模型 API 映射 + MCP client"]
+    C <--> P["MCP JSON-RPC<br/>stdio / Streamable HTTP"]
+    P <--> S2["MCP server<br/>业务适配由提供方实现"]
+  end
+  C --> M["模型 API<br/>不直接发送 MCP 报文"]
 `}
 />
 
-这张图里有个值得注意的对称：**左边那六条箭头是六份重复的工作，右边那五条箭头是五次不同的工作。** 协议的价值不在减少箭头的数量（6 到 5 差别不大），而在**每一条箭头只需要实现一次、而且实现方式相同**。
+图中比较的是接口边界数量：直接对接最多要维护 N×M 对组合；采用 MCP 后，host 侧实现 client 接入，能力提供方各自实现 server。具体收益取决于复用次数、SDK、授权和运维成本，不能从箭头数量直接推出工时或性能提升。
+## 可运行的 server 实现
 
-M 和 N 越大，这个差别的绝对值越大 —— 但即使 M=2、N=3，收益也已经出现了：从「3 个应用各写 2 套适配」变成「2 个 server + 1 套 client」。
-## 完整可运行代码
-
-下面是一个最小的 MCP server：用 stdio 传输、换行分隔的 JSON-RPC 2.0，实现了第 4 节会展开的无状态形态。
+本节保留一份最小 stdio server，便于直接观察 JSON-RPC。它与[第 4 节的实现](/chapters/mcp/build-a-server)保持一致；完整 client 与多条请求测试也在那里。维护时应同步两处，本项目的审计脚本会比较两份 server 代码。（本地教学 server/client 路径实跑状态：2026-10-20；本轮未做官方 SDK/provider 互操作。）
 
 ```python
 """一个最小 MCP server（stdio + 换行分隔的 JSON-RPC 2.0）。
 
-按 2026-07-28 那版的**无状态**形态实现：
-  - 没有 initialize 握手，每个请求自己在 _meta 里带协议版本与客户端能力
-  - 版本不匹配 → UnsupportedProtocolVersionError
-  - server/discover 让 server 主动声明支持的版本
-  - 需要补充输入时不主动发请求，而是返回 InputRequiredResult（MRTR）
+按 2026-07-28 的**无状态**路径实现：
+  - 不执行 initialize 握手；每个请求在 _meta 中带协议版本与客户端能力
+  - 不支持的版本返回 JSON-RPC error code -32022
+  - server/discover 与 tools/list 返回规范要求的缓存元数据
+  - 需要 client 输入时返回 input_required，client 用新 request id 携带 inputResponses 与原 requestState 重试
 
-它只在**形态**上照做，没有对接官方 SDK —— 所以它验证的是协议机制本身，
-而不是「官方实现是否如此」。实跑状态：2026-10-09。
+教学实现不是官方 SDK 的兼容性认证；当前代码仅覆盖声明的无状态 stdio 工具路径。
 """
-import json, sys
+import json, math, sys
 
-SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25"]
+SUPPORTED_VERSIONS = ["2026-07-28"]
 
 TOOLS = [
     {"name": "get_weather",
@@ -218,7 +219,7 @@ TOOLS = [
                                     "day": {"type": "string", "enum": ["明天", "后天"]}},
                      "required": ["city", "day"]}},
     {"name": "transfer_money",
-     "description": "给指定账户转账（不可逆）。",
+     "description": "演示转账确认流程；本示例不会执行真实转账。",
      "inputSchema": {"type": "object",
                      "properties": {"to": {"type": "string"}, "amount": {"type": "number"}},
                      "required": ["to", "amount"]}},
@@ -235,50 +236,107 @@ def error(req_id, code, message, data=None):
 
 
 def result(req_id, payload):
+    # serverInfo 放在每个成功响应 result 的 _meta 中；它用于识别/诊断，不是安全凭据。
+    payload = dict(payload)
+    meta = dict(payload.get("_meta", {}))
+    meta["io.modelcontextprotocol/serverInfo"] = {"name": "demo-server", "version": "1.0.0"}
+    payload["_meta"] = meta
     return {"jsonrpc": "2.0", "id": req_id, "result": payload}
+
+
+def tool_failure(req_id, message):
+    """把可供调用方修正的输入/业务错误作为 tool result 返回。"""
+    return result(req_id, {"resultType": "complete", "isError": True,
+                           "content": [{"type": "text", "text": message}]})
 
 
 def handle(req):
     """处理一个请求。注意：这里是**无状态**的 —— 没有 session 对象可查。"""
+    if not isinstance(req, dict) or req.get("jsonrpc") != "2.0" or not isinstance(req.get("method"), str):
+        return error(None, -32600, "Invalid Request")
     method = req.get("method")
     req_id = req.get("id")
+    if isinstance(req_id, bool) or not isinstance(req_id, (str, int)):
+        return error(None, -32600, "Invalid Request id")
     params = req.get("params", {})
+    if not isinstance(params, dict):
+        return error(req_id, -32602, "params must be an object")
     meta = params.get("_meta", {})
-    version = meta.get("protocolVersion")
+    if not isinstance(meta, dict):
+        return error(req_id, -32602, "params._meta must be an object")
+    version = meta.get("io.modelcontextprotocol/protocolVersion")
+    client_caps = meta.get("io.modelcontextprotocol/clientCapabilities")
 
     # --- 无状态化的核心：版本校验发生在**每个请求**上，而不是握手时 ---
+    if not isinstance(version, str) or not version or not isinstance(client_caps, dict):
+        return error(req_id, -32602, "Missing required per-request _meta fields")
     if version not in SUPPORTED_VERSIONS:
-        return error(req_id, -32001, "UnsupportedProtocolVersionError",
+        return error(req_id, -32022, "Unsupported protocol version",
                      {"requested": version, "supported": SUPPORTED_VERSIONS})
 
     if method == "server/discover":
-        return result(req_id, {"protocolVersions": SUPPORTED_VERSIONS,
-                               "capabilities": {"tools": {"listChanged": True}},
-                               "serverInfo": {"name": "demo-server", "version": "1.0.0"}})
+        return result(req_id, {"resultType": "complete",
+                               "supportedVersions": SUPPORTED_VERSIONS,
+                               "capabilities": {"tools": {}},
+                               "ttlMs": 300000, "cacheScope": "public"})
 
     if method == "tools/list":
-        return result(req_id, {"tools": TOOLS})
+        # 缓存元数据是 ListToolsResult 的规范字段；public 表示结果不随用户身份变化。
+        return result(req_id, {"resultType": "complete", "tools": TOOLS,
+                               "ttlMs": 300000, "cacheScope": "public"})
 
     if method == "tools/call":
         name = params.get("name")
         args = params.get("arguments", {})
+        if not isinstance(name, str) or not isinstance(args, dict):
+            return error(req_id, -32602, "tools/call requires a string name and object arguments")
 
         if name == "get_weather":
-            out = TEMP.get((args.get("city"), args.get("day")), {"error": "没有数据"})
-            return result(req_id, {"resultType": "complete",
-                                   "content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]})
+            city, day = args.get("city"), args.get("day")
+            if not isinstance(city, str) or not city.strip() or day not in ("明天", "后天"):
+                return tool_failure(req_id, "get_weather 输入无效：city 不能为空，day 只能是明天或后天")
+            out = TEMP.get((city, day))
+            if out is None:
+                # 业务执行失败仍是一个 tool result；用 isError 告诉调用方不要把它当成功数据。
+                return result(req_id, {"resultType": "complete", "isError": True,
+                                       "content": [{"type": "text", "text": "没有该城市/日期的天气数据"}]})
+            return result(req_id, {"resultType": "complete", "isError": False,
+                                   "content": [{"type": "text", "text": json.dumps({"temperature": out}, ensure_ascii=False)}]})
 
         if name == "transfer_money":
-            # MRTR：金额超过阈值时不主动发 elicitation，而是让客户端补输入后重调
-            if not params.get("_confirmed"):
+            amount, recipient = args.get("amount"), args.get("to")
+            if (not isinstance(recipient, str) or not recipient.strip()
+                    or isinstance(amount, bool) or not isinstance(amount, (int, float))
+                    or not math.isfinite(amount) or amount <= 0):
+                return tool_failure(req_id, "transfer_money 输入无效：收款方不能为空，amount 必须是正数")
+            # MRTR：结果通过 InputResponses map 回来；这只是教学交互，不是真实转账授权。
+            input_responses = params.get("inputResponses", {})
+            if not isinstance(input_responses, dict):
+                return error(req_id, -32602, "inputResponses must be an object")
+            response = input_responses.get("confirm")
+            expected_state = json.dumps({"to": recipient, "amount": amount},
+                                        sort_keys=True, ensure_ascii=False)
+            if response is None:
                 return result(req_id, {
                     "resultType": "input_required",
-                    "inputRequests": [{"id": "confirm",
-                                       "prompt": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
-                                       "schema": {"type": "boolean"}}]})
+                    "inputRequests": {"confirm": {
+                        "method": "elicitation/create",
+                        "params": {"mode": "form",
+                                   "message": "确认给 %s 转账 %s 元？" % (args.get("to"), args.get("amount")),
+                                   "requestedSchema": {"type": "object",
+                                                       "properties": {"confirmed": {"type": "boolean"}},
+                                                       "required": ["confirmed"]}}}},
+                    "requestState": expected_state})
+            # 生产系统应对有安全意义的状态做签名/MAC；这里仅演示逐字回传与绑定参数。
+            if params.get("requestState") != expected_state:
+                return error(req_id, -32602, "requestState missing or does not match this action")
+            if response.get("action") != "accept" or not response.get("content", {}).get("confirmed"):
+                return result(req_id, {"resultType": "complete",
+                                       "content": [{"type": "text", "text": "用户未确认；未执行"}]})
             return result(req_id, {"resultType": "complete",
-                                   "content": [{"type": "text", "text": "已转账 %s 元给 %s"
-                                                % (args.get("amount"), args.get("to"))}]})
+                                   "isError": False,
+                                   "content": [{"type": "text", "text": "教学模拟：确认已通过；本示例未连接转账系统，不会发生真实转账（%s 元给 %s）"
+                                                % (amount, recipient)}]})
 
         return error(req_id, -32602, "Unknown tool: %s" % name)
 
@@ -304,20 +362,20 @@ if __name__ == "__main__":
 
 ### 怎么把它跑起来
 
-这段 server 单独存成 `mcp_server.py` 就能跑 —— 但**它需要有人给它发请求**，否则你会看到它一直等 stdin：
+将这段代码存为 `mcp_server.py`。它会等待 stdin 的 JSON-RPC 请求；下面命令发一条带 2026-07-28 `_meta` 的 `tools/list` 请求：
 
 ```bash
 # 一条消息一行，直接喂给 server
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"protocolVersion":"2026-07-28"}}}' \
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
   | python3 mcp_server.py
 ```
 
-返回就是一行 JSON。要跑完整的七个场景（含 MRTR 往返），用第 4 节那个 `Client` —— 它用真正的子进程与管道驱动同一个 `mcp_server.py`。**本节只给 server，是因为本节的主题是「协议解决什么、不解决什么」；能跑通的完整往返在第 4 节。**
+返回是一行 JSON。要验证完整 client/server 往返（含 MRTR 新 id 重试），运行[第 4 节的 client 示例](/chapters/mcp/build-a-server)。这份手写实现只用于学习协议形态；生产环境优先使用维护中的 SDK，并按目标版本做互操作测试。
 
 ## 常见坑
 
-- **以为 MCP 负责「让模型更好地用工具」。** 它只搬运消息；工具描述的质量是第 4 章的事。
-- **以为 MCP 负责安全。** 它规定怎么连、怎么调，不规定你能调什么。接入第三方 server 的风险要自己评估。
-- **在一个 host 对一个 server 的场景上引入协议。** 没有「多方」，协议的价值为零，只剩一层间接。
+- **以为 MCP 会替模型挑工具。** 选择仍由 host 和模型完成；但 MCP 传递的工具描述、schema 和结果会影响模型所看到的内容，不能说它对模型行为“完全透明”。
+- **以为协议会替应用做业务授权。** MCP 定义了一些安全控制和建议；host/server 仍须落实具体的身份、数据范围、授权与确认策略。
+- **把 N×M → N+M 当作必然省工。** 先比较复用收益和 SDK、运维、授权成本；一对一场景可能适用，也可能不值得引入抽象。
 - **把 MCP 和某个具体框架绑定。** 它是一个协议；第 13 章那些框架只是它的消费者或提供者之一。
-- **以为它必须有 SDK 才能用。** 消息格式就是 JSON-RPC，手写一个 server 是一百行的事。
+- **以为手写 demo 等于生产可用实现。** JSON-RPC 易读不代表完整实现简单；版本、schema、transport、安全与 SDK 互操作都要验证。

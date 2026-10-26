@@ -8,66 +8,43 @@ status: drafting
 
 第一个要建立的认知是：图像不是一个「附件」。
 
-## 实测一：它和文本走同一条通道
+## 图像怎样进入请求
 
-我用一张 1×1 的 PNG 做了一次最小调用，和纯文本调用对比输入 token：
+图像不是对话界面里的“附件”；在 API 请求里，它会按目标 provider 的协议，作为一类输入内容随消息提交。**消息块形状不是通用标准**：DeepSeek 的 Anthropic-compatible `/messages` 使用 `image` block，OpenAI-compatible Chat Completions 使用 `image_url`，Responses API 又使用 `input_image`。调用前要查目标 API 文档，不能把其中一家格式直接复制到另一家。[DeepSeek Vision 文档](https://api-docs.deepseek.com/guides/vision/)分别列出了这些形式；它还说明当前图像输入可用 base64、公开 URL 或 Files API `file_id`。
 
-| 内容 | 输入 token |
-|---|---:|
-| 只有一句文本 | 34 |
-| 一句文本 + 一张 1×1 的图 | 224 |
-
-（实跑数据，2026-10-08，`deepseek-flash`。token 为三项之和，含缓存命中部分。）
-
-> 这里的「输入 token」是把 `input_tokens`、`cache_read_input_tokens`、`cache_creation_input_tokens` 三项相加得到的。原因是**提示缓存**（prompt caching）：被命中的前缀不重复计入 `input_tokens`，而是单独记在 `cache_read_input_tokens` 里 —— 只看 `input_tokens` 会低估真实用量。本章所有数字都按三项之和统计，与第 1 章口径一致。
-
-**一张 1×1 的图就加了 190 token。** 这个数字本身就说明问题：那幅图里只有一个像素，信息量是零，但它照样要花将近 200 token。
-
-原因在于图像在消息里的形态 —— 它不是文件引用，而是 `content` 数组里的**一个内容块**，和文本块并列：
+下面是 DeepSeek 的 Anthropic-compatible `/messages` 形状示意：
 
 ```json
 [
-  { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "..." } },
-  { "type": "text",  "text": "这张图是什么颜色？" }
+  {
+    "type": "image",
+    "source": {
+      "type": "base64",
+      "media_type": "image/png",
+      "data": "..."
+    }
+  },
+  { "type": "text", "text": "这张图是什么颜色？" }
 ]
 ```
 
-其中 `source.type` 有两种取值，先记住它们的分工：`base64` 表示这份字节由你自己编码后内联进 JSON，`url` 表示你只给一个地址、由服务端去取（下面实测）。**base64 不是加密，也不是压缩** —— 它是一种把任意二进制字节编码成可打印 ASCII 字符的规则，每 3 个字节编成 4 个字符，所以体积会膨胀约 1/3。JSON 只能装字符串、装不下裸字节，这是要用它的唯一原因。
+Base64 是把二进制编码为可打印字符的方式；编码后字节数大约增加三分之一（还未计 JSON/HTTP 的其他开销）。它不是压缩或加密。若复用图片，部分 API 提供 Files API 的 `file_id`，可以在后续请求中引用已上传文件；这减少重复传送图像字节，但**不能仅凭此推断视觉 token 或账单会下降**，要看目标 API 的 usage 与缓存语义。
 
-这个形态带来三个后果，每一个都比「多花点 token」重要：
+在客户端维护完整历史的无状态请求里，旧图像若仍作为 inline 内容留在 messages 中，客户端通常要随完整历史再次提交它；如果删除旧图像或改为只保留文字摘要，模型就不再能直接查看那张图。服务端管理会话、文件引用和缓存则可能改变实际请求体与计费方式。先明确你的状态模型，再按真实请求记录上下文 token 和网络字节。
 
-**一，它可以和文本交错排列。** 图和文字的先后顺序会影响理解 —— 图片前面那句「只看右下角」和图片后面那句「只看右下角」，模型拿到的信息是不一样的。
+一个很小的历史对照曾记下纯文本 34 tokens、文本加 1×1 PNG 为 224 tokens，但两次请求的提示词也不相同（`回复「收到」` 与 `只回复「收到」`），且逐次请求、原始响应、完整 usage 与模型快照未归档。它只能作为未经独立复核的历史摘要，不能把差值 190 解释为图像的固定 token 开销，也不能称为图像信息量为零。
 
-**二，它进入对话历史。** 一旦传过，之后每一轮都要重新发一遍。第 1 章那条按轮累积的算式（12 轮 6.5 倍、50 轮 24 倍）对图片**同样成立**，只是基数更大。
+## URL 输入会把取图工作交给服务端
 
-**三，它按内容计费，不按文件计费。** 后面第 3 节会看到：同一个文件换个编码格式，字节数差一倍，token 一点不变。
+历史请求对 `https://example.com/a.png` 记录了一条 `HTTP 400`，错误文本包含 `Failed to download image from`。它能说明该次请求在取图阶段失败；当前 DeepSeek Vision 文档也明确写明，外部公开 URL 由模型服务下载。它不能证明私网地址可达，也不能证明任何 provider 都采取相同的抓取策略。
 
-## 实测二：URL 形式的图会被服务端下载
+把 URL 传给 provider，本质上是把取图工作交给对方服务。不要把任意用户 URL 直接转发给外部模型服务；优先接收你控制的对象 ID，再映射到受控存储或使用 provider 的文件上传功能。如果你的应用需要自己下载用户提供的 URL，这就是你自己的 SSRF 攻击面：应限制协议与目的地，校验 DNS 解析到的目标 IP 并绑定实际连接、谨慎处理重定向，设置大小/超时限制并配合出口网络策略。单独做字符串校验或 DNS 查询不能替代连接时的目标控制。[OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)给出了这些边界。
 
-图像块有两种提供方式：`base64` 与 `url`。我用一个不存在的地址试了第二种：
+## 历史分辨率记录与当前 provider 估算
 
-```text
-HTTP 400
-{
-  "message": "messages.0.content[0].image[0]: Failed to download image from
-             https://example.com/a.png (request_id: 27b6a777-...)",
-  "type": "invalid_request_error"
-}
-```
+下表抄录自 2026-10-08 的单次调用摘要。逐次原始响应、确切 endpoint 与模型后端快照、完整 usage 和 scorer 未归档，因此无法独立重算；下表是历史观察，不是现在可依赖的 DeepSeek 计费曲线。
 
-（原始报文，2026-10-08。为便于阅读做了折行。）
-
-这条报错值得读两遍：**"Failed to download image from"** —— 说明这个地址是**服务端去取的**，不是客户端取好再传。
-
-这意味着两件事。好消息是你可以直接引用已有的图片地址，不必自己下载再 base64。坏消息是：**你把一个 URL 交给了对方服务器去访问**。如果这个 URL 来自用户输入，那就等于把 SSRF 的可能性交给了服务端 —— 内网地址（`http://169.254.169.254/`、`http://localhost:6379/`）会由**对方**发起请求。
-
-实务上的选择很清楚：**地址可控时用 URL，地址来自用户时先自己下载并校验，再用 base64 传。**
-
-## 实测三：token 成本随分辨率怎么涨
-
-把同一张测试图渲染成不同尺寸，逐档测量：
-
-| 尺寸 | PNG 字节 | 输入 token | 相对基线增量 |
+| 尺寸 | PNG 字节 | 历史摘要记录的 input tokens | 历史摘要记录的增量 |
 |---|---:|---:|---:|
 | （纯文本） | — | 34 | — |
 | 64×64 | 848 | 220 | 186 |
@@ -77,192 +54,226 @@ HTTP 400
 | 768×768 | 5,561 | 418 | 384 |
 | 896×896 | 6,740 | 544 | 510 |
 | 1,024×1,024 | 7,857 | 688 | 654 |
-| 1,280×1,280 | 10,658 | **1,030** | 996 |
-| 1,568×1,568 | 14,338 | **1,030** | 996 |
-| 2,048×2,048 | 21,895 | **1,030** | 996 |
-| 3,000×3,000 | 40,642 | **1,030** | 996 |
+| 1,280×1,280 | 10,658 | 1,030 | 996 |
+| 1,568×1,568 | 14,338 | 1,030 | 996 |
+| 2,048×2,048 | 21,895 | 1,030 | 996 |
+| 3,000×3,000 | 40,642 | 1,030 | 996 |
 
-（实跑数据，2026-10-08。每档均为单次调用。）
+这组摘要曾被解释为“186 的固定下限、996 的固定上限”和“每 1,600 像素约 1 token”。由于缺少原始响应和多次重复，这些模式不能作为当前 endpoint 的固定规格；一组等值也无法单独证明服务端如何缩放图像。
 
-这张表里有三个必须注意的地方。
+**截至 2026-10-22，DeepSeek 当前 Vision 文档**称图像 token 根据尺寸估算、推理前会调整图像大小：总像素较小时会放大，较大时缩放至约 1300×1300 像素规模；文档给出每图 1024 token 的上限，并明确实际用量可能与估算略有差异，应以目标 API 返回的 usage 为准。[Vision](https://api-docs.deepseek.com/guides/vision/)与[Token & Token Usage](https://api-docs.deepseek.com/quick_start/token_usage/)限定的是当前文档所述 DeepSeek API 行为，不能反推旧样本，也不能套到其他 provider。正式使用时记录每次请求的模型标识、响应模型、图片尺寸、提示词、终态和 usage；不要把 prompt cache 字段未经文档定义就与总输入字段相加。
 
-**第一，小图有固定下限。** 64×64 与 512×512 花一样多的 token —— 都是 186。也就是说**把图从 512 缩到 64 不会省一分钱**，纯粹在丢信息。
-
-（186 这个下限的成因官方没有给出机制，我也没有考证。从数据形态看，它更像一笔「每张图至少按固定块数计费」的入场费 —— 只要图的存在被识别，就先扣这个数，而不是某种随像素变化的下限。**这一点是推断，不影响用法**：下限以下的缩放不省钱。）
-
-**第二，大图有上限，而且服务端会自己缩。** 1,280、1,568、2,048、3,000 四档的 token **完全相同**。而它们的字节数从 10KB 涨到了 40KB。这说明超过某个尺寸之后，服务端会先把图缩下来再处理 —— 你传的额外像素**没有被使用**。
-
-**第三，中间那段是线性的。** 640 到 1,280 之间，token 大约按像素数线性增长，斜率约 **每 1,600 像素 1 个 token**。
-
-> 顺便说一个经常被引用的数字：官方文档给出的估算式是「像素数 ÷ 750」。**在我这个端点上实测到的斜率更接近 ÷ 1,600，而且有 186 的下限与 996 的上限。** 我没有去考证它为什么不同（可能是服务端先做了缩放），只把实测结果放在这里 —— 这正是第 3 节要讲的做法：**成本必须自己测，不能照搬公式。**
+PNG 字节数、Base64 请求体大小、视觉 token 和模型表现是不同指标。降采样或有损压缩可能减少上传字节，也可能损失小字或细节；图像 token 应按 provider 规则估算并从响应核对，业务效果则用代表性任务单独评测。替换 JPEG/PNG 编码后“token 一定不变”不是跨 provider 的保证。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["一张图"] --> B{"尺寸小于约 512？"}
-    B -->|是| C["按下限计费<br/>实测 186 token"]
-    B -->|否| D{"尺寸超过约 1280？"}
-    D -->|是| E["服务端先缩小<br/>实测仍 996 token"]
-    D -->|否| F["按像素线性计费<br/>实测约 1600 像素/token"]
-    C --> G["进入 content 数组"]
-    E --> G
-    F --> G
-    G --> H{"用 base64 还是 URL？"}
-    H -->|base64| I["你自己控制字节"]
-    H -->|URL| J["⚠️ 服务端去下载<br/>地址来自用户 = SSRF 风险"]
-    G -.-> K["⚠️ 它会进入历史<br/>之后每一轮都重发"]
+  A["选择目标 API 和模型"] --> B{"该 endpoint 文档支持哪些图像输入？"}
+  B --> C["base64 / data URL"]
+  B --> D["公开 URL（服务端取图）"]
+  B --> E["Files API file_id"]
+  C --> F["按目标文档估算，并从响应核对 usage"]
+  D --> F
+  E --> F
+  F --> G["记录图像字节、视觉 token 与任务质量"]
+  G --> H{"客户端是否每轮重发完整历史？"}
+  H -->|是| I["估算累计 input token volume"]
+  H -->|否 / 服务端状态| J["核对真实请求与计费语义"]
 `}
 />
 
-## 一张截图在 agent 循环里值多少
+## 图像在多轮请求中的影响
 
-把上面两个数字合起来算，就能回答一个很实际的问题：**让 agent 每轮截一张图，比每轮读一段文本贵多少？**
+只有当你的客户端在每轮请求里都提交完整历史，并且旧图像仍留在历史中时，图像才会随着请求重复进入上下文。对每轮新增一个图像、并完整重发历史的简化模型，令每张图的输入用量为 `I`、每轮新增文字为 `T`、轮数为 `N`，则仅统计这些输入片段的累计 token volume：
 
-假设一张 1,280×1,280 的截图 = 996 token，一段等价的结构化文本 = 300 token。按第 1 章那条「每轮重发全部历史」的规律，累计输入是每轮内容 × N(N+1)/2：
-
-| 轮次 | 截图方案 | 文本方案 | 倍数 |
-|---:|---:|---:|---:|
-| 5 | 14,940 | 4,500 | 3.3x |
-| 10 | 54,780 | 16,500 | 3.3x |
-| 20 | 209,160 | 63,000 | 3.3x |
-
-（按模型计算，用的是本节实测的单张 996 token。）
-
-关键不是 3.3 倍这个数，而是**它是乘法关系**：图像单价比文本高 3.3 倍，而轮次带来的 N² 增长两者相同。所以「截图 + 长对话」是两个放大叠在一起。
-
-实操结论：**截图适合放在循环的开头或结尾**（拿到一次状态、产出一次结果），不适合每轮都截。如果确实需要持续观察界面变化，就该在每一轮把上一张图从历史里**替换**掉，而不是追加。
-
-这里有个不显眼的麻烦：多数 API 不提供「修改历史里某一项」的操作，你只能自己重建 messages 数组。所以「每轮更新一张图」在实现上意味着每一轮都从头拼一次历史 —— 这反过来又要求你的循环把 messages 的管理权握在自己手里，而不是交给某个框架。
-
-落到代码上就是两件事：**截图进状态、不进历史**；**messages 每轮重建、不追加**。下面这段是核心逻辑（示例：构造数据，未实跑）：
-
-```python
-# 状态里只存「最新截图 + 已完成步骤的文字摘要」，不存历史截图。
-# 每轮从状态重新拼 messages —— 不是 append。（示例：构造数据，未实跑）
-def build_messages(state):
-    return [{
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "已完成：" + state["summary"]},
-            {"type": "image", "source": {"type": "base64",
-             "media_type": "image/png", "data": state["latest_screenshot_b64"]}},
-            {"type": "text", "text": "这是当前界面。下一步做什么？只回一个动作。"},
-        ],
-    }]
-
-# 每轮：先更新状态，再重建；历史里永远只有一张图。
-state["latest_screenshot_b64"] = screenshot()      # 覆盖上一张，而不是新增一张
-state["summary"] += "；" + describe_last_step()  # 早期截图压成一行文字
-messages = build_messages(state)                   # 重新赋值，不是 append
+```text
+图像片段：I × N(N+1)/2
+文字片段：T × N(N+1)/2
 ```
 
-关键在最后一行：`messages` 是**重新赋值**的，不是 `append` 出来的。这样图片那一项从「随轮累积」降成「每轮一张」。
+例如设 `I=1000`、`T=300`（**纯假设，不是价格或模型实测**）：
+
+| 轮次 N | 图像片段累计 token volume | 文字片段累计 token volume |
+|---:|---:|---:|
+| 5 | 15,000 | 4,500 |
+| 10 | 55,000 | 16,500 |
+| 20 | 210,000 | 63,000 |
+
+这个公式只计算新图像/文字片段在完整历史里的累计出现次数，不包含 system prompt、模型输出、工具结果、缓存、重试或 provider 的其他上下文管理；**token volume 也不等于账单**。要测费用，应按目标 provider 的 usage/缓存字段与价格文档另算。
+
+在视觉循环里可以只保留最新截图、用文字摘要表示已完成步骤；但这会丢弃旧画面证据，不能盲目把所有截图都替换。先判断后续动作是否还需要回看旧状态，再设计保存完整图像、文件引用、截图索引或摘要的策略。状态与 messages 分开维护有助于明确哪些证据进入下一次请求：
+
+```python
+# 示例：构造数据，未实跑。messages 的图片块必须按目标 provider 的协议构造。
+def build_messages(state):
+    evidence = list(state["required_prior_evidence"])
+    if state["latest_screenshot_b64"] is not None:
+        evidence.append(state["latest_screenshot_b64"])
+    return render_provider_messages(summary=state["summary"], images=evidence)
+
+# 每轮先更新显式状态，再从状态构建新请求；
+# 是否保留旧截图由任务的回看需求决定，而不是默认全部累积或全部删除。
+messages = build_messages(state)
+```
 
 ## 三种提供方式怎么选
 
-| 方式 | 谁去取 | 适合的场景 |
+DeepSeek 当前文档列出三种图像输入方式；其他 provider 的可用项可能不同：
+
+| 方式 | 谁提供内容 | 需要核对的边界 |
 |---|---|---|
-| base64 内联 | 你自己 | 图片来源不可信、需要自己先校验、要精确控制字节 |
-| URL 引用 | **服务端** | 图在你自己可控的存储上，且希望省掉一次传输 |
-| 直接传字节 | 你自己 | 本地文件；省掉 base64 的膨胀 |
+| base64 / data URL | 客户端上传图像内容 | 图像格式、请求体限制和 block 形状依 endpoint 而定 |
+| 外部 URL | 客户端给地址，provider 服务取图 | 只使用公开且获授权的地址；不要转发任意用户 URL |
+| Files API `file_id` | 客户端先上传，再引用文件 ID | 可避免重复上传字节；token/计费语义仍按 API 文档检查 |
 
-最后一行值得单独说：**base64 会让字节数膨胀约 33%**。一张 40KB 的图会变成 53KB 的字符串。这**不影响 token**（token 按分辨率算，第 3 节会验证），但影响上传延迟与请求体大小 —— 图片量大时这是个真实的差别。
-## 完整可运行代码
+不要把“SDK 接受文件对象”误认为消息协议有一个通用的原始字节块。SDK 可能会代你编码或上传，实际线上格式仍由具体 API 决定。
 
-下面这段代码里的 `max_tokens` 指的是单次响应允许模型**输出**的最大 token 数（是输出上限，不是输入上限），本节用它把回答截短、避免无关输出干扰计时；它和图像输入的 token 是两笔账。
+**Base64 编码后的二进制长度约增加三分之一**，这说的是编码 payload 大小，不是视觉 token 数或费用。它可能影响请求体上限与传输时间；token 使用应按 provider 文档估算，再读取响应 usage 核对。
+下面的脚本用 DeepSeek 当前 OpenAI-compatible Chat Completions 格式，对一条纯文本请求和多种尺寸的合成图像请求做一次 smoke test。每个请求使用完全相同的文字提示，结果逐次保存到 JSONL，并保留 response model、finish reason 和 API 实际返回的 usage 字段。它不是重复评测或质量评估：每个尺寸只请求一次，模型/后端仍可能变化。
+
+**实跑状态：代码由本节离线 fake SDK 测试；未向 DeepSeek 或其他 provider 发请求。** 只有显式设置 `RUN_LIVE_IMAGE_PROBE=1` 才会执行 12 次在线请求，可能产生费用。按 DeepSeek Vision 文档安装并锁定 `openai`、`Pillow` 版本，设置 `DEEPSEEK_API_KEY`；兼容 API 的 endpoint 与格式需自行核对。
 
 ```python
-"""分辨率 → token 成本阶梯：生成不同尺寸的图，实测输入 token。
-
-实跑状态：2026-10-08，deepseek-flash。
-"""
+"""运行单图 usage smoke test 前，必须显式设置 RUN_LIVE_IMAGE_PROBE=1。"""
 
 import base64
+import hashlib
 import json
 import os
-import urllib.request
 from io import BytesIO
+from pathlib import Path
+
+from openai import OpenAI
 from PIL import Image, ImageDraw
 
+MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
+PROMPT = "Reply with exactly RECEIVED and nothing else."
+SIZES = [
+    (64, 64), (256, 256), (512, 512), (640, 640), (768, 768),
+    (896, 896), (1024, 1024), (1280, 1280), (1568, 1568),
+    (2048, 2048), (3000, 3000),
+]
+USAGE_FIELDS = (
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "prompt_cache_hit_tokens",
+    "prompt_cache_miss_tokens",
+)
 
-def make_image(w, h):
-    """画一张有内容的图（纯色块会被压缩到极小，不利于测真实成本）。"""
-    img = Image.new("RGB", (w, h), "white")
-    d = ImageDraw.Draw(img)
-    for i in range(0, max(w, h), 20):
-        d.line([(i, 0), (i, h)], fill=(200, 210, 220), width=1)
-        d.line([(0, i), (w, i)], fill=(200, 210, 220), width=1)
-    d.rectangle([w // 8, h // 8, w // 2, h // 2], outline="black", width=2)
-    d.text((10, 10), "TEST %dx%d" % (w, h), fill="black")
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+
+def make_image(width: int, height: int) -> bytes:
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    for position in range(0, max(width, height), 20):
+        draw.line([(position, 0), (position, height)], fill=(200, 210, 220), width=1)
+        draw.line([(0, position), (width, position)], fill=(200, 210, 220), width=1)
+    draw.rectangle(
+        [width // 8, height // 8, width // 2, height // 2],
+        outline="black",
+        width=2,
+    )
+    draw.text((10, 10), f"TEST {width}x{height}", fill="black")
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
-def ask(content, max_tokens=100):
-    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
-                       "messages": [{"role": "user", "content": content}]}).encode()
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read())
-    u = data.get("usage", {})
-    total = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-             + u.get("cache_creation_input_tokens", 0))
-    return total, u.get("output_tokens", 0)
+def make_record(route: str, width: int | None, height: int | None,
+                image_bytes: bytes | None, response) -> dict:
+    choice = response.choices[0] if response.choices else None
+    finish_reason = getattr(choice, "finish_reason", None)
+    message = getattr(choice, "message", None)
+    text = getattr(message, "content", None)
+    text = text if isinstance(text, str) else ""
+    complete = finish_reason == "stop" and bool(text)
+    usage = getattr(response, "usage", None)
+    usage_record = (
+        {field: getattr(usage, field, None) for field in USAGE_FIELDS}
+        if usage is not None else None
+    )
+    return {
+        "route": route,
+        "width": width,
+        "height": height,
+        "image_bytes": len(image_bytes) if image_bytes is not None else None,
+        "image_sha256": (
+            hashlib.sha256(image_bytes).hexdigest()
+            if image_bytes is not None
+            else None
+        ),
+        "requested_model": MODEL,
+        "response_model": getattr(response, "model", None),
+        "request_id": getattr(response, "id", None),
+        "finish_reason": finish_reason,
+        "status": "complete" if complete else "incomplete",
+        "answer": text,
+        "answer_correct": complete and text.strip() == "RECEIVED",
+        "usage": usage_record,
+    }
+
+
+def request(client: OpenAI, image_bytes: bytes | None) -> dict:
+    content = [{"type": "text", "text": PROMPT}]
+    if image_bytes is not None:
+        encoded = base64.b64encode(image_bytes).decode("ascii")
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64," + encoded},
+        })
+    return client.chat.completions.create(
+        model=MODEL,
+        max_tokens=16,
+        messages=[{"role": "user", "content": content}],
+    )
+
+
+def main() -> None:
+    if os.environ.get("RUN_LIVE_IMAGE_PROBE") != "1":
+        raise SystemExit("Set RUN_LIVE_IMAGE_PROBE=1 to allow the 12 live requests.")
+    client = OpenAI(
+        api_key=os.environ["DEEPSEEK_API_KEY"],
+        base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+    )
+    output_path = Path(
+        os.environ.get("IMAGE_PROBE_OUTPUT", "image-usage-results.jsonl")
+    )
+    with output_path.open("w", encoding="utf-8") as output:
+        cases = [("text_only", None, None, None)]
+        for width, height in SIZES:
+            cases.append(("image", width, height, make_image(width, height)))
+        for route, width, height, image_bytes in cases:
+            try:
+                response = request(client, image_bytes)
+                record = make_record(route, width, height, image_bytes, response)
+            except Exception as error:
+                record = {
+                    "route": route,
+                    "width": width,
+                    "height": height,
+                    "status": "request_error",
+                    "error_type": type(error).__name__,
+                }
+            output.write(json.dumps(record, ensure_ascii=False) + "\n")
+            output.flush()
+            print(route, width, height, record["status"], record.get("usage"))
+    print(
+        f"Per-request records saved to {output_path}; verify the API usage "
+        "definition before comparing."
+    )
 
 
 if __name__ == "__main__":
-    print("%10s %12s %10s %10s" % ("尺寸", "PNG 字节", "输入 token", "每像素 token"))
-    base, _ = ask([{"type": "text", "text": "回复「收到」"}])
-    print("%10s %12s %10d" % ("(纯文本)", "-", base))
-    prev = None
-    for w, h in [(64, 64), (256, 256), (512, 512), (640, 640), (768, 768), (896, 896),
-                 (1024, 1024), (1280, 1280), (1568, 1568), (2048, 2048), (3000, 3000)]:
-        raw = make_image(w, h)
-        b64 = base64.b64encode(raw).decode()
-        try:
-            total, _ = ask([
-                {"type": "image", "source": {"type": "base64",
-                 "media_type": "image/png", "data": b64}},
-                {"type": "text", "text": "只回复「收到」"},
-            ])
-            px = total - base
-            print("%10s %12d %10d %10.4f" % ("%dx%d" % (w, h), len(raw), total, px / (w * h)))
-            if prev:
-                print("%10s 上一档的 %.2f 倍" % ("", px / prev))
-            prev = px
-        except urllib.error.HTTPError as e:
-            print("%10s %12d  失败 HTTP %d: %s" % ("%dx%d" % (w, h), len(raw), e.code,
-                                                   e.read().decode()[:160]))
+    main()
 ```
 
-实跑输出（2026-10-08）：
-
-```text
-      尺寸       PNG 字节   输入 token
-     (纯文本)            -         34
-     64x64          848        220
-   256x256         1899        220
-   512x512         3294        220
-   640x640         4441        310
-   768x768         5561        418
-   896x896         6740        544
- 1024x1024         7857        688
- 1280x1280       10658       1030
- 1568x1568       14338       1030
- 2048x2048       21895       1030
- 3000x3000       40642       1030
-```
+结果解释时，先确认每条记录的请求完成、`finish_reason` 正常，且 `usage.prompt_tokens` 存在；缺字段应记为缺失，不能用 0 代替。比较图像与文本请求时，这个差值仍同时受输入封装与服务端预处理影响，不等同于普遍图像 token 价格。完整结论需要多次重复、多个代表性图像、任务质量判分、目标 endpoint 文档与响应记录。
 
 ## 常见坑
 
-- **把图像当成「附件」。** 它是 content 数组里的一个内容块，参与历史、参与计费、可以和文本交错。
-- **以为缩小图片就一定省钱。** 512 以下是一个固定下限，再从 512 缩到 64 一分钱不省。
-- **上传超大图求「更清楚」。** 1,280 以上 token 完全相同，多出来的像素被服务端丢掉了，只是白白多传了 30KB。
-- **照搬文档里的 token 估算公式。** 本端点上实测的斜率与下限都和公式对不上 —— 成本要自己测（第 3 节给出怎么做）。
-- **直接把用户给的 URL 塞进 image 块。** 服务端会去下载，等于把内网地址交给对方访问。
-- **忘了图会进历史。** 在 agent 循环里每轮截一张图，成本是按轮累积的，不是一次性的。
+- **把一种 provider 的消息格式当成通用协议。** Anthropic-compatible `image`、Chat Completions 的 `image_url` 与 Responses API 的 `input_image` 形状不同，先核对目标 endpoint 文档。
+- **把历史 token 摘要当当前成本曲线。** 2026-10-08 的 186/996 tokens 缺逐次记录，不能拿来当固定下限/上限；查询当前估算并保留真实 usage。
+- **把 prompt cache 字段随意相加。** 只有当目标 API 文档明确字段含义时才能计算总输入或账单；缺字段不等于零。
+- **把用户 URL 直接转给 provider。** 远端 URL 取图是服务端 fetch；使用授权且公开的对象地址，或走受控文件上传。应用自己抓取 URL 时，必须把它当 SSRF 面保护。
+- **假定 stateless 请求每次都必须重传 inline 图片，或假定文件引用能省 token。** 依据具体 API 的会话、Files API 与缓存语义区分 request bytes、上下文 token 和实际费用。
+- **把输入 token volume 直接等同账单。** 缓存计费、输出、重试和价格规则需要分开核对。

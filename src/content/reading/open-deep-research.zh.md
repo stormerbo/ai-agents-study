@@ -123,7 +123,7 @@ python tests/extract_langsmith_data.py --project-name "YOUR_EXPERIMENT_NAME" --m
 
 #### 托管部署
 
-你可以轻松部署到 [LangGraph Platform](https://langchain-ai.github.io/langgraph/concepts/#deployment-options)。
+你可以轻松部署到 [LangGraph Platform](https://docs.langchain.com/langsmith/deployments)。
 
 #### Open Agent Platform
 

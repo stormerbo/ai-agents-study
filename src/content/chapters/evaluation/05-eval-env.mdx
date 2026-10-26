@@ -1,281 +1,347 @@
 ---
 lesson: evaluation/eval-env
-title: 评测环境：分数是「模型 + 环境」的结果
+title: 评测环境：分数来自完整运行配置
 status: drafting
 ---
 
 前面几节都在讲**指标与题目**。这一节讲一个更容易被忽略的东西：**被测的那个世界**。
 
-先看一个实验。我搭了一个最小的工具型任务：环境里有三笔退款申请 `R-001/R-002/R-003`，
-问模型「现在有多少笔退款申请」。
+先看一个最小的构造实验（数据：合成，非线上模型结果）：环境初始有三笔退款申请
+`R-001/R-002/R-003`，但共享存储里还残留上一轮的两条记录。一个只负责列出退款的
+`list_refunds` 工具返回它实际读到的状态。
 
 ```text
-干净环境（3 条）                模型答：3   ✓
-未重置环境（3 条 + 2 条脏数据）    模型答：5   ✗
+干净 fixture（3 条）            工具返回：3 条   ✓
+带残留的共享 fixture（3+2 条）  工具返回：5 条   ✗
 ```
 
-**真实记录数始终是 3。** 模型答 5 不是模型的错 —— 它老老实实读了工具返回的 5 条，
-只不过那 5 条里有 **2 条是上一轮跑完没清理掉的**。
+表格只说明：验证器若期望 3 条，运行环境却返回 5 条，测试就不能归因到模型。它本身
+不证明模型曾在 2026-10-09 的付费调用中答过 5；历史稿中的 3/5 说法没有留存逐次请求、
+工具返回和评分记录，无法独立复核，已在这里改为可控的合成示例。
 
 这就是本节要说的第一件事：
 
-> **你测出来的分数，是「模型 + 环境」这个组合的属性，不是模型的属性。**
+> **分数来自整条被测配置和执行环境。** 比较模型时，要固定或记录 prompt、工具、数据、
+> 依赖、评测器和执行配置；如果目标是比较完整应用，则这些正是被测系统的一部分。
 
-## 一、评测环境的五个要素
+## 一、先定义环境契约
 
-一个能复现的评测环境，至少要把五件事定清楚：
+下面这份清单是设计环境契约的起点，不是所有系统都固定只有五项：
 
 | 要素 | 说清楚什么 | 不定清楚的后果 |
 | --- | --- | --- |
-| **初始状态** | 开始前世界是什么样 | 跑第二次结果就变了（上面那个实验） |
-| **工具集** | 有哪些工具、返回什么格式 | 换一版工具描述就测不出是不是模型变好 |
-| **终止条件** | 什么算「做完了」 | 有的跑到 3 步就停，有的跑到 20 步 |
-| **验证器** | 判成功的依据是什么 | 分数不可复现，两人打分不同 |
-| **隔离方式** | 每个用例之间怎么互不影响 | 用例顺序会影响结果 |
+| **初始状态与外部依赖** | 数据快照、时钟、随机种子、网络/服务响应是什么 | 运行读到了不同世界或不同服务状态 |
+| **应用配置** | 代码、prompt、模型/endpoint、工具 schema 和授权策略版本 | 分数变化无法归因到被比较的改动 |
+| **执行边界** | timeout、最大步骤、重试、并行度、终止/错误状态 | 预算和停止路径不一致 |
+| **评分契约** | 评测单位、成功条件、失败/拒答/超时口径、grader 版本 | 错误解析或评分偏差被当成能力变化 |
+| **隔离与清理** | 用例之间如何隔离状态及副作用 | 顺序、并发或前一次写入影响后续用例 |
 
-这五条里，**初始状态和隔离方式是工程上最容易漏、后果最严重的两条**。
-它们不会让评测报错，只会让分数悄悄偏移。
+读者要产出一份可版本化的环境清单和每次运行的配置记录。哪些值固定、哪些随机、
+哪些由外部服务决定，都要有记录或替身；发生变化就分开报告，不能把环境变化归功于模型。
 
 ## 二、为什么「状态污染」特别难发现
 
-上面那个实验的失败形态很典型：分数从 3 变成 5，**看起来像是模型多找出了两笔**，
-你甚至可能觉得这是好事。
+构造样例里，工具返回条数从 3 变成 5，表面上像是系统发现了更多结果；但 fixture
+状态不符合预期，评分应标记为环境前置条件失败，而不是模型成功或失败。
 
 真正的问题在于**它不会报错**。环境没重置不会抛异常，工具照常返回、模型照常作答、
 验证器照常打分 —— 只是打在一个错的世界状态上。
 
-更麻烦的是它**有方向性**：状态通常只会累积（上一条测试留下的数据还在），
-所以错误往往表现为「分数偏高」。而评测分数偏高是最不容易被质疑的方向。
+污染的影响没有固定方向：残留记录可能让计数偏高，也可能遮蔽新增记录、触发去重、改变
+排序或使状态冲突；共享状态还可能增加方差。先检查 fixture 和执行轨迹，再决定该次评分
+是否有效。只有确认污染机制与评分的关系后，才能判断偏差方向。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["同一个用例"] --> B{"环境是否重置？"}
-    B -->|"重置"| C["世界状态 = 初始状态"]
-    B -->|"未重置"| D["世界状态 = 初始 + 上一轮残留"]
-    C --> E["模型看到 3 条<br/>答案 3"]
-    D --> F["模型看到 5 条<br/>答案 5"]
-    E --> G["分数可信"]
-    F --> H["分数偏高，且<strong>不报错</strong>"]
-    H --> I["你以为模型变强了"]
+    A["固定用例与版本化环境配置"] --> B{"初始 fixture 符合契约？"}
+    B -->|否| C["标记环境无效<br/>不计模型得分"]
+    B -->|是| D["在隔离环境执行被测系统"]
+    D --> E["采集响应、轨迹与副作用"]
+    E --> F{"评分器输入完整且有效？"}
+    F -->|否| G["标记评分/运行错误<br/>不得当成模型失败"]
+    F -->|是| H["按任务结果、护栏与过程指标分开报告"]
+    H --> I["销毁或重建环境，验证跨用例隔离"]
     style D fill:#fee,stroke:#c33
-    style H fill:#fee,stroke:#c33
+    style C fill:#fee,stroke:#c33
+    style G fill:#fee,stroke:#c33
 `}
 />
 
-## 三、一个可复用的环境骨架
+## 三、环境契约与可运行骨架
 
-先给「初始状态」一个真实形态 —— 它是五要素里第一个，也是最容易被写成 `{}` 的一个（示例：构造数据，未实跑）：
+先看一份最小运行记录（示例：构造数据，本地代码稍后会验证）：
 
 ```json
 {
-  "refunds": ["R-001", "R-002", "R-003"],
-  "orders": {"A-1001": {"status": "已发货", "amount": 1288.50}},
-  "audit": []
+  "case_id": "refund-count-001",
+  "fixture_version": "refunds-v3",
+  "expected_initial": {"refunds": ["R-001", "R-002", "R-003"]},
+  "expected_terminal": {"refund_count": 3},
+  "tool_schema_version": "refund-tools-v2",
+  "policy_snapshot": "refund-policy-2026-10-01",
+  "execution": {"max_steps": 8, "timeout_seconds": 30, "parallelism": 1},
+  "grader_version": "refund-outcome-v1",
+  "isolation": "one in-memory environment per case"
 }
 ```
 
-它要满足一个判据：**一个用例跑完之后，这份状态必须能被完整还原。** 凡是 agent 执行中会改的东西（表、文件、审计日志）都要在这里；只读的外部依赖（比如一个固定的政策文档）不必进，但要单独记录版本。
+执行前核对初始 fixture；执行后按任务定义检查预期终态，再验证临时资源是否清理。写操作任务的终态可能本来就不同于初始状态，因此不能把“恢复成初始状态”当成所有任务的成功判据。数据快照、工具契约、政策版本、超时/步骤预算和 grader 都要版本化或可追溯。
 
-下面这段是评测环境的正确形状。关键不是代码复杂度，而是**每个用例前后都有明确的边界**。
+下面是一个可运行的内存模型，展示 fixture 校验、每用例新建状态、任务终态验证和环境销毁。真实 DB/文件/服务需要各自的隔离与回收实现；内存示例不能证明外部副作用已回滚。
+
+```python
+import copy
+import json
+
+BASE = {"refunds": ["R-001", "R-002", "R-003"]}
+
+
+class EnvironmentFailure(Exception):
+    """工具、fixture 或测试环境无法按契约执行。"""
+
+
+def grade_case(env, case, result):
+    """评分器单独运行；评分实现错误不能记成 agent 错误。"""
+    return (
+        env.state == case["expected_final"]
+        and result == case["expected_result"]
+    )
+
+
+class EvalEnv:
+    """每个用例独占一个状态副本；此模型没有外部共享存储。"""
+
+    def __init__(self, fixture):
+        self.state = copy.deepcopy(fixture)
+        self.trace = []
+        self.closed = False
+
+    def call_tool(self, name, args=None):
+        if self.closed:
+            raise EnvironmentFailure("environment is closed")
+        args = args or {}
+        self.trace.append({"tool": name, "args": copy.deepcopy(args)})
+        if name == "list_refunds":
+            return copy.deepcopy(self.state["refunds"])
+        if name == "create_refund":
+            refund_id = args["refund_id"]
+            if refund_id in self.state["refunds"]:
+                raise EnvironmentFailure("duplicate refund id")
+            self.state["refunds"].append(refund_id)
+            return {"created": refund_id}
+        raise EnvironmentFailure("unknown tool: %s" % name)
+
+    def close(self):
+        # 真实系统应在这里销毁 schema/container 或撤销临时资源；不能假装回滚已发生。
+        self.closed = True
+
+
+def run_case(case, agent_fn, grader_fn=grade_case, env_factory=EvalEnv):
+    env = env_factory(case["fixture"])
+    if env.state != case["expected_initial"]:
+        outcome = {"status": "invalid_fixture"}
+    else:
+        try:
+            result = agent_fn(env, case)
+        except EnvironmentFailure as exc:
+            outcome = {
+                "status": "environment_error",
+                "error": type(exc).__name__,
+            }
+        except Exception as exc:
+            # 这是执行阶段异常；不能据此断言模型能力失败或推断 provider 根因。
+            outcome = {
+                "status": "agent_runtime_error",
+                "error": type(exc).__name__,
+            }
+        else:
+            try:
+                passed = grader_fn(env, case, result)
+            except Exception as exc:
+                outcome = {
+                    "status": "grader_error",
+                    "error": type(exc).__name__,
+                }
+            else:
+                outcome = {
+                    "status": "scored",
+                    "passed": passed,
+                    "result": result,
+                }
+
+    # 清理状态独立保存，失败不会覆盖上面的执行/评分结果。
+    try:
+        env.close()
+    except Exception as exc:
+        outcome["cleanup"] = {
+            "status": "error",
+            "error": type(exc).__name__,
+        }
+    else:
+        outcome["cleanup"] = {"status": "passed"}
+    outcome["trace"] = env.trace
+    return outcome
+
+
+def scripted_agent(env, case):
+    if case["operation"] == "count":
+        return len(env.call_tool("list_refunds"))
+    return env.call_tool("create_refund", {"refund_id": "R-004"})
+
+
+CASES = [
+    {
+        "id": "clean-count",
+        "operation": "count",
+        "fixture": BASE,
+        "expected_initial": BASE,
+        "expected_final": BASE,
+        "expected_result": 3,
+    },
+    {
+        "id": "stale-fixture",
+        "operation": "count",
+        "fixture": {"refunds": BASE["refunds"] + ["OLD-1", "OLD-2"]},
+        "expected_initial": BASE,
+        "expected_final": BASE,
+        "expected_result": None,
+    },
+    {
+        "id": "expected-write",
+        "operation": "create",
+        "fixture": BASE,
+        "expected_initial": BASE,
+        "expected_final": {"refunds": BASE["refunds"] + ["R-004"]},
+        "expected_result": {"created": "R-004"},
+    },
+]
+
+
+if __name__ == "__main__":
+    results = {case["id"]: run_case(case, scripted_agent) for case in CASES}
+    assert results["clean-count"]["result"] == 3
+    assert results["clean-count"]["passed"] is True
+    assert results["stale-fixture"]["status"] == "invalid_fixture"
+    assert results["expected-write"]["passed"] is True
+    assert results["clean-count"]["result"] == run_case(CASES[0], scripted_agent)["result"]
+
+    def interrupted_agent(*_):
+        raise RuntimeError("runtime interrupted")
+
+    def broken_grader(*_):
+        raise AssertionError("grader parser failed")
+
+    class CleanupFailureEnv(EvalEnv):
+        def close(self):
+            raise RuntimeError("cleanup failed")
+
+    agent_error = run_case(CASES[0], interrupted_agent)
+    env_error = run_case(
+        CASES[0],
+        lambda env, case: env.call_tool("create_refund", {"refund_id": "R-001"}),
+    )
+    grader_error = run_case(CASES[0], scripted_agent, grader_fn=broken_grader)
+    cleanup_error = run_case(
+        CASES[0], interrupted_agent, env_factory=CleanupFailureEnv
+    )
+    assert agent_error["status"] == "agent_runtime_error"
+    assert env_error["status"] == "environment_error"
+    assert grader_error["status"] == "grader_error"
+    assert cleanup_error["status"] == "agent_runtime_error"
+    assert cleanup_error["cleanup"]["status"] == "error"
+
+    print(json.dumps(results, ensure_ascii=False, sort_keys=True))
+    print("PASS: fixture, execution, environment, grader, and cleanup states")
+```
+
+结果显示三个不同状态：干净只读用例通过、带残留的 fixture 被拒绝计分、预期写操作按终态判分。执行与评分阶段的异常也分别标为 `environment_error`、`agent_runtime_error`、`grader_error`；`agent_runtime_error` 只说明执行阶段中断，不能把它直接解释为模型能力失败或 provider 故障。未知异常保留为执行阶段异常并继续查 trace。清理结果单独写入 `cleanup`，不会覆盖主要结果。
+
+`expected-write` 的最终状态本来就不同于初始状态，因此 **teardown 不能要求每个任务世界恢复成初始值**。真实部署中，可以为用例创建事务、临时 schema、容器或独立账号；评测任务先按目标终态验证，再做清理并检查外部副作用。清理失败要单独报告，不能覆盖原来的执行或评分异常。
+
+深拷贝在这个小例子里用于隔离 Python 对象；生产环境要选择能覆盖实际副作用的边界。数据库事务回滚无法撤销已发送邮件、第三方请求或跨服务写入。对不可逆动作应使用 fake/sandbox sink 或专用隔离租户，并明确它们与生产语义的差异。
+
+### 验证器、终止条件、隔离方式
+
+**验证器**检查任务定义的结果或约束；**终止条件**决定执行何时结束并记录为何结束；**隔离与回收**确保一个用例的状态不会泄漏到另一个。三者不能互相代替。验证器不应只看模型最终文本，也不应只看状态：例如计数结果正确但通过越权工具得到，任务结果可对而安全约束仍失败。
+
+模型评测另外要固定或记录 max steps、超时、重试、模型参数、工具返回、当前时间和随机源。当执行随机模型时，同一输入重复结果不同可能来自模型/采样、网络、外部数据或竞态，不能仅凭「两次不同」就判定环境污染。先用确定性 fake agent 检查环境契约，再在真实模型重复运行中分别报告随机波动与环境状态。
+
+**实跑状态**：本节展示的三个用例可在本地 Python 标准库运行；退款 3/5 是合成 fixture 对照，不是实测模型准确率。2026-10-09 历史记录缺逐次请求、工具返回和 scorer，无法复核原文的付费调用结论。
+
+### 一个可复现的报错：把 teardown 当成回滚断言
+
+下面这个错误实现要求每个用例结束时状态都等于初始快照：
 
 ```python
 import copy
 
 
-class EvalEnv:
-    """一个可复现的评测环境。核心是 setup / teardown 成对出现。"""
-
-    def __init__(self, initial_state):
-        self.initial = copy.deepcopy(initial_state)
-        self.state = None
-
-    def setup(self):
-        """每个用例开始前必须调用。深拷贝 —— 否则 initial 会被第一次跑坏。"""
-        self.state = copy.deepcopy(self.initial)
-        self.trace = []
+class IncorrectTeardown:
+    def __init__(self, initial):
+        self.initial = copy.deepcopy(initial)
+        self.state = copy.deepcopy(initial)
 
     def teardown(self):
-        """每个用例结束后必须调用。断言状态已回到初始。"""
         assert self.state == self.initial, (
-            "环境没回到初始状态：%r" % (self.state,)
+            "environment did not return to initial state"
         )
-        # 故意不在这里重置 —— 让忘记 setup 的代码在下一次跑时立刻暴露
-
-    def call_tool(self, name, args):
-        self.trace.append((name, args))
-        if name == "list_refunds":
-            return {"refunds": list(self.state["refunds"])}
-        raise ValueError("未知工具: %s" % name)
 
 
-def run_case(initial_state, case, agent_fn):
-    """一个用例 = 一个新的环境实例 + 一次 agent 执行。
-
-    三个参数语义固定：initial_state 是世界初始快照，case 是这个用例的输入，
-    agent_fn(env, case) 是被测系统。分开传，避免「环境」与「用例」互相污染。
-    """
-    env = EvalEnv(initial_state)
-    env.setup()
-    try:
-        result = agent_fn(env, case)
-    finally:
-        env.teardown()          # finally —— 用例抛异常也要清理
-    return result
+env = IncorrectTeardown({"refunds": ["R-001", "R-002", "R-003"]})
+env.state["refunds"].append("R-004")  # 这是本用例预期产生的写操作
+try:
+    env.teardown()
+except AssertionError as exc:
+    print("Observed: AssertionError: %s" % exc)
 ```
 
-三个设计点值得单独说：
+实跑输出是 `Observed: AssertionError: environment did not return to initial state`。只读测试可能通过；但合法创建退款的用例会在清理时触发断言，因为预期终态已经变化。修正方式是先用验证器判定任务终态，再由隔离层销毁/重建临时环境；对只读用例可额外断言状态未变。清理失败应单独记录，也不能覆盖模型或工具异常。这是可复现的教学错误，不是对历史事故的引用。
 
-**一、`setup` 用深拷贝。** 直接赋值会让 `initial` 被第一次运行改掉，
-于是第二次的「初始状态」已经不是初始状态了。
+## 四、怎么验证环境契约
 
-**二、`teardown` 里那句 `assert`。** 它把「环境没清干净」变成一个**立刻失败**，
-而不是让污染悄悄流到下一个用例。这比事后分析轨迹便宜得多。
+先把环境问题与模型波动分开。可按以下顺序做检查：
 
-**三、`teardown` 故意不自动重置。** 如果它顺手帮你重置了，
-那么忘记调 `setup` 的用例仍然能跑对 —— 污染就被掩盖了。**让它暴露，比让它自愈更有价值。**
+1. **检查运行指纹。** 每次运行记录 fixture/schema 的哈希或版本、应用与工具版本、prompt、模型 endpoint/参数、评分器版本、时钟/随机种子、并发度和外部依赖替身。不同指纹说明运行配置不同，应分组比较或明确哪些配置就是实验变量。
+2. **用固定脚本验证 fixture。** 暂时不调用模型，用确定性 fake agent 和固定工具响应按不同顺序、重复执行、并行执行；检查每个用例读到的初始状态、预期副作用和清理结果。这个测试只能覆盖已模拟的环境边界。
+3. **校验输入与评分链。** 在调用模型前检查 fixture 前置条件；运行后分别记录模型结束状态、工具/环境错误、grader 解析错误和业务判定。解析失败、timeout、拒答和环境损坏不要自动归为同一种模型失败。
+4. **最后才测真实系统波动。** 固定可固定的配置，对模型输出做计划内重复，并把抽样随机性与环境事件分别统计。随机模型同输入跑出不同文本，不足以证明隔离失败；相同得分也不证明环境一致。
 
-### 验证器、终止条件、隔离方式
+顺序、重复与并发测试是诊断手段，不是普遍证明。比如顺序敏感可能来自共享数据库，也可能来自全局速率限制、缓存预热或任务配额；并发差异可能来自竞态，也可能是服务端限流、调度和模型随机性。要结合状态快照、工具返回与错误轨迹定位原因。重放应使用独立命名空间或不可变快照，避免诊断测试本身修改基准数据。
 
-上面骨架只解决了「初始状态」这一要素，另外三样各给一个可执行形态（示例：构造数据，未实跑）：
+对真实外部服务，做到“两个世界完全一样”往往不现实。应固定或快照能控制的依赖，对无法冻结的依赖使用录制响应或 fake，保留它与生产服务的差异；若这类差异会影响结论，就不能把结果直接外推到生产。
 
-```python
-# ---- 验证器：判定成功看**环境终态**，不看模型说了什么 ----
-def validate(env, case):
-    return env.state["refunds"] == case["expect_refunds"]
+## 五、不同执行形态的环境风险
 
-# ---- 终止条件：先给硬上限，再给「目标达成」 ----
-def should_stop(env, case, step):
-    if step >= case.get("max_steps", 8):
-        return "steps_exhausted"                 # 硬上限，防止不收敛
-    if env.state["refunds"] == case["expect_refunds"]:
-        return "solved"                          # 目标达成
-    return None
+环境可以同时有状态写入、外部服务、用户交互和多 Agent，并不只有两种互斥形态。按副作用和不确定性逐项设计隔离：
 
-# ---- 隔离方式：每个用例一个新环境实例（进程内最简单的一种）----
-# 需要更强隔离时换成「每用例一个新 schema / 一个新容器」，判据不变：
-# 用例 A 结束后，用例 B 看到的世界必须只有 B 的初始状态。
+- **只读工具任务**：固定数据快照、权限身份和工具响应；确认缓存/索引版本及时间语义。
+- **写操作任务**：每用例独立事务、schema、容器或 sandbox sink；验证预期终态后清理，并检查清理是否成功。第三方真实写入应使用专用测试账号或 fake，不要以数据库 rollback 假定外部效果可撤回。
+- **人机交互任务**：记录参与者或模拟器版本、会话状态、脚本、终止条件与评分 rubric。固定 prompt、参数和随机种子有助复现，但不保证模型扮演者输出确定；真人评审则需要明确标注规则并保留分歧。
+- **并发/多 Agent 任务**：记录调度策略、并发上限、消息顺序、超时与共享存储边界；用确定性 fake 验证协议/隔离，再以真实执行评估运行波动。
 
-CASE = {"id": "refund-count", "expect_refunds": ["R-001", "R-002", "R-003"]}
-```
-
-三样的分工要记清：**验证器回答「算不算成功」，终止条件回答「什么时候停」，隔离方式回答「用例之间看不看得见」。** 少任何一样，分数都不再可复现。
-
-**实跑状态**：本节的环境骨架与三条自检在 2026-10-12 的修复中跑通；开头那个退款实验的 3 / 5 是实测数据（2026-10-09）。
-
-### 一个真实的报错
-
-我第一次写这个骨架时，`teardown` 里写的是：
-
-```python
-def teardown(self):
-    self.state = copy.deepcopy(self.initial)     # 错
-```
-
-看起来很贴心，实际上它让整套机制失效了：**`setup` 从此变成可选的**，
-漏调也不会被发现，而污染依旧会在 `setup` 缺失时发生。
-正确的做法是**让 teardown 只负责检查，不负责修复**。
-
-## 四、怎么发现你的环境在污染分数
-
-上面那个实验是我**故意构造**出来的，所以一眼能看出问题。真实场景里不会这么明显。
-三个可操作的检测办法，按成本从低到高：
-
-**一、把同一套用例连跑两遍，比较两次分数。**
-如果第二次和第一次不同，环境里一定有跨用例的状态。这是最便宜的自检，
-一条命令就能做，而且能抓到绝大多数显式污染。
-
-**二、打乱用例顺序，再跑一遍。**
-如果分数随顺序变化，说明用例之间存在依赖 —— 要么共享了状态，要么前一个用例
-改变的全局配置影响了后一个。这一条比第一条更严格：连跑两遍只能发现「累积型」污染，
-换顺序能发现「相互干扰型」。
-
-**三、换并发度再跑一遍。**
-这一条针对的是批量并发：如果你的评测框架并发跑用例，而它们共享一个环境实例，
-那么结果会随并发度变化。判据很简单 —— **把并发度从 1 调到 4，看分数是否变**。
-变了就说明环境没有做到用例级隔离，不变才说明隔离成立。它和前两条测的不是同一件事：
-前两条测「状态有没有跨用例泄漏」，这一条测「并发路径与串行路径是不是同一个世界」。
-
-这三条都可以写成自动化检查，放进评测脚本里：
-
-```python
-from concurrent.futures import ThreadPoolExecutor
-
-
-def check_environment_stability(initial_state, cases, agent_fn):
-    """三条环境自检。任何一条不过，先修环境，别看分数。"""
-
-    def run_all(cs):
-        return [run_case(initial_state, c, agent_fn) for c in cs]
-
-    # 一、同一套用例连跑两遍
-    a = run_all(cases)
-    b = run_all(cases)
-    if a != b:
-        return "❌ 两次运行结果不同 —— 存在跨用例状态"
-
-    # 二、打乱顺序（反过来跑，再把结果翻回来）
-    c = list(reversed(run_all(list(reversed(cases)))))
-    if c != a:
-        return "❌ 换顺序后结果不同 —— 用例之间互相干扰"
-
-    # 三、换并发度：并发 4 与串行必须给出同一个世界
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        d = list(ex.map(lambda x: run_case(initial_state, x, agent_fn), cases))
-    if d != a:
-        return "❌ 并发度 4 与串行结果不同 —— 用例之间没有做到隔离"
-
-    return "✅ 环境自检通过"
-```
-
-**这三条应该跑在评测之前，而不是跑完之后。** 理由很直接：
-如果环境不稳定，后面所有关于「模型变好还是变坏」的讨论都没有意义 ——
-你只是在比较两个不同的世界。
-
-## 五、两种形态的环境，难点不一样
-
-评测环境大体分两类，它们的工程难点完全不同：
-
-**工具调用型。** 世界状态是明确的（数据库、文件、API 返回），验证器可以写成代码。
-上面那个退款实验就是这一类。
-
-**它的难点是「状态与隔离」** —— 也就是本节前半部分讲的那些。
-好处是判定客观，坏处是要把被测系统周围的那一圈全部模拟出来，工作量往往比写 agent 本身还大。
-
-**人机交互型。** 世界状态里有一个「人」，它的反馈是模型生成的或人扮演的。
-客服、销售、谈判类任务属于这一类。
-
-**它的难点是「反馈的一致性」** —— 同一个用户输入，扮演者这次说「可以」、下次说「不行」，
-分数就不可比了。缓解办法有两个：**把扮演者的提示词固定并版本化**，
-以及**同一组用例上固定扮演者的种子**（如果你的扮演者也是模型，至少把参数固定）。
-
-还有第三个不那么显眼但很重要的区别：**工具调用型的失败通常可归因，
-人机交互型的失败常常无法归因**。前者你能看到「调了哪个工具、传了什么参数」，
-后者你只有一段对话，而「这次为什么没谈成」可能连人自己也说不清。
-所以人机交互型任务更适合用**配对比较**（下一节讲）而不是绝对分数。
+失败归因需要轨迹证据，不由架构类型自动决定。工具调用轨迹可以帮助定位选择/参数问题，但不一定揭示根因；对话记录也可以配合订单状态、用户反馈和标注复核进行分类。绝对指标、配对比较或人工评审该选哪种，取决于目标、评测单位、随机性和数据配对条件，不存在“人机交互就应该只做配对比较”的通用规则。
 
 ## 六、环境也是被测系统的一部分
 
 这一节最容易被读成「工程细节」。但它的推论其实很硬：
 
-**如果你改了环境，之前的评测结果就不能直接对比。**
+**如果你同时改模型和环境，单次前后差值无法单独归因给模型。**
 
-常见的情形：你为了修一个 bug 改了工具的返回格式（比如从字符串改成结构化对象），
-然后发现分数涨了 8 个百分点。**这 8 个百分点里有多少来自模型、多少来自环境？**
-如果你没把环境版本记下来，这个问题没有答案。
+例如你更换模型的同时把工具返回格式从字符串改成结构化对象，观察到的差异混合了两项改动。
+要比较模型，就固定工具契约和其他配置；若要评估完整改动包，就明确报告这是联合变化。必要时
+使用多因素实验拆分影响，不能只凭一个前后分数声称某一项导致变化。
 
-所以评测报告里至少要记三样：**模型版本、提示词版本、环境版本**。
-少一样，跨时间的比较就不可解释。
+所以评测报告至少记录：模型/endpoint 与参数、应用和 prompt 版本、工具及授权策略、fixture/依赖
+快照、评分器版本、随机/时钟设置、运行预算、并发度和每例终止/错误状态。配置哈希可以帮助
+发现变化，但应能追溯到具体内容；哈希本身不是环境相同或评测有效的证明。
 
 ## 七、小结
 
-- **分数是 (模型 + 环境) 的属性** —— 环境未重置时，模型答 5 而真实值是 3
-- **环境五要素**：初始状态、工具集、终止条件、验证器、隔离方式
-- **状态污染不报错且有方向性**：通常让分数偏高，而偏高最不易被质疑
-- **`setup` 要深拷贝，`teardown` 只检查不修复** —— 让它暴露，比让它自愈有价值
-- **环境改动会让历史分数不可比**，所以报告要记录模型/提示词/环境三个版本
+- **分数由完整运行配置产生**；比较单个组件时固定其他变量，比较整体应用时报告联合改动。
+- **运行契约**包含 fixture、应用配置、外部依赖、执行边界、评分口径和隔离回收。
+- **污染可能抬高、压低或增加分数波动**；用运行指纹、fixture 检查、轨迹和资源状态诊断。
+- **任务终态不必等于初始状态**；先按目标验证，再清理临时资源并独立报告清理失败。
+- **重复/顺序/并发差异是线索而非证明**；随机模型、缓存、限流和竞态都可能影响结果。
 
-一句话收尾：**在你怀疑模型之前，先确认世界是对的。**
-我看到「模型答 5」时的第一反应是去查模型为什么多数了两笔，
-而正确答案是**环境里本来就有五笔** —— 模型一点错都没有。
-这类误判的代价很高，因为它会让你去改一个根本没坏的东西 —— 而真正的 bug 还留在那儿，下一次它换个形态再咬你一口 —— 而那时你已经忘了上一轮这处误判。
+一句话收尾：**在解释模型分数之前，先确认运行契约、观测轨迹和判分链都可信。**

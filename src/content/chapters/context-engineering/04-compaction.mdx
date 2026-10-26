@@ -4,14 +4,17 @@ title: 压缩与结构化笔记：上下文快满了怎么办
 status: drafting
 ---
 
-上下文快满时，最直觉的做法是「把之前的对话总结一下」。这一节要说明两件事：
+上下文快满时，最直觉的做法是「把之前的对话总结一下」。这一节要区分三件事：
 
-1. **摘要确实会丢东西** —— 而且丢的往往是最不该丢的那一类
-2. **压缩不是免费的** —— 它在一次性任务里是净亏损；收益只在你**复用**压缩结果时才出现
+1. **摘要是有损表示** —— 有可能遗漏后续恰好需要的信息，遗漏类型要用任务样本测
+2. **压缩有成本，也有损失** —— 成本与收益取决于后续请求数、缓存、计费口径和质量要求，不能只看摘要长度
+3. **结构化笔记也不是天然可靠** —— 字段固定只让遗漏更容易检测；值仍需来源、冲突处理和业务校验
 
-## 实测一：压缩比不压缩更贵
+> **历史实测边界**：下文 2026-10-08 的 token、8 条信息保存率和 5 次问答对照，当前只剩汇总数字；逐次原始请求/响应、准确 endpoint/model、完整 usage 与 scorer 未归档，无法独立复算。`deepseek-flash` 不能唯一识别具体模型版本。这些数字只能作为待复核的历史观察，不能推出摘要必然更贵、摘要更容易丢约束或某提示在一般情况下有效。新项目应先用自己的任务集建立可复现基线。
 
-场景：一个 32 轮的对话。早期几轮里埋了 3 条具体信息（订单号、金额、某方案被否决的原因），中间 28 轮是与任务无关的问答，最后提一个必须用到那 3 条信息的问题。
+## 历史样本一：该组记录中摘要路线 token 更多
+
+历史报告把场景描述为一个 32 轮对话：早期埋入 3 条信息，中间有无关问答，最后询问这些信息。逐轮对话已无法取得，因此下表不可重放；下方代码是独立的候选保留探针，不是表格实验的复现输入。
 
 三条路线：
 
@@ -21,9 +24,9 @@ status: drafting
 | **B 摘要压缩** | 让模型把历史压成 ≤200 字 | 3/3 | **2272** |
 | **C 结构化笔记** | 让模型抽成结构化 JSON | 3/3 | **4246** |
 
-（实测数据，`deepseek-flash`，2026-10-08。token 为**该路线所有调用之和**。）
+（2026-10-08 历史汇总，`deepseek-flash`；token 被报告为**该路线所有调用之和**，原始 usage 未归档。）
 
-三条路线**都答对了**。但看最后一列 —— **「压缩」比不压缩更贵，而且贵得多。**
+历史汇总称三条路线**都答对了**，并记录了表中的 token 数；由于缺少原始轨迹和评分器，这些数字目前不可独立复算。它们不证明压缩通常更贵。
 
 原因不难想，但很容易被忽略：
 
@@ -34,11 +37,11 @@ B 摘要压缩：  2 次调用（第 1 次输入 = 全部历史，第 2 次输�
 C 结构化笔记：2 次调用，且压缩产物本身更长（880 字 vs 138 字）
 ```
 
-**压缩的第一步就是「把没压缩的东西全读一遍」。** 这个成本省不掉 —— 所以压缩只有在**压缩结果被复用很多次**时才划算：压一次、用十次，第一次的开销就被摊薄了。
+**自建摘要通常需要先处理待压缩的历史**，这会增加一次调用；后续能否回本，取决于摘要被复用多少次、每次输入/输出与缓存成本、延迟和任务质量。某些 provider 也提供服务端压缩或上下文编辑，调用与计费语义不同，不能把“先读全量历史”当成所有压缩 API 的统一实现细节。
 
-如果这个上下文只用一次（比如你就问一个问题然后结束），压缩是纯粹的额外开销。
+如果摘要只用于一次后续请求，压缩往往会增加一轮处理成本；但是否净亏仍需按目标 endpoint 的 usage/价格、缓存和答案质量计算。不要仅凭本节单组样本决定是否压缩。
 
-## 实测二：摘要丢掉了那条硬约束
+## 历史样本二：摘要记录中遗漏一条硬约束
 
 第二个场景更贴近真实压缩的压力：8 条具体信息散在对话里，其中好几条是用「顺便说一句」这类从句带出来的。
 
@@ -51,19 +54,19 @@ C 结构化笔记：2 次调用，且压缩产物本身更长（880 字 vs 138 �
 
 > 「还有个事，客户强调过**不要动生产库**。」—— 客户的硬约束
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（2026-10-08 历史汇总，`deepseek-flash`；原始对话、摘要、结构化产物与逐条判分未归档。）
 
-注意它丢掉的是什么：**一条约束**。不是订单号，不是金额，不是报错原文 —— 那些都在。丢掉的是那句听起来像闲聊、但对后续每一步操作都构成限制的话。
+历史摘要记录称该次摘要丢了**一条约束**、保留了其余七项。它提醒我们要把约束纳入评估集；单次样本不能证明模型摘要普遍优先丢约束，也不能支撑“摘要天然按重要性排序”的机制结论。
 
-这正好印证了 checkpoint（本站指每节末尾的自检题）里那条判断：**摘要天然按「重要性」排序，而「结论」和「主线」看起来总比「约束」重要。** 一条约束被单独拎出来时，它看起来只是一句备注；只有当它和后面的动作放在一起时，你才知道它有多关键 —— 而摘要的时候，你还没有后面的动作。
+即使摘要看起来连贯，也不能据此推断所有约束都保留了。更稳妥的工程做法是：为目标任务定义需要保真的字段、保存来源与状态，并用已知答案的回归集检查压缩前后的差异。
 
 <Mermaid
   chart={`
 flowchart TB
     H["完整对话历史"] --> A["摘要压缩"]
     H --> B["结构化笔记"]
-    A --> A1["按重要性取舍<br/>结论/主线留下"]
-    A1 --> A2["约束、备注、具体值<br/>被当作冗余丢掉"]
+    A --> A1["摘要可能省略细节<br/>具体取舍需用评测集测"]
+    A1 --> A2["约束、备注、具体值<br/>必须作为测试用例检查"]
     B --> B1["按对话历史里没有的固定字段抽取<br/>标识符/数值/约束/否决理由各占一格"]
     B1 --> B2["不会因为'看起来不重要'被丢<br/>代价是产物更长、更贵"]
 `}
@@ -71,18 +74,18 @@ flowchart TB
 
 ## 那该怎么做：把「状态」从历史里挪出来
 
-结构化笔记之所以更可靠，机制很简单：**它的结构是你定义的，不是模型当场判断的。**
+结构化笔记的优势是：**字段由你定义，缺字段和格式错误更容易由程序检查**。它不保证模型填对、填全，也不能代替授权、状态机或数据库事实。
 
 ```text
 摘要：     模型决定什么重要 → 你无法预知它会丢什么 → 丢了也不会报错
-结构化笔记：你定义有哪些字段 → 模型只负责填 → 缺字段是可检测的
+结构化笔记：你定义字段与来源要求 → 模型提出候选值 → 程序校验类型/来源/冲突，必要时回查权威系统
 ```
 
-这和你熟悉的一件事是同一个思路：**把状态从「过程」里拆出来。** 对话历史适合承载「我们聊过什么」，笔记适合承载「现在确定了什么」。把状态挪进笔记之后，压缩历史时就不必再小心翼翼 —— 因为该保住的已经不在历史里了。
+这和后端熟悉的状态管理相似：把任务状态持久化到明确的数据结构，而不是把对话 transcript 当作唯一数据库。但笔记仍是派生数据；涉及金额、审批、生产环境限制或已执行副作用时，权威状态应来自宿主应用/业务数据库，模型摘要不能成为唯一记录。
 
-一个可操作的清单，按「必须结构化保留」排序：
+一个可用于设计回归测试的候选字段清单：
 
-| 类别 | 例子 | 为什么不能交给摘要 |
+| 候选字段 | 例子 | 为什么值得纳入评测 |
 |---|---|---|
 | **约束与禁止项** | 「不要动生产库」 | 单独出现时看起来像备注，实际限制全部后续动作 |
 | **标识符** | 订单号、报表编号、文件路径 | 摘要极易把具体值写成「某订单」 |
@@ -90,7 +93,7 @@ flowchart TB
 | **否决过的方案及原因** | 「批量接口 —— 不支持幂等」 | 不记原因，下一步会重新提出同一个方案 |
 | 数值与日期 | 4820 元、2026-03-15 | 会被四舍五入或写成「约」 |
 
-> 注意最后两行。**「被否决的方案」是最容易被丢的一类** —— 它既不是结论，也不是待办，看起来像已经翻篇的闲聊。但它是唯一能阻止 agent 重新走进同一个坑的东西。
+> 这些类别是本例的测试设计，不是所有 agent 的固定必填字段。被否决方案可以减少重复讨论，但若需求、接口或约束变化，旧否决未必继续有效；应保存时间、范围、来源与失效/替代状态。
 
 ### 一份填好的笔记
 
@@ -99,38 +102,38 @@ flowchart TB
 ```json
 {
   "identifiers": [
-    {"value": "ORD-88213", "what": "订单号"},
-    {"value": "RE-4471",  "what": "报表编号"}
+    {"fact_id": "f-1", "value": "ORD-88213", "what": "订单号", "source": "turn-1"},
+    {"fact_id": "f-2", "value": "RE-4471",  "what": "报表编号", "source": "turn-1"}
   ],
-  "amounts": [{"value": 4820, "unit": "CNY", "what": "退款金额"}],
-  "dates":   [{"value": "2026-03-15", "what": "复检截止"}],
+  "amounts": [{"fact_id": "f-3", "value": 4820, "unit": "CNY", "what": "退款金额", "source": "turn-1"}],
+  "dates":   [{"fact_id": "f-4", "value": "2026-03-15", "what": "复检截止", "source": "turn-2"}],
   "rejected_proposals": [
-    {"proposal": "改用批量接口", "reason": "不支持幂等", "turn": 3}
+    {"fact_id": "f-5", "proposal": "改用批量接口", "reason": "不支持幂等", "turn": 3, "source": "turn-3"}
   ],
   "constraints": [
-    {"text": "不要动生产库", "source": "客户", "turn": 8}
+    {"fact_id": "f-6", "text": "不要动生产库", "source": "turn-8", "speaker": "客户", "turn": 8}
   ],
-  "error_codes": ["ERR_POOL_EXHAUSTED"],
-  "contacts":    [{"name": "张岚", "role": "对接人"}]
+  "error_codes": [{"fact_id": "f-7", "value": "ERR_POOL_EXHAUSTED", "source": "turn-4"}],
+  "contacts":    [{"fact_id": "f-8", "name": "张岚", "role": "对接人", "source": "turn-8"}]
 }
 ```
 
-与摘要版的差别不在长度，而在**可检测性**：这份笔记的 7 个字段都有明确的值或空数组，程序能逐个断言；摘要是一段散文，丢没丢东西只有读的人能发现 —— 而读的人不会知道原本有什么。
+与摘要版的差别在**可检测性**：程序可以断言字段存在、类型正确、值有来源；但“字段非空”并不等于值正确，也不等于覆盖了原文中所有相关事实。评估完整性仍需对照来源或已知答案集。
 
 字段怎么定，三条判据：
 
-1. 会被**程序**拿去比较或拼接的（编号、金额、日期）必须单独成值，不能混在一句话里；
-2. 丢了会**重复执行**的（已经产生的副作用、已经做过的操作）必须记；
-3. 丢了会**越界**的（约束、禁止项、被否决的方案及理由）必须记，而且**必须带来源与轮次**，否则下一步无法判断它还成不成立。
+1. 会被**程序**拿去比较或拼接的（编号、金额、日期）单独成值，并保留单位、来源与时间；
+2. 涉及**副作用**的记录与实际操作账本对齐，笔记只存引用/摘要，不代替幂等键和执行状态；
+3. 会限制动作的约束保存来源、生效范围、时间与撤销/替代状态；有冲突时暂停或回查权威来源，不靠“最后一条”自行裁决。
 
 ### 笔记放在哪、下一轮谁读回来
 
 笔记是**你**维护的一等对象，不是对话历史的一部分。生命周期有四步：
 
-1. **触发** —— 检测到新事实时写，不是每轮写、也不是对话结束时写。新事实包括：出现一个标识符、确认一条约束、否决一个方案、产生一次副作用。
-2. **存放** —— 序列化后放进**稳定前缀**：通常是 system 之后单独的一条 user 消息，不和时间戳、本轮问题混在一起。理由是它跨轮不变，能命中缓存；本轮问题必须放最后，因为它每轮都变（第 7 节讲这层机制）。
-3. **读回** —— 每次请求按「笔记 → 最近 N 轮原始对话」的顺序拼。笔记给出确定的事实，最近 N 轮给出当前的语流；更早的历史可以压缩或丢弃，因为该保住的已经不在里面了。
-4. **更新** —— 按「类别 + 值」去重合并，不覆盖没被提到过的字段。
+1. **触发** —— 按任务风险与更新频率选择写入时机；结构性状态变化（审批、承诺、外部副作用）应由宿主在同一事务/可靠事件流程中落账，不依赖模型“检测到”后再记。
+2. **存放** —— 放入版本化、带任务/租户范围与访问控制的状态存储。把它放在请求的哪个消息位置由 provider 的协议和缓存规则决定；位置本身不保证缓存命中或更高优先级。Anthropic 当前提供 server-side compaction / context editing；OpenAI Responses API 也提供 compaction 接口。它们是 provider-specific 机制，先核对当前文档、模型支持与保留的状态形态，再决定是否自建摘要。
+3. **读回** —— 按需注入经过授权且仍有效的状态；最近对话可以提供语境，但遇到冲突时要按明确来源优先级回查，不能默认笔记正确。
+4. **更新** —— 校验 schema、来源、版本与状态迁移；并发更新使用版本号/CAS 或数据库事务，处理冲突时保留审计记录。
 
 消息数组长这样（示例：构造数据，未实跑）：
 
@@ -142,43 +145,86 @@ flowchart TB
 ]
 ```
 
-第一条 system 里那句「只依据笔记回答」不是客套 —— 实测里缺了它，模型会在笔记没写的地方给出**确定结论**；加上它，模型会如实说笔记里没有（见下面那组 5 次对照）。
+“只依据笔记回答”可以作为提示，但不能保证模型不补全或不受其它上下文影响。历史 5 次对照缺逐次响应与 scorer，不可复算；缺失关键事实时应由宿主阻止高风险操作、向权威数据源查询或要求用户补充，而非依赖提示语保证安全。
 
 更新与在线检测的伪码：
 
 ```python
-REQUIRED = ["identifiers", "amounts", "dates", "rejected_proposals",
-            "constraints", "error_codes", "contacts"]
+LIST_FIELDS = {"identifiers", "amounts", "dates", "rejected_proposals",
+               "constraints", "error_codes", "contacts"}
+REQUIRED_TEXT = {
+    "identifiers": ("value", "what"),
+    "amounts": ("unit", "what"),
+    "dates": ("value", "what"),
+    "rejected_proposals": ("proposal", "reason"),
+    "constraints": ("text", "speaker"),
+    "error_codes": ("value",),
+    "contacts": ("name", "role"),
+}
+INTEGER_FIELDS = {"rejected_proposals": ("turn",), "constraints": ("turn",)}
+
+
+def validate_notes(notes: dict) -> list[str]:
+    """检查本例的字段形状与基础类型；不验证事实真实、完整或授权。"""
+    errors = []
+    if not isinstance(notes, dict):
+        return ["notes: expected object"]
+    for key in LIST_FIELDS:
+        if key not in notes or not isinstance(notes[key], list):
+            errors.append(f"{key}: expected list")
+            continue
+        for index, item in enumerate(notes[key]):
+            where = f"{key}[{index}]"
+            if not isinstance(item, dict):
+                errors.append(f"{where}: expected object")
+                continue
+            for field in ("fact_id", "source"):
+                value = item.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    errors.append(f"{where}: missing fact_id or source (invalid {field})")
+            for field in REQUIRED_TEXT.get(key, ()):
+                value = item.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    errors.append(f"{where}.{field}: expected nonempty string")
+            for field in INTEGER_FIELDS.get(key, ()):
+                value = item.get(field)
+                if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                    errors.append(f"{where}.{field}: expected positive integer")
+            if key == "amounts":
+                value = item.get("value")
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    errors.append(f"{where}.value: expected number")
+    return errors
 
 
 def merge_notes(notes: dict, new_facts: list[dict]) -> dict:
-    """按「类别 + 值」去重合并，不覆盖未被提及的字段。"""
-    for f in new_facts:
-        cat = f["category"]
-        if cat == "constraints":                      # 约束只追加，不删
-            if f["text"] not in {c["text"] for c in notes.get(cat, [])}:
-                notes.setdefault(cat, []).append(f)
-        elif cat == "rejected_proposals":             # 同一方案再次被否决 → 更新理由
-            by_proposal = {p["proposal"]: p for p in notes.get(cat, [])}
-            by_proposal[f["proposal"]] = f
-            notes[cat] = list(by_proposal.values())
-        elif cat in ("identifiers", "amounts", "dates"):
-            by_value = {r["value"]: r for r in notes.get(cat, [])}
-            by_value[f["value"]] = f                  # 同值去重
-            notes[cat] = list(by_value.values())
-        else:
-            notes[cat] = f["value"]                   # 标量字段直接覆盖
-    return notes
-
-
-def missing_fields(notes: dict) -> list[str]:
-    """在线检测：读回前先确认必填字段都在，返回缺失的字段名。"""
-    return [k for k in REQUIRED if not notes.get(k)]
+    """示意：按稳定 fact_id 去重；冲突拒绝合并，由调用方持久化候选并交宿主裁决。"""
+    merged = {**notes, **{k: list(v) for k, v in notes.items() if isinstance(v, list)}}
+    errors = validate_notes(merged)
+    if errors:
+        raise ValueError(f"invalid existing notes: {errors}")
+    for fact in new_facts:
+        category = fact["category"]
+        if category not in LIST_FIELDS or category not in merged:
+            raise ValueError(f"unknown category: {category}")
+        if not isinstance(merged[category], list):
+            raise TypeError(f"{category} must be a list")
+        if not fact.get("fact_id") or not fact.get("source"):
+            raise ValueError("new facts require fact_id and source")
+        existing = next((x for x in merged[category] if x.get("fact_id") == fact["fact_id"]), None)
+        if existing is None:
+            merged[category].append(fact)
+        elif existing != fact:
+            raise ValueError(f"conflicting contents for fact_id={fact['fact_id']}; preserve for host review")
+    errors = validate_notes(merged)
+    if errors:
+        raise ValueError(f"invalid merged notes: {errors}")
+    return merged
 ```
 
-**冲突不要静默覆盖。** 如果同一个字段出现新值（金额从 4820 改成 4800），保留两条并把旧值标上 `superseded_by`，让代码能发现「这一轮改了金额」—— 直接覆盖等于丢掉了「改过」这个事实。
+**冲突不要静默覆盖。** 若金额从 4820 改成 4800，helper 应拒绝同一 `fact_id` 的异值合并；调用方需把新旧候选、来源和版本写入冲突记录，再由业务规则或人工确认哪条生效。不能仅凭出现顺序标记新值为真。对于生产环境禁止项、审批状态等约束，模型笔记不能覆盖宿主策略。
 
-**在线丢字段检测要拦在答题之前。** `missing_fields` 返回非空时，往 system 里补一句「你还缺 X，先用工具查或向用户补问」，**不要让它在缺字段的情况下继续答题**。缺字段还继续，正是第 5 章说的「必填逼幻觉」—— 模型会给那个空格填一个看起来合理的值。
+**结构校验失败要在使用前拦截。** `validate_notes` 只能发现若干形状/来源问题；它不能证明事实为真或所有必需事实都已抽取。遇到业务关键字段缺失或冲突，由宿主执行查询、拒绝操作或要求澄清；再提示模型“先查证”只是辅助，不能作为唯一控制。
 
 ### 别把它和记忆、RAG 混起来
 
@@ -200,14 +246,17 @@ def missing_fields(notes: dict) -> list[str]:
 
 import json
 import os
+from pathlib import Path
 
 import anthropic
 
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
+if bool(api_key) == bool(auth_token):
+    raise RuntimeError("set exactly one of ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN")
 client = anthropic.Anthropic(
-    api_key=(
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    ),
+    api_key=api_key,
+    auth_token=auth_token,
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
 MODEL = os.environ["VERIFY_MODEL"]
@@ -245,7 +294,12 @@ def compress(prompt: str) -> str:
         model=MODEL, max_tokens=3000,
         messages=[*HISTORY, {"role": "user", "content": prompt}],
     )
-    return "".join(b.text for b in resp.content if b.type == "text")
+    if resp.stop_reason != "end_turn":
+        raise RuntimeError(f"incomplete summarization: stop_reason={resp.stop_reason}")
+    text = "".join(b.text for b in resp.content if b.type == "text")
+    if not text.strip():
+        raise RuntimeError("summarizer returned no text")
+    return text
 
 
 def audit(label: str, artifact: str) -> None:
@@ -260,11 +314,20 @@ def audit(label: str, artifact: str) -> None:
 
 
 if __name__ == "__main__":
-    audit("摘要压缩", compress(SUMMARY_PROMPT))
-    audit("结构化笔记", compress(NOTES_PROMPT))
+    summary = compress(SUMMARY_PROMPT)
+    notes = compress(NOTES_PROMPT)
+    audit("摘要压缩", summary)
+    audit("结构化笔记", notes)
+    # 子串命中只是候选标签，不等于语义完整性或正确性。
+    if os.environ.get("SAVE_RAW_RESPONSES") == "1":
+        Path("compaction-candidates.json").write_text(
+            json.dumps({"summary": summary, "notes": notes}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print("raw candidates saved; protect the file and manually adjudicate")
 ```
 
-> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+> **实跑状态**：表格数字是 2026-10-08 的历史记录，但原始请求/响应、模型指纹和评分材料缺失，当前不可复算。上面的 SDK 脚本本轮只做离线检查，未调用 provider；`FACTS` 子串命中只能发现字面缺失，不能判定语义正确、否定、错配或冲突。正式评测需保存脱敏样本、请求参数、provider usage、任务验收规则和裁决结果。
 
 ## 压缩之后，模型会不会承认自己不知道
 
@@ -278,27 +341,27 @@ if __name__ == "__main__":
 | 加一句「只依据摘要回答」 | 0/5（5 次都承认摘要里没有） |
 | 再加「缺失要明说」 | 0/5（与上一条无差别） |
 
-第一行最值得警惕。模型不是乱说，它的回答形态是：「不可以。根据该摘要，演练期间仅要求执行常规巡检，**并未授权**写生产库。」—— 它的推理是**摘要里没写，所以不允许**，语气确定，还给出了像模像样的理由。这个结论碰巧是对的，但**推理来源是假的**：换一条真实规则，它同样会从「摘要没提」推出一个确定结论。
+历史记录描述的第一类回答是：「不可以。根据该摘要，演练期间仅要求执行常规巡检，**并未授权**写生产库。」但没有原文、逐次输出或判分记录，不能验证引述或断定该响应模式稳定。摘要未提某约束，不等于该约束不存在；尤其不能用“摘要没写”来推导授权或禁止。
 
-第二行说明修复成本极低：**一句「只依据摘要回答」就够了**，额外的「缺失要明说」并没有带来差别。
+这组 5 次对照的历史摘要不足以证明一句提示就能可靠解决缺失信息问题；即使模型报告“未知”，高风险决策仍须由宿主按权威状态执行 fail closed。
 
-这件事在压缩场景里格外重要，因为压缩的目的就是把原文移出上下文 —— 于是**模型从此没有任何办法发现自己被喂了残缺信息**。这份信息不对称是**你自己制造**的。所以压缩之后，system 里必须补上那句限定：它不是客套话，是压缩这个操作的必要配套。
+压缩会改变可见证据，因此应在应用层显式记录摘要覆盖范围、来源、时间和待验证项。提示可以要求模型区分“摘要明确记载”与“没有证据”，但不能保证其遵守，也不能把它当作压缩 API 的普遍必要协议。
 
 ## 压缩该在什么时候触发，又必须保住什么
 
 两个操作层面的问题。
 
-**触发时机。** 按 token 占窗口的比例触发（比如超过 70%）比按轮次触发稳，因为每轮增长的量差异很大。但压缩本身要花一次调用，所以别在临界点反复触发 —— 设一个滞后区间（压到 50% 再恢复计数）比单阈值更省。
+**触发时机。** 不能把 70%/50% 当通用阈值。按 token/剩余窗口触发比固定轮数更贴近实际容量，但阈值要预留工具结果、输出上限、重试与 provider 侧开销；用目标流量回放测定安全边际。可加滞后区间避免重复压缩，但恢复点应由测量确定，并确保单次压缩不会递归触发。
 
-**必须保住什么。** 从上面的实测看，摘要最容易丢的恰恰是最不该丢的那一类。所以在压缩提示里应该**显式点名**三样：**硬约束**（不许做什么）、**当前目标**（这一轮到底要完成什么）、**已产生的副作用**（已经改了哪些东西）。前两类丢了会让行为跑偏，第三类丢了会导致重复执行 —— 而这三样都不是「流程步骤」，正是常规摘要最容易略过的内容。
+**必须保住什么。** 不能根据一条历史样本概括摘要的普遍丢失分布。应依据任务威胁模型和恢复要求，把当前目标、有效约束、决策与依据、待办、失败/未决状态、外部副作用引用纳入测试集；真正的副作用状态留在应用账本，摘要只引用其 ID/版本。来源冲突时保留冲突并回查，别让摘要替业务规则裁决。
 
 ## 常见坑
 
-**以为压缩是免费的。** 压缩第一步就要把完整历史读一遍。本节实测：一次性任务里，摘要路线（2272 token）比不做压缩（1952 token）**更贵**。
+**以为压缩是免费的。** 自建摘要一般会增加摘要调用，但总成本取决于后续复用、缓存和质量。本节 2272 vs 1952 是不可复算的单组历史摘要，不是通用成本结论。
 
-**以为摘要能保住关键信息。** 实测 8 条里丢 1 条 —— 丢的是「不要动生产库」这样的**硬约束**，因为它单独看起来只像一句备注。
+**以为摘要能保住关键信息。** 该历史摘要记录为 8 条中保住 7 条，遗漏一条生产库约束；这是一个应加入回归测试的案例，不能推广为摘要的一般错误率。
 
-**把「被否决的方案」当成垃圾丢掉。** 它既不是结论也不是待办，看起来已经翻篇 —— 但它是唯一能阻止 agent 重新提出同一个错误方案的东西。**必须连同否决原因一起保留。**
+**把「被否决的方案」当成垃圾丢掉。** 记录方案、理由、来源和适用范围，避免无谓重复；旧决定可能因条件变化而失效，不能把它视为永久禁令。
 
 **等上下文快满了才想压缩。** 那时你是在压力下做取舍，而且留给「发现丢了什么」的余量已经没有了。结构化笔记应当在**第一次确认某个事实时**就写下来，而不是事后从历史里回收。
 

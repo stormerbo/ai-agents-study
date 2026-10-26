@@ -4,34 +4,34 @@ title: 遗忘、更新与冲突
 status: drafting
 ---
 
-记忆库用久了，一定会出现两种东西：**过期的**和**互相矛盾的**。
+当系统持续写入并召回记忆时，可能累积过期信息或出现相互矛盾的候选；发生频率取决于数据类型、写入策略与更新流程。
 
-第 2 节讲的是怎么在写入时做减法，但减法解决不了全部问题 —— 用户就是会改口，环境就是会变。所以这一节处理的是：当库里已经躺着两条互相矛盾的事实，系统该怎么办。
+第 2 节讲的是如何在写入时做筛选，但后续仍可能出现信息更新、来源更正或环境变化。本节讨论如何区分同一事实的新版本、条件不同的并存事实，以及无法自动裁决的冲突候选。
 
-## 实测：同一份冲突输入，加不加时间戳差别很大
+## 历史实验摘要：一次小样本对照不足以证明时间戳的效果
 
-构造两条直接冲突的记忆，内容不变，只改注入方式，各跑 3 次：
+旧记录称以相同的两条冲突陈述做了两组提示，各运行 3 次；但逐次请求、响应、提示快照、评分器与精确模型路由未归档。下面保留的是历史摘要，不是本轮复现：
 
-| 注入方式 | 3 次结果 | 稳定性 |
+| 注入方式 | 旧摘要所报的 3 次输出 | 历史摘要标签 |
 |---|---|---|
-| A 不带时间戳 | 中文、英文、英文 | ❌ 不稳定 |
-| B 带时间戳（英文那条是 2026-10-01，中文那条是 2026-03-01） | 英文、英文、英文 | ✅ 稳定遵循「取最新」 |
+| A 不带时间戳 | 中文、英文、英文 | 摘要称“不稳定” |
+| B 带时间戳（英文那条是 2026-10-01，中文那条是 2026-03-01） | 英文、英文、英文 | 摘要称“取最新” |
 
-（实跑数据，2026-10-08，`deepseek-flash`。脚本见本节末尾。）
+（仅存 2026-10-08 的摘要；没有逐次请求/响应、提示快照、评分器与准确模型路由，本轮未复现。）
 
-条件 A 的结果值得多看一会儿：**同一份输入、同一个模型，三次跑出了两种不同的语言。** 而这不是「模型能力不行」—— 是因为这份输入里**根本没有可以用来裁决的信息**。两条记忆都自称是「用户偏好」，没有任何一条能说明自己更新。模型只能任选一条，于是每次选择都可能不同。
+旧摘要报告条件 A 的 3 次输出分成两种语言。由于原始逐次轨迹与判分依据未留存，不能确认除时间戳外的输入是否一致，也不能据此判定模型能力、输出差异的原因或未来运行的随机性。缺少来源、范围、确认时间和更新关系的冲突确实没有可靠的自动裁决依据；安全策略应让它进入待处理状态，而不是把决定交给无依据的模型猜测。
 
-条件 B 只多做了一件事：给每条记忆带上时间戳。结果立刻稳定下来，3/3 都选了更新的那条。
+旧摘要报告条件 B 的三次输出都选择了时间较新的陈述；但这组样本很小且缺少可复核材料，不能证明时间戳导致稳定，也不能推出“取最新”普遍正确。
 
-**所以冲突本身不可怕，不可裁决才可怕。** 而「可裁决」的前提条件，就是在写入那一刻把时间戳和来源记下来 —— 这也是第 2 节那三条标准里第三条的实际用途。
+冲突处理的前提是知道比较的是同一主体、同一范围和同一事实，并保留来源、时区明确的事件时间、确认状态及更新关系。时间戳是证据之一，不足以单独决定哪条事实为真。
 
 ## 冲突从哪来
 
-三种来源，处理方式不同：
+冲突可能来自意图更新、证据错误、范围不同或环境变化；先区分“同一事实的新版本”和“两个不同条件下都成立的事实”：
 
-**用户真的改口了。** 「不要给我发邮件」→「可以发」。这是最正当的冲突，答案是取最新。
+**用户明确更新偏好。** 例如从“不要发邮件”改为“可以发摘要”。只有在确认是同一主体、同一范围且明确替代旧偏好的情况下，才建立 supersedes 关系；该确认必须来自有权的用户/审核者或可验证的权威流程，不能仅由模型推断生成。实现中 `supersession_confirmed` 是受信任写入路径产生的证据字段，不是信任模型传入的布尔值；缺失或为 false 时必须待审。仅凭较新时间不能证明用户想覆盖旧规则。
 
-**写入时混进了推断。** 第 2 节的实测里，模型把「我可能对价格比较敏感吧」整理成了「用户对价格较敏感」。如果后来又观测到一次相反的信号，库里就有两条相互矛盾的「事实」，而其中一条本来就不该存在。**这类冲突的根源在写入侧，不在裁决侧。**
+**写入来源和事实状态混淆。** 第 2 节的历史摘要称模型曾把带有“可能”的陈述改写为确定偏好，但逐次输出不可复核。工程上应把推断标作候选，并要求来源证据与业务授权；后续还要允许用户修正或撤回。
 
 **环境变了。** 「目标服务器是 k8s」在两年前成立，现在迁到了别的平台。这不是矛盾，是过期 —— 处理方式是时效闸门，而不是裁决。
 
@@ -39,318 +39,324 @@ status: drafting
 
 遇到冲突时，按代价从低到高：
 
-**一，按来源等级。** 用户明说 > 系统观测 > 模型推断。这条能解决大部分由推断混入导致的冲突 —— 而且它是纯规则，不需要模型参与。
+**一，先检查来源是否可比较。** 用户陈述、系统观测和模型推断表示不同证据类型，不能跨场景固定排成一个通用真值顺序。按用途定义可接受的证据；推断默认保持候选，观测也要检查采集质量、主体和时间范围。
 
-**二，同来源等级时取最新。** 这是上面条件 B 验证过的做法，实测 3/3 稳定。
+**二，仅在同一范围、同一事实且更新关系明确时应用版本顺序。** 可比较的时区时间能提供顺序线索；并发更新、时间相同、来源强度不同或无法证明语义等价时，应保留冲突并请求确认。历史 3/3 摘要不构成该策略的验证。
 
-**三，仍然无法判断时，交给人。** 比如两条都是用户明说、时间也很接近、内容直接互斥。这时最糟的做法是把两条一起塞给模型「让它自己看着办」—— 那等于把冲突转嫁给一个没有裁决依据的组件（条件 A 的结果已经演示了会发生什么）。
+**三，仍然无法判断时，停止注入并进入待处理队列。** 需要时向用户澄清；低风险场景也可按明示产品策略保留多个带时间范围的事实。这时最糟的做法是把两条一起塞给模型「让它自己看着办」—— 那等于把冲突转嫁给一个没有裁决依据的组件（无裁决依据时应保持待审状态，而不是让模型猜测）。
 
 ## 关键：在写入侧解决，而不是让矛盾长期共存
 
-上面那套裁决是**读取时**的兜底。更好的做法是让冲突根本不存在：**检测到矛盾就在写入侧处理掉** —— 新记忆覆盖旧记忆，或者在旧记忆上标记失效，而不是让两条并存。
+读取侧的筛选只能作为防线。写入侧应先判断候选是否与同一主体、范围和事实相关，再记录新版本或保留冲突待确认；不要默认覆盖旧值。对需要审计的产品，使用带时间范围的版本记录，并通过状态与权限闸门阻止失效记录进入召回。
+
+版本关系字段本身也必须有可信来源：仅存一个 `supersedes_id`，若该边由模型任意生成，代码就会把模型猜测提升成裁决依据。下面的 resolver 要求关系已由信任边界之外的流程确认为 `supersession_confirmed=True`；生产 schema 还应保存确认主体、时间和证据引用。
 
 这样做还有一个附带好处：库里的条目数不会无限增长。如果每次改口都新增一条，一年后同一个偏好会有几十个版本，召回时它们互相挤占名额（第 2 节讲去重时说过这个问题）。
 
 ## 遗忘必须是显式功能
 
-「遗忘」听起来像一个可以推迟的问题，但它的成本是随时间单调上升的：库越大，召回越容易捞到过时信息；噪声越多，精确率越低；而**每一次错误召回都会污染模型的判断**（第 3 节实测过）。
+遗忘策略需要随数据风险和用途设计。数据规模增长本身不必然降低精确率；但缺少过期过滤或删除机制可能让陈旧内容再次进入提示。误召回是否改变任务结果，应单独用有标签的任务数据评估，不能由单个历史案例外推。
 
 显式遗忘至少要有三样东西：
 
-- **TTL**：这条记忆什么时候该失效。按类型不同 —— 偏好可以是几个月，环境配置可能几周。
+- **有效期**：依数据类型与用途确定，并记录时区明确的 `valid_until` 或更新时间与 TTL。不要把“几个月/几周”当通用默认值；通过过时数据损失、确认频率和误用风险制定可检查的策略。
 - **失效条件**：被新事实取代时，怎么标记它。注意是「标记」而不是「删除」，因为审计时你可能还需要知道它曾经存在过。
-- **删除能力**：用户要求删除时能真的删干净。这既是合规要求，也是调试时的救命手段 —— 没有它，你连「把某条可疑记忆拿掉再试一次」都做不到。
+- **删除能力**：区分撤销召回、逻辑删除和按产品保留策略执行的物理清理。删除需要身份与范围校验、可恢复失败处理，并确保索引、缓存和下游副本遵循同一状态。具体法律义务与期限取决于产品部署地与数据类型。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["新记忆要写入"] --> B{"与已有记忆矛盾？"}
-    B -->|否| C["正常写入（带来源与时间戳）"]
-    B -->|是| D{"来源等级不同？"}
-    D -->|是| E["高等级覆盖低等级"]
-    D -->|否| F["取最新的那条<br/>旧条目标记为已失效"]
-    E --> G["库里始终只有一条有效"]
-    F --> G
-    A -.-> H["读取时的兜底裁决<br/>（实测：只有带时间戳才稳定）"]
-    H -.-> I["⚠️ 无时间戳时同一输入会给出不同结果<br/>实测 3 次跑出 2 种答案"]
+    A["候选记忆"] --> B{"主体、scope 与事实键明确？"}
+    B -->|否| C["保持候选；补充来源或请求确认"]
+    B -->|是| D{"同键存在多个 active 值？"}
+    D -->|否| E["按产品策略写入并记录来源、版本与有效期"]
+    D -->|是| F{"存在明确、可验证的更新关系？"}
+    F -->|是| G["仅在已定义策略允许时切换当前版本"]
+    F -->|否| H["标记 needs_review，并阻止自动注入"]
+    G --> I["检索前校验 status、scope 与 valid_until"]
+    H --> I
+    I --> J["用户删除：先写 tombstone，再清理索引与副本"]
 `}
 />
 
 ## 完整可运行代码
 
 ```python
-"""冲突裁决：两条互相矛盾的记忆，怎么决定用哪条。
+"""本地冲突门：只对同 scope/key 且明确版本关系的数据做裁决。
 
-前半段是确定性规则（不需要网络），后半段用模型验证规则是否真的生效。
+这是确定性规则示例，不调用模型，也不复现下方历史 provider 摘要。
+实跑状态：2026-10-21，本机 Python 3.14.7 的固定 fixture 通过；不含 provider 与存储验证。"""
+from datetime import datetime
 
-实跑状态：2026-10-08，deepseek-flash，已跑通。
-"""
-
-import json
-import os
-import urllib.request
-
-# 两条冲突的记忆，都带来源与时间戳 —— 没有这两样，下面的裁决一步都做不了
 MEMORIES = [
-    {"id": "m1", "text": "用户偏好：所有回复必须用中文。", "at": "2026-03-01"},
-    {"id": "m2", "text": "用户偏好：replies must be in English.", "at": "2026-10-01"},
+    {"id": "m1", "scope": "project:demo", "key": "reply_language",
+     "source": "user_stated", "text": "所有回复用中文",
+     "event_at": "2026-03-01T09:00:00+08:00", "valid_until": None,
+     "status": "active", "supersedes_id": None},
+    {"id": "m2", "scope": "project:demo", "key": "reply_language",
+     "source": "user_stated", "text": "replies must be in English",
+     "event_at": "2026-10-01T09:00:00+08:00", "valid_until": None,
+     "status": "active", "supersedes_id": "m1", "supersession_confirmed": True},
 ]
-INJECTION_ORDER = ["m1", "m2"]        # 注入顺序也固定，避免它成为变量
 
 
-def render(mems, with_time):
-    """把记忆拼成注入文本。with_time 决定要不要带时间戳。"""
-    parts = []
-    for m in mems:
-        parts.append(("[%s] " % m["at"] if with_time else "") + m["text"])
-    return "\n".join(parts)
+def parse_aware(value):
+    parsed = datetime.fromisoformat(value)
+    if parsed.utcoffset() is None:
+        raise ValueError("timestamp must include a UTC offset")
+    return parsed
 
 
-def resolve(mems):
-    """确定性裁决：同级来源时取时间最新的那条。"""
-    return sorted(mems, key=lambda m: m["at"], reverse=True)[0]
+def resolve(records, *, scope, key, now):
+    """Return a unique explicit version tip, or fail closed for review."""
+    now = parse_aware(now)
+    candidates = []
+    for record in records:
+        if record.get("scope") != scope or record.get("key") != key:
+            continue
+        if record.get("status") != "active":
+            continue
+        parse_aware(record["event_at"])
+        until = record.get("valid_until")
+        if until is None or now < parse_aware(until):
+            candidates.append(record)
 
+    if not candidates:
+        return {"status": "none"}
+    if len(candidates) == 1:
+        return {"status": "resolved", "record": candidates[0]}
+    ids = {record["id"] for record in candidates}
+    if any(record.get("supersedes_id") in ids and record.get("supersession_confirmed") is not True
+           for record in candidates):
+        return {"status": "needs_review", "ids": sorted(ids)}
+    if len({record.get("source") for record in candidates}) != 1:
+        return {"status": "needs_review", "ids": sorted(r["id"] for r in candidates)}
 
-def ask(system, user, max_tokens=1200):
-    body = json.dumps({"model": os.environ.get("VERIFY_MODEL", "claude-haiku-4-5"),
-                       "max_tokens": max_tokens, "system": system,
-                       "messages": [{"role": "user", "content": user}]}).encode()
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read())
-    return "".join(b["text"] for b in data["content"] if b["type"] == "text")
+    parents = [record.get("supersedes_id") for record in candidates
+               if record.get("supersedes_id") in ids]
+    tips = [record for record in candidates if record["id"] not in parents]
+    if len(tips) != 1:
+        return {"status": "needs_review", "ids": sorted(ids)}
 
-
-def language_of(text):
-    return "中文" if any("一" <= c <= "鿿" for c in text) else "英文"
+    # Require one explicit, acyclic chain covering every candidate.
+    visited = set()
+    current = tips[0]
+    while current is not None:
+        if current["id"] in visited:
+            return {"status": "needs_review", "ids": sorted(ids)}
+        visited.add(current["id"])
+        parent_id = current.get("supersedes_id")
+        current = next((r for r in candidates if r["id"] == parent_id), None)
+    if visited != ids:
+        return {"status": "needs_review", "ids": sorted(ids)}
+    return {"status": "resolved", "record": tips[0]}
 
 
 if __name__ == "__main__":
-    print("确定性规则给出的答案：%s（最新的一条）" % resolve(MEMORIES)["text"])
-    print()
-    if not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
-        print("（未配置凭据，跳过模型部分）")
-        raise SystemExit
-    for label, with_time in [("不带时间戳", False), ("带时间戳", True)]:
-        langs = []
-        for _ in range(3):
-            text = ask(render(MEMORIES, with_time), "用一句话介绍你自己，不要解释。")
-            langs.append(language_of(text))
-        print("%s：3 次结果是 %s" % (label, "、".join(langs)))
+    args = {"scope": "project:demo", "key": "reply_language",
+            "now": "2026-10-21T00:00:00+08:00"}
+    print("有明确版本链:", resolve(MEMORIES, **args)["record"]["id"])
+    ambiguous = [dict(record, supersedes_id=None) for record in MEMORIES]
+    print("没有版本链:", resolve(ambiguous, **args)["status"])
 ```
 
-实跑输出（2026-10-08）：
+本地规则示例的输出（只验证代码路径，不复现历史实验）：
 
 ```text
-确定性规则给出的答案：用户偏好：replies must be in English.（最新的一条）
-
-不带时间戳：3 次结果是 中文、英文、英文
-带时间戳：3 次结果是 英文、英文、英文
+有明确版本链: m2
+没有版本链: needs_review
 ```
+
+旧实验只保留上一段所列的 3 次输出摘要。即使该摘要准确，也只描述当次小样本行为，不能隔离时间戳的因果作用或证明规则可泛化。
 
 ### 删除能力：接口形态与行为约定
 
-「用户要求删除时能真的删干净」是一句要求，落到代码上是一个函数和三条约定：
+用户发起删除时，需要先阻止该内容继续被读取，再清理搜索索引和其他副本。跨数据库与向量索引通常不是单个原子事务；以下是状态机接口草图，不是可直接部署的实现：
 
 ```python
-# delete_memory.py
-"""删除：标记失效 → 物理删除 → 确保索引里也不留。"""
+# delete_memory_protocol.py
+"""接口草图：权威存储、outbox 与检索索引由应用实现。"""
+
+def request_deletion(tx, principal, scope, memory_id, now):
+    """在权威库事务中先写 tombstone，再排队清理；失败可重试。"""
+    with tx.atomic():
+        tx.authorize(principal, scope, memory_id)
+        targets = tx.deletion_targets(memory_id, scope)  # 按产品策略含关联版本
+        for record in targets:
+            if record["scope"] != scope:
+                raise PermissionError("scope mismatch")
+            revision = record["revision"] + 1
+            tx.tombstone_and_clear_payload(record["id"], revision=revision, at=now)
+            tx.enqueue_outbox({"kind": "purge_memory", "id": record["id"],
+                               "scope": scope, "revision": revision})
+    return {"status": "deletion_pending", "count": len(targets)}
 
 
-def delete_memory(store, memory_id, hard=False):
-    """硬删除（合规请求）与软删除（正常遗忘）走同一个入口，但结果不同。
-
-    约定：
-      1. 先删索引，再删表 —— 顺序反了会出现「库里没有、检索还能召回」
-      2. 软删除只把 status 置为 deleted，text 清空（下游不该再注入它的内容）
-      3. 硬删除必须先检查 superseded_by 链，把指向它的记录一起处理
-    """
-    rec = store.get(memory_id)
-    if rec is None:
-        return {"ok": False, "reason": "not_found"}
-
-    # 第 1 步：索引先删。这一步失败就不要继续动表——留下孤儿索引比报错更糟
-    store.index.remove(memory_id)
-
-    if not hard:
-        rec["status"] = "deleted"
-        rec["text"] = ""              # 软删除也要让内容不可见
-        rec["deleted_at"] = now_iso()
-        return {"ok": True, "mode": "soft", "affected": 1}
-
-    # 第 2 步：硬删除前先处理引用链
-    affected = 1
-    for other in store.all():
-        if other.get("superseded_by") == memory_id:
-            other["superseded_by"] = rec.get("superseded_by")  # 链尾接链头
-            affected += 1
-    store.table.delete(memory_id)
-    return {"ok": True, "mode": "hard", "affected": affected}
+def apply_purge_event(store, index, event):
+    """幂等清理；索引更新必须使用 revision 防止旧 upsert 复活数据。"""
+    record = store.get(event["id"], scope=event["scope"])
+    if record is None or record["revision"] != event["revision"]:
+        return "stale_event"
+    if record["status"] != "deletion_pending":
+        return "already_handled"
+    index.remove(event["id"], if_revision_at_most=event["revision"])
+    store.mark_deleted(event["id"], revision=event["revision"])
+    return "deleted_from_primary_and_index"
 
 
-def now_iso():
-    from datetime import datetime, timezone, timedelta
-    return datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+# 检索命中后、注入前仍需向权威库校验 status/scope/revision；
+# 删除期间的 tombstone 必须使其不可注入，即使索引清理尚未完成。
 ```
 
-（**上述删除实现是示例：构造数据，未实跑。**）三条约定里最反直觉的是第一条：**先删索引再删表** —— 反过来做的话，任何一次中途报错都会留下一份「数据库里查不到、但检索还能召回」的索引，而它造成的后果正是用户最不能接受的那一种。
+（**上述接口草图未实跑，且不覆盖副本、缓存、备份和法律保留策略。**）核心顺序是先在权威库事务中使记录不可读并写 outbox，再异步清理索引；召回路径必须以权威状态为准，不能只依赖索引删除。若异步步骤失败，告警与重试应持续工作；对需要物理清除的场景，还要枚举所有副本和保留介质并验证清理结果。
 
 删除与失效的区别，一张表说清：
 
 | | 触发者 | 记录怎么处理 | 还能不能审计 | 用户能查到它存在过吗 |
 |---|---|---|---|---|
-| **失效**（superseded） | 系统检测到冲突 | 保留，`status=superseded`，`text` 保留 | 能 | 能（这是正确的） |
-| **删除**（deleted） | 用户请求 / 合规 | 软删：`status=deleted` 且 `text` 清空；硬删：物理移除 | 只剩删除日志 | 不能 |
+| **版本失效**（superseded） | 确认新版本替代旧值 | 旧版本按产品策略保留；召回过滤掉旧版本 | 视保留策略而定 | 不应作为当前值注入 |
+| **用户删除**（deletion requested） | 经过授权的删除请求 | 先 tombstone 并阻止读取，再按策略清理主库、索引与副本 | 仅保留明确允许的最少审计元数据 | 删除状态对用户可见；原始内容不可召回 |
 
-The distinction matters because conflating them means either losing audit trails unnecessarily or keeping data that users have explicitly requested to be removed.
+区分版本失效与用户删除，既能保留必要的版本关系，也能避免把“软删除标记”误当成所有副本都已清理。
 
 ## 怎么检测出矛盾
 
 「检测到矛盾就覆盖」说起来简单，但**发现两条记忆矛盾**本身是个独立问题，而且是这里最容易被低估的一步。
 
-三个层次的检测，代价递增：
+可以按结构化程度逐步处理：
 
-**一，同主题关键词命中。** 「回复语言」「输出格式」这类偏好可以归类，同类里出现多条就送去人工检查。成本低，但只能覆盖你事先想到过的类别。
+**一，显式主题与事实键。** 相同 scope/key 下出现多个值时进入待审队列。这不需要关键词检索，但依赖可靠的写入映射，结构化错误同样会误判。
 
-**二，语义相似但结论互斥。** 两条记忆说的是同一件事，取值却相反。这需要语义判断 —— 纯词法在这里没用（第 6 章的实测结论），得靠嵌入或模型。**嵌入**在这里指的是把每条记忆过一个嵌入模型、得到定长向量（第 6 章第 3 节给了最小实现），然后比两条向量的余弦相似度：**相似度高但取值不同**，就是这一层要抓的信号；而**语义相似**（semantic similarity）就是「两条文本的向量方向接近、余弦值高」，它和「字面用词相同」是两回事 —— 中文里「回复用中文」和「别跟我说英文」字面几乎不重合，语义却很近。
+**二，同一规范键下的值冲突。** 如果写入时能可靠抽取 `scope + subject + predicate`，就能在相同事实键上发现不同值；映射错误会漏报或误报。嵌入相似度可以帮助找候选，但“语义相近”不代表互相矛盾，必须再检查极性、对象、时间范围与业务含义。
 
-**三，跨记忆的逻辑冲突。** 例如「不要给我发邮件」与「每天发一封汇总邮件」。两条各自看都没问题，放在一起才冲突。这一层基本只能靠模型通读一遍，成本最高。
+**三，跨记录约束冲突。** 例如禁止任何邮件与要求定时发送邮件摘要相冲突。可以用产品规则、约束求解或模型产生冲突候选；模型输出需由用户确认或确定性策略验证。没有统一的“只能靠模型”实现。
 
-务实的做法是**先做第一层**：把记忆按主题分类（语言偏好、输出格式、技术栈、部署环境……），同类内出现多条就标记为待裁决。它能覆盖多数真实冲突，而且完全可预测、可测试。
+起步时可以先依赖结构化的 `scope`、主题和事实键，把同键多值送入待裁决队列。这能使队列逻辑可测试，但覆盖率取决于提取与映射质量；它不会自动发现多数真实冲突。
 
 ## 第一层检测：主题枚举表
 
-「把记忆按主题分类」这句话要能用，就得有一份**枚举表**。下面是起步版本（**示例：构造数据，未实跑**）：
+主题表是产品 schema 与队列策略的示例（**构造数据，未实跑**）；这些阈值不表示语义矛盾，也不是推荐的通用容量：
 
-| 主题（枚举值） | 判定关键词 | 已有条目上限 | 同主题多条怎么处理 |
+| 主题（枚举值） | 示例值 | 待审阈值（示例） | 发现多条后的默认动作 |
 |---|---|---:|---|
-| `reply_language` | 中文/英文/语言/用……回复 | 1 | 取 `updated_at` 最新的，旧的标 `superseded` |
-| `output_format` | 表格/列表/JSON/Markdown/不要寒暄 | 3 | 通常是可叠加的，超过上限才裁决 |
-| `tech_stack` | PostgreSQL/MySQL/k8s/Docker/框架名 | 5 | 同一技术类目内互斥（数据库、运行时各一条） |
-| `deploy_env` | 部署/服务器/集群/环境 | 1 | 互斥，取最新 |
-| `user_role` | 我是……/职位/团队规模 | 2 | 通常稳定，超过 2 条视为描述漂移 |
-| `project_state` | 当前项目/进行中/这个季度 | 3 | 强时效，配合 `ttl_days` 一起用 |
+| `reply_language` | `user_stated` | 1 | 待确认；不得仅因超阈值自动覆盖 |
+| `output_format` | `user_stated` | 3 | 待确认；多项偏好可能同时成立 |
+| `tech_stack` | `user_stated` | 5 | 先按项目与技术子类分 scope/key |
+| `deploy_env` | `observed` / `user_stated` | 1 | 核对环境范围和观测时间 |
+| `user_role` | `user_stated` | 2 | 核对主体与时间范围 |
+| `project_state` | `user_stated` | 3 | 结合明确有效期与项目范围 |
 
-**上限那一列怎么定，是这张表的全部价值。** 它的判据只有一句话：**这个主题里，两条不同的值能不能同时成立？** 回复语言不能（互斥，上限 1）；输出格式能（可叠加，上限放宽）；技术栈是半互斥的（数据库与运行时各一条，所以上限 5 而不是 1）。选错上限的后果是可预测的：定成 1，你会丢掉合法的叠加偏好；定成 5，你会让两条互斥的语言偏好长期并存。
+这里的阈值只是用来演示“队列容量/审查触发器”的构造数据，不是由主题逻辑推导出的正确条目上限，也不应直接用于生产。是否冲突还要看主体、项目、时间范围、来源和字段；同一主题里可能有多条合法偏好。超阈值时示例代码只打上待审标记。
 
 ```python
 # topic_gate.py
-"""第一层冲突检测：同主题第二条第几条 → 标记待裁决。
+"""按显式 scope/topic 字段统计待审候选，不做文本语义判断。
+实跑状态：2026-10-21，本机 Python 3.14.7 的固定 fixture 通过；阈值为构造值。"""
+from datetime import datetime, timezone
 
-自包含：纯本地逻辑。实跑状态：本机 Python 3.10 实跑（2026-10-12）。"""
-
-from datetime import datetime, timezone, timedelta
-
-CN = timezone(timedelta(hours=8))
-
-# 主题 → (判定关键词, 上限)
-TOPICS = {
-    "reply_language": (("中文", "英文", "语言"), 1),
-    "output_format": (("表格", "列表", "JSON", "寒暄"), 3),
-    "tech_stack": (("PostgreSQL", "MySQL", "k8s", "Docker"), 5),
-    "deploy_env": (("部署", "服务器", "集群"), 1),
+REVIEW_LIMITS = {
+    "reply_language": 1,
+    "output_format": 3,
+    "tech_stack": 5,
+    "deploy_env": 1,
+    "user_role": 2,
+    "project_state": 3,
 }
 
 
-def topic_of(text):
-    for topic, (keywords, _) in TOPICS.items():
-        if any(k.lower() in text.lower() for k in keywords):
-            return topic
-    return None
-
-
 def classify(records):
-    """把 active 记录按主题分组，标出超限的组。"""
     groups = {}
-    for r in records:
-        if r["status"] != "active":
+    for record in records:
+        if record.get("status") != "active":
             continue
-        topic = topic_of(r["text"])
-        if topic is None:
+        scope, topic = record.get("scope"), record.get("topic")
+        if not scope or topic not in REVIEW_LIMITS:
             continue
-        groups.setdefault(topic, []).append(r)
+        groups.setdefault((scope, topic), []).append(record)
 
     pending = []
-    for topic, items in groups.items():
-        limit = TOPICS[topic][1]
+    for (scope, topic), items in groups.items():
+        limit = REVIEW_LIMITS[topic]
         if len(items) > limit:
-            # 超过上限 → 全部标为待裁决，交规则或人处理
-            pending.append((topic, [r["id"] for r in items], len(items) - limit))
+            pending.append({"scope": scope, "topic": topic,
+                            "ids": [r["id"] for r in items],
+                            "count_over_limit": len(items) - limit})
     return groups, pending
 
 
 def mark_pending(records, pending, now=None):
-    """标记待裁决：不改 status，只加一个显式字段。"""
-    now = now or datetime.now(CN).isoformat(timespec="seconds")
-    ids = {mid for _, mids, _ in pending for mid in mids}
-    for r in records:
-        if r["id"] in ids:
-            r["pending_review"] = now
-            r["pending_reason"] = "同主题多条，超过上限"
+    now = now or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    pending_keys = {(group["scope"], memory_id)
+                    for group in pending for memory_id in group["ids"]}
+    for record in records:
+        key = (record.get("scope"), record.get("id"))
+        if key in pending_keys:
+            record["pending_review"] = now
+            record["pending_reason"] = "review threshold exceeded"
+        else:
+            record.pop("pending_review", None)
+            record.pop("pending_reason", None)
     return records
 
 
 if __name__ == "__main__":
     records = [
-        {"id": "m1", "text": "用户要求回复使用中文。", "status": "active"},
-        {"id": "m2", "text": "用户要求 replies must be in English.", "status": "active"},
-        {"id": "m3", "text": "用户偏好表格输出。", "status": "active"},
+        {"id": "m1", "scope": "project:demo", "topic": "reply_language",
+         "text": "用户要求回复使用中文。", "status": "active"},
+        {"id": "m2", "scope": "project:demo", "topic": "reply_language",
+         "text": "用户要求 replies must be in English.", "status": "active"},
+        {"id": "m3", "scope": "project:demo", "topic": "output_format",
+         "text": "用户偏好表格输出。", "status": "active"},
     ]
-    groups, pending = classify(records)
-    print("分组:", {k: [r["id"] for r in v] for k, v in groups.items()})
-    print("待裁决:", pending)
-    mark_pending(records, pending)
-    print("标记后:", [(r["id"], r.get("pending_reason", "-")) for r in records])
+    _, pending = classify(records)
+    mark_pending(records, pending, now="2026-10-21T00:00:00+00:00")
+    print("待审组:", pending)
+    print("标记后:", [(r["id"], bool(r.get("pending_review"))) for r in records])
 ```
 
 ```text
-分组: {'reply_language': ['m1', 'm2'], 'output_format': ['m3']}
-待裁决: [('reply_language', ['m1', 'm2'], 1)]
-标记后: [('m1', '同主题多条，超过上限'), ('m2', '同主题多条，超过上限'), ('m3', '-')]
+待审组: [{'scope': 'project:demo', 'topic': 'reply_language', 'ids': ['m1', 'm2'], 'count_over_limit': 1}]
+标记后: [('m1', True), ('m2', True), ('m3', False)]
 ```
 
-注意它**只标记、不自动裁决**。语言偏好这种互斥主题，两条都带时间戳时「取最新」是对的（本节实测 3/3 稳定）；但如果你把这条规则套到「用户同时喜欢表格和 JSON」上，就会无缘无故删掉一条合法偏好 —— 所以自动裁决只对上限为 1 的主题开，其余全部走人工。
+该示例只按显式主题字段和人为设定的 active 数量上限生成待审队列，不理解文本语义，也不验证两条事实是否真的互斥。每个产品需定义 scope、主题分类、候选状态和冲突操作；即使某主题配置上限为 1，也不要据此自动覆盖用户陈述。
 
-## TTL 该设多长
+## 有效期如何设定
 
-TTL 的设置标准是**这条信息的自然变化周期**，而不是「希望它多准」：
+没有适用于所有产品的固定 TTL。把数据变化频率、误用后果、再次确认成本和用户撤销方式一起纳入策略；对高风险或易变事实，过期后先阻止注入并要求刷新。
 
-| 记忆类型 | 建议 TTL | 理由 |
+| 信息类别 | 过期/复核策略（需按产品验证） | 到期后的默认安全行为 |
 |---|---|---|
-| 回复语言 / 输出格式偏好 | 半年以上 | 变化极慢，而且用户会主动纠正 |
-| 技术栈、部署环境 | 1 到 3 个月 | 会随项目迁移变化，但不频繁 |
-| 当前项目状态、进行中的任务 | 数天 | 任务结束就失效 |
-| 模型推断出来的条目 | 不设 TTL，直接不注入 | 见第 2 节：它不该作为事实存在 |
+| 回复风格偏好 | 用户可随时修改；定期提示确认是否仍有效 | 保留为低风险偏好，或按产品策略到期 |
+| 技术栈、部署环境 | 绑定项目与环境，并在部署变更时刷新 | 未确认前不用于高影响操作 |
+| 当前项目状态、进行中的任务 | 绑定明确任务状态与 `valid_until` | 过期即不注入，要求重新确认 |
+| 模型推断候选 | 除非得到来源核实和授权，否则保持候选 | 不作为用户确认事实注入 |
 
-最后一行值得单独说：给推断类条目设 TTL 是一种自我安慰。它们的问题不是「会过期」，而是「本来就不该被当作事实」。正确做法是让它们永远不进入注入队列 —— 第 3 节的来源闸门就是干这个的。
+模型推断与用户确认事实应使用不同状态和来源标记。TTL 只能约束时间，不能补足来源真实性或用户授权；产品若允许推断参与决策，应把它保留为明确标记的低置信度候选，并按风险设定独立策略。
 ## 本节小结
 
-1. **冲突不可怕，不可裁决才可怕** —— 实测：无时间戳时同一份输入 3 次跑出 2 种答案；加上时间戳后 3/3 稳定。
-2. **裁决顺序**：来源等级 → 时间新旧 → 交给人。前两步都是确定性规则，只有第三步需要人。
-3. **根治在写入侧**：检测到矛盾就覆盖或标记失效，不要让两条长期共存。
-4. **遗忘是显式功能**，要有 TTL、失效标记与删除能力 —— 缺任何一个，事故发生时你都没有干预手段。
+1. **历史冲突对照只有摘要** —— 3 次输出不能证明时间戳的因果效果；生产裁决需依赖明确的 scope、事实键、证据和版本关系。
+2. **只有适用条件满足时才自动解析**：显式版本链可确定当前版本；同键多值、来源不匹配或关系不清时进入待审队列。
+3. **写入侧避免无依据覆盖**：记录明确的替代关系或保留冲突待确认，并在召回时排除 pending 与失效记录。
+4. **过期、失效与用户删除是不同操作**：明确状态、scope、召回过滤、索引清理与失败重试；有效期策略需按业务验证。
 5. **每一个机制都要能回答「它改善了哪个指标」** —— 这是下一节的主题。没有这个答案，你无法判断该不该给它加预算。
 ## 冲突与遗忘的三种失败形态
 
-上面每一步都会以特定方式坏掉，而且这三种坏法都不会报错：
+以下是需要由不变式与指标发现的失败形态；是否静默取决于具体实现：
 
-**一，未裁决的冲突堆成队列（静默降级成「两条并存」）。** 最像成功的一种失败：`pending_review` 的记录一直在库里、一直在被召回，而两条互斥的值同时进入上下文 —— 模型又回到了本节开头条件 A 的状态（3 次跑出 2 种答案）。**怎么发现**：把 `pending_review` 的条数做成一个看板数字，它单调上升就说明裁决没人在做。**所以怎么做**：给待裁决队列设一个服务级目标（比如 24 小时内清空），清不掉就必须降级 —— 把该主题整体排除出注入队列，而不是让它继续参与召回。
+**一，待审队列可能被错误注入。** 如果召回查询没有过滤 `pending_review`，冲突值可能被一起注入；**怎么发现**：监控待审数量、队列等待时间、待审记录被召回/注入次数及拒绝率。数量增长也可能是流量增长，必须与吞吐量和 SLA 一起看。**所以怎么做**：按风险定义队列服务目标；达到时限后停止自动注入待审事实，按产品策略降级或请求用户确认。不要把特定 24 小时数字当通用门槛。
 
-**二，`superseded_by` 链写歪，审计断掉。** 如果只在新记录上写指针、旧记录不写，或链尾不接链头，回查时你会看到一条没有取代者的孤儿记录。**怎么发现**：加一个不变式检查 —— 每条 `status=superseded` 的记录必须同时满足「`superseded_by` 非空」且「目标记录存在且为 active」。**所以怎么做**：把这个不变式写成断言，在写入后跑一遍；它很便宜，却能挡住绝大多数手写排序留下的错误。
+**二，版本链断开或跨 scope。** 错误的 `supersedes_id` 可能指向不存在、范围不一致或已删除的数据，导致无法还原更新关系。**怎么发现**：加一个不变式检查 —— 每条 `status=superseded` 的记录必须指向同一 scope 内、版本关系合法且可审计的替代记录；替代记录未必永远是 active，允许形成经过校验的版本链。**所以怎么做**：把版本链完整性与 scope 一致性写入校验，并覆盖删除/过期后的引用更新。
 
-**三，删了表但没删索引（用户仍然被召回删除的内容）。** 这是三种里最严重的，因为它直接违反用户的合规请求，而且从表面完全看不出来。**怎么发现**：删除后立刻用被删除的原文当查询跑一次检索，断言结果里不含这个 id。**所以怎么做**：把这条断言放进删除流程本身（上面 `delete_memory` 的第一步就是在做这件事），并让硬删除失败时整体回滚。
+**三，索引残留让已 tombstone 的记录再次命中。** 如果召回后没有查权威状态，旧向量可能导致被删除内容继续影响候选。**怎么发现**：删除后立刻用被删除的原文当查询跑一次检索，断言结果里不含这个 id。**所以怎么做**：集成测试分别验证 tombstone 立即阻断注入、索引清理可重试、过期 revision 不会删错新数据；跨库操作不应假设可整体回滚。
 
-三种失败形态有一个共同点：**它们都不产生报错**，只产生一个看起来正常的系统。所以对付它们的办法也不是更仔细，而是**不变式 + 断言** —— 把「应该成立的事」写成可以随时执行的检查。
+用不变式、指标、告警与可重试流程共同检查；各项检查应对应明确的存储与召回边界。
 
 ## 常见坑
 
-- **让矛盾的记忆长期共存。** 实测里这会直接导致行为不稳定：同一份输入 3 次跑出 2 种答案。
-- **不记时间戳。** 没有它，「取最新」这个最简单的规则都无法执行 —— 而它是绝大多数冲突的正确解。
-- **把冲突塞给模型裁决。** 两条地位相同、都无时间戳的断言，模型没有依据可选，它只能任选。
-- **只做读取时的裁决，不做写入时的覆盖。** 前者是兜底，后者才是根治；只做前者会让库无限膨胀。
-- **把「遗忘」当成以后再说的事。** 不遗忘的成本随时间单调上升，而且每一次错误召回都是静默的。
-- **只有删除、没有失效标记。** 审计时你会需要知道某条记忆曾经存在过。
+- **把小样本历史摘要当因果结论。** 旧输出摘要不能证明缺少时间戳导致不稳定；未裁决的冲突应在可确认前阻止自动注入。
+- **只用更新时间裁决。** 更新时间能排序事件，不能证明同一范围、事实或用户意图；版本关系和来源边界也要保存。
+- **要求模型给无来源冲突选边。** 模型可以生成解释或待确认的问题，但不能代替用户意图、来源质量或产品策略。
+- **把新值直接覆盖旧值。** 保留版本或显式标注 supersession，避免丢掉审计所需的时间与更新关系。
+- **假设状态标记自动删除了所有副本。** 召回侧需要强制过滤，异步副本还要有幂等清理和失败监控。
+- **把软删除等同于用户删除完成。** 只改主表状态不足以证明缓存、索引、备份和其他副本已清理。

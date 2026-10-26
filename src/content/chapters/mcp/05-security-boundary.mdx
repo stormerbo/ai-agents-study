@@ -4,41 +4,43 @@ title: 安全边界：接入第三方 server 意味着什么
 status: drafting
 ---
 
-接入一个第三方 MCP server，实际上是把两样东西同时引进了你的系统。这一节把它们分开讲，因为**它们的防线完全不同**。
+接入第三方 MCP server 时，至少要分开审视**数据流、动作权限和运行环境**。这几类风险彼此相关，但不能只靠一条“信任/不信任”判断来处理。
 
 ## 第一类风险：它会看到什么
 
-你在对话里用到的上下文、你让它读的文件、模型生成的中间结果 —— 这些都可能被传给 server。
+server 能看到它实际收到的请求内容。MCP 不会因为某个 server 被挂进 tools，就自动把整段对话发送给它；host 通常通过 `tools/call` 发送工具名、`arguments` 和协议元数据，HTTP transport 还会带相应授权信息。若 host 把整段对话、文件或模型中间结果塞进参数，对端就会收到那些内容。
 
-一个「代码审查」server 看起来只需要代码，但它拿到的是**你发给它的整个请求**。而如果它被挂在 tools 上，模型可以在任何一轮调用它，那时上下文里可能已经有别的内容。
+还要区分 transport：远程 server 作为独立服务运行，其文件、凭据与网络权限由服务端部署决定；MCP 请求内容只说明 host 发了什么，不能推出 server 的出站网络范围。本地 stdio server 则在 host 上作为进程启动，可能访问该账户可读的文件、环境变量与网络。真实边界由启动权限、sandbox 和网络策略决定。
 
-这类风险的本质是**数据外泄**：你控制不了对方拿这些数据做什么。
+这类风险的本质是**数据外泄**：发送的数据和进程可访问的数据，都需要逐项盘点。
+
+远程 server 能访问什么，取决于它的服务端身份、文件挂载、凭据和网络出口策略；MCP 协议不会把它限制在本次 `tools/call` 的参数范围内。反过来，MCP client 在处理 OAuth 资源或授权服务器元数据时也会主动抓取 URL，恶意元数据可能诱发 client-side SSRF，触达内网、loopback 或云元数据服务。因此，“远程 server 只能访问自己的服务资源”不是协议保证；部署方要限制服务端出站网络，client 也要验证 OAuth URL、重定向目标并按环境阻断内部地址。
 
 ## 第二类风险：它能做什么
 
 这是更常被讨论、也更容易被低估的一类。
 
-server 提供的工具由**它自己**定义。你的 host 在 `tools/list` 时看到的只有三样东西：名字、描述、参数 schema。
+server 提供的工具定义来自 server。host 通过 `tools/list` 能看到 `name`、`description` 和 `inputSchema` 等字段；现代规范还允许 `title`、`icons`、`outputSchema`、`annotations` 等可选元数据。它们描述接口，不是实现或安全证明；工具注解也应视为不可信，除非来源本身可信。
 
 我在自己的最小实现上跑了一遍这个「你究竟能看到什么」：
 
 ```text
-tools/list 返回了 2 个工具。host 能看到的全部信息：
+tools/list 返回了 2 个工具。下面只打印 host 可读的核心字段：
   · name=get_weather
     description=查询某个城市某一天的最高气温。
     inputSchema={"type": "object", "properties": {"city": ..., "day": ...}}
   · name=transfer_money
-    description=给指定账户转账（不可逆）。
+    description=演示转账确认流程；本示例不会执行真实转账。
     inputSchema={"type": "object", "properties": {"to": ..., "amount": ...}}
 ```
 
-**这就是全部。** host 看不到的：
+这些字段不能让 host 检查实现本身。host 看不到的：
 
 - **实现是什么。** 工具名只是声明，代码在对方那里。
 - **有没有副作用。** `get_weather` 看起来只读 —— 但那是它的描述说的，不是它的代码说的。
 - **它会怎么处理参数。** 同一个参数可能触发完全不同的行为。
 
-第二个例子里的 `transfer_money` 恰好把危险性写在了名字上。但现实中更常见的是下面这种：
+当前 MCP 工具定义还可能包含可选显示信息、注解或输出 schema；这些都仍是 server 提供的元数据。它们不能证明实现做了什么，也不等同于授权规则。第二个例子里的 `transfer_money` 恰好把潜在影响写在名字上，但现实中更常见的是下面这种：
 
 ```json
 {"name": "optimize_storage",
@@ -48,34 +50,34 @@ tools/list 返回了 2 个工具。host 能看到的全部信息：
 
 这个名字和描述完全无害 —— 而它的实现可以是 `DROP DATABASE`。**描述是对方写的，不是事实。**
 
-## 两类风险的防线完全不同
+## 主要风险与对应控制点
 
-这是本节最想传达的一点：
+关键是把保护措施放在正确边界：
 
 | | 它会看到什么（数据外泄） | 它能做什么（动作越界） |
 |---|---|---|
 | 防线位置 | **数据流**：在把内容发出去之前过滤 | **动作流**：在执行调用之前拦截 |
-| 有效手段 | 最小化上下文、按需传参、脱敏 | 第 9 章那四道闸门 |
-| 能靠协议解决吗 | 不能 | 不能 |
-| 能靠「信任对方」解决吗 | 不能 | 不能 |
+| 有效手段 | 最小化并检查实际发送的数据 | host allowlist、访问控制、敏感操作确认、sandbox |
+| 协议能提供什么 | 不能替 host 决定哪些上下文可发送 | 提供输入校验、访问控制和确认等安全要求；具体授权仍由 host/server 落实 |
+| 供应链评估的作用 | 有帮助但不是证明 | 有帮助但不是运行时授权 |
 
-**两类都不能靠协议解决。** MCP 规定了消息怎么传，没有规定传什么、允许做什么。这是第 1 节那条「协议不负责安全」的具体含义。
+**协议不能替你完成应用级的数据授权与业务动作策略。** 但这不等于 MCP 完全没有安全机制：2026-07-28 的工具规范要求 server 校验输入、实施访问控制、限流并清理输出；client 对展示调用参数、敏感操作确认、校验工具结果、设置超时和记录审计日志有 SHOULD 建议。Streamable HTTP 另有 `Origin` 校验等要求。协议提供安全控制要求与机制，部署方仍须把它落实成适合自身数据与权限模型的规则。
 
-也不能靠「选一个可信的 server」解决 —— 因为「可信」是一个关于对方意图的判断，而意图无法验证。第 2 节讲过：能力声明只说明接口可用，不保证实现行为。
+评估维护者、源码、签名和版本有助于判断供应链风险，但工具描述或 `serverInfo` 不能单独证明实现可信。MCP 工具名只在单个 server 内唯一；host 聚合多个 server 时，应使用本地配置的 server 身份做隔离，不能只信对方自报名称。
 
 ## 工程上能做什么
 
-按有效性排序，五条。
+五条都是工程建议，需按部署权限与业务后果取舍。
 
-**一，优先用 resources，谨慎用 tools。** 第 2 节那张表：resources 的数据进入上下文是**你**决定的，tools 是**模型**决定的。同一份数据用 resources 拿，你的控制点就多一个。
+**一，区分读取与执行入口。** resources 往往由 host 决定是否读取，tools 则可由模型提出调用；这会改变 host 的控制点，但 resources 并非天然安全：读取的数据仍可能敏感或含有提示注入，host 要决定是否把它送入模型。
 
-**二，把 server 的工具放进第 9 章的四道闸门。** 活动范围（哪些工具禁止调用）、预算（一次任务最多调几次）、熔断、**不可逆确认**。注意最后一道：如果一个工具可能不可逆，确认点必须在你的代码里，不能交给模型 —— 第 9 节讲过的理由在这里同样成立，而且因为工具来自第三方，理由更强。
+**二，在 host 的调用边界执行授权。** 以本地配置的 server 身份和工具名做 allowlist，默认拒绝未登记的工具；再按风险设置预算、超时、熔断与人工确认。模型给出 `tool_use` 不代表获得授权。对不可逆动作，确认与最终授权必须由 host 的策略控制，不能由模型自行宣布“已确认”。
 
-**三，MRTR 给你的那个决策点要用起来。** 第 3 节讲过，2026-07-28 把「server 主动发请求」改成了「返回 input_required，客户端决定」。**那个「客户端决定」的位置就是你的检查点** —— 可以先看请求内容再决定要不要满足它。这是那次修订在安全上的实际价值。
+**另需把 MRTR 当作协议交互点，不要当作审批保证。** 2026-07-28 的 server 可把所需输入放进 `input_required`，客户端重试原请求。host/SDK 可以在重试前检查或拒绝，但 SDK 也可能按配置自动处理；规范不保证一定显示给用户，也不保证这是授权或人工审批。对有副作用的操作，仍需独立的 host 权限策略与确认流程。
 
-**四，最小化发给它的上下文。** 只发这次调用需要的字段，不要顺手把整段对话传过去。这一条听起来简单，但它是最有效的数据外泄防线 —— 因为泄露的前提是数据真的发出去过。
+**四，最小化发给它的数据。** 只发这次调用需要的字段，不要顺手把整段对话传过去。减少发送内容能缩小泄露面；先盘点参数、传输凭据和本地进程可读资源，再决定哪些必须提供。
 
-**五，让外部工具只碰得到它该碰的东西。** 如果 server 是一个本地进程，用最小权限运行它；如果它需要访问你的内网，把它限制在一段你能接受的范围内。这是**纵深防御**：即使前面的判断都错了，爆炸半径也是有限的。
+**五，限制运行时权限。** 本地进程用 sandbox、文件系统白名单和最小环境变量；不需要网络时关闭网络，需要网络时通过出口策略限制目标。远程 server 则校验目标、身份与授权范围，并控制它能访问的下游资源。容器限制能缩小爆炸半径，但不能代替 host 授权或可信部署。
 
 <Mermaid
   chart={`
@@ -85,13 +87,13 @@ flowchart TB
     B --> B1["防线在数据流<br/>发出之前过滤"]
     B1 --> B2["最小化上下文 / 按需传参"]
     C --> C1["防线在动作流<br/>执行之前拦截"]
-    C1 --> C2["第 9 章四道闸门<br/>尤其不可逆确认"]
-    B2 -.-> D["两类都不能靠协议解决"]
+    C1 --> C2["host allowlist / 授权<br/>敏感操作确认"]
+    B2 -.-> D["协议提供部分安全机制<br/>应用策略仍由 host 落实"]
     C2 -.-> D
-    D --> E["也不能靠「选一个可信的 server」解决<br/>因为意图无法验证"]
-    F["你唯一能看到的信息"] --> F1["name / description / inputSchema"]
-    F1 -.-> G["⚠️ description 是对方写的，不是事实<br/>optimize_storage 可以是 DROP DATABASE"]
-    H["MRTR 给的决策点"] -.-> H1["返回 input_required 时<br/>客户端可以看内容再决定"]
+    D --> E["供应链审查能降低风险<br/>但元数据不是实现证明"]
+    F["host 可读的工具定义元数据"] --> F1["name / description / inputSchema<br/>及可选 title / icons / annotations / outputSchema"]
+    F1 -.-> G["⚠️ 元数据不是安全证明<br/>optimize_storage 仍可能有高危副作用"]
+    H["MRTR input_required"] -.-> H1["提供协议交互点<br/>不等于人工审批"]
 `}
 />
 
@@ -106,7 +108,7 @@ flowchart TB
 5. **它跑在什么权限下？** 本地进程用最小权限；远程 endpoint 限定它能访问的范围。
 6. **有没有一个明确的确认点？** 不可逆动作必须在你的代码里停一下。
 
-六条里，第三条和第六条是**你必须做的**，前四条是降低概率的。这个区分很重要：概率可以降低但不能消除，而拦截点是确定性的。
+六条是风险评审步骤，不是安全保证。allowlist、每次调用授权与敏感操作确认应由 host 在执行前强制；其余检查降低风险，但不能证明 server 实现无恶意或无漏洞。
 
 ## 完整可运行代码
 
@@ -133,8 +135,8 @@ class Client:
         self.n += 1
         p = dict(params or {})
         if with_meta:
-            p["_meta"] = {"protocolVersion": version,
-                          "clientCapabilities": {"elicitation": {}}}
+            p["_meta"] = {"io.modelcontextprotocol/protocolVersion": version,
+                          "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}}
         req = {"jsonrpc": "2.0", "id": self.n, "method": method, "params": p}
         self.proc.stdin.write(json.dumps(req, ensure_ascii=False) + "\n")
         self.proc.stdin.flush()
@@ -193,7 +195,9 @@ if __name__ == "__main__":
         show("补上确认后重调", c.send("tools/call",
                                      {"name": "transfer_money",
                                       "arguments": {"to": "张三", "amount": 5000},
-                                      "_confirmed": True}), "result")
+                                      "requestState": r["requestState"],
+                                      "inputResponses": {"confirm": {
+                                          "action": "accept", "content": {"confirmed": True}}}}), "result")
     c.close()
 
 
@@ -204,7 +208,7 @@ def security_probe():
     tools = resp["result"]["tools"]
     print()
     print("=== 5. 接入第三方 server：host 能看到什么 ===")
-    print("  tools/list 返回了 %d 个工具。host 能看到的全部信息：" % len(tools))
+    print("  tools/list 返回了 %d 个工具。host 能看到的核心字段：" % len(tools))
     for t in tools:
         print("    · name=%s" % t["name"])
         print("      description=%s" % t["description"])
@@ -215,8 +219,8 @@ def security_probe():
     print("    · 有没有副作用（get_weather 看起来只读，但描述不能作为保证）")
     print("    · 它会怎么处理参数（同一个参数可能触发完全不同的行为）")
     print()
-    print("  ⚠️ transfer_money 这个名字暴露了它的危险性；")
-    print("     但一个叫 optimize_storage 的工具完全可能有同样的破坏力 ——")
+    print("  ⚠️ 工具名和描述都是元数据，不能证明实现会做什么；")
+    print("     一个叫 optimize_storage 的工具也可能有破坏性副作用 ——")
     print("     而 description 是**对方写的**，不是事实。")
     c.close()
 
@@ -234,8 +238,8 @@ if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "security":
 
 ```json
 {"jsonrpc": "2.0", "id": 31, "method": "tools/call",
- "params": {"_meta": {"protocolVersion": "2026-07-28",
-                      "clientCapabilities": {"elicitation": {}}},
+ "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                      "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}},
             "name": "review_code",
             "arguments": {"diff": "...", "language": "python"}}}
 ```
@@ -245,58 +249,78 @@ if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "security":
 **落点二：工具白/黑名单拦截。** 「哪些工具禁止调用」必须在调用前查表，而不是指望模型不去调：
 
 ```python
-# 执行层的第一道闸门：按 (server, tool) 决定放行 / 拒绝 / 需确认
+# host 配置中的 server_id 必须由本地确定，不使用 server 自报名称做安全身份。
+# 第三方工具默认拒绝，只有审核并登记的操作才允许。
 POLICY = {
-    ("github", "delete_repo"): "deny",
-    ("tickets", "close_ticket"): "confirm",
+    ("github-prod", "get_issue"): "allow",
+    ("tickets-prod", "close_ticket"): "confirm",
 }
-DEFAULT = "allow"
+DEFAULT = "deny"
 
-def gate(server_name, tool_name, args):
-    verdict = POLICY.get((server_name, tool_name), DEFAULT)
+def gate(server_id, tool_name, args, approve, execute):
+    verdict = POLICY.get((server_id, tool_name), DEFAULT)
     if verdict == "deny":
-        raise PermissionError("工具 %s/%s 被策略禁用" % (server_name, tool_name))
-    if verdict == "confirm" and not user_approved(server_name, tool_name, args):
-        return {"status": "need_confirmation", "tool": tool_name}
-    return execute(server_name, tool_name, args)
+        raise PermissionError("工具 %s/%s 被策略禁用" % (server_id, tool_name))
+    if verdict == "confirm" and not approve(server_id, tool_name, args):
+        return {"status": "denied", "tool": tool_name}
+    return execute(server_id, tool_name, args)
+
+# 可运行的教学回调：真实 host 应注入自己的授权与 dispatch 实现。
+def demo_approve(server_id, tool_name, args):
+    return False
+
+def demo_execute(server_id, tool_name, args):
+    return {"status": "would_execute", "server": server_id, "tool": tool_name}
+
+if __name__ == "__main__":
+    print(gate("tickets-prod", "close_ticket", {"id": "T-1"}, demo_approve, demo_execute))
 ```
 
-`user_approved` 是你自己的确认函数（弹窗、审批流、或第 3 节那个 MRTR 决策点）。**默认拒绝还是默认放行，取决于 server 的来源**：自己写的 server 默认放行、危险项进 `deny`；第三方的 server 默认拒绝、需要的逐个进 `allow`（第 2 节那张权限桶就是 `allow` 形态）。
+`approve` 与 `execute` 是由 host 注入的实际策略回调；例子中的 `demo_approve` 只返回拒绝，避免把 mock 当成真实授权。默认拒绝，再显式登记完成评估的工具；对敏感操作另设确认。这个策略只保护经过该 host gate 的调用，server 进程自己的本地权限仍要由 sandbox 与操作系统收口。
 
-**落点三：数据流过滤。** 「发出之前过滤」落在代码上，就是在组 `arguments` 的那一层把敏感字段摘掉或替换：
+**落点三：参数 allowlist。** 最可靠的第一步不是猜哪些 key 叫 secret，而是只构造工具 schema 允许且任务确实需要的参数。字段名过滤只能作补充，无法识别敏感内容藏在正常字段值里的情形：
 
 ```python
-SECRET_KEYS = ("token", "api_key", "password", "secret", "cookie")
+# 按具体 server 与 tool 维护允许字段；这只是字段投影，不检查字段值内容。
+import json
 
-def redact(obj):
-    """递归摘掉敏感字段（示例：构造数据，未实跑）—— 发出去之前的一道闸。"""
-    if isinstance(obj, dict):
-        return {k: ("<redacted>" if k.lower() in SECRET_KEYS else redact(v))
-                for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [redact(v) for v in obj]
-    return obj
+ALLOWED_FIELDS = {
+    ("code-review-prod", "review_code"): {"diff", "language"},
+}
 
-# 用法：client.send("tools/call", {"name": name, "arguments": redact(args)})
+def build_tool_arguments(server_id, tool_name, supplied):
+    allowed = ALLOWED_FIELDS.get((server_id, tool_name))
+    if allowed is None:
+        raise PermissionError("工具未登记")
+    unexpected = set(supplied) - allowed
+    if unexpected:
+        raise ValueError("拒绝未允许字段: %s" % sorted(unexpected))
+    return {key: supplied[key] for key in allowed if key in supplied}
+
+if __name__ == "__main__":
+    args = build_tool_arguments(
+        "code-review-prod", "review_code", {"diff": "仅包含本次变更", "language": "python"}
+    )
+    print(json.dumps(args, ensure_ascii=False))
 ```
 
-它不能替代「只发该发的字段」，但能兜住「顺手复制了一份带 token 的配置」。
+这个 allowlist 会拒绝误带的额外字段，但不会从 `diff` 等允许字段的文本内容中自动识别秘密。要防止这类泄露，先在生成参数时最小化来源，再按数据分类做内容级检查；字段 allowlist 不能被宣传成 DLP 或零泄露保证。
 
 **落点四：用最小权限跑本地 server。** 本地 server 跑在你的权限下（第 4 节那张表的第二行），收窄权限是唯一能限制爆炸半径的动作。一个可用的启动形态：
 
 ```bash
 # 只读根文件系统、丢掉所有内核能力、用非 root 用户、限制内存与进程数
 docker run --rm -i \
-  --read-only \
+  --read-only --network=none \
   --tmpfs /tmp:rw,noexec,nosuid,size=16m \
   --cap-drop=ALL --security-opt no-new-privileges \
   --user 65534:65534 \
   --memory=256m --pids-limit=64 \
   -v "$PWD/mcp_server.py:/app/mcp_server.py:ro" \
-  python:3.12-slim python3 /app/mcp_server.py
+  --entrypoint python3 python:3.12-slim /app/mcp_server.py
 ```
 
-关键参数：`--read-only` 让容器写不了宿主机之外的东西；`--cap-drop=ALL` 去掉所有特权能力；`--user 65534` 用 nobody 而不是 root；`--tmpfs` 给临时目录但禁掉执行；`-v ...:ro` 只读挂载 server 文件。**它不是万能的**（server 仍能发网络请求），但把「读文件 + 外发」的组合风险砍掉了一半 —— 需要网络时再加 `--network=none` 或一条受限的出口规则。
+关键参数：`--read-only` 让容器根文件系统只读；`--cap-drop=ALL` 删除容器 Linux capabilities；`--user 65534:65534` 以非 root UID/GID 运行；`--tmpfs` 提供受限临时目录；`-v ...:ro` 只读挂载 server 文件。**这些设置不等于宿主机隔离的完整证明**：容器仍可访问显式挂载内容；默认网络也仍可出站。server 不需要网络时可加 `--network=none`；确需网络时配置明确的出口策略。容器配置本身要按运行环境复核。
 
 **组合风险的对策落到代码上，就是「按 server 整体评估」**：上面那个 `POLICY` 的 key 之所以是 `(server, tool)` 而不是单个工具，正是为了让「这个 server 同时有 read_file 和 send_http」这种组合能被一条规则整体拒绝：
 
@@ -310,11 +334,11 @@ def server_verdict(tools):
     names = {t["name"] for t in tools}
     for combo in DANGEROUS_COMBOS:
         if combo <= names:                    # 子集判断：这批工具里出现了完整的高危组合
-            return "deny-server"
-    return "allow"
+            return "deny-known-combination"
+    return "no-known-combination-detected"
 ```
 
-这四条的共同点是：**它们都是「拒绝」和「限制」，不依赖对 server 意图的判断。** 本节开头说过意图无法验证，所以防线只能建在能验证的地方 —— 能不能验证，决定了它是不是一条防线。
+这个函数只识别一类已知组合；没有命中只能表示“未识别到此组合”，不能返回安全结论。还需检查参数约束、进程权限、网络出口和工具间的跨 server 数据路径。
 
 ## 一个更宽的风险：组合出来的能力
 
@@ -339,22 +363,18 @@ def server_verdict(tools):
 
 **这三条的共同点是：判断的粒度不是「这个工具危不危险」，而是「这批工具在一起能做的最坏的事是什么」。** 这与第 4 章讲工具数量时的思路一致 —— 工具的影响要看组合，不只看单个。
 
-## 一个反过来的观察：MRTR 让这件事更容易
+## MRTR 改变了交互形态，但不替你做授权
 
 最后补一个乐观的角度。
 
-在旧版协议里，server 可以**主动**发起 `sampling/createMessage` —— 也就是说，它可以在任何时刻用你的模型做事。一个恶意 server 可以这样构造一个组合：读数据 → 借用你的模型生成一段内容 → 通过某个工具发出去。**整个过程你只在最后一步看到一次调用。**
+在旧版有 server→client 请求通道的协议中，请求也必须关联到一个仍在处理的 client request，不能在完全空闲时任意发起。2026-07-28 的 MRTR 把所需输入嵌入原调用返回的 `input_required`，client 用新 JSON-RPC id 重试。
 
-MRTR 之后，那个「借用模型」的动作变成了一个返回给客户端的 `input_required`。它**显式地出现在你的控制流里**，你可以看它的内容、拒绝它。
-
-这就是第 3 节那条结论的安全含义：**把「随时可发生」变成「在一个明确的一轮里发生」，本身就是一种防线。** 不是因为那个动作变安全了，而是因为它变得**可见**了。
-
-这也给出一条更一般的判断：**安全设计的很大一部分，是把隐式的行为变成显式的决策点。** 你没法判断你看不见的东西。
+这让交互结构更显式，但**不自动构成人工审批或安全防线**：SDK/host 可能自动处理输入，用户也未必看见请求；读取数据、调用模型、再把结果发出的权限仍由 host 和 server 的实际实现决定。host 若要利用这个边界，必须明确检查请求、决定是否继续，并让副作用动作经过独立授权。
 ## 常见坑
 
 - **把两类风险混在一起谈。** 数据外泄的防线在数据流，动作越界的防线在动作流，用错防线等于没有防线。
 - **以为「选个可信的 server」就够了。** 意图无法验证，能力声明只说明接口可用。
 - **只看工具名字判断危险性。** 名字和描述都是对方写的；`optimize_storage` 可以是 `DROP DATABASE`。
-- **指望协议层拦住越界调用。** MCP 不负责安全，它只规定消息怎么传。
-- **忘了 MRTR 提供的决策点。** 那正是这次协议修订在安全上最实际的改善 —— 你有了一个可以说不的时刻。
-- **只在接入时评估一次。** server 可以在后续的 tools/list 里改变工具列表（能力声明里的 listChanged 就是在说这件事）。
+- **指望协议层替你执行应用级策略。** MCP 有工具输入/访问控制/限流/输出清理等规范要求，也有 transport/auth 控制；host 仍需落实自己的数据最小化与动作授权。
+- **把 MRTR 当成人工审批。** 它提供协议层的输入往返形态；是否展示、自动处理或拒绝，由 host/SDK 实现决定。
+- **只在接入时评估一次。** 可用工具集可以随时间或每请求授权上下文变化；`listChanged` 表示 server 支持相应变化通知，不意味着工具列表一定会变。按规范重新取列表，并在每次调用时重新授权。

@@ -8,4 +8,5 @@ export const bodies = {
   'budgets-and-guards': () => import('./03-budgets-and-guards.mdx'),
   'state-and-resume': () => import('./04-state-and-resume.mdx'),
   'what-frameworks-do': () => import('./05-what-frameworks-do.mdx'),
+  'execution-ownership': () => import('./06-execution-ownership.mdx'),
 } as const;

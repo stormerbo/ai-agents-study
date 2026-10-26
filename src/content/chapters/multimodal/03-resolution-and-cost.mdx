@@ -4,291 +4,175 @@ title: 分辨率、分块与成本
 status: drafting
 ---
 
-视觉输入的成本旋钮只有一个：**分辨率**。
+本站 2026-10-08 的历史实验曾记录：合成表格图在 290 与 1,061 token 时都得到 36/36。**这只是单次历史观察，不能证明分辨率不影响准确率，也不能支撑旧文中的 186/996 固定费用阈值。** 逐次响应、精确模型快照、完整 usage 口径和重复运行没有完整留存；生成图时字号还随画布宽度改变，实验同时改变了字号与总像素，不能把差异单独归因于分辨率。更小尺寸下的一次错误也不能证明错误与尺寸无关。本节撤回这些通用结论，改为给出按目标 endpoint 建立成本和质量证据的方法。
 
-文本你可以删、可以摘要、可以只取相关段落；图不行 —— 它是一整块。你唯一能做的就是把它缩放、压缩、或者切成几块。所以这一节要回答的是一个很实际的问题：**这个旋钮该转到哪。**
+## 三种不同的成本
 
-常见的答案有两派。一派说「尽量缩小，反正模型看不清细节」；另一派说「尽量保真，别让模型看不清」。两派都能讲出道理。我把它测了。
+| 成本 | 主要影响因素 | 测量方法 |
+|---|---|---|
+| 模型输入成本 | provider 图像预处理、模型档位、图像与文本上下文、缓存和价格 | 保存响应 usage，并按当日价格核对账单 |
+| 请求字节与延迟 | 编码大小、网络、重复上传、请求体限制 | 记录编码字节和端到端上传耗时 |
+| 任务质量 | 有效像素、字号、压缩伪影、旋转/裁剪、任务类型 | 用答案键统计字段准确率、漏读和错读 |
 
-## 实测：分辨率换来的准确率是多少
+压缩可以降低请求字节和传输量，但不能由字节数直接推断视觉 token。重度有损压缩也可能破坏细线和小字；必须评估实际送出的图像。
 
-我生成了一张 12 行 × 3 列的表（答案键由代码生成，逐格比对），然后**按宽度等比放大字号**渲染成不同分辨率 —— 模拟同一页在不同清晰度下的截屏。
+截至 **2026-10-22** 查阅的官方文档显示，不同 provider 的计算路径不同：
 
-每档都让模型把表格提取成 JSON，逐格核对 36 个单元格：
+- DeepSeek Vision 描述了按比例自动缩放：总像素较小时会放大，较大时缩至约 1300×1300 像素规模，单图估算上限 1024 tokens；官方同时提示实际 usage 可能略有差异。只把它用于文档覆盖的 DeepSeek API。
+- Claude Vision 按 28×28 像素 patch 估算 visual tokens，并依模型档位设置长边与视觉 token 上限。规则按模型变化。
+- 兼容 API 不保证沿用原厂的图像预处理、usage 字段或计费方式。记录 base URL、API 模式和响应中的 model id，再解释观测结果。
 
-| 宽度 | 字号 | PNG 字节 | 输入 token | 正确格数 |
-|---:|---:|---:|---:|---:|
-| 480 | 11 | 14,699 | 290 | **36/36** |
-| 720 | 16 | 25,370 | 333 | **36/36** |
-| 1,000 | 22 | 37,388 | 511 | **36/36** |
-| 1,400 | 31 | 56,015 | 891 | **36/36** |
-| 2,000 | 44 | 87,497 | 1,061 | **36/36** |
+预算公式只是估算：
 
-（实跑数据，2026-10-08，deepseek-flash。）
+```text
+估算输入成本 = Σ（各计费类别的 token usage × 对应单价）
+```
 
-读出这张表只需要一句话：**从 290 token 到 1,061 token，准确率一格没变。**
-
-480 宽那张只有 14.7KB，2,000 宽那张 87.5KB，**字节数差 6 倍、token 差 3.7 倍，而结果完全相同**。
-
-## 往下再压呢
-
-也许断崖在更下面。继续往下压，并把字号下限锁在 8px（再小就不是「分辨率低」而是「字被压掉了」）：
-
-| 宽度 | 字号 | 输入 token | 正确格数 |
-|---:|---:|---:|---:|
-| 400 | 9 | 273 | 35/36 ❌ |
-| 300 | 8 | 264 | 36/36 ✅ |
-| 220 | 8 | 264 | 36/36 ✅ |
-| 160 | 8 | 256 | 36/36 ✅ |
-
-（实跑数据，2026-10-08。）
-
-注意 400 那一行错了 1 格，而**更小的 300 / 220 / 160 反而全对**。
-
-这不是「400 比 160 更差」—— 它说明**那一格错误和分辨率无关**。如果是分辨率造成的，错误应该随尺寸单调增加。而这批数据不是单调的，所以它更可能是一次运行间抖动。第 4 节会专门验证这件事，并给出错误真实的样子。
-
-所以到目前为止的结论是反直觉的：**在我测的这个范围里（160 宽到 2,000 宽），分辨率不是准确率的瓶颈。**
-
-## 那这个旋钮该转到哪
-
-既然准确率不随分辨率变，成本就成了唯一的判据。综合第 1 节的阶梯与本节的数据，可以给出一条明确的规则：
-
-**一，不要低于服务端的下限。** 实测 512 及以下都是一个固定价（186 token），再缩不省钱，只丢信息。所以**没有理由把图缩到 512 以下**。
-
-**二，不要高于服务端的上限。** 实测 1,280 及以上都是同一个价（996 token），因为服务端会先缩。所以**传 3,000 和传 1,280 花的 token 一模一样**，多出来的 30KB 只是白传。
-
-**三，落在这两者之间，按需选。** 如果下游任务只是「图里有没有某个东西」，480 宽就够；如果是密集表格的逐格提取，往 1,000 以上靠。但要记住：本节的实测**没有证据支持**「往上靠能提高准确率」。
-
-**四，压缩格式随便选。** 同一张表存成 PNG、JPEG q20、JPEG q10，字节数从 37.4KB 降到 18.5KB（**减半**），而准确率三档都是 36/36：
-
-| 格式 | 字节 | 正确格数 |
-|---|---:|---:|
-| PNG | 37,364 | 36/36 ✅ |
-| JPEG q20 | 21,947 | 36/36 ✅ |
-| JPEG q10 | 18,515 | 36/36 ✅ |
-
-（实跑数据，2026-10-08。）
-
-这不奇怪：**token 按分辨率算，不按字节算。** 所以压缩格式影响的是上传延迟和请求体大小，不是账单。对于「一次传几十张图」的场景，这个差别是真实的。
+如果某个 endpoint 将这些输入 token 都按同一单价计费，可以合并后相乘；若缓存读写、长上下文等类别有独立费率，就按响应 usage 中的类别分别计算。这里得到的仍是估算值，最终以该 endpoint 的计费规则和账单为准。
 
 <Mermaid
   chart={`
-flowchart TB
-    A["准备发送一张图"] --> B{"宽度小于 512？"}
-    B -->|是| C["放大到 512 以上<br/>再缩不省钱，只丢信息"]
-    B -->|否| D{"宽度大于 1280？"}
-    C --> D
-    D -->|是| E["缩到 1280<br/>token 一样，字节少 2-4 倍"]
-    D -->|否| F["保持原尺寸"]
-    E --> G["选压缩格式：JPEG q10<br/>字节减半，token 不变"]
-    F --> G
-    G --> H["发送"]
-    H -.-> I["⚠️ 别指望「更清楚 = 更准」<br/>实测 290 与 1061 token 准确率相同"]
+flowchart TD
+    A["确定 endpoint / model"] --> B["查对应官方估算规则"]
+    B --> C["定义任务质量门槛"]
+    C --> D["固定样本，配对测试尺寸"]
+    D --> E{"达到质量门槛？"}
+    E -->|否| F["保留原尺寸或裁剪关键区"]
+    E -->|是| G["比较 usage / 延迟 / 账单"]
+    F --> D
+    G --> H["选满足质量的最低成本方案"]
+    H --> I["留存响应并持续回归"]
 `}
 />
 
-## 分块：什么时候该把图切开
+缓存、折扣、批处理和服务档位都可能改变最终账单；价格会变。每次运行记录日期、响应 model、finish reason、usage 字段与请求 ID，以 endpoint 返回的 usage 和账单校准估算器。
 
-分辨率之外还有一个旋钮：**把一张大图切成几块，分别发送。**
+## 怎样选择分辨率
 
-这个旋钮看起来稳赚 —— 每块都小，服务端不会缩，细节全保住了。但第 1 节那张阶梯表里藏着一条会让它亏本的规则：**每张图都有 186 token 的下限。**
+先定义质量门槛。低分辨率往往先伤害小字号、密集表格、勾选框、图表标签和坐标定位；大图也可能被服务端缩放或拒绝。不要用「越清楚越准」或「图越小越省」替代测量。
 
-用实测数字算一笔账。假设一张 1,000×3,000 的长截图（一个长页面）：
+| 任务 | 质量指标 |
+|---|---|
+| 页面分类 | 各类别召回率、混淆矩阵 |
+| 字段抽取 | 每字段精确匹配、漏字段率 |
+| 表格读取 | 单元格准确率、行列错位、完整行率 |
+| 屏幕定位 | 目标框/坐标误差及缩放后的坐标映射 |
+| 图表理解 | 数值误差、趋势或排序正确率 |
 
-| 方案 | 计算 | token |
-|---|---|---:|
-| 整张发 | 长边 3,000 超过上限，按 996 计 | **996** |
-| 切 3 块（各 1,000×1,000） | 3 × 688（第 1 节实测值） | **2,064** |
-| 切 6 块（各 1,000×500） | 6 × 下限 186（512 以下按下限） | **1,116** |
+实验固定原图内容、提示词、endpoint、model、输出 schema 与采样参数，每次只改变一个变量。分别比较原图、应用侧缩小图、按 provider 文档处理的图；测压缩时还要记录尺寸、色彩空间和质量参数。候选方案用同一批样本配对比较，并做重复运行和独立留出验证。输出失败、截断、拒答、解析失败、缺失 usage 都应作为单独状态保存；不能把空文本记为模型错误，也不能把缺失 usage 当成零成本。
 
-（按第 1 节与本节实测的单价推算。）
+结果应保留逐样本记录，而不是只贴一行平均值：例如记录样本 ID、图片哈希、处理档位、精确匹配字段数、总字段数、finish reason、usage 与请求 ID。先按模板、页面类型或来源拆分误差，避免同一模板泄漏到调参集和评估集。样本量由你需要的置信度和预期错误率决定；小样本适合发现明显问题，不能用来证明两个尺寸等价。若决策涉及成本与精度的权衡，先定义可接受错误上限，再比较达到该门槛的方案。
 
-三种方案的差别不只是钱：
+## 分块：以信息增益证明额外成本
 
-- **整张发最便宜，但长边被服务端缩到约 1,280，下半页的细节是丢的** — 而你不会收到任何提示
-- **切 3 块贵一倍，但每块都是原始分辨率** — 这是唯一「花更多钱买到更多细节」的方案
-- **切 6 块只贵 12%，但每块都落到了下限以下** — 你为「图的存在」付了 6 次固定费，实际拿到的分辨率还不如切 3 块
+裁剪主要解决整图缩放后关键细节不可读，或需要对局部放大检查的情况。它会增加图片数量、请求字节、延迟和潜在视觉 token，并削弱局部块与整页的空间关系。每块固定最低 token、切块必然贵几倍等说法都不是跨 provider 规律。
 
-所以规则很清楚：**切块的唯一理由是「整张已经被服务端缩了」。** 只有在这种情况下，你花的钱才买到了原本会丢失的细节；否则它就是把成本乘以块数。
+决策步骤：
 
-还有一个实现上的前提容易被忽略：切块之后，模型看到的是**几块互不相关的图** —— 它不知道第 2 块在第 1 块下面。所以切块必须配合重叠（比如上下各留 10% 重叠）或者明确的文字说明（「这是同一页的第 2/3 块」），否则跨块的内容会被读错。
+1. 先测完整图，确认模型是否缩放、拒绝，关键文字是否可读。
+2. 若关键区域变得不可读，裁切时保留行列标题、页码和必要上下文。
+3. 需要跨区域比较时，为每块标注页码、区域序号及坐标范围。
+4. 用答案键比较整图与裁块方案的质量、usage、延迟和失败率；只有达到质量门槛且增益值得成本时才采用裁块。
 
-重叠裁剪十行就能写完：
+实跑状态：本节裁剪函数已由 4 个离线断言检查，包括合成图片的三个边界与无效参数。测试使用 fake image 对象；未运行真实 Pillow、图像模型或计费 endpoint。下面代码只验证本地几何裁剪，不代表任何 API 的 token 计算，也不证明裁块能提升模型质量。overlap 是实验参数，不是推荐的通用比例。
 
 ```python
+import math
 from PIL import Image
 
-def split_with_overlap(img, blocks=3, overlap=0.10):
-    """把长图纵向切 blocks 块，相邻块各留 overlap 比例的重叠。"""
-    w, h = img.size
-    step = h // blocks
-    pad = int(step * overlap)
-    out = []
-    for i in range(blocks):
-        top = max(0, i * step - (pad if i > 0 else 0))
-        bottom = min(h, (i + 1) * step + (pad if i < blocks - 1 else 0))
-        out.append((i, top, bottom, img.crop((0, top, w, bottom))))
-    return out
-```
 
-本次真跑（2026-10-12，一张 1000×3000 的本地构造长图，切 3 块、重叠 10%）拿到这样一组边界：
+def split_vertical(image: Image.Image, parts: int, overlap: float = 0.0):
+    """返回 (index, y_start, y_end, crop)；overlap 是基础块高的比例。"""
+    if isinstance(parts, bool) or not isinstance(parts, int) or parts < 1:
+        raise ValueError("parts must be an integer >= 1")
+    if (
+        isinstance(overlap, bool)
+        or not isinstance(overlap, (int, float))
+        or not math.isfinite(overlap)
+        or not 0 <= overlap < 1
+    ):
+        raise ValueError("overlap must be a finite number in [0, 1)")
+    width, height = image.size
+    if width < 1 or height < 1 or parts > height:
+        raise ValueError("image height must be >= parts")
 
-```text
-块 1/3: y 0    - 1100  （下侧重叠 100）
-块 2/3: y 900  - 2100  （上侧重叠 100、下侧重叠 100）
-块 3/3: y 1900 - 3000  （上侧重叠 100）
-总高 3000 -> 三块高度和 3400，多出来的 13% 是被重复发送的重叠区
-```
+    result = []
+    for i in range(parts):
+        core_top = i * height // parts
+        core_bottom = (i + 1) * height // parts
+        pad = round((core_bottom - core_top) * overlap)
+        top = max(0, core_top - (pad if i else 0))
+        bottom = min(height, core_bottom + (pad if i < parts - 1 else 0))
+        result.append((i, top, bottom, image.crop((0, top, width, bottom))))
+    return result
 
-重叠解决的是「切点正好落在内容中间」；它**不解决**模型不知道该块在页面什么位置。所以每一块还要带一行位置说明，例如第 2 块（示例：构造数据，未实跑）：
-
-```text
-这是同一页截图的第 2/3 块，纵向范围 y=900..2100。
-相邻块各有 100px 重叠；重叠区的内容不要重复计数。
-请只提取本块可见的行，并保留行号。
-```
-
-两件事必须同时做：**重叠**防止内容被切断，**位置标注**防止模型把三块当成三张无关的表从而重复计数或漏行。
-
-## 本节小结
-
-1. **准确率不随分辨率变**（实测 290 与 1,061 token 都是 36/36）—— 这个旋钮买到的是字节数，不是准确率。
-2. **成本有下限也有上限**（186 与 996）—— 缩到 512 以下不省钱，传到 1,280 以上不多花钱。
-3. **压缩格式不影响 token** —— JPEG q10 把字节减半，token 一点没变。
-4. **切块只在「整张已被服务端缩小」时才值得** —— 否则就是把成本乘以块数，还要额外处理跨块语义。
-## 完整可运行代码
-
-代码里读了一个响应字段 `stop_reason`，它指的是模型为什么停下 —— 正常结束、撞到 `max_tokens` 上限、还是要调用工具。**没有确认它之前，不要把「没答出来」归因于模型能力**：密集表格的输出很长，预算不够时返回的是半截文本+`stop_reason=max_tokens`，看起来就像模型做不到。
-
-```python
-"""分辨率 → 视觉提取准确率：同一张表渲染成不同宽度。
-
-答案键由代码生成并逐格比对 —— 不靠人眼看。
-
-实跑状态：2026-10-08，deepseek-flash。
-"""
-
-import base64
-import json
-import os
-import random
-import re
-import urllib.request
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
-
-FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
-random.seed(20261008)
-
-ROWS = []
-for i in range(12):
-    ROWS.append(("ITM-%03d" % (101 + i),
-                 str(random.randint(10, 990)),
-                 "%d.%02d" % (random.randint(1, 99), random.randint(0, 99))))
-
-
-def render(width):
-    """按宽度等比放大字号 —— 模拟同一页在不同分辨率下的截屏。"""
-    fs = max(8, round(width * 0.022))
-    font = ImageFont.truetype(FONT, fs)
-    lh = round(fs * 2.1)
-    header = ["Item", "Qty", "Amount"]
-    height = lh * (len(ROWS) + 2) + 30
-    img = Image.new("RGB", (width, height), "white")
-    d = ImageDraw.Draw(img)
-    cols = [round(width * 0.08), round(width * 0.52), round(width * 0.72)]
-    for r, row in enumerate([header] + ROWS):
-        y = 15 + r * lh
-        for c, cell in enumerate(row):
-            d.text((cols[c], y), cell, fill="black", font=font)
-        if r == 0:
-            d.line([(cols[0], y + lh - 4), (width - cols[0], y + lh - 4)], fill="black", width=2)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue(), (width, height), fs
-
-
-def ask(content, max_tokens=4000):
-    body = json.dumps({"model": os.environ.get("VERIFY_MODEL"), "max_tokens": max_tokens,
-                       "messages": [{"role": "user", "content": content}]}).encode()
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=240) as resp:
-        data = json.loads(resp.read())
-    u = data.get("usage", {})
-    total = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-             + u.get("cache_creation_input_tokens", 0))
-    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-    return text.strip(), total, data.get("stop_reason")
-
-
-def parse(text):
-    m = re.search(r"\[.*\]", text, re.S)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except Exception:
-        return None
-
-
-PROMPT = ("把这张表格里的每一行提取出来，返回 JSON 数组，每项形如 "
-          "{\"item\":\"...\",\"qty\":\"...\",\"amount\":\"...\"}。"
-          "数字必须逐字准确，不要做任何计算或四舍五入。只输出 JSON。")
 
 if __name__ == "__main__":
-    print("答案键（由代码生成）：共 %d 行 × 3 列 = %d 格" % (len(ROWS), len(ROWS) * 3))
-    print(ROWS[0], "...", ROWS[-1])
-    print()
-    print("%8s %7s %9s %8s %10s %s" % ("宽度", "字号", "PNG字节", "token", "正确格数", "错误明细"))
-    for width in [480, 720, 1000, 1400, 2000]:
-        png, size, fs = render(width)
-        b64 = base64.b64encode(png).decode()
-        text, tok, stop = ask([
-            {"type": "image", "source": {"type": "base64",
-             "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": PROMPT}])
-        got = parse(text)
-        if got is None:
-            print("%8d %7d %9d %8d %10s %s" % (width, fs, len(png), tok, "解析失败",
-                                               "stop=" + str(stop)))
-            continue
-        correct, wrong = 0, []
-        for i, truth in enumerate(ROWS):
-            if i >= len(got):
-                wrong.append("缺第%d行" % (i + 1))
-                continue
-            for k, want in zip(("item", "qty", "amount"), truth):
-                if str(got[i].get(k, "")).strip() == want:
-                    correct += 1
-                else:
-                    wrong.append("%s:%s≠%s" % (want, got[i].get(k, ""), want))
-        print("%8d %7d %9d %8d %6d/%d %s" % (width, fs, len(png), tok, correct, len(ROWS) * 3,
-                                             "  ".join(wrong[:4]) or "—" if wrong else "—"))
+    page = Image.new("RGB", (1000, 3000), "white")
+    blocks = split_vertical(page, 3, 0.10)
+    assert [(top, bottom) for _, top, bottom, _ in blocks] == [
+        (0, 1100), (900, 2100), (1900, 3000)
+    ]
+    print([(i + 1, top, bottom, crop.size)
+           for i, top, bottom, crop in blocks])
 ```
 
-实跑输出（2026-10-08）：
+输出：
 
 ```text
-答案键（由代码生成）：共 12 行 × 3 列 = 36 格
-('ITM-101', '309', '6.56') ... ('ITM-112', '484', '60.07')
-
-      宽度      字号     PNG字节    token       正确格数 错误明细
-     480      11     14699      290     36/36 —
-     720      16     25370      333     36/36 —
-    1000      22     37388      511     36/36 —
-    1400      31     56015      891     36/36 —
-    2000      44     87497     1061     36/36 —
+[(1, 0, 1100, (1000, 1100)), (2, 900, 2100, (1000, 1200)), (3, 1900, 3000, (1000, 1100))]
 ```
 
-## 常见坑
+这是合成 1000×3000 图片的本地边界检查；不是 API 或模型实验。重叠区域会重复发送；若做文档抽取，还要防止重叠区重复计数。涉及账务、审批或执行动作的字段须经过确定性校验或人工复核。
 
-- **把图缩得很小来省钱。** 512 以下是一个固定下限，把 512 缩到 64 一分钱不省。
-- **上传原图求保真。** 1,280 以上 token 完全相同，多出来的像素根本没被用。
-- **以为「分辨率越高越准」。** 实测 290 token 与 1,061 token 的准确率一格不差 —— 这个旋钮买到的是字节数，不是准确率。
-- **看字节数估算成本。** token 按分辨率算。JPEG q10 把字节砍掉一半，token 一点没变。
-- **只测一档就下结论。** 正确做法是测一整条阶梯 —— 只测两档很容易把运行间抖动当成分辨率效应（400 宽那一格就是这么冒出来的）。
-- **忽略「一张图是一整块」。** 文本能删能摘要，图不能。所以分辨率的决定要在发送**之前**做好，发送之后没有任何补救手段。
+本节离线测试的记录样例只描述裁剪几何；模型相关字段保持 null，不能被误读为一次 API 结果：
+
+```json
+{
+  "sample_id": "synthetic-page-01",
+  "variant": "vertical-3-overlap-0.10",
+  "image_size": [1000, 3000],
+  "crop_y_ranges": [[0, 1100], [900, 2100], [1900, 3000]],
+  "provider_request_id": null,
+  "response_model": null,
+  "finish_reason": null,
+  "usage": null,
+  "field_accuracy": null,
+  "status": "geometry-only"
+}
+```
+
+正式质量实验中，按一张源图建立配对组，每个变体使用同一提示词、schema 和抽取字段，并保留每次的原始响应与解析结果。图片如果来自多个模板或来源，应报告各组指标，不能让一个容易识别的模板支配总体分数。对解析失败的响应仍保留请求、终止原因与原文；只有完成状态、结构合法且字段可评分的样本才进入字段准确率分母，同时单独报告失败率。这样才能区分“模型看错了”和“请求没完成”这两种工程问题。
+
+选档时同时看质量与成本，而不是先选尺寸再为它找理由：横轴可以是实际图像 usage 或单位处理费用，纵轴为预先指定的字段指标；质量未达标的方案直接淘汰。若两档差距小于样本不确定性，就不能声称某一档更准，应扩大样本、增加重复或选择成本较低且质量风险可接受的一档。没有通用的重复次数，具体样本量取决于错误率、任务分布和可接受的不确定度。
+
+## 多轮图像的费用
+
+「后续轮次能看见先前图像」不等于「每次都以相同方式重复上传或重复计费」。无状态客户端可能每轮重发完整历史；服务端会话、文件引用、缓存及不同 API 的上下文管理方式都可能不同。应分别测传输量、上下文 usage、缓存 usage 与最终账单。
+
+仅在每轮都重发完整历史、旧图像每次都重新计入输入的假设下，设每轮新增文本输入为 T、历史图像折算输入为 V、调用 N 次，累计输入量近似为：
+
+```text
+N × T + V × N × (N + 1) / 2
+```
+
+此公式是特定无状态场景的推导，不是所有 Agent/API 的成本规律。
+
+## 常见错误
+
+- **套用历史 186/996/512/1280 阈值**：这些数字不能代表当前各 provider 的通用边界；查目标 API 文档并核对真实 usage。
+- **用单次 36/36 断言尺寸无关**：原实验还改变字号，且没有重复；控制变量并配对测量。
+- **字节少就认定 token 少**：字节、视觉 token、质量是不同指标，分别记录。
+- **切块后默认更清楚、更便宜**：测量额外图块带来的质量增益，并计入重叠、延迟和 usage。
+- **把估算值当账单**：估算、API usage 和扣费是三个口径，逐次保留证据。
+- **把截断记为视觉误读**：分别处理 max_tokens、拒答、网络失败、解析失败与识别错误。
+- **把完整历史重发成本推广到所有接口**：确认会话状态、文件引用和缓存语义，再按轮对账。
+
+决策原则：**先满足任务质量门槛，再按目标 endpoint 的 usage、延迟和账单优化图像输入；任何尺寸、压缩和分块参数都要按具体 API 验证。**
+
+## 依据与范围
+
+- [DeepSeek Vision](https://api-docs.deepseek.com/guides/vision/)：接口形式、输入方式、图像缩放估算和限制；查阅日期 2026-10-22。
+- [DeepSeek Token & Token Usage](https://api-docs.deepseek.com/quick_start/token_usage/)：图像 token 估算器；估算不替代在线响应 usage；查阅日期 2026-10-22。
+- [Claude Vision](https://platform.claude.com/docs/en/build-with-claude/vision)：图像 patch、模型分辨率档位及压缩建议；查阅日期 2026-10-22。
+- 本地分块代码只验证几何边界；未连接 provider、未测 token、账单或视觉质量。

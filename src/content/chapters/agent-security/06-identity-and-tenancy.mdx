@@ -1,0 +1,115 @@
+---
+lesson: agent-security/identity-and-tenancy
+title: 身份与租户：模型给出的 user_id 不是身份
+status: drafting
+---
+
+## 本节要解决什么
+
+Agent 把工具调用交给模型选择与填参，因此一个请求里可能同时出现登录用户、当前租户、目标对象、模型生成的参数和工具 server 的服务身份。若把其中任意一个字段直接当作授权依据，提示注入或普通参数错误就可能变成跨租户访问。本节交付物是一条可审计的 `principal → action → resource` 授权链和一个 SQLite 负向测试模型。验收判据是：主体来自已验证的认证上下文；每次工具执行都检查具体 action 和 resource；租户边界由可信上下文与数据访问共同执行；缺身份、缺策略或未知动作一律拒绝。
+
+## principal、action、resource 分别是什么
+
+**principal** 是经过认证并由服务端确认的调用主体，通常包含稳定的 subject、当前已验证的租户上下文和必要属性。**action** 是正在请求的具体操作，例如 `orders:read`、`refund:create` 或 `file:delete`。**resource** 是这次操作实际要访问的那一条订单、退款或文件。授权问题不是“这个用户能不能用 Agent”，而是“这个已认证主体是否能在此刻对这个确切资源执行这个动作”。
+
+认证成功只证明主体身份，不能推出其拥有所有功能和对象的权限。角色名、scope 和工具描述也不能替代对象级检查：`orders:read` 可能允许查询订单，但不代表任意租户、任意订单都可读。系统必须在执行边界重新计算权限，不能让模型自己说“用户是管理员”，不能把请求体里的 `user_id`、`tenant_id` 或 `role` 覆盖认证上下文。缺失规则时使用 deny-by-default；权限检查失败或策略服务不可用时，不要降级成允许。
+
+## Agent 工具调用中的授权链
+
+<Mermaid
+  chart={`
+flowchart LR
+    U[已认证会话 / token] --> P[服务端构造 principal]
+    M[模型生成的 action 与参数] --> G[工具执行网关]
+    P --> G
+    G --> V{主体仍有效？}
+    V -->|否| D[拒绝并审计]
+    V -->|是| A{允许此 action？}
+    A -->|否| D
+    A -->|是| R{resource 属于可信 tenant？}
+    R -->|否| D
+    R -->|是| O{对象级策略通过？}
+    O -->|否| D
+    O -->|是| Q[按授权条件读取或写入]
+    Q --> H[仅将获准结果交给 Agent]
+`}
+/>
+
+模型可以提供业务参数，比如订单号；这些参数是**待检查的对象引用**，不是授权证明。服务端应以 principal 中的 subject 与经过验证的 active tenant 为查询条件，再按 action 和对象策略检查；先按资源 ID 把敏感正文取出来，再在应用层“记得检查租户”，会增加漏检和误传给模型的风险。检索、缓存、日志导出和异步任务也都是数据或动作边界：如果异步 worker 之后执行，队列消息必须绑定可信主体/租户，并在执行时根据当前策略重新验证。
+
+## 租户边界不由模型或 URL 参数决定
+
+多租户系统中的 tenant 是安全边界。登录用户可能属于多个租户，所以“用户是 Alice”不足以决定这次请求访问哪个租户；应用需从已验证会话中取得当前租户上下文，并确认该主体当前仍是此租户成员。若用户可以切换租户，切换动作本身也要由服务端检查并写入受信上下文，而不是直接相信请求体中的 `tenant_id`。
+
+数据查询要把 tenant 条件与 resource 条件一起下推，例如 `WHERE tenant_id = :trusted_tenant AND order_id = :requested_order`。写操作同样要检查目标对象归属、当前 ownership 和 action 权限；不能因为对象 ID 难猜，就省掉授权。可进一步使用数据库 RLS 作为纵深防线，但必须确认应用连接角色不绕过策略、连接池不会串用事务上下文，并用真实数据库配置测试策略。PostgreSQL RLS 约束的是普通行级 `SELECT`、`INSERT`、`UPDATE`、`DELETE`；它不会替代表级 SQL 权限，也不约束 `TRUNCATE`、`REFERENCES` 这类整表操作。表所有者通常绕过策略，superuser 与 `BYPASSRLS` 角色总会绕过；外键、唯一约束等完整性检查也不受行策略过滤，策略若查询其他表还要评估并发竞态。因而应分离迁移/维护角色与应用运行角色，限制后者的 SQL 权限，并针对实际角色、表所有权、连接上下文和失败路径做数据库集成测试。应用层授权和 RLS 的责任应写清楚，不能把“开了 RLS”当作整套业务权限已经正确。
+
+`USING` 和 `WITH CHECK` 不能混为一谈：前者限制现有行能否被看见或作为更新/删除目标，后者检查插入或更新后将要写入的新行。下面只演示租户行界限，不包含 owner/ACL 业务规则，也没有在 PostgreSQL 实例上执行：
+
+```sql
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY documents_tenant_read ON documents
+  FOR SELECT TO app_runtime
+  USING (tenant_id = current_setting('app.tenant_id', true));
+
+CREATE POLICY documents_tenant_insert ON documents
+  FOR INSERT TO app_runtime
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+
+CREATE POLICY documents_tenant_update ON documents
+  FOR UPDATE TO app_runtime
+  USING (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+```
+
+服务端需在**同一个显式事务**中，从已验证的 principal 派生租户值，再执行 `SELECT set_config('app.tenant_id', $1, true)`；第三个参数 `true` 让值只对当前事务生效，避免连接归还连接池后残留到下一次借用。这个自定义设置只是把上下文传给策略，不能证明其中的租户值真实：它必须由可信服务端绑定，且应用仍要做对象级授权。若攻击者能通过 SQL 注入以应用角色执行任意 SQL，就不能把可由会话设置的 tenant 值当成独立身份边界。RLS 也不能替代 SQL `GRANT`；执行 `UPDATE` 若同时读取目标表列，还需要相应 `SELECT` 权限与适用的 SELECT 策略。
+
+## 本地 SQLite 负向模型
+
+配套代码在 `examples/identity-tenancy/access_policy.py`。它使用合成主体和资料记录来展示三种边界：只有已登录主体且数据库中有活动成员关系才可访问；查询同时限定可信租户与对象 ID；更新只允许对象 owner。传入的 `request_tenant_id` 参数被特意忽略，tenant 来自调用方提供的 `trusted_tenant_id`，这个参数在真实服务中应由认证/会话中间件构造，而不是从模型参数或请求 JSON 复制。SQLite 示例不是 PostgreSQL RLS、多进程隔离或真实身份服务的验证。
+
+实跑状态：Python 标准库 SQLite 离线模型，7/7 测试通过。模型只返回读取操作的正文；更新路径只作授权判定且不返回正文，并明确不执行实际写入。一个租户伪造场景的原始结果为：
+
+```text
+authenticated_subject=bob
+trusted_tenant_id=tenant-b
+request_tenant_id=tenant-a
+document_id=doc-a
+decision=Decision(allowed=False, reason='resource_outside_tenant', body=None)
+```
+
+这是合成 SQLite fixture 的越权负向测试，不是生产事故记录。测试覆盖同租户读、跨租户 IDOR、请求 tenant 伪造、非 owner 更新、owner 更新不返回正文、已停用成员与未知 action。代码先查对象的租户和 owner 元数据；只有授权通过的 read 才另查正文。SQLite 测试没有并发事务、数据库 RLS、真实认证中间件或生产连接池，不能证明这些部署层属性。
+
+业务审计可以记录判定所需的最小字段，避免把 bearer token、完整请求正文或检索到的敏感内容塞进日志。一个可供排查的决策记录可以是：
+
+```json
+{
+  "decision_id": "dec-42",
+  "principal": "bob",
+  "trusted_tenant": "tenant-b",
+  "action": "document:read",
+  "resource_id": "doc-a",
+  "allowed": false,
+  "reason": "resource_outside_tenant",
+  "policy_version": "docs-v3"
+}
+```
+
+日志里的 subject 和对象 ID 仍可能是敏感元数据，需要按最小可见原则控制保留期限与访问者。若记录 `reason`，应使用稳定的内部分类码，并避免把数据库原始错误、token claims 全文或文档正文直接写入应用日志。审计记录回答“哪个可信主体对哪个动作与对象做了什么判定”，不负责替代授权逻辑本身。
+
+## 处理失败与撤权
+
+1. 从认证中间件取得已验证的 subject 与当前租户上下文；拒绝模型返回的身份、角色和权限字段覆盖它们。
+2. 按 action 分类定义允许规则，并为每种不可逆动作单独定义人工确认、审计和重放约束。
+3. 每次工具调用前检查 subject、租户成员关系、对象归属和操作权限；不要只在会话开始时检查一次。
+4. 先将 tenant 与 resource 条件放进数据访问查询，只把已授权内容交给模型；写操作在提交时仍需再次绑定资源和条件。
+5. 对无主体、无成员关系、策略查询超时、未知 action、找不到资源和跨租户对象统一拒绝，并记录可排查的失败类别。
+6. 测试列表、读取、更新、删除、批量操作、搜索、缓存命中、导出和后台任务等所有能触达同类资源的路径；对象 ID 替换测试要覆盖水平越权。
+7. 做成员移除、角色降权与租户切换测试，验证撤权何时生效；若缓存或长期 token 会延迟生效，应明确时效上界与失效策略。
+
+验收产物是一张授权矩阵，列出 principal 属性来源、action、resource、tenant 约束、判定位置、拒绝行为与审计字段。验收时用正例确认授权路径可用，用跨租户与未授权动作负例确认数据在送入模型或发生写操作前就被拦截。若新增工具后授权矩阵没有对应行，默认拒绝并阻止发布。
+
+## 后端经验迁移
+
+可以直接迁移的是身份认证与业务授权分离、服务端派生安全字段、对象级权限、每请求授权、deny-by-default、审计和数据库行级安全。需要改变的直觉是：模型选出的 tool call 与参数和普通 HTTP 客户端参数一样都不可信；“它在同一个会话里”不意味着它的权限没变；“这个 user 有角色”也不意味着对这个 tenant 的每个 resource 都有权限。把授权放在真正执行动作和读取数据的边界，才能让提示注入停留在一次被拒绝的请求，而不是变成数据泄露。

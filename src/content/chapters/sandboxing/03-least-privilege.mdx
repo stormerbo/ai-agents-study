@@ -4,13 +4,15 @@ title: 文件系统与网络的最小权限
 status: drafting
 ---
 
-第 2 节说「按爆炸半径选层级」。这一节讲在那层隔离里，**权限具体怎么收到最小**。
+接着[隔离的层级](/chapters/sandboxing/isolation-levels)的选择，本节讲在所选隔离层里**如何把权限收紧到任务需要的范围**。
 
 核心只有一句话：**默认拒绝，按需放开，而且放开的那部分要能被验证。**
 
 ## 一个「看着对」的检查
 
 最小权限最常见的实现形态是「限制在一个目录里」。而它最常见的写法是这样的：
+
+下面的 `naive_read` 与后面的 `safe_read` 都是函数片段，依赖本节完整演示中的 `os`、`SANDBOX` 和文件夹 fixture；单独复制不能运行。
 
 ```python
 def naive_read(rel):
@@ -20,22 +22,22 @@ def naive_read(rel):
     return open(full).read()
 ```
 
-这段代码的意图完全正确，而且它确实是很多生产代码的样子。问题在 startswith 检查的是**字符串**，而不是**文件实际在哪**。
+这段代码展示一种容易出现的错误：`startswith` 检查的是**字符串**，而不是**文件实际在哪**。这里的函数是漏洞演示，不代表某个生产系统的代码。
 
 我用 6 种手法测了它：
 
-| 攻击手法 | 朴素前缀检查 | 真实路径检查 |
+| 攻击手法 | 朴素前缀检查 | 固定 fixture 的 realpath 检查 |
 |---|---|---|
 | 正常读取（应该允许） | ✅ 读到 | ✅ 读到 |
-| 用 .. 往回跳一级 | ❌ **读到了密钥** | ✅ 拒绝 |
-| 往回跳两级 | ❌ **读到了密钥** | ✅ 拒绝 |
-| 符号链接（沙箱内的 link 指向外部） | ❌ **读到了密钥** | ✅ 拒绝 |
+| 用 .. 往回跳一级 | ❌ **读到沙箱外 fixture** | ✅ 拒绝 |
+| 往回跳两级 | ❌ **读到沙箱外 fixture** | ✅ 拒绝 |
+| 符号链接（沙箱内的 link 指向外部） | ❌ **读到沙箱外 fixture** | ✅ 拒绝 |
 | 绝对路径 | ✅ 拒绝 | ✅ 拒绝 |
-| 带多余斜杠的越界（./.././） | ❌ **读到了密钥** | ✅ 拒绝 |
+| 带多余斜杠的越界（./.././） | ❌ **读到沙箱外 fixture** | ✅ 拒绝 |
 
-（实跑数据，2026-10-09。沙箱外放了一个含密钥的文件作为目标。）
+（实跑数据，2026-10-09。沙箱外放了一个只含 `SENSITIVE_MARKER=fixture` 的合成标记文件，不含真实凭据。）
 
-**6 种手法里，朴素版放过了 4 种。** 而且放过的那些恰好都成功了 —— 一次成功的注入就能读到沙箱外的任意文件。
+**这组固定本地夹具里，朴素版放过了 4 种。** 这些路径都指向进程可读的夹具文件；它说明前缀比较不能约束文件系统解析，不代表一次注入能读到任意文件 —— 实际可读范围仍受进程权限、挂载和 OS 隔离约束。
 
 ## 为什么会绕过
 
@@ -52,9 +54,9 @@ SANDBOX/../secret.env
 
 符号链接是同一个问题的另一种形态：沙箱内的 link.txt 这个名字完全合法，但它**指向**外面。
 
-## 修好的版本
+## 固定路径下的基础修正
 
-两处关键改动：
+下面的 `realpath` 检查能拒绝本节固定 fixture 中的 `..` 与符号链接逃逸，并修复相似前缀误判。它适合说明路径解析问题，**不是可抵御并发恶意文件系统写入的完整沙箱边界**。
 
 ```python
 def safe_read(rel):
@@ -67,36 +69,35 @@ def safe_read(rel):
     return open(full).read()
 ```
 
-**改动一（realpath）** 把 `..` 和符号链接都解析成真实路径，于是字符串检查和文件系统解析终于看的是同一个东西。
+**改动一（realpath）** 在本次路径查询时把 `..` 与符号链接规范化为真实路径，修复静态 fixture 中的越界；检查与稍后的 `open` 仍是分开的系统调用，不能因此宣称对抗并发路径替换。
 
 **改动二（结尾分隔符）** 防的是另一个漏：如果只用 `startswith(base)`，那么 `/tmp/sandbox-evil` 会被判断为「在 `/tmp/sandbox` 内」—— 因为它的字符串前缀确实匹配。加一个结尾的分隔符就把这种情况排除了。
 
 **改动三（只允许普通文件）** 防的是「读目录」和「读设备文件」。后者会挂住 —— 比如读 `/dev/zero` 会一直读下去。
 
-改完之后，**6 种手法全部被拒**（除了正常的那个）。
+在 2026-10-09 的固定 fixture、没有并发改名/替换路径组件的条件下，**6 种输入中正常读取成功，其余 5 种被拒**。这不覆盖竞态、硬链接或其他文件系统行为。
 
 ## 网络的最小权限
 
-文件系统的坑在于「路径可以绕过检查」。网络的坑在于**默认是通的**。
+文件路径检查和网络目标检查是不同的边界。网络能力是否开放取决于宿主、容器、代理与出口策略，必须查看实际运行环境。
 
-一个「发 HTTP 请求」的工具如果不做限制，模型可以访问：
+如果模型能让宿主代发未受约束的 HTTP 请求，目标范围会取决于宿主网络身份、出口策略和 URL 校验；这不是模型直接获得网络权限。未经限制的请求可能触及：
+
+若不可信内容可能影响请求目标、且宿主可访问敏感数据或外部目标，还应与[数据外传路径](/chapters/agent-security/exfiltration)一并评估。
 
 - **内网地址**（10.x、192.168.x、172.16-31.x）→ 探测内网服务
-- **云元数据端点**（169.254.169.254）→ 这是最经典的一个：很多云上它能直接换到临时凭据
+- **云元数据端点**（例如 169.254.169.254）→ 在某些云与实例配置下，访问它可能暴露实例身份或临时凭据
 - **localhost** → 访问你这台机器上的其他服务（包括管理接口）
 - **任意公网地址** → 数据外泄的出口
 
-第 8 章实测过一个相关现象：给模型一个 URL 图像，**服务端会去下载它** —— 地址来自用户就意味着一个 SSRF 面（**SSRF**，服务端请求伪造：攻击者让你**服务端**去访问一个他自己够不着的地址，比如内网服务或云元数据端点，你的服务器成了他的跳板）。
+[多模态输入章节](/chapters/multimodal/how-images-enter-context)记录过一个 provider 特定现象：把 URL 图像传给相应视觉 API 时，服务端会尝试获取该公开 URL；这只能证明该 endpoint 的行为，不能说明本站服务端替用户抓取了任意 URL。自建 URL fetcher 则是 SSRF 面（**SSRF**，服务端请求伪造：攻击者诱导你的服务端访问它本来不该访问的网络位置）。
 
-网络最小权限的做法同样是「默认拒绝 + 白名单」：
+最小权限的实现取决于任务边界：
 
-```text
-默认：禁止一切出站
-放开：api.example.com、docs.example.com（写在配置里，可 review）
-并且：禁内网网段、禁云元数据端点、禁 localhost —— 即使它出现在白名单里也要二次拒绝
-```
+- 若 agent 只需访问一组已知服务，按服务身份配置精确的目的 host/IP、端口、协议、HTTP 方法与路径 allowlist，并由出口代理/防火墙强制执行。确实需要访问内网服务时，应只开放指定服务，不要套用“所有私网一律禁止”的规则。
+- 若功能要抓取用户给出的任意公网 URL，应把它当 SSRF 边界：仅允许所需 scheme/端口，在连接时检查目标地址；阻止 loopback、link-local、组织私网、云元数据和其它非许可网段，禁用自动跳转或对每次跳转重新完整校验，并用网络出口策略兜底。
 
-最后那条「二次拒绝」是有意的：**白名单可能被改错，而这三类地址一旦可达，后果比其他地址严重得多。** 多一道检查的成本很低。
+下面的代码只演示“已知公网 host allowlist”策略。它是离线判定 fixture，不发 DNS 请求、不建立 HTTP 连接，不能单独充当安全下载器。
 
 <Mermaid
   chart={`
@@ -112,33 +113,33 @@ flowchart TB
     H -->|否| J["拒绝"]
     I -->|是| K["允许读取"]
     I -->|"否（目录/设备）"| J
-    F -.-> L["实测：6 种手法放过 4 种"]
-    G -.-> M["实测：6 种手法全部拦住"]
+    F -.-> L["本地 fixture：朴素实现读到 4 个测试机密"]
+    G -.-> M["固定路径 fixture：5 个越界输入被拒；不覆盖竞态"]
 `}
 />
 
 ## 三条能带走的规则
 
-**一，检查「解析后的东西」，不要检查「原始字符串」。** 文件要 realpath，URL 要解析出 host 再判断，SQL 要参数化。**共同的根因是：你检查的表示形式和实际使用的表示形式不一致。**
+**一，检查并使用同一个受约束的目标。** 字符串前缀不能替代文件系统解析；URL host 检查也不能替代连接时对实际 IP 的约束；SQL 值应参数化。遇到并发可变路径，要让 OS 在一次受限解析/打开中执行边界。
 
 **二，比较路径时带结尾分隔符。** 用 startsWith 比较路径在多数场景下都是错的，除非第二个参数以分隔符结尾。
 
-**三，默认拒绝，白名单放开。** 黑名单版本（「禁止这些路径」）一定会漏 —— 第 2 节那个 L1 层就是黑名单思路的示范。三条规则里，第一条是最根本的：**检查的表示形式和使用的表示形式必须是同一个**，否则中间那段差异就是攻击面。
+**三，默认拒绝，按任务边界配置 allowlist。** 公网任意 URL 抓取与调用已知内部服务是不同威胁模型；后者可以通过身份、host/IP、端口和网络策略精确放行。所有规则都应由连接层/OS 隔离真正执行，而不是只在应用代码里检查一次。
 
 
 ## 四类必须单独处理的路径
 
-上面那 6 种是最常见的手法，但实际要防的不止这些。有四类值得单独列出来，因为它们的绕过方式各不相同：
+上面那 6 种是最常见的手法，但实际要防的不止这些。有四类值得单独列出来，因为它们的绕过方式各不相同；后面再补充并发路径替换这一类竞态：
 
 **一、符号链接。** 沙箱内的一个合法文件名，指向外部。防范方式是 realpath（解析后再判断），而不是检查名字。
 
-**二、硬链接。** 同一个 inode 的另一个名字。它还多一个副作用：**写入会同时改到原文件**，所以「只读挂载」之外还要保证「不可写」。做法不是逐条禁路径，而是让越界写入在结构上不可能：把可写工作目录挂成**独立的文件系统**（如 tmpfs）—— 硬链接不能跨文件系统，于是沙箱内造不出指向宿主文件的硬链接；宿主侧再确认 `fs.protected_hardlinks=1`（默认值，防未授权硬链接）。
+**二、硬链接。** 它是同一 inode 的另一个目录项；写入硬链接会修改同一文件内容，但读取也可能暴露目标数据，具体仍受文件权限与进程身份控制。`realpath` 不会区分硬链接名。将不可信工作区置于独立文件系统可阻止它与宿主文件跨文件系统建立硬链接，但同一文件系统内仍需靠所有权、权限和沙箱策略限制。Linux 的 [`fs.protected_hardlinks`](https://docs.kernel.org/admin-guide/sysctl/fs.html) 可限制一部分硬链接创建情形；内核文档列出限制条件，但该 sysctl 是否存在、当前值与行为仍取决于目标系统配置，不能视为通用默认保证。
 
-**三、大小写与 Unicode 归一化。** 有些文件系统大小写不敏感（macOS 默认），有些会把不同的 Unicode 表示归一化成同一个名字。如果你的白名单比较是字节级的，就会漏。
+**三、大小写与 Unicode 归一化。** 文件系统与路径 API 的大小写/Unicode 处理依平台和卷配置而异；若授权比较和最终打开使用不同的规范化规则，可能产生歧义。优先让 OS 对同一个目录句柄执行访问约束，不要用字节前缀去替代文件系统语义。
 
-**四、特殊文件。** `/dev/zero`（无限读）、`/dev/random`（阻塞）、命名管道（FIFO，会挂住直到对端写入）。**防法是「只允许普通文件」**，而不是去枚举哪些特殊文件危险。
+**四、特殊文件与资源上限。** `/dev/zero` 可持续提供数据，FIFO 读取可能等待写入方；`/dev/random` 的阻塞行为依操作系统版本与熵状态而异。按文件类型限制只是一层，仍需字节数、超时和进程资源上限。
 
-四类里，第一类和第四类最常见。而它们的防法都是**一句话的规则**（realpath、isfile），不是一长串黑名单 —— 这是最小的成本、最大的收益。
+这些检查仍不足以对抗并发目录替换：`realpath`、`isfile` 与之后的 `open` 是多个路径查找，攻击者若能并发改名/替换组件，检查时的路径和打开时的对象可能不同（TOCTOU）。Linux 可用 `openat2` 的 `RESOLVE_BENEATH` / `RESOLVE_IN_ROOT` 等解析约束，在一次内核路径解析中限制越界；具体语义与内核支持见 [Linux pathname lookup](https://docs.kernel.org/filesystems/path-lookup.html) 和 [`openat2(2)`](https://man7.org/linux/man-pages/man2/openat2.2.html)；是否同时禁止符号链接或跨挂载，按需求选择对应 flag。其他平台应使用其安全目录句柄 API，或依靠只读/独立挂载、进程身份和 OS sandbox 建立实际边界。还需设置文件大小与读取时限，避免允许路径里的大文件导致资源耗尽。
 ## 完整可运行代码
 
 下面这段代码跑的就是上面那张对照表：两个版本的实现，6 种攻击手法。
@@ -146,20 +147,19 @@ flowchart TB
 ```python
 """把一个「看着对」的沙箱检查攻破，再给出修好的版本。
 
-这是第 16 章最核心的一次演示：**权限检查的直觉几乎总是错的。**
-纯本地，不依赖任何外部服务。实跑状态：2026-10-09。
+这是本节的完整演示：**权限检查的直觉很容易出错，需要用固定攻击夹具检验。**
+纯本地，不依赖任何外部服务。原始记录日期：2026-10-09；W6 verifier 于 2026-10-22 再运行。
 """
-import os, shutil, tempfile
+import atexit, os, shutil, tempfile
 
-ROOT = os.path.join(tempfile.gettempdir(), "sandbox-demo")
-if os.path.exists(ROOT):
-    shutil.rmtree(ROOT)
+ROOT = tempfile.mkdtemp(prefix="sandbox-demo-")
+atexit.register(shutil.rmtree, ROOT, ignore_errors=True)
 SANDBOX = os.path.join(ROOT, "sandbox")
 os.makedirs(os.path.join(SANDBOX, "sub"))
 
 # 沙箱外的「机密」：一个正常系统里到处都有的东西
 with open(os.path.join(ROOT, "secret.env"), "w") as f:
-    f.write("API_KEY=sk-live-9f3a...（这就是不该被读到的东西）\n")
+    f.write("SENSITIVE_MARKER=fixture\n")
 with open(os.path.join(SANDBOX, "ok.txt"), "w") as f:
     f.write("这是沙箱内允许读的文件\n")
 
@@ -206,16 +206,21 @@ ATTACKS = [
 
 if __name__ == "__main__":
     print("沙箱目录：%s" % SANDBOX)
-    print("沙箱外有一个 secret.env —— 它就是不能读到的东西")
+    print("沙箱外的 secret.env 只含合成标记 —— 不是真实凭据")
     print()
     print("  %-34s %-30s %s" % ("攻击手法", "朴素前缀检查", "真实路径检查"))
-    leak = 0
+    naive_secret_reads = 0
+    checked_secret_reads = 0
     for label, rel in ATTACKS:
         n = naive_read(rel)
         s = safe_read(rel)
-        if n.startswith("✅") and "secret" in n + rel:
-            pass
+        naive_secret_reads += "SENSITIVE_MARKER=fixture" in n
+        checked_secret_reads += "SENSITIVE_MARKER=fixture" in s
         print("  %-34s %-30s %s" % (label, n[:28], s[:30]))
+    assert naive_secret_reads == 4, naive_secret_reads
+    assert checked_secret_reads == 0, checked_secret_reads
+    assert safe_read("ok.txt").startswith("✅ 读到："), "normal in-sandbox read should work"
+    print("fixture assertions: naive_secret_reads=4; checked_secret_reads=0; normal_read=pass")
     print()
 
     print("=== 关键点 ===")
@@ -223,12 +228,9 @@ if __name__ == "__main__":
     print("  所以 startswith 检查通过了。前缀检查的问题在于：它检查的是**字符串**，")
     print("  而不是**文件实际在哪**。")
     print()
-    print("  修好的版本有两处关键改动：")
-    print("    1. realpath —— 把 .. 和符号链接都解析掉，得到真实路径")
-    print("    2. 结尾加分隔符 —— 否则 /sandbox-evil 会被误判为在 /sandbox 内")
-    print()
-    print("  还有第三条不在路径里但同样重要：**只允许普通文件**。")
-    print("  如果 path 指向一个目录或设备文件（比如 /dev/zero），读它会挂住。")
+    print("  基础示例有三项检查：realpath 规范化、带分隔符的目录边界、普通文件类型。")
+    print("  它不防并发路径替换；生产边界应由 OS sandbox 或受限目录句柄 API 执行。")
+    print("  还应限制读取大小和时长，避免大文件耗尽资源。")
 ```
 
 
@@ -236,26 +238,23 @@ if __name__ == "__main__":
 
 前面讲的都是「拒绝式」的做法 —— 列出允许的范围，其余拒绝。还有一个思路相反的：**不传路径，传句柄。**
 
-具体说，工具不接收「路径」参数，而是接收一个**已经打开的文件对象**或一个不透明的能力 id。模型能操作的范围就物理上限于你已经打开的那些 —— 它没有「传一个别的路径」这个选项。
+具体说，工具不接收「路径」参数，而是接收一个**由可信宿主选定、权限尽量收窄的文件对象**或一个不透明的能力 id。工具只通过明确暴露的操作使用该对象；模型不能仅凭这个接口再传一个任意路径。句柄的可读写范围仍由打开方式、宿主权限、对象选择和生命周期决定。
 
-这个思路在操作系统里叫**能力（capability）模型**，它的好处是**越界在结构上不可能**，而不是「被检查拦住了」。第 4 章讲 poka-yoke（防呆设计：把操作设计成「错了也做不成」，而不是「错了被抓住」）时说过同一件事：让错误在结构上不可能，比让它被检测到更可靠。
+这个思路与操作系统里的**能力（capability）模型**相通：显式交付受限对象，可以减少调用方任意选择资源的机会。它不能保证「越界在结构上不可能」：句柄权限可能过宽，能力 id 可能被误复用，工具可能忽略主体授权，进程还可能通过其它接口访问资源。仍要验证主体、对象、操作、有效期与撤销，并由 OS/运行时限制进程的其它可达路径。它与[防呆设计](/chapters/tool-calling/poka-yoke)有相似思路：尽量让无效操作无法表达，但接口约束不能替代授权检查。
 
 代价是灵活性下降：你需要在调用工具之前就知道它要访问什么。对「读一个用户指定的文件」这类任务不适用，但对「处理这一批已选定的文件」非常合适。
-## 网络最小权限的实现：从 URL 到 IP 的完整判据
+## 网络最小权限的实现：离线 URL 与请求策略判定
 
-上面那 4 行伪代码缺的是**判据**：host 怎么取、IP 怎么解析、三类二次拒绝怎么判。下面这段补上，纯本地可跑（DNS 结果用 `DEMO_DNS` 固定住以便复现；真实实现删掉那张表，走 `socket.getaddrinfo`）。实跑数据 2026-10-12。
+下面的离线示例展示一个狭窄的 URL 策略判定：解析 host、匹配固定白名单，并拒绝本例策略不允许的地址与端口。DNS 结果由 fixture 固定；未知 host fail closed，不访问真实 DNS。它不发起 HTTP 请求。2026-10-12 的旧代码虽称离线，但对不在 `DEMO_DNS` 中的 `evil.com` 与 `api.example.com.evil.com` 会走 `socket.getaddrinfo`，因此实际执行过外部 DNS 查询；逐次 DNS 响应与连接目标未归档，旧输出不能证明 DNS rebinding 防护。2026-10-21 复核已移除真实 resolver fallback，仅运行固定 DNS fixture，不访问网络。
 
 ```python
-"""网络最小权限：解析 host -> 判白名单 -> 二次拒绝三类危险地址。
-
-真实实现用 socket.getaddrinfo 解析；本地演示把 DNS 结果固定住（DEMO_DNS），
-这样离线可复现。把 DEMO_DNS 设为 {} 就退化成真实 DNS 解析。
-"""
-import ipaddress, socket
+"""离线 URL policy fixture；不查询真实 DNS，也不发起 HTTP 请求。"""
+import ipaddress
 from urllib.parse import urlparse
 
 ALLOW_HOSTS = {"api.example.com", "docs.example.com", "rebind.example.com"}
-DEMO_DNS = {                       # 离线演示用；真实环境删掉这张表
+ALLOWED_PATHS = {"api.example.com": {"/orders"}, "docs.example.com": {"/x"}, "rebind.example.com": {"/x"}}
+DEMO_DNS = {                       # 完全本地的固定解析结果
     "api.example.com": ["93.184.216.34"],
     "docs.example.com": ["93.184.216.34"],
     "rebind.example.com": ["10.0.0.5"],       # 白名单域名解析到内网 -> 必须二次拒绝
@@ -275,6 +274,7 @@ def _literal_ipv4(host):
     return None
 
 def resolve(host):
+    """离线 fixture resolver：不查询 DNS，未知名称 fail closed。"""
     host = host.strip("[]")
     if host in DEMO_DNS:
         return list(DEMO_DNS[host])
@@ -282,37 +282,57 @@ def resolve(host):
     try:
         return [str(ipaddress.ip_address(lit))]
     except ValueError:
-        pass
-    try:
-        return sorted({i[4][0] for i in socket.getaddrinfo(host, None)})
-    except socket.gaierror:
         return []
 
 def dangerous(ip):
-    a = ipaddress.ip_address(ip)
-    if a.is_loopback: return "localhost"
-    if a.is_link_local: return "云元数据/链路本地（169.254.0.0/16）"
-    if a.is_private: return "内网网段"
-    if a.is_reserved or a.is_multicast or a.is_unspecified: return "保留/组播地址"
+    address = ipaddress.ip_address(ip)
+    # 本 fixture 只允许已知公网服务；不等同于组织网络的完整策略。
+    if not address.is_global:
+        return "非全局可路由地址（含内网、共享、保留或特殊用途地址）"
     return None
 
-def check_url(url):
-    p = urlparse(url)
+def check_url(url, method="GET"):
+    if method != "GET":
+        return "拒绝", "HTTP 方法未放行"
+    try:
+        p = urlparse(url)
+        host = (p.hostname or "").lower()
+        port = p.port
+    except ValueError:
+        return "拒绝", "URL 或端口格式无效"
     if p.scheme != "https":
         return "拒绝", "非 https"
-    host = (p.hostname or "").lower()
+    if p.username is not None or p.password is not None:
+        return "拒绝", "不接受 userinfo"
+    if port not in (None, 443):
+        return "拒绝", "端口不在允许范围（仅 443）"
     if not host:
         return "拒绝", "没有 host"
+    if p.query or p.fragment:
+        return "拒绝", "不接受 query 或 fragment"
+    if host not in ALLOW_HOSTS:
+        # 未知域名不触发 DNS；IP literal 先在本地分类，再拒绝未授权目标。
+        literal = _literal_ipv4(host) or host
+        try:
+            candidate = ipaddress.ip_address(literal)
+        except ValueError:
+            return "拒绝", "host 不在白名单"
+        denied = dangerous(candidate)
+        if denied:
+            return "拒绝", "%s（解析到 %s）" % (denied, candidate)
+        return "拒绝", "IP 地址未列入目标 allowlist"
+    if p.path not in ALLOWED_PATHS.get(host, set()):
+        return "拒绝", "不允许的 path"
     ips = resolve(host)
     if not ips:
-        return "拒绝", "无法解析"
-    for ip in ips:                       # 先做二次拒绝，再判白名单：
-        d = dangerous(ip)                # 危险地址即使来自白名单域名也不放行
+        return "拒绝", "fixture 中没有该 host 的解析记录"
+    for ip in ips:
+        d = dangerous(ip)
         if d:
-            return "拒绝", "二次拒绝：%s（解析到 %s）" % (d, ip)
+            return "拒绝", "%s（解析到 %s）" % (d, ip)
     if host not in ALLOW_HOSTS:
         return "拒绝", "不在白名单（host=%s）" % host
-    return "允许", "白名单命中（%s -> %s）" % (host, ",".join(ips))
+    return "策略通过（尚未连接）", "白名单命中（%s -> %s）；真实客户端必须连接此验证 IP 并保留 TLS hostname" % (host, ",".join(ips))
 
 CASES = [
     "https://api.example.com/orders",
@@ -320,6 +340,11 @@ CASES = [
     "https://docs.example.com/x",
     "https://evil.com/x",
     "https://api.example.com.evil.com/x",
+    "https://api.example.com/admin",
+    "https://api.example.com/orders?debug=1",
+    "https://api.example.com:8443/x",
+    "https://api.example.com:invalid/x",
+    "https://100.64.0.1/",
     "https://rebind.example.com/x",
     "https://169.254.169.254/latest/meta-data/",
     "https://api.example.com@169.254.169.254/",
@@ -333,36 +358,53 @@ CASES = [
 ]
 
 if __name__ == "__main__":
-    for url in CASES:
-        dec, why = check_url(url)
-        print("  %-46s %-4s %s" % (url, dec, why))
+    results = [check_url(url) for url in CASES]
+    decisions = [dec for dec, _ in results]
+    for url, (dec, why) in zip(CASES, results):
+        print("  %-46s %-16s %s" % (url, dec, why))
+    allowed = decisions.count("策略通过（尚未连接）")
+    denied = decisions.count("拒绝")
+    post_result = check_url("https://api.example.com/orders", method="POST")[0]
+    assert allowed == 3 and denied == len(CASES) - 3, (allowed, denied)
+    assert post_result == "拒绝", post_result
+    print("fixture assertions: allowed=3; denied=%d; POST=denied; externalDNSCalls=0; httpRequests=0" % denied)
 ```
 
-实跑输出：
+完整 fixture 输出（离线；20 个 URL 与 1 个 POST 判定均来自这段固定代码，不建立网络连接）：
 
 ```text
-  https://api.example.com/orders                 允许   白名单命中（api.example.com -> 93.184.216.34）
-  https://API.EXAMPLE.COM/orders                 允许   白名单命中（api.example.com -> 93.184.216.34）
-  https://docs.example.com/x                     允许   白名单命中（docs.example.com -> 93.184.216.34）
-  https://evil.com/x                             拒绝   不在白名单（host=evil.com）
-  https://api.example.com.evil.com/x             拒绝   不在白名单（host=api.example.com.evil.com）
-  https://rebind.example.com/x                   拒绝   二次拒绝：内网网段（解析到 10.0.0.5）
-  https://169.254.169.254/latest/meta-data/      拒绝   二次拒绝：云元数据/链路本地（169.254.0.0/16）（解析到 169.254.169.254）
-  https://api.example.com@169.254.169.254/       拒绝   二次拒绝：云元数据/链路本地（169.254.0.0/16）（解析到 169.254.169.254）
-  https://10.0.0.1/                              拒绝   二次拒绝：内网网段（解析到 10.0.0.1）
-  https://192.168.1.1/                           拒绝   二次拒绝：内网网段（解析到 192.168.1.1）
-  https://172.16.0.1/                            拒绝   二次拒绝：内网网段（解析到 172.16.0.1）
-  https://2130706433/                            拒绝   二次拒绝：localhost（解析到 127.0.0.1）
-  https://0x7f000001/                            拒绝   二次拒绝：localhost（解析到 127.0.0.1）
-  https://[::1]/                                 拒绝   二次拒绝：localhost（解析到 ::1）
-  http://api.example.com/x                       拒绝   非 https
+  https://api.example.com/orders                 策略通过（尚未连接）       白名单命中（api.example.com -> 93.184.216.34）；真实客户端必须连接此验证 IP 并保留 TLS hostname
+  https://API.EXAMPLE.COM/orders                 策略通过（尚未连接）       白名单命中（api.example.com -> 93.184.216.34）；真实客户端必须连接此验证 IP 并保留 TLS hostname
+  https://docs.example.com/x                     策略通过（尚未连接）       白名单命中（docs.example.com -> 93.184.216.34）；真实客户端必须连接此验证 IP 并保留 TLS hostname
+  https://evil.com/x                             拒绝               host 不在白名单
+  https://api.example.com.evil.com/x             拒绝               host 不在白名单
+  https://api.example.com/admin                  拒绝               不允许的 path
+  https://api.example.com/orders?debug=1         拒绝               不接受 query 或 fragment
+  https://api.example.com:8443/x                 拒绝               端口不在允许范围（仅 443）
+  https://api.example.com:invalid/x              拒绝               URL 或端口格式无效
+  https://100.64.0.1/                            拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 100.64.0.1）
+  https://rebind.example.com/x                   拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 10.0.0.5）
+  https://169.254.169.254/latest/meta-data/      拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 169.254.169.254）
+  https://api.example.com@169.254.169.254/       拒绝               不接受 userinfo
+  https://10.0.0.1/                              拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 10.0.0.1）
+  https://192.168.1.1/                           拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 192.168.1.1）
+  https://172.16.0.1/                            拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 172.16.0.1）
+  https://2130706433/                            拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 127.0.0.1）
+  https://0x7f000001/                            拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 127.0.0.1）
+  https://[::1]/                                 拒绝               非全局可路由地址（含内网、共享、保留或特殊用途地址）（解析到 ::1）
+  http://api.example.com/x                       拒绝               非 https
+fixture assertions: allowed=3; denied=17; POST=denied; externalDNSCalls=0; httpRequests=0
 ```
 
 三个绕过点在这段代码里为什么被挡住：
 
-- `api.example.com@169.254.169.254`：`urlparse` 会把 userinfo 和 host 分开，`p.hostname` 取到的是 `169.254.169.254`，不是 `api.example.com` —— **永远用解析出来的 host，不要用字符串里看起来像域名的那一段。**
+- `api.example.com@169.254.169.254`：这个 fixture 直接拒绝任何 URL userinfo，避免 host 解析歧义。若业务确需接受完整 URL，应使用与实际 HTTP 客户端一致的 URL parser，以解析后的 canonical host/port 做 allowlist，并重建请求目标；不要从原始字符串截取“看起来像域名”的部分。
 - `2130706433` / `0x7f000001`：点分十进制不是 IP 的唯一写法，`ipaddress` 直接解析会失败，所以先做一次整数还原。**这类绕过是「检查的表示形式和使用的表示形式不一致」的又一次出现**（本节前面那条规则的网络版）。
-- `rebind.example.com`：域名在白名单里，但**解析结果**落在内网 —— 所以判据必须是「解析后的 IP」，而且要在**每次请求时**解析，不能只在配置加载时解析一次。真正的 DNS 重绑定会在两次解析之间换 IP，所以还要把「已解析并校验过的 IP」固化到连接层（例如 pin 住 IP、Host 头另设），而不是「校验完再按域名连一次」—— 中间那一次重新解析就是缺口。
+- `rebind.example.com`：固定 fixture 模拟该域名解析到私网地址，所以策略拒绝。真实 DNS 检查必须在请求时完成，并确保 HTTP 客户端连接到同一已验证 IP、同时保留原 host 做 TLS SNI/证书校验；不能检查一次 DNS 后再让客户端按域名重新解析。还要禁用自动跳转，或对每个 redirect 目标重新做完整策略检查。
+
+本例使用 `ipaddress.is_global` 区分全局可路由地址，但该属性会随 Python 版本中的 IANA 特殊用途登记更新：Python 3.13 修正了若干地址分类；文档说明 `100.64.0.0/10` 在 `is_private` 与 `is_global` 中都为 False。不要只用 `is_private` 建 SSRF 策略，也要显式覆盖组织自有网段、云元数据地址和连接端口。`is_global` 的定义与版本变化见 [Python ipaddress 文档](https://docs.python.org/3/library/ipaddress.html)。
+
+[OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html) 区分已知可信目标 allowlist 与任意外部目标的防护，并要求连接到已验证 IP、不要让自动重定向绕过检查。Linux 对路径解析竞态可参考 [Pathname lookup](https://docs.kernel.org/filesystems/path-lookup.html) 的 `openat2` 解析约束。
 
 ### 网络版与文件版并列
 
@@ -370,20 +412,20 @@ if __name__ == "__main__":
 |---|---|---|
 | 检查的原始值 | `path` 字符串 | `url` 字符串 |
 | 必须解析成 | `realpath(path)` | `urlparse(url).hostname` 再解析成 IP |
-| 白名单比较 | 真实路径前缀（带分隔符） | host 精确匹配 |
-| 二次拒绝 | 不是普通文件 / 越界 | 内网 / 云元数据 / localhost |
+| 白名单比较 | 真实路径前缀（仍需 OS 防竞态） | host、port、method、path 精确匹配 |
+| 二次拒绝 | 非普通文件 / 越界（另需 OS 层处理竞态） | 本例公网 allowlist 拒绝非全局地址；内部服务须按目标显式放行 |
 | 已知绕过 | `..`、符号链接、前缀相似目录 | userinfo、整数 IP、DNS 重绑定 |
 | 共同根因 | **检查的表示形式 ≠ 使用的表示形式** | 同左 |
 
 ## 能力式接口长什么样
 
-L239 说「工具不接收路径，而是接收一个已经打开的文件对象」，具体签名是这种形态：
+上文的能力列表可以用这种签名表达。**实跑状态：接口示意，未独立运行。** `resolve_task_file` 是占位接口；真实实现应由可信宿主完成主体/对象授权，并打开权限受限的目标。
 
 ```python
 # ❌ 拒绝式：模型传路径，校验在工具内部（校验写错就漏）
 def read_file(path: str) -> str: ...
 
-# ✅ 能力式：调用方（你的代码）先打开文件，工具只拿到句柄
+# ✅ 能力式：可信调用方先完成对象授权，再把受限句柄交给工具
 import typing
 def read_file(handle: typing.IO[bytes], max_bytes: int = 1_000_000) -> str:
     return handle.read(max_bytes).decode("utf-8", "replace")
@@ -393,13 +435,13 @@ with open(resolve_task_file("notes.md"), "rb") as fh:
     read_file(fh)
 ```
 
-区别在**谁能改变访问目标**：拒绝式里路径来自模型参数，校验是「后加的」；能力式里路径来自你的代码，模型手上没有「换一个路径」这个选项 —— 越界在结构上不可能。代价是灵活性：需要「读一个用户指定的文件」时用不了，需要「处理这一批已选定的文件」时正合适。
+区别在**谁能改变访问目标**：拒绝式里模型提供路径，工具再尝试校验；能力式接口由可信调用方先选定对象，模型只能请求接口暴露的操作。它缩小了该接口可表达的目标范围，但不能防止过宽句柄、未授权对象、能力 ID 混淆或其它工具路径，因此授权仍需在宿主执行。示例的 `max_bytes` 只限制本次读取字节数；若来源可能阻塞，还需确认它是预期文件类型并单独设置时限。代价是灵活性：需要「读一个用户指定的文件」时由可信宿主先授权并打开；需要「处理这一批已选定的文件」时可逐个交付受限句柄。
 
 ## 常见坑
 
 - **用 startswith 检查路径。** 实测 6 种手法放过 4 种，而且是静默放过。
 - **忘了路径比较要带结尾分隔符。** /tmp/sandbox-evil 会被误判为在 /tmp/sandbox 内。
 - **只检查路径，不检查文件类型。** 读一个目录或设备文件会挂住（/dev/zero 会一直读）。
-- **网络默认放开。** 一个「发 HTTP 请求」的工具默认能访问内网、云元数据端点和 localhost。
-- **以为白名单就够了。** 白名单可能被改错，内网/元数据/localhost 这三类要二次拒绝。
-- **只在代码里写「已做限制」，没有攻击测试。** 隔离的验证方式是攻击测试，不是配置检查。
+- **不核对网络实际边界。** HTTP 工具可达范围由宿主身份、出口防火墙和代理配置决定，应在部署环境验证。
+- **以为 host 白名单就够了。** 同一 host 仍可能暴露不该调用的端口、HTTP 方法或路径；若向公网抓取，还需在连接时限制解析后的 IP、redirect 与实际出口。
+- **只在代码里写「已做限制」，没有行为验证。** 既要检查配置，也要用越界拒绝和合法访问成功的攻击/正向测试验证具体边界；配置存在本身不证明目标运行时按预期执行。

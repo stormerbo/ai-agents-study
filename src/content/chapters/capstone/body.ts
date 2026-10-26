@@ -8,4 +8,5 @@ export const bodies = {
   hardening: () => import('./03-hardening.mdx'),
   deliver: () => import('./04-deliver.mdx'),
   retrospective: () => import('./05-retrospective.mdx'),
+  acceptance: () => import('./06-acceptance.mdx'),
 } as const;

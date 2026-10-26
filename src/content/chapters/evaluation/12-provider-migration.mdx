@@ -1,0 +1,107 @@
+---
+lesson: evaluation/provider-migration
+title: 模型迁移：证明契约还在
+status: drafting
+---
+
+更换模型、API 或兼容端点，看起来像改一个 `base_url` 和模型名，实际上改变的是系统依赖的行为契约。请求返回 200，只说明 HTTP 请求被接受；它不能证明工具调用仍可执行、拒绝仍被识别、截断仍会停止流程、usage 仍可计量，也不能证明业务质量没有退化。
+
+本节把迁移定义成一个可审查的发布决策：对固定场景集，在目标端点验证协议状态、工具往返、输出保证、错误处理、计量和业务质量，并把支持、不支持、未知三种结论分开。离线示例只验证判定器；真实端点上的能力必须由真实请求产生证据。
+
+## 迁移的产物与判据
+
+每次迁移都应生成一份随版本保存的报告，至少记录旧、新端点身份（厂商、API 类型、模型标识、SDK 版本、日期）、运行参数、数据集修订、每个场景的原始响应定位、归一化结果、usage、延迟、成本计算版本和逐例差异。密钥、隐私信息和完整敏感提示词不应进入报告；若使用脱敏输入，要记录它与生产分布的差异。
+
+迁移判据分三层。**协议层**看请求是否被接受、返回结构是否可解析；**控制层**看正常结束、工具请求、拒绝、截断、错误和不完整响应能否分别分类，工具调用 id 与结果能否配对；**任务层**看同一评测集上的业务成功率、关键失败、成本和延迟。协议层通过不能替代控制层，控制层通过也不能替代任务层。关键场景退化时，整体平均分上升不能抵消它。
+
+| 维度 | 最少用例 | 通过证据 | 不能据此推断 |
+|---|---|---|---|
+| 普通文本 | 短答、长答、空结果 | 结束状态与文本符合契约 | 事实正确 |
+| 工具 | 单工具、多工具、参数边界、工具错误；若启用 thinking，检查跨轮 reasoning 内容延续 | 名称、参数、调用 id、结果回传可配对，端点专属延续字段不丢失 | 模型总会选对工具 |
+| 模型拒绝 | 明确拒绝、应拒绝但可能回答的任务 | 拒绝信号 / stop reason 被保留，并按任务契约处理 | 应用授权正确；拒绝信号本身不是安全边界 |
+| 宿主授权与副作用 | 无权限主体请求敏感工具、对象或租户资源 | 宿主在每次操作前按身份与对象授权；拒绝路径没有写入、发送或其他副作用 | 模型会稳定拒绝越权请求 |
+| 截断与异常 | 输出上限、超时、限流、服务错误 | 非成功状态不会被归一成完成 | 所有错误可重试 |
+| 结构化结果 | 合法、拒绝、不完整、业务无效 | Schema 与业务验证分别运行 | JSON 合法就代表业务正确 |
+| 计量与性能 | usage 缺字段、延迟分位、成本 | 缺失值标未知，口径可复算 | 不同厂商 usage 可直接相加 |
+
+官方契约说明了这些差异的实际位置：[OpenAI Responses Function Calling 文档](https://developers.openai.com/api/docs/guides/function-calling)中，工具调用是 `function_call` 输出项并以 `call_id` 回传；[Anthropic 工具调用文档](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview)说明 Messages 使用 `tool_use` 内容块和 `tool_result`，由 `stop_reason` 决定宿主是否执行工具；[DeepSeek Tool Calls 文档](https://api-docs.deepseek.com/guides/tool_calls/)分别说明 thinking mode 与 strict 模式的支持边界。一个容易漏掉的延续条件是：[DeepSeek Thinking Mode 文档](https://api-docs.deepseek.com/guides/thinking_mode/)规定，携带 `tools` 的请求在后续轮次必须传回此前的 `reasoning_content`；缺失时官方文档说明请求会返回 400。DeepSeek strict tool-call mode 是 beta 能力，文档要求使用 OpenAI-compatible 的 `https://api.deepseek.com/beta`，不能据此推断 `/anthropic` 或标准 base URL 有同等能力。迁移样例应把“thinking 开启时保留 reasoning 内容”和“实际 endpoint/format 是否支持 strict”加入测试矩阵。[OpenAI Structured Outputs 文档](https://developers.openai.com/api/docs/guides/structured-outputs)说明，拒绝可能通过 `refusal` 信号返回；Responses 也可能以 `incomplete` 状态结束，并给出 `max_output_tokens` 等原因。调用方应分别识别拒绝与不完整结果，不能把二者当作符合 Schema 的正常完成。
+
+安全用例要拆成两类。模型拒绝测试检查 provider 如何表达拒绝；授权测试则直接检查宿主是否在执行工具前按当前主体、对象和操作作出授权决定。对拒绝样例收到 `refusal`，不能证明另一个请求不会执行未授权操作。可在隔离环境里用 fake sink 验证拒绝发生在副作用之前，并覆盖授权缺失、错误对象或租户等路径；生产授权仍需按实际策略与身份链路验证。[OWASP Authorization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html) 建议默认拒绝并在每个请求验证权限；Anthropic 的工具调用说明也明确区分模型提出调用与应用执行操作。
+
+## 保留状态，不伪造成功
+
+定义内部最小状态集合：`completed`、`tool_call`、`refusal`、`truncated`、`error`、`unknown`。适配器负责映射协议结果，同时保留原始响应和原始结束原因。遇到未知字段或新的结束原因时返回 `unknown`，进入人工检查或阻断路径；不要把未知状态默认为 `completed`。
+
+工具调用不是普通文本。Responses 的 function call 使用 `call_id`；Chat Completions 使用 `tool_call_id`；Anthropic 用 `tool_use` 的 `id` 与后续结果中的 `tool_use_id` 关联。适配器可提供统一的内部 `call_id`，但原始 id 和协议类型必须可以追溯。多个调用、拒绝和文本可能共存，解析器不得只取第一个内容块后丢掉剩余内容。迁移时还要核实工具选择策略、严格 Schema、并行调用和中途插入消息等能力，不能只比较 schema 长得像不像。
+
+usage 遵循明确缺失原则。缺少 `input_tokens`、`output_tokens` 或缓存分项时用 `null` / `unknown`，不填 0。零代表实际计量结果为零，未知代表端点没有给出可比信息；将未知写成零会让成本图表和路由策略静默偏向该端点。token 数量可按明确定义的字段展示；货币成本只有在记录币种、价格版本、缓存分类和时间窗口后才比较。价格变化时，历史账单与按当前价格重算的预测应使用不同价格版本。
+
+## 离线验证判定器
+
+本地示例 [`migration_gate.py`](../../../examples/provider-migration/migration_gate.py) 用固定结果验证判定规则。它要求工具调用有名称和参数，把拒绝、截断保留为单独状态，并把 usage 缺失保留为 `None`。固定 fixture 不是模型能力数据：它只能说明判定器如何处理输入，不能证明任一厂商一定会产生这些结果。必测场景集合必须非空；空集合不能通过“所有用例均通过”的空真判断冒充证据。
+
+最小迁移报告产物如下。这里 `live_evidence` 明确为空，因此该报告不能放行端点切换：
+
+```json
+{
+  "report_version": 1,
+  "dataset": "support-smoke@3",
+  "source": {"api": "messages", "model": "pinned-old-model", "sdk": "locked"},
+  "candidate": {"api": "responses", "model": "candidate-model", "sdk": "locked"},
+  "fixture_gate": "fixture-pass",
+  "live_evidence": null,
+  "decision": "insufficient-evidence",
+  "missing": ["live paired runs", "quality comparison", "latency and usage"]
+}
+```
+
+```text
+$ PYTHONDONTWRITEBYTECODE=1 python3 examples/provider-migration/demo_migration_gate.py
+fixture: plain completed, refusal refusal, long truncated, lookup tool_call
+fixture decision: fixture-pass
+empty required suite: incomplete
+live-provider decision: unavailable (no live responses recorded)
+
+$ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s examples/provider-migration -v
+Ran 8 tests
+OK
+```
+
+**实跑状态：** 本机 Python 3 离线执行 [`demo_migration_gate.py`](../../../examples/provider-migration/demo_migration_gate.py) 与 `unittest`，8 项通过；没有发送模型请求。上面的 fixture 摘要由 demo 脚本实际生成，单元测试输出也与所示一致；这些都不是实测模型输出。离线套件证明分类逻辑对样例按预期工作；在线报告才证明某个具体端点、模型和日期下的表现。若真实 API Key 或能力不可用，报告标为 `unavailable` / `unverified`，不得补造成功结果。
+
+### 可执行迁移流程
+
+1. 冻结带版本的数据集，包含正常任务、关键边界、历史故障和安全负例。不可在看见候选端点输出后临时删改用例；修改时另起数据集版本并保留差异。
+2. 固定业务工具定义、提示词、解析器、采样与预算参数。若迁移必须改这些条件，把它们列为独立变量，不能声称只比较了模型。
+3. 在旧端点和新端点运行配对场景。对非确定输出记录重复次数和随机性设置；按 task id 对齐，不只比较总分。若两端不能同时运行，交错并随机化运行顺序，记录时间、缓存/预热状态及可见的模型版本信息，降低时间漂移与顺序效应；未公开或不可固定的 provider 版本应列为限制。随机化与分块是控制运行顺序、时间等干扰因素的实验设计手段，见 [NIST 实验设计指南](https://www.itl.nist.gov/div898/handbook/pri/section3/pri3.htm)。
+4. 先裁决硬契约：工具调用结构、拒绝、截断、错误映射和必要 usage 缺失。授权与副作用作为宿主侧独立门禁验证；关键场景发生越权执行或状态混淆时直接阻断，不能由平均质量分抵消。
+5. 再看任务质量、成本、延迟和速率限制。报告逐条退化与改进并给出评估不确定性；样本不足时结论是“证据不足”，不是“无差异”。
+6. 写迁移记录，说明端点差异、临时降级、回滚条件、未验证功能与负责人。发布后监测拒绝率、工具错误、截断率、usage 缺失、成本和延迟漂移。
+
+<Mermaid
+  chart={`
+flowchart TD
+  A[固定场景集与旧端点基线] --> B[目标端点配对运行]
+  B --> C{原始响应可分类吗}
+  C -->|未知| X[保留原始响应并阻断或人工检查]
+  C -->|可分类| D{硬契约全通过吗}
+  D -->|否| Y[阻断迁移并定位逐例差异]
+  D -->|是| E[比较质量、成本、延迟与不确定性]
+  E --> F{证据充分且满足门槛吗}
+  F -->|否| Z[补样本或保持旧端点]
+  F -->|是| G[生成迁移记录与回滚条件]
+  G --> H[灰度发布并监测漂移]
+`}
+/>
+
+## 自动判定与人工判断
+
+可自动判定：请求和响应是否解析、结束状态分类、调用 id 匹配、工具参数是否通过本地 Schema、必需字段是否缺失、硬性安全用例是否产生副作用、usage 是否可计量，以及逐条回归差异。业务语义、答复是否有帮助、工具调用是否适当、不同措辞是否等价，通常需要规则、人工抽查或经过校准的评审器。评审器本身也要对照人工标签；迁移前后使用同一个评审器，不代表它的偏差会抵消。
+
+后端工程经验可以直接迁移：版本锁定、兼容矩阵、契约测试、回归集、灰度和回滚都适用。会失效的直觉是“HTTP 200 就是成功”和“统一响应 DTO 可以丢掉厂商字段”。模型行为有非确定性，协议结果又可能带拒绝、工具请求和多种结束原因，因此要保留原始证据，分开报告协议行为和任务质量。
+
+迁移的最终交付物不是一句“新模型效果不错”，而是一个可复查的选择：哪些内部契约继续成立，哪些能力改变，变化带来什么质量和成本取舍，哪些证据仍缺，以及出现什么信号时回滚。离线 fixture 通过只能批准判定器，不能批准 provider 迁移。若缺少在线证据，正确决定可以是“尚未批准”。
+
+### 本节验收
+
+给定目标 provider 的响应样例，读者应输出状态分类、工具调用配对、usage 完整性、逐条质量差异和缺失证据，并作出 `approve`、`block` 或 `insufficient-evidence` 的判定。对于硬契约、安全用例或关键业务场景，不允许总分掩盖单例退化。报告必须能定位 API 类型、模型标识、SDK 版本、数据集版本和运行日期。

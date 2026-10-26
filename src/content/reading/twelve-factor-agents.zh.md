@@ -46,7 +46,7 @@ Agents，至少是好的 agents，并不遵循 [“这是你的 prompt，这是�
 
 欢迎来到 12-factor agents。正如自 Daley 以来每一任芝加哥市长都持续在这座城市的主要机场到处张贴的那样，我们很高兴你来到这里。
 
-_特别感谢 [@iantbutler01](https://github.com/iantbutler01)、[@tnm](https://github.com/tnm)、[@hellovai](https://www.github.com/hellovai)、[@stantonk](https://www.github.com/stantonk)、[@balanceiskey](https://www.github.com/balanceiskey)、[@AdjectiveAllison](https://www.github.com/AdjectiveAllison)、[@pfbyjy](https://www.github.com/pfbyjy)、[@a-churchill](https://www.github.com/a-churchill)，以及 SF MLOps 社区对本指南的早期反馈。_
+_特别感谢 [@iantbutler01](https://github.com/iantbutler01)、[@tnm](https://github.com/tnm)、[@hellovai](https://www.github.com/hellovai)、[@stantonk](https://www.github.com/stantonk)、[@balanceiskey](https://www.github.com/balanceiskey)、[@AdjectiveAllison](https://github.com/allisoneer)、[@pfbyjy](https://www.github.com/pfbyjy)、[@a-churchill](https://www.github.com/a-churchill)，以及 SF MLOps 社区对本指南的早期反馈。_
 
 ## 简版：12 个因素
 

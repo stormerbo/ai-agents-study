@@ -4,315 +4,357 @@ title: 权限与活动范围
 status: drafting
 ---
 
-前两节把两个事实摆出来了：**动作空间是开放的**（同一个 `click` 什么都能点），**而模型不能作为停止条件**（它卡住时会一直重试）。
+前两节展示了两类风险：坐标动作本身不包含业务语义，重复调用也可能留下未确认状态。本节把控制面拆成几部分，帮助你逐项设计策略与执行边界。
 
-这两条合起来就是一个很具体的工程要求：**权限边界必须由你的代码来画，而不是写在提示词里。**
+这两类风险共同说明：权限与执行约束应由可信宿主强制，不能只写在提示词里。
 
-这一节把边界拆成四道闸门，并给出一份可运行的实现。
+下面用四类控制做教学示例。它们不是一份完整的生产安全方案；授权、隔离、审计、隐私和恢复仍需按具体系统补齐。
 
 ## 第一道：活动范围
 
 最直观的一道 —— **限定它能碰到哪里**。
 
-界面自动化的动作空间是「整个屏幕」，但一个具体任务通常只需要屏幕的一小块：填这张表单、点这一个按钮。所以第一件事就是把「允许点击的区域」声明成白名单。
+对截图/坐标适配器，可以把允许点击的屏幕区域作为一层策略。坐标必须与执行器实际使用的窗口、缩放和滚动坐标系一致；屏幕矩形只约束点击位置，不能证明点击对象的语义正确，也不会限制键盘输入、其他工具或应用自身的授权。
 
-实测里那一次失控很有说服力：小目标注入下，模型最后点出了 **323 px 的落空距离** —— 那已经不在按钮附近了，而是在**乱试**。如果屏幕上那个位置恰好有个危险按钮，这一下就点中了。
+历史 harness 的一条失败摘要记录了 **323 px 的最近登记元素中心距离**。它不是相对 Create 按钮的误差，也没有保留点击坐标，因此不能据此推断模型点到了哪里或判定为「乱试」。坐标范围限制仍可降低越界动作的影响，但区域应按具体界面和任务设计。
 
-范围白名单的价值不在于「它会点错」，而在于**点错时的爆炸半径被封住了**。
+范围白名单能减少执行器可点击的位置，但白名单内仍可能有危险控件。它是纵深防护的一层，不能代替动作级授权或应用侧权限校验。OWASP 授权建议采用默认拒绝并在每次请求上验证授权；这里的坐标范围不提供这些语义，参见 [OWASP Authorization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)。
 
 实现上就是一组矩形：
 
 ```python
 g = Guard(safe_zones=[(60, 150, 500, 296), (60, 380, 240, 432)])
-g.allow({"action": "click", "x": 280, "y": 173})   # 放行（在输入框里）
-g.allow({"action": "click", "x": 700, "y": 100})   # 拦截（在范围外）
+print(g.allow({"action": "click", "x": 280, "y": 173}))  # (True, "ok")
+print(g.allow({"action": "click", "x": 700, "y": 100}))  # (False, ...)
 ```
 
-注意这道闸门是**确定性的**：给定坐标与矩形，结果只有放行或拦截，没有「大概可以」。这和前面几章反复出现的判断一样 —— 能写成确定性规则的东西，就不要交给模型。
+矩形包含判断对给定坐标是确定的；但坐标映射、目标移动和焦点状态仍可能不准确。策略应在执行器实际动作前检查，并按接口分别约束点击、键盘、文本输入与导航。
 
 ## 第二道：预算
 
-第二道是钱和时间。它有两种，都要设：
+第二道是预算。请求发出后才知道 provider 实际 usage，所以仅在响应后比较累计 token 是**事后记账**，不能阻止当前请求花费超限。发送前应检查步数与预算余量，按输入估算和最大输出预留额度；响应回来后用实际 usage 对账，若超出预留则不再执行动作或发起新请求。预估误差、并发请求和 provider 计费口径仍可能造成超额，需按目标端点校准。Python [内置类型文档](https://docs.python.org/3.14/library/stdtypes.html)说明 `bool` 是 `int` 的子类，因此只检查 `isinstance(value, int)` 会放过 `True`；预算边界要显式拒绝布尔值、浮点数和负数，并分别校验请求前的预留量与响应后的实际 usage。
 
-**步数上限**。第 2 节讲过它是兜底；第 3 节的实测说明了它为什么会真的用上 —— 点击无效时模型连续重试了 4 次都没有停，最后是撞上上限才结束的。
+**步数上限**。应在每次模型请求之前检查剩余步数；第 3 节的 noop 历史摘要只表明一条运行记录到 8 步上限，不证明模型是否意识到动作无效。宿主还应把预算耗尽、模型退出和任务完成分开记录。
 
-**token 上限**。这一条容易被漏掉，因为步数上限看起来已经间接限制了成本。但两者并不等价：界面复杂时单张截图就可能接近 996 token（第 8 章实测的上限），12 步的 token 总量会是几步的好几倍。按 token 设上限，才是真正的成本闸门。
+**token 预算**。步数与 token 用量并不等价：截图复杂度、历史长度、模型输出和缓存口径都会影响 usage。每次调用前尽量用输入估算与请求级输出上限预留预算，调用后再用实际 usage 对账；预算边界能否严格执行取决于 provider 和并发模型。
 
-预算怎么定？**按失败路径定，不要按成功路径定。** 第 3 节实测：成功的运行约 5,000 token，而失败的运行是 12,000 到 27,000。如果按成功路径设 6,000，那么每一次失败都会超支 —— 而失败是常态的一部分。
+预算应按目标工作负载测量，并覆盖重试、停滞与收尾路径。第 3 节留下的 tiny 失败输出为 19,209 与 26,568 token，noop 为 11,827；旧 scorer 和缺失的原始响应使它们无法用于估计失败概率、期望成本或通用预算倍率。
 
 ## 第三道：熔断
 
-第三道防的是「原地打转」，它的判据是**界面连续 N 步没有变化**。
+第三道用于发现可能的「原地打转」，例如连续多次观测未见预期进展。
 
-这道闸门比步数上限更早触发，也更省：如果连续三步截图一模一样，这个循环已经不可能靠继续走变好了，而每多走一步都要付一次截图的钱。
+相同的压缩哈希可作为可能停滞的信号，但碰撞或漏掉细微变化都可能发生，不能证明界面完全相同、任务卡死或业务失败。连续 3 次相邻比较相等需要至少 4 次观测（基线帧加 3 次比较）；阈值要按目标界面的误报与漏报校准，并保留未确认状态。
 
 ```text
-第 1 步（同一张界面）→ 继续
-第 2 步（同一张界面）→ 继续
-第 3 步（同一张界面）→ 继续
-第 4 步（同一张界面）→ 熔断：界面连续 3 步无变化，判定为卡住
+观测 1（建立基线）→ 继续
+观测 2（相邻比较 1：相同）→ 继续
+观测 3（相邻比较 2：相同）→ 继续
+观测 4（相邻比较 3：相同）→ 停止新动作，标记为可能停滞
 ```
 
-实现上有两个坑。**一是不要用文件字节相等去比** —— 光标闪烁、加载动画、时间戳都会让两张视觉上相同的图产生不同字节。要么比较缩小后的感知哈希，要么明确排除掉允许变化的区域。
+实现上可将感知哈希用于候选信号，或屏蔽已知动态区域；每种方法都可能把真实变化漏掉或把正常变化当作进展，因此阈值策略应结合应用状态、超时和其他观测。
 
-**二是阈值别设成 2。** 有些操作本来就需要两步才见效（点了提交 → 出现确认弹窗）。实测里模型在点击无效时重试了 4 次，说明「连续 2 到 3 步不变」是正常范围，3 到 4 步才是异常。
+阈值需按界面动态校准。延迟更新、动画和确认流程都可能改变误报与漏报；部署前应在目标 UI 验证该信号如何触发等待、重新观测或人工处理。
 
-## 第四道：不可逆动作的确认点
+## 第四道：高影响动作的授权与审批
 
-这一道最关键，因为它防的是**无法撤销的后果**。
+这一类控制针对高影响或难以补偿的后果，审批强度应与影响、用户授权和恢复能力相匹配。
 
-判据可以写得很干脆：**如果一个动作失败之后无法用另一个动作撤销，它就不该由循环自动执行。**
+可逆性是风险评估因素之一，但不能单独决定是否允许自动执行。低风险且有明确授权的操作可能自动执行；高影响或授权不足的操作应要求额外确认、限制参数或转人工。
 
-而这里有一个必须讲清楚的设计要求：**确认点不能放在模型这一层。**
+关键边界是：**模型不能为自己产生的动作自行批准。**
 
-理由直白：模型既可以发起那个动作，也可以「批准」它 —— 那不是确认，那是自问自答。确认必须来自**循环之外**：人（在界面上点一下）、或者一条独立的策略（比如「金额超过 X 就必须人工」）。
+批准可以由用户交互或独立策略提供，不要求物理上位于循环之外；但批准来源必须独立于模型提议，并绑定到具体任务、目标和参数。对于异步或延迟执行，还需设置有效期、一次性消费与撤销规则，避免把旧批准复用于改过的动作。
 
-实现上就是把批准权从模型手里拿走：
+教学代码用一个由宿主传入的一次性引用演示该边界。真实系统必须由可信授权流程验证批准者、动作摘要、任务和有效期；下面的字符串引用本身不提供身份认证或防篡改能力：
 
 ```python
-g.allow({"action": "delete-all"})          # 拦截：不可逆，未获确认
-g.declare("delete-all", approved_by="人")  # 这一步只能由循环之外调用
-g.allow({"action": "delete-all"})          # 放行
+action = {"action": "click", "x": 150, "y": 200}
+# requires_approval 由可信宿主按真实目标和动作策略计算。
+# 实际批准由可信宿主验证并提供；此字符串引用自身不是身份凭据。
+g.approve_once("task-42", action, opaque_ref="approval-91")
+g.allow(action, task_id="task-42", approval_ref="approval-91", requires_approval=True)
 ```
 
-注意 `declare()` 这个接口**不在模型的输出格式里**。模型能决定的只有「我想做什么」，而「允许做什么」由代码决定。这两件事分开，是整个设计里最重要的那条线。
+`approve_once()` 仅是教学接口，不应暴露给模型动作路由。模型可以提出动作，宿主则根据已验证的用户意图和策略决定是否执行；白名单、审批或哈希检查的存在本身不等于系统已获授权。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["模型输出一个动作"] --> B{"在活动范围内？"}
-    B -->|否| X["拦截（确定性规则）"]
-    B -->|是| C{"预算还有吗？<br/>步数 + token"}
-    C -->|否| X
-    C -->|是| D{"界面连续 N 步无变化？"}
-    D -->|是| X
-    D -->|否| E{"是不可逆动作吗？"}
-    E -->|是| F{"循环之外确认过？"}
-    F -->|否| X
-    F -->|是| G["执行"]
-    E -->|否| G
-    G --> H["执行后核对目标状态<br/>（第 3 节：落在数据层）"]
-    X -.-> I["⚠️ 模型能决定「想做什么」<br/>只有代码能决定「允许做什么」"]
+    A["读取当前观测并估算输入与输出预算"] --> B{"步数和预算可预留？"}
+    B -->|否| B0["不发送模型请求"]
+    B -->|是| C["发送模型请求并接收动作"]
+    C --> D{"实际 usage 对账通过且未触发停滞？"}
+    D -->|否| D0["记账并丢弃动作<br/>标记未确认"]
+    D -->|是| E{"动作在允许范围内？"}
+    E -->|否| E0["拒绝动作"]
+    E -->|是| F{"需要额外批准？"}
+    F -->|否| H["执行动作"]
+    F -->|是| G{"可信授权绑定当前任务、目标和参数？"}
+    G -->|否| G0["不执行"]
+    G -->|是| H
+    H --> I["核对业务后置条件"]
+    B0 -.-> Z["模型不能自批<br/>策略由可信宿主强制"]
+    D0 -.-> Z
+    E0 -.-> Z
+    G0 -.-> Z
 `}
 />
 
 ## 审计轨迹：出事之后靠什么复盘
 
-四道闸门都是**事前**的。但界面自动化一定会出事 —— 不是「如果」，是「什么时候」。所以还需要一件**事后**的事：留痕。
+前面的策略检查不能替代事后审计。记录应足以调查失败，同时按数据敏感度做最小化、脱敏、访问控制与保留期限管理；截图可能包含凭据、个人信息或业务机密，不应默认永久保存整屏内容。
 
-要留的东西很少，但缺一不可：
+建议根据风险保留足够的事件证据，并按需脱敏：
 
-- **每一步的截图**（本来就要发给模型，顺手落盘）
-- **每一步的动作**（模型输出的**原始 JSON**，不是解析后的版本）
-- **每一步的 token**（事后算成本，也用于发现异常）
-- **动作是否被执行、以及被拦截的原因**
+- **观测引用或经批准的脱敏截图**，并记录采集时间、哈希和保留策略
+- **动作提议的受控记录**，避免将凭据或完整页面内容写入日志
+- **实际 usage、预算预留与停止原因**
+- **执行决策、结果状态、拒绝原因和批准记录引用**
 
-最后一条最容易被漏掉。只记「模型请求了什么」，你就无法区分「它没想做」和「它想做但被拦住了」—— 而后者恰恰是闸门在工作的证据，也是调阈值的依据。
+只记「模型请求了什么」，无法区分动作未执行、已执行、被拦截或结果未知。日志可协助复核和重建事件顺序，但模型调用、外部状态与 UI 时序通常不能靠日志保证逐字节重放。参见 [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html) 关于事件数据、敏感数据最小化与日志保留的建议。
 
-这些东西**必须在循环里记，不能在模型那边记**。模型不会主动汇报自己 5 步前点了哪里；日志才是唯一能事后重放的东西。
+这些记录应由宿主或可信执行器生成，而非依赖模型自述；应把它们当作调查证据，不承诺精确重放。
 
-## 为什么是四道，而不是一道
+## 为什么需要多层控制
 
-这四道闸门分别防四种不同的失控，任何一道都替代不了另一道：
+这四类控制覆盖不同风险，相互补充，但不构成完整的生产安全验收：
 
 | 闸门 | 防的是 | 缺了会怎样 |
 |---|---|---|
-| 活动范围 | 点到不该点的地方 | 一次乱点就可能造成不可逆后果 |
-| 预算 | 无限烧钱和无限等待 | 卡住的循环永远不结束 |
+| 活动范围 | 超出任务范围的输入 | 越界动作可能触发未授权或意外结果 |
+| 预算 | 缺少成本与等待上限 | 循环可能持续消耗资源，直到外部停止 |
 | 熔断 | 原地打转 | 预算被无效步骤吃掉，走不到有用的那一步 |
-| 不可逆确认 | 无法撤销的后果 | 其他三道都拦不住「动作确实做对了，但那个动作本身不该做」 |
+| 高影响审批 | 任务/目标/参数未获授权 | 范围和预算合法仍不代表该副作用获准 |
 
-最后一行值得单独说：**前三道都是「动作层面的安全检查」，它们默认「模型想做的动作是对的」。** 第四道是唯一会质疑「这个动作该不该做」的 —— 它不看坐标在不在范围内，它看的是语义。
+最后一行值得单独说：坐标范围与预算检查不代表动作已经获准。高影响操作还需独立判断任务、目标、参数与调用者授权。
 
-四道合起来，才是「活动范围」这个词的完整含义：**不只是「它能碰哪里」，还包括「它能花多少」「它能试多久」和「它能决定什么」。**
+组合起来，它们覆盖界面范围、预算、无进展处理和高影响动作授权；还需单独验证账户权限、执行器隔离、隐私与日志治理、业务后置条件和故障恢复。
 ## 完整可运行代码
 
-下面把这四道闸门落成可运行、可测试的代码。它是纯本地逻辑，不需要任何凭据。
+下面的纯本地示例演示边界检查、请求前预算预留、响应后 usage 对账、相邻观测停滞信号，以及绑定具体任务和动作的一次性批准引用。它不实现真实身份认证、可信授权服务、并发预留、UI 语义定位或隔离执行。
 
 ```python
-"""权限与活动范围：四道闸门的最小实现。
+"""安全闸门的本地教学模型；不调用网络或真实 UI。
 
-纯本地逻辑，不需要网络。它把第 4 节讲的边界落成可测试的代码：
-  一、活动范围（只能碰白名单区域）
-  二、预算（步数 + token）
-  三、熔断（连续 N 步界面无变化就中止）
-  四、不可逆动作必须显式确认
-
-实跑状态：2026-10-09，已跑通。
+实跑状态：2026-10-20，离线脚本执行通过。
 """
-
 from dataclasses import dataclass, field
+import hashlib
+import json
+import math
 
 
 @dataclass
 class Guard:
-    """包在动作外面的一层。模型说什么不算数，它先过这里。"""
-
-    safe_zones: list          # 允许点击的矩形列表 [(x0,y0,x1,y1), ...]
+    safe_zones: list[tuple[float, float, float, float]]
     step_budget: int = 12
     token_budget: int = 20000
-    no_change_limit: int = 3  # 连续多少步界面无变化就熔断
-    irreversible: set = field(default_factory=set)   # 需要显式确认的动作名
+    no_change_limit: int = 3
+    max_text_chars: int = 500
 
-    steps: int = 0
-    tokens: int = 0
+    steps_started: int = 0
+    tokens_used: int = 0
     same_screen: int = 0
     last_hash: str | None = None
-    confirmations: set = field(default_factory=set)
-    log: list = field(default_factory=list)
+    grants: set[tuple[str, str, str]] = field(default_factory=set)
+    consumed_grants: set[tuple[str, str, str]] = field(default_factory=set)
 
-    def declare(self, action_name: str, approved_by: str) -> None:
-        """不可逆动作必须由**人或策略层**批准，不能由模型自己批准。"""
-        self.confirmations.add(action_name)
-        self.log.append("已确认 %s（由 %s 批准）" % (action_name, approved_by))
+    def __post_init__(self):
+        for name, value in (
+            ("step_budget", self.step_budget),
+            ("token_budget", self.token_budget),
+            ("no_change_limit", self.no_change_limit),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if isinstance(self.max_text_chars, bool) or not isinstance(self.max_text_chars, int) or self.max_text_chars < 0:
+            raise ValueError("max_text_chars must be a non-negative integer")
+        for x0, y0, x1, y1 in self.safe_zones:
+            if not all(math.isfinite(v) for v in (x0, y0, x1, y1)) or x0 > x1 or y0 > y1:
+                raise ValueError("invalid safe-zone rectangle")
 
-    def record_step(self, tokens: int, screen_hash: str) -> tuple[bool, str]:
-        self.steps += 1
-        self.tokens += tokens
-        if self.steps > self.step_budget:
-            return False, "步数超预算（%d/%d）" % (self.steps, self.step_budget)
-        if self.tokens > self.token_budget:
-            return False, "token 超预算（%d/%d）" % (self.tokens, self.token_budget)
-        if screen_hash == self.last_hash:
-            self.same_screen += 1
-            if self.same_screen >= self.no_change_limit:
-                return False, "界面连续 %d 步无变化，判定为卡住" % self.same_screen
-        else:
-            self.same_screen = 0
-        self.last_hash = screen_hash
+    @staticmethod
+    def fingerprint(action: dict) -> str:
+        encoded = json.dumps(action, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    def begin_request(self, reserved_tokens: int) -> tuple[bool, str]:
+        """Call before the provider request; reservation is an estimate, not a guarantee."""
+        if isinstance(reserved_tokens, bool) or not isinstance(reserved_tokens, int) or reserved_tokens < 0:
+            return False, "invalid token reservation"
+        if self.steps_started >= self.step_budget:
+            return False, "step budget exhausted"
+        if self.tokens_used + reserved_tokens > self.token_budget:
+            return False, "token budget reservation would exceed limit"
+        self.steps_started += 1
         return True, "ok"
 
-    def allow(self, action: dict, irreversible_names: set | None = None) -> tuple[bool, str]:
-        names = irreversible_names or self.irreversible
-        kind = action.get("action")
+    def finish_request(self, actual_tokens: int, observation_hash: str) -> tuple[bool, str]:
+        """Reconcile usage after response; hash must represent the observation sent."""
+        if isinstance(actual_tokens, bool) or not isinstance(actual_tokens, int) or actual_tokens < 0:
+            return False, "invalid provider usage"
+        self.tokens_used += actual_tokens
+        if self.tokens_used > self.token_budget:
+            return False, "actual usage exceeded budget; do not execute returned action"
+        if not isinstance(observation_hash, str) or not observation_hash:
+            return False, "missing observation hash"
+        if observation_hash == self.last_hash:
+            self.same_screen += 1
+        else:
+            self.same_screen = 0
+        self.last_hash = observation_hash
+        if self.same_screen >= self.no_change_limit:
+            return False, "possible stagnation; stop before another action"
+        return True, "ok"
+
+    def approve_once(self, task_id: str, action: dict, opaque_ref: str) -> None:
+        """Demo seam only; production approval must be verified by a trusted host."""
+        self.grants.add((task_id, self.fingerprint(action), opaque_ref))
+
+    def allow(self, action: dict, *, task_id: str, focused_target: str | None = None,
+              approval_ref: str | None = None, requires_approval: bool = False) -> tuple[bool, str]:
+        if not isinstance(action, dict) or not isinstance(action.get("action"), str):
+            return False, "invalid action shape"
+        kind = action["action"]
         if kind == "click":
-            x, y = action.get("x"), action.get("y")
-            inside = any(x0 <= x <= x1 and y0 <= y <= y1 for x0, y0, x1, y1 in self.safe_zones)
-            if not inside:
-                return False, "点击 (%d,%d) 落在活动范围之外" % (x, y)
-        if kind in names and kind not in self.confirmations:
-            return False, "动作 %s 不可逆，未获确认" % kind
+            if set(action) != {"action", "x", "y"}:
+                return False, "unexpected click fields"
+            x, y = action["x"], action["y"]
+            if (isinstance(x, bool) or isinstance(y, bool)
+                    or not isinstance(x, (int, float)) or not isinstance(y, (int, float))
+                    or not math.isfinite(x) or not math.isfinite(y)):
+                return False, "click coordinates must be finite numbers"
+            if not any(x0 <= x <= x1 and y0 <= y <= y1
+                       for x0, y0, x1, y1 in self.safe_zones):
+                return False, "click outside configured region"
+        elif kind == "type":
+            if set(action) != {"action", "text"} or not isinstance(action["text"], str):
+                return False, "invalid type action"
+            if len(action["text"]) > self.max_text_chars:
+                return False, "text input exceeds limit"
+            if focused_target not in {"search-box", "approved-form-field"}:
+                return False, "focused target is not allowlisted"
+        elif kind == "done":
+            if set(action) != {"action"}:
+                return False, "unexpected done fields"
+        else:
+            return False, "unknown action: default deny"
+
+        fingerprint = self.fingerprint(action)
+        if requires_approval:  # 由可信宿主的资源/动作策略决定
+            grant = (task_id, fingerprint, approval_ref or "")
+            if grant not in self.grants or grant in self.consumed_grants:
+                return False, "missing, mismatched, or already consumed approval"
+            self.consumed_grants.add(grant)
         return True, "ok"
 
 
 if __name__ == "__main__":
-    # 只允许在表单区域里点：输入框 + Create 按钮
-    g = Guard(safe_zones=[(60, 150, 500, 296), (60, 380, 240, 432)], step_budget=6)
+    g = Guard(safe_zones=[(60, 150, 500, 296)],
+              step_budget=2, token_budget=2500,
+)
+    print("范围与默认拒绝")
+    for action in (
+        {"action": "click", "x": 280, "y": 173},
+        {"action": "click", "x": 900, "y": 100},
+        {"action": "launch-shell"},
+    ):
+        print(action, "->", g.allow(action, task_id="task-1")[0])
 
-    print("闸门一：活动范围")
-    for px, py_ in [(280, 173), (700, 100), (150, 400)]:
-        ok, why = g.allow({"action": "click", "x": px, "y": py_})
-        print("  点 (%3d,%3d) → %s  %s" % (px, py_, "放行" if ok else "拦截", "" if ok else why))
-    print()
+    print("请求前预算预留")
+    print("第 1 次:", g.begin_request(1000))
+    print("响应对账:", g.finish_request(900, "frame-a"))
+    print("第 2 次:", g.begin_request(1700))  # 预留将超过 token 上限
+    step_guard = Guard(safe_zones=[], step_budget=1)
+    step_guard.begin_request(100)
+    print("步数耗尽:", step_guard.begin_request(100))
 
-    print("闸门二：步数与 token 预算")
-    for i in range(1, 8):
-        ok, why = g.record_step(tokens=1000, screen_hash="h%d" % i)
-        print("  第 %d 步（token 累计 %5d）→ %s" % (i, g.tokens, "继续" if ok else "停止：" + why))
-        if not ok:
-            break
-    print()
-
-    print("闸门三：熔断（界面连续无变化）")
-    g2 = Guard(safe_zones=[], no_change_limit=3, step_budget=99)
-    for i in range(1, 6):
-        ok, why = g2.record_step(tokens=100, screen_hash="一模一样")
-        print("  第 %d 步（同一张界面）→ %s" % (i, "继续" if ok else "熔断：" + why))
-        if not ok:
-            break
-    print()
-
-    print("闸门四：不可逆动作的确认点")
-    g3 = Guard(safe_zones=[], irreversible={"delete-all"})
-    ok, why = g3.allow({"action": "delete-all"})
-    print("  模型请求 delete-all → %s  %s" % ("放行" if ok else "拦截", "" if ok else why))
-    g3.declare("delete-all", approved_by="人（在 UI 上点了确认）")
-    ok, why = g3.allow({"action": "delete-all"})
-    print("  人确认之后 → %s" % ("放行" if ok else "拦截"))
-    print()
-    print("关键点：确认是在 Guard 之外取得的，模型自己无法调用 declare()。")
-    print("模型能决定「想做什么」，但只有代码能决定「允许做什么」。")
+    print("动作绑定的一次性批准")
+    high_impact_click = {"action": "click", "x": 150, "y": 200}
+    g.approve_once("task-1", high_impact_click, "opaque-demo-ref")
+    print("原动作:", g.allow(high_impact_click, task_id="task-1",
+                                approval_ref="opaque-demo-ref", requires_approval=True))
+    print("重复消费:", g.allow(high_impact_click, task_id="task-1",
+                                approval_ref="opaque-demo-ref", requires_approval=True))
 ```
 
-实跑输出（2026-10-09）：
+实跑输出（2026-10-20，当前教学代码）：
 
 ```text
-闸门一：活动范围
-  点 (280,173) → 放行  
-  点 (700,100) → 拦截  点击 (700,100) 落在活动范围之外
-  点 (150,400) → 放行  
-
-闸门二：步数与 token 预算
-  第 1 步（token 累计  1000）→ 继续
-  ...
-  第 7 步（token 累计  7000）→ 停止：步数超预算（7/6）
-
-闸门三：熔断（界面连续无变化）
-  第 4 步（同一张界面）→ 熔断：界面连续 3 步无变化，判定为卡住
-
-闸门四：不可逆动作的确认点
-  模型请求 delete-all → 拦截  动作 delete-all 不可逆，未获确认
-  人确认之后 → 放行
-
-关键点：确认是在 Guard 之外取得的，模型自己无法调用 declare()。
-模型能决定「想做什么」，但只有代码能决定「允许做什么」。
+范围与默认拒绝
+{'action': 'click', 'x': 280, 'y': 173} -> True
+{'action': 'click', 'x': 900, 'y': 100} -> False
+{'action': 'launch-shell'} -> False
+请求前预算预留
+第 1 次: (True, 'ok')
+响应对账: (True, 'ok')
+第 2 次: (False, 'token budget reservation would exceed limit')
+步数耗尽: (False, 'step budget exhausted')
+动作绑定的一次性批准
+原动作: (True, 'ok')
+重复消费: (False, 'missing, mismatched, or already consumed approval')
 ```
 
-## 把 Guard 接进循环：两个调用点
+本地批准接口仅用于演示绑定关系和一次性消费；真实系统必须由宿主从可信审批记录验证批准者、任务、参数摘要和有效期。
 
-`Guard` 本身是纯逻辑，「在哪里调用它」才是落地时最容易漏的。整个循环里只有**两个**调用点，位置不能挪：
+## 把 Guard 接进循环：预算与动作的边界
+
+Guard 本身是纯逻辑；调用顺序决定预算和动作是否真的被约束。下面是宿主集成的伪代码，call_model、current_screen 与执行器接口需由具体 provider / UI adapter 实现：
 
 ```python
-g = Guard(safe_zones=[(60, 150, 500, 296), (60, 380, 240, 432)],
-          step_budget=12, token_budget=20000, irreversible={"delete-all"})
-
-history = [{"role": "user", "content": [task_text, screenshot_block(current_screen())]}]
 while True:
-    text, tin, tout = call_model(history)
-    ok, why = g.record_step(tin + tout, dhash(current_screen()))   # 闸门二/三
+    observation = current_screen()                  # 捕获一次
+    observation_hash = hash_observation(observation)
+    reservation = estimate_input(observation, history) + max_output_tokens
+
+    ok, why = guard.begin_request(reservation)       # 请求前预留
     if not ok:
-        break                    # 超预算或熔断：结束循环，原因在 why 里
-    history.append({"role": "assistant", "content": text})
+        stop(why)
+        break
 
-    action = parse_action(text)
-    allowed, reason = g.allow(action)                              # 闸门一/四
-    if not allowed:
-        history.append({"role": "user", "content": [screenshot_block(current_screen()),
-                        blocked_result(action, reason)]})
-        continue                 # 关键：回填给模型，而不是静默丢弃或直接终止
+    response = call_model(history, observation,
+                          max_output_tokens=max_output_tokens)
+    ok, why = guard.finish_request(
+        response.actual_usage, observation_hash      # 对账同一份输入观测
+    )
+    if not ok:
+        stop(why)                                    # 不执行本次返回的动作
+        break
 
-    apply_action(state, action)
-    history.append({"role": "user", "content": [screenshot_block(current_screen())]})
+    action = parse_and_validate(response)
+    ok, why = guard.allow(
+        action, task_id=task_id,
+        focused_target=trusted_ui.focused_target(),
+        approval_ref=trusted_host.approval_for(action, task_id),
+    )
+    if not ok:
+        report_blocked_to_model_or_user(action, why)
+        continue
+
+    result = trusted_ui.execute(action)
+    verify_business_postcondition(result)
 ```
 
-**第一个调用点** `record_step` 放在拿到模型响应之后、解析动作之前 —— 它只管账，不管动作对不对。**第二个调用点** `allow` 放在动作真正执行之前，这是唯一能拦住它的位置。
+begin_request 必须在 provider 调用前执行，响应回来后用实际 usage 对账。估算与并发可能导致实际用量越过预算；严格共享预算需要由可信宿主原子预留，并限制请求最大输出。哈希必须对应发给模型的那一帧，不能在响应后重新截屏再拿来比较。allow 必须在执行器产生副作用之前运行，而且还需结合目标 UI 的语义定位、账户授权和结果核验。
 
-**被拦截之后怎么回填，决定了这道闸门是「护栏」还是「死路」。** 如果只是 `continue` 或者直接退出，模型什么都不知道，下一轮还会重复同一个动作 → 直到撞上限。正确的做法是把拦截当成一次**失败的动作结果**告诉它。用 `tool_use/tool_result` 协议时就是这样（示例：构造数据，未实跑）：
-
-```python
-def blocked_result(action, reason):
-    return {"type": "tool_result",
-            "tool_use_id": action["id"],       # 对应模型那次 tool_use
-            "is_error": True,
-            "content": "动作被安全策略拦截：%s。请换一个不会越界的动作。" % reason}
-```
-
-`is_error` 这一项不是装饰：第 4 章实测过，**不标它，模型会把错误当成数据继续往下用**；标上并说明原因，它才会调整策略。如果你的循环用的是纯文本 JSON 协议（本章的合成环境就是），等价做法是把这句话塞进下一条 user 消息，效果一样。
+被拒绝的动作如何反馈取决于协议。纯文本 JSON 循环应把拒绝原因作为下一条 user 消息或终止状态；不要把自定义 JSON 对象伪装成 Anthropic tool_result。在 Anthropic client-side tool-use 流程中，结果必须关联原始 tool_use block 的 id（即 tool_use_id）；若采用 Anthropic computer-use 工具集，还需遵循对应工具集字段要求。is_error 是可选的错误信号，不保证模型一定采取某种恢复策略。参见 [Anthropic Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)。
 
 ## 本节小结
 
-1. **活动范围、预算、熔断、不可逆确认** —— 四道闸门防四种失控，缺一道都会漏。
-2. **预算按失败路径定**：实测失败路径是成功路径的 2.4 到 5.3 倍。
-3. **熔断用感知哈希，不要用字节相等**；阈值 3 到 4 步，不是 2。
-4. **确认点必须在循环之外** —— 模型既发起又批准，那不是确认。
-5. **事前四道闸门 + 事后审计轨迹 + 第 3 节的结果核对**，三样齐全才算一个能上线的界面自动化。
-6. **这四道闸门都不需要模型配合** —— 它们全部在模型之外。这一点是刻意的：安全边界不能建立在被约束者的自觉上。
+1. **活动范围、预算、停滞信号与高影响动作审批** 是不同的教学控制面；缺失某一层会留下对应风险，但这四项不是完整安全方案。
+2. **预算按目标负载测量**：第 3 节的历史摘要不能支持失败成本倍数或预算分布。
+3. **哈希用于提示可能停滞，不证明业务无进展**；3 次相邻相同比较需要 4 次观测，阈值应实测校准。
+4. **批准来源必须独立于模型提议**，并绑定具体任务、目标和参数；批准可以由用户交互或独立策略产生。
+5. **策略执行、受控审计和业务结果核对各有作用**；还需验证授权身份、隔离、隐私、恢复和运行环境，不能仅凭本节示例判定可上线。
+6. **策略应由可信宿主在动作执行前强制**；模型遵循提示只能作为辅助信号，不能替代应用侧授权。
 ## 常见坑
 
 - **把权限边界写在提示词里。** 「不要点击删除按钮」是一句请求，不是一条约束。约束要写在执行动作之前的那层代码里。
-- **让模型自己批准不可逆动作。** 它能发起、也能批准，那不是确认。批准入口必须在循环之外。
+- **让模型自己批准高影响动作。** 批准来源必须独立于模型提议，并绑定任务、目标和参数；批准由 UI、审批服务或独立策略产生都可以。
 - **只设步数上限，不设 token 上限。** 两者不等价 —— 界面越复杂，单张截图越贵，同样的步数可以差出好几倍成本。
-- **按成功路径设预算。** 实测失败路径是成功路径的 2.4 到 5.3 倍。预算是给失败留的，不是给顺利留的。
+- **只按成功路径测预算。** 应覆盖目标环境中的重试、停滞与收尾路径，并记录实际 usage 和停止原因；第 3 节历史摘要不能提供通用倍率。
 - **用像素或文件字节判断「界面有没有变化」。** 光标闪烁和动画会让它永远不相等，闸门就废了。
-- **把熔断阈值设成 2。** 有些操作本来就需要两步才见效，阈值太低会误杀正常流程。
+- **把某个停滞阈值当成通用常数。** 哈希与阈值只是启发式；用目标界面测误报、漏报和等待时间。
 - **只在动作前设闸门，不做执行后的核对。** 闸门防的是「不该做的动作」，防不住「做对了动作但结果不对」。结果核对（第 3 节）是另一半。

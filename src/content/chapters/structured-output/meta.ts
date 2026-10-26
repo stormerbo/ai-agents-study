@@ -36,14 +36,22 @@ export const chapter = {
           basis: 'inferred',
           question: '“在 prompt 里要求输出 JSON”和“用约束解码强制输出 JSON”，本质区别是什么？',
           answer:
-            '前者是请求，后者是保证。提示级的约束靠模型“愿意遵守”，在绝大多数情况下没问题，但它是一个概率性保证——总有那么一小部分请求会多出一句解释、少一个括号、或者在字符串里带上未转义的引号，而这类失败会随调用量增加而必然出现。约束解码则是在采样阶段就屏蔽掉不符合语法的 token，从机制上让非法输出无法生成。前者用于快速原型，后者用于要上线的系统。',
+            '提示会影响输出倾向，但不是格式保证。目标 endpoint 若支持约束输出，它只约束已声明且受支持的 schema 子集；拒绝、截断、传输错误仍要分流。应用仍须解析并在副作用入口前执行本地 schema/业务校验。',
         },
         {
           id: 'failure-rate-math',
           basis: 'inferred',
           question: '如果单次请求的格式正确率是 99%，为什么在真实系统里这个数字不够用？',
           answer:
-            '因为失败会累积。一个 agent 任务如果平均要调用 10 次模型，每次 99% 正确，整体成功率就掉到约 90%——而这还只是一次任务，如果每天跑上千次，异常处理路径每天都会被执行很多遍。所以工程上说“99% 够用了”通常是不成立的，要么把单次正确率提到 99.9% 以上，要么必须有一套可靠的失败兜底路径。',
+            '若每次调用独立、成功率相同且没有重试，N 次都通过的概率为 p^N；例如 p=0.99、N=10 时约 90.4%。这只是说明累积效应的简化模型，不是线上预测。少量样本不能证明极低失败率；应按目标端到端验收定义持续测量，并保留校验、重试、降级或人工处理路径。',
+        },
+        {
+          id: 'provider-output-token-limit',
+          basis: 'documented',
+          question: '为什么不能把 `max_tokens` 当成所有模型 API 的通用字段？',
+          answer:
+            '输出上限字段属于具体 API 契约：Anthropic Messages 使用 `max_tokens`，OpenAI Chat Completions 推荐 `max_completion_tokens`（旧 `max_tokens` 已弃用），Responses API 使用 `max_output_tokens`。上限可能计入不可见的推理 token；请求与预算要按目标 endpoint 文档解释。',
+          sourceIds: ['anthropic-messages-api', 'openai-chat-api', 'openai-responses-reference'],
         },
       ],
     },
@@ -64,15 +72,15 @@ export const chapter = {
           basis: 'inferred',
           question: '受 schema 约束的输出，为什么仍然可能“内容上是错的”？',
           answer:
-            '因为 schema 只能约束**结构**：字段名、类型、是否必填、枚举取值。它管不了内容是否正确——字段叫 total_amount 且类型是 number，不意味着这个数字算对了；枚举里有 “refund” 这个值，不意味着这次请求真的该判为退款。结构合法与语义正确是两个层次的问题，前者可以机械保证，后者需要业务校验或人工确认。',
+            'schema 在 endpoint 支持的子集内可以约束字段形状和值域，但不能证明模型填写的事实有可信来源，也不能替代业务授权。需要把结构/值域校验、证据核验与副作用授权分开。',
         },
         {
           id: 'strict-vs-normal',
-          basis: 'inferred',
+          basis: 'documented',
           question: '在使用厂商提供的“严格模式”时，需要注意什么限制？',
           answer:
-            '严格模式通常对 schema 的表达能力有子集限制（比如不支持某些递归引用、某些关键字被忽略），且要求所有字段都必须出现在 required 里、用可选字段时得显式允许 null 来表示“没有值”。不同厂商的限制细节不同，且会随版本变化——所以要以官方文档为准，别照搬博客里的写法。',
-          resourceIds: ['claude-api-docs'],
+            '严格约束能力属于具体 API 契约。DeepSeek strict tool calls 需使用其 Beta Chat Completions function 形态；Anthropic strict tool use 与 JSON structured outputs 是不同功能。各自只支持文档列出的 schema 子集，例如递归引用、数值边界和字符串模式的边界并不相同。请求前核对目标 endpoint、模型与当前文档；结构约束仍不代表事实正确或获准执行。',
+          sourceIds: ['deepseek-tool-calls', 'anthropic-strict-tool-use', 'anthropic-structured-outputs'],
         },
       ],
     },
@@ -136,6 +144,9 @@ export const chapter = {
     },
   ],
   resourceIds: [
+    'anthropic-messages-api',
+    'openai-chat-api',
+    'openai-responses-reference',
     'claude-api-docs',
     'openai-cookbook',
     'openai-agents-sdk-python',
@@ -158,6 +169,6 @@ export const chapter = {
     cost: 'medium',
   },
   status: 'published',
-  updatedAt: '2026-10-08',
-  verifiedAt: '2026-10-08',
+  updatedAt: '2026-10-22',
+  verifiedAt: '2026-10-22',
 } satisfies Chapter;

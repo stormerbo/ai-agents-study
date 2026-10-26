@@ -53,7 +53,7 @@ export const chapter = {
       chapterId: 'agent-frameworks',
       slug: 'abstraction-models',
       title: '三种抽象模型',
-      summary: '图、agent-runner、session-hooks —— 它们对「一个 agent 是什么」的回答不同。',
+      summary: '线性序列、显式图和 agent loop —— 它们把控制流与模型决策放在不同位置。',
       estimatedMinutes: 20,
       difficulty: 'intermediate',
       hasBody: true,
@@ -63,26 +63,33 @@ export const chapter = {
         {
           id: 'three-models',
           basis: 'inferred',
-          question: '主流框架对「一个 agent」的抽象，大致有哪几种形态？',
+          question: '本节用哪三种教学模型讨论控制流？它们之间是什么关系？',
           answer:
-            '三种，差别在**你把流程写成什么形状**：\n\n1. **图 / 状态机** —— 节点是步骤、边是转移条件（LangGraph 这一类）。控制流是显式的，适合步骤清晰、需要人工介入与分支的任务。代价是你要把流程想清楚才能写。\n2. **agent + runner + handoff** —— 你定义一个 agent（指令 + 工具），runner 负责循环，多个 agent 之间用转交连接（OpenAI Agents SDK 这一类）。最少的样板代码，代价是循环内部的细节默认由框架决定。\n3. **session + 钩子** —— 以会话为中心，通过权限、钩子、子 agent、技能来定制行为（Claude Agent SDK 这一类）。它假设你要的是一个能干活的编码/操作型 agent，而不是自己拼一套流程。\n\n选哪种，先看你**更愿意把复杂度写在哪里**：写在流程里（图）、写在配置里（runner）、还是写在钩子里（session）。',
+            '本节用三个便于比较的教学模型：**线性序列**把顺序写在组合表达式中；**图 / 状态机**把节点、状态和路由显式化；**agent loop**让模型输出参与下一步选择，由 host/runtime 执行并约束。它们不是完整分类或能力等级，也不互斥：图节点可以调用模型，agent loop 也可以被固定流程包围。\n\n选型时要看目标任务的决策位置、状态与恢复要求、预算、安全边界和团队维护成本，而不是按某个框架的标签直接归类。',
         },
         {
           id: 'explicit-vs-implicit-control',
           basis: 'inferred',
-          question: '「控制流显式」和「控制流隐式」分别适合什么情况？',
+          question: '怎样区分应用编排与模型参与决策？',
           answer:
-            '**显式**（图）适合流程需要被审计、被干预、被复用的场景 —— 你能指着图说「这一步之后必须人工确认」。它也更容易做可视化与断点调试。代价是灵活性：流程要改就得改图。\n\n**隐式**（runner 循环）适合流程本身就是「模型自己决定下一步」的场景 —— 硬写成图反而是自欺欺人，因为你并不知道它下一步会做什么。代价是可观测性与可控性都要另外补。\n\n一个实用的折中：**外层用显式流程，内层用隐式循环。** 把「必须按顺序发生的几件事」写成图或普通代码，把「每件事内部怎么探索」交给 agent 循环。',
+            '应用编排与模型决策不是互斥项。应用可以用图定义状态、步骤与路由，也可以在某个节点调用模型；模型输出参与后续选择时，host/runtime 仍负责验证、授权与执行。应明确每个决策点由谁作出，以及异常、超限、人工介入和恢复时的路径。\n\n对照候选实现时，不要假定「图一定显式且易调试」或「runner 一定隐式」。查看目标版本的实际接口、trace、停止条件和持久化配置，再用关键失败路径做原型验证。',
+        },
+        {
+          id: 'langgraph-persistence-requires-checkpointer',
+          basis: 'documented',
+          question: '把流程写成 LangGraph 图，就自动获得跨进程断点恢复了吗？',
+          answer: '不会。需配置 checkpointer，并在调用时提供稳定的 thread_id；需要跨线程保存的业务数据还应使用 store。检查点持久化图状态，不替外部副作用提供 exactly-once 保证；重放与幂等仍由应用设计。',
+          sourceIds: ['langgraph-persistence'],
         },
       ],
-      resourceIds: ['langchain-docs', 'openai-agents-sdk-python', 'claude-agent-sdk'],
+      resourceIds: ['langchain-docs', 'langgraph-persistence', 'openai-agents-sdk-python', 'claude-agent-sdk'],
     },
     {
       id: 'agent-frameworks/leaky-abstractions',
       chapterId: 'agent-frameworks',
       slug: 'leaky-abstractions',
       title: '抽象在哪里泄漏',
-      summary: '四个最常见的下探触发点，选型时就该问清楚。',
+      summary: '用 schema、重试和控制流边界识别何时需要下探，并估算本项目的维护成本。',
       estimatedMinutes: 20,
       difficulty: 'advanced',
       hasBody: true,
@@ -91,20 +98,21 @@ export const chapter = {
       checkpoints: [
         {
           id: 'leak-points',
-          basis: 'inferred',
-          question: '实际项目里，最常被迫下探到框架内部的是哪几种需求？',
+          basis: 'documented',
+          question: '在 LangChain Core 0.3.63 中，普通 str、parse_docstring 与 Literal 分别影响什么？',
           answer:
-            '四个：**自定义重试与预算策略**（默认策略与你的成本模型不匹配）、**替换状态存储**（默认存在内存或某个你不想要的数据库里）、**插入人工确认点**（高风险动作前必须停下来等人）、以及**拿到完整的执行轨迹**（用于成本归因与故障复盘）。\n\n这四个的共同点是：**它们都发生在「默认行为不够用」的时刻，而那正是生产与 demo 的分界线。** 所以选型测试不该是「跑通一个 hello world」，而该是「把其中一项需求实现一遍」。',
+            '`@tool` 默认从函数签名推断 schema，`parse_docstring` 默认关闭；开启后可解析 Google Style 参数说明，但说明文本本身不生成 enum。该版本的 `Literal["明天", "后天"]` 可生成字段 enum。请检查实际生成的 schema；这只说明本地 schema 生成，不证明 provider 接受所有关键字，也不保证模型输出正确。',
+          sourceIds: ['langchain-core-063-tool-convert', 'langchain-core-063-tool-base'],
         },
         {
           id: 'escape-hatch-test',
           basis: 'inferred',
-          question: '怎么在选型阶段就判断一个框架让不让路？',
+          question: '怎样在选型阶段评估一个抽象的扩展成本？',
           answer:
-            '做一次**逃逸测试**：挑上面四项里你最需要的一项，在**不改框架源码**的前提下实现它。允许的话，抽象就是安全的；要 fork 才能做，就说明这个抽象在你的场景里迟早会成为负债。\n\n两项补充证据也很有用：**错误信息的可读性**（出问题时它告诉你的是「第几步、哪个工具、什么参数」，还是一句泛泛的异常），以及**能否导出完整调用轨迹**（第 4 阶段做成本归因时会直接依赖它）。\n\n这两项都不需要写代码就能验证 —— 看文档和 issue 区即可。',
+            '选一条对自己重要的需求，针对固定 SDK 版本与配置验证默认路径、扩展点、失败恢复和升级时的复核责任。记录测试覆盖范围及未验证的生产边界；可以将 fork 成本纳入比较，但“不需要 fork”不能单独证明框架安全或适合生产。',
         },
       ],
-      resourceIds: ['langchain-docs', 'claude-agent-sdk'],
+      resourceIds: ['langchain-docs', 'claude-agent-sdk', 'langchain-core-063-tool-convert', 'langchain-core-063-tool-base', 'openai-agents-sdk-python'],
     },
     {
       id: 'agent-frameworks/build-vs-buy',
@@ -123,15 +131,15 @@ export const chapter = {
           basis: 'documented',
           question: '12-Factor Agents 的核心主张是什么？它对框架的态度是什么？',
           answer:
-            '核心主张是把 agent 当作**确定性软件**来写：大部分流程由你自己的代码控制，只在真正需要判断的地方调用模型。它的反对对象不是某个框架，而是「把控制流整个交给模型和框架」这种默认做法。\n\n放到本站的语境里，它与第 9 章手写循环的立场一致：**先知道轮子怎么造，再看官方抽象。** 顺序反过来，你就失去了判断哪些抽象是必要的、哪些只是多一层的机会。\n\n要注意这份材料是**立场声明而不是在演进的项目**（仓库最后更新停留在 2025 年 9 月），读它的观点即可，不必等新版本。',
+            '12-Factor Agents 是 HumanLayer 作者提出的工程原则，不是框架能力的对照实验。它主张让应用能检查和掌握关键控制流、提示词、上下文与状态，同时明确表示这些原则不等于批评框架，也允许把小而模块化的 agent 概念整合进现有产品。应把它用作选型核对清单；具体框架是否满足某项原则，需要按版本、配置与目标故障路径验证。',
           sourceIds: ['twelve-factor-agents'],
         },
         {
           id: 'when-buy-wins',
           basis: 'inferred',
-          question: '什么情况下「买」明显优于「自己写」？',
+          question: '如何按具体需求评估采用框架、自行实现或组合使用？',
           answer:
-            '三种情况：**需要持久化执行**（自己实现检查点与恢复的成本远高于引入一个成熟方案）、**需要团队协作**（统一抽象降低沟通成本，新人不必读你手写的循环）、以及**需要现成的可观测与部署链路**（追踪、评测、部署配套齐全）。\n\n反过来，如果你的流程并不复杂、只有一个团队维护、而且对成本与延迟极其敏感，那么一个几百行的自研循环往往比引入框架更划算 —— 你付的框架成本（学习、版本升级、抽象绕行）会超过你省下的代码量。',
+            '不存在脱离上下文的“买一定更优”结论。先列出目标能力与故障路径，再核对候选方案在当前版本和配置下的行为、可观察性、升级责任、团队维护能力、迁移与退出成本。对关键成功路径和副作用失败路径运行可重复测试；把已验证、需配置、应用负责和未知项分别记录。选择能满足要求且责任边界可接受的方案，并保留复查条件。',
         },
       ],
       resourceIds: ['twelve-factor-agents', 'langchain-docs'],
@@ -153,21 +161,30 @@ export const chapter = {
           basis: 'inferred',
           question: '不依赖具体框架名，选型时该回答哪几个问题？',
           answer:
-            '五个：**流程是显式已知还是会动态决定**（决定抽象模型）；**任务是否需要持久化执行**（决定要不要引入执行层）；**是否需要多智能体**（大多数情况下不需要，见第 10 章）；**团队规模与既有技术栈**（决定学习成本能否摊薄）；**是否需要下探自定义**（决定抽象是否安全）。\n\n把这五个问题的答案写下来，再去看候选框架的文档，你会发现问题从「哪个更好」变成了「哪个匹配」。前者没有答案，后者有。',
+            '先区分不可妥协的门槛与可权衡偏好：provider/协议支持、授权与数据边界、失败与恢复语义属于常见硬门槛；团队熟悉度、集成便利、扩展方式和可观测性可按项目加权。候选方案按目标版本与配置验证关键成功路径和副作用失败路径，再记录证据、未知项与复查条件。此清单是工程判断，不是普遍排序规则。',
+        },
+        {
+          id: 'openai-sdk-or-api-choice',
+          basis: 'documented',
+          question: 'OpenAI 官方文档如何说明 Agents SDK 与直接使用 Responses API 的适用选择？',
+          answer:
+            '官方首页将“由应用控制 loop、工具分发与状态处理”列为直接使用 Responses API 的适用方向；将希望 runtime 管理 turns、工具执行、guardrails、handoffs 或 sessions 列为使用 Agents SDK 的方向，并说明应用可以混用两者。这是 OpenAI 对自家产品路径的说明，不应外推为其他框架或 provider 的通用规律。具体能力需按当前版本与配置复核。',
+          sourceIds: ['openai-agents-sdk-python'],
         },
         {
           id: 'migration-cost',
           basis: 'inferred',
           question: '怎样为将来换框架留出余地？',
           answer:
-            '三个约定，都不依赖具体框架：**业务逻辑与编排逻辑分开写**（工具的实现、校验、数据访问不要蘸上框架的类型）；**状态用你自己的 schema 表达**（框架的存储格式当作序列化细节）；**把模型调用收口在一个薄适配层**（本站的 Playground 就是这个做法 —— 适配器按协议选，而不是按厂商）。\n\n判断标准很直接：**你的业务代码里 import 了多少框架符号？** 越少，迁移越便宜。如果数据访问层直接 import 了框架的节点类型，那么换框架就等于重写。',
+            '迁移成本不能由 import 数量直接推出。把依赖点作为定位线索，再按模型/provider 适配、工具与业务策略、持久化状态格式、trace/测试/告警以及升级/部署/退出责任拆工作项。对代表性工作流做切换演练，记录语义差异、数据转换、测试缺口和实际改动；不要将单个试点外推为全系统工时。自己的业务类型和适配层可减少部分 API 耦合，但不能保证行为或持久数据可直接迁移。',
         },
       ],
-      resourceIds: ['langchain-docs', 'google-adk-docs', 'langchain-academy'],
+      resourceIds: ['langchain-docs', 'google-adk-docs', 'langchain-academy', 'openai-agents-sdk-python'],
     },
   ],
   resourceIds: [
     'langchain-docs',
+    'langgraph-persistence',
     'openai-agents-sdk-python',
     'claude-agent-sdk',
     'twelve-factor-agents',
@@ -179,11 +196,11 @@ export const chapter = {
     transferable: [
       '技术选型的通用方法：先列需求清单，再看匹配度，而不是先看热度',
       '「薄适配层」的经验：把外部依赖收口在一处，换起来才便宜',
-      '评估迁移成本的方式：数一数业务代码里渗透了多少框架符号',
+      '评估迁移成本：盘点行为、持久化、接口和运营责任，再做代表工作流的切换演练',
     ],
     pitfalls: [
       '把框架当能力来源：功能列表最长的不一定最适合你',
-      '跳过手写直接上框架，于是无法判断哪些抽象是必要的',
+      '没有目标工作流和验收契约就按功能清单选型，无法判断默认行为是否满足实际要求',
       '选型测试只跑 hello world，没有验证「默认行为不够用时能否下探」',
       '业务逻辑与编排逻辑混写，导致换框架等于重写',
     ],

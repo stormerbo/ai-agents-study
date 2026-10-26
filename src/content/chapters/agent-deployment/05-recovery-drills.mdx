@@ -1,0 +1,133 @@
+---
+lesson: agent-deployment/recovery-drills
+title: 恢复演练：证明备份和副作用能接上
+status: drafting
+---
+
+“有备份”“有重试”“队列会恢复”都只是配置或意图，不是恢复能力。只有在受控环境制造故障，恢复后核对任务状态、数据范围和外部副作用，才能知道系统是否真的可恢复。Agent 服务尤其要把两条状态线分开：内部任务可以恢复，外部动作的结果却可能未知。数据库回滚不会撤回已经发出的邮件、工单或退款。
+
+本节交付一份可执行的演练记录：触发条件、注入点、预期状态、验证查询、责任人、停止条件和遗留风险。演练从开发环境的确定性故障注入开始；PostgreSQL 恢复、真实 worker 被 kill、MCP/模型端点中断和线上切流属于独立的集成演练，需要目标环境、备份和授权。本地 SQLite 测试不能替代它们。
+
+## 演练对象和成功判据
+
+先把依赖按故障后果分组：任务数据库、worker、模型 API、MCP 工具服务、检索服务、外部接收方、身份与密钥服务。每个依赖都要回答四个问题：故障如何发现；正在运行的任务落入什么持久状态；恢复后从哪个 checkpoint 或动作记录继续；怎样证明没有丢任务、重复副作用或越权执行。答案写不出来时，演练目标就是补齐这个决策，而不是先随机 kill 进程。
+
+每个演练案例至少包含这些字段：
+
+```json
+{
+  "drill_id": "external-receipt-lost-v1",
+  "environment": "isolated-local-test",
+  "injection_point": "receiver-committed-before-local-receipt",
+  "expected": "reconcile-existing-delivery",
+  "assertions": ["delivery_count(operation_id) == 1", "task_is_not_resubmitted"],
+  "observed": "passed",
+  "limitations": ["SQLite model", "no real worker process", "no production endpoint"]
+}
+```
+
+这是本地测试案例的报告形状示例；线上演练必须填真实的环境标识、时间线和观察证据，不能直接复制 `passed` 作为结果。
+
+| 字段 | 内容 | 验收问题 |
+|---|---|---|
+| 场景与版本 | build、prompt、tool schema、数据库 schema、模型端点 | 能否复现当时运行组合？ |
+| 触发和注入点 | worker 退出、连接断开、超时、数据库故障或接收方响应丢失 | 注入是否落在声明的边界？ |
+| 预期状态 | queued、running、waiting_approval、unknown、completed 等 | 业务状态是否明确而非猜测？ |
+| 数据核对 | 任务、动作、outbox、审计记录及备份恢复点 | 能否解释每条状态的来源？ |
+| 外部副作用核对 | 接收方按稳定 operation key 查询的结果 | 能证明未执行、已执行或结果未知吗？ |
+| 恢复与回滚 | 重启、接管、对账或停止自动执行 | 是否有明确停止条件？ |
+| 证据和责任人 | 日志定位、查询结果、时间、观察者 | 另一个值班同事能独立判读吗？ |
+
+成功不是“进程起来了”，也不是所有任务都变成 completed。成功标准是：系统恢复到一个有证据支撑的业务状态；对未知外部结果先对账，未查清之前不再次执行；无法安全自动恢复的任务进入人工队列并带有可操作信息。
+
+## 从低风险故障逐级演练
+
+按外部影响从低到高，分层执行。每次只注入一种故障，保存基线和恢复后快照；演练结束后复原环境并确认下一次运行从干净状态开始。
+
+**第一层：请求提交重复。** 同一个 tenant 和 idempotency key、同一请求内容并发提交多次，验证只产生一个持久任务，客户端重试能取回同一 task id。若同一作用域的 key 被不同请求内容复用，应返回冲突，不能把旧 task 当作新请求成功受理。再对比不同 tenant、不同 key，确认幂等范围没有意外扩大。提交接口返回超时并不意味着数据库没有写入；客户端再次提交必须安全。
+
+这个 SQLite fixture 用 payload 字符串相等来判断重放请求是否相同。生产接口应先按业务语义规范化参与幂等判定的字段，再持久化请求摘要；不能把易变的传输字段算进摘要，也不能在同 key 的业务参数不同时复用旧结果。
+
+**第二层：worker 在可恢复边界退出。** 分别在领取任务后、保存 checkpoint 前后停止 worker。检查租约或执行 epoch 是否阻止旧 worker 恢复后迟到写入；确认新 owner 从已提交 checkpoint 接管，不重复已完成的只读工作。进程退出不是重试策略本身，数据库必须记录它的 owner 和状态。
+
+**第三层：外部调用结果不确定。** 在发送前中断时，预期接收方没有记录；在接收方已提交但本地回执未保存时，预期本地状态为 unknown/dispatching，恢复流程先用稳定 operation key 对账，找回原回执。同一 key 必须绑定相同请求内容；key 相同但 payload 不同时，调用方和接收方都应拒绝冲突，不能静默复用旧结果。若接收方不支持幂等键或查询，系统不能保证“恰好一次”，必须转人工核对或定义补偿流程。
+
+**第四层：审批等待超过任务期限。** 将一条待审批任务的 deadline 调到过去，再触发一次 worker claim。判据不是只看任务变成 `failed`：待审批记录必须变为 `cancelled`，未完成 action 和 queued outbox 也必须取消，`task.deadline_expired` 事件要记录清理数量；如果被清理的任务意外仍关联 `dispatching` 或 `unknown` outbox，就不能按普通过期路径失败，而要保留动作并转入 `reconciling`。先检查 `approvals`、`actions`、`outbox` 与 `events` 四处持久状态，才能证明审批过期不会留下可被误执行的动作，也不会把可能已发生的外部效果伪报为失败。P4 的 PostgreSQL 集成测试覆盖待审批和 queued delivery；另用故意构造的状态不一致用例检查有潜在外部效果时的保守分支。这验证的是本地实现，不替代真实接收方对账。
+
+配套 [`fault_models.py`](../../../examples/reliability/fault_models.py) 将应用库和接收方放在两个临时 SQLite 文件中，显式暴露两个边界。运行命令：
+
+```text
+$ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s examples/reliability -v
+Ran 7 tests
+OK
+```
+
+**实跑状态：** 上述套件在本地 Python 3 / SQLite 环境实跑，7 项测试通过；覆盖并发提交、同一幂等 key 的不同 payload 冲突、外部动作调用前崩溃、对方提交后本地回执丢失，以及接收方已有 operation key 的参数冲突拒绝，且对账不会把冲突 payload 误确认为已发送。它用确定性异常模拟故障边界，不是杀真实生产 worker，不是多进程服务或网络分区演练。PostgreSQL 逻辑归档恢复另由下文独立脚本验证。
+
+这套 SQLite fixture 也没有实现租约过期、执行 epoch 或旧 worker 的 fencing 检查；`claim()` 的原子领取测试不能证明 worker 接管后迟到写入会被拒绝。第二层演练应针对实际存储与 owner/version 条件增加旧 owner 写入回归测试。
+
+调用后回执丢失时，故障信号是明确的：
+
+```text
+RuntimeError: injected crash after external success, before local receipt
+```
+
+这条异常只证明测试按指定位置注入并中止。是否重复发送由恢复后的接收方记录计数证明：对同一个 operation id，首次提交后再对账，交付记录仍为 1。若只断言 `reconcile()` 返回成功，而不查接收方记录，就没有验证重复副作用。
+
+## 数据库恢复需要真实演练
+
+数据库备份校验和完整恢复是两件事。PostgreSQL 的 `pg_verifybackup` 用于检查通过 `pg_basebackup` 获取的集群 base backup，可依据 backup manifest 检查文件和所需 WAL 的一些完整性问题；官方文档同时明确说，这项检查不覆盖运行服务器使用备份时的所有检查，因此仍需实际测试恢复，并检查恢复出的数据库是否包含正确数据。持续归档与时间点恢复依赖 base backup 和连续 WAL；它不是“拿一个 pg_dump 就能任意 PITR”。
+
+PostgreSQL 18 文档说明，`pg_dump -Fc` 生成供 `pg_restore` 使用的 custom archive；`pg_dump` 只导出一个数据库，因此不能单独代表整个 cluster 的备份或 WAL/PITR 能力。[pg_dump](https://www.postgresql.org/docs/18/app-pgdump.html) · [pg_restore](https://www.postgresql.org/docs/18/app-pgrestore.html) PostgreSQL 还警告，恢复会执行归档中由源 superuser 选择的代码；只恢复可信来源的归档，不可信时先用 `pg_restore --file` 导出 SQL 检查。
+
+2026-10-20 与 2026-10-21 在 PostgreSQL `18.0-bookworm` 容器中创建合成应用库与接收端库，分别用 `pg_dump -Fc` 导出，再恢复到全新的容器。可复跑脚本 [`postgres_restore_drill.sh`](../../../examples/recovery-drills/postgres_restore_drill.sh) 校验恢复后的任务仍是 `reconciling`、动作和 outbox 仍是 `unknown`，而接收端 operation key `op-1` 的记录数仍是 1。一次实跑输出：`RESTORE_OK app_state=reconciling:unknown:unknown:external_effect_unknown sink_operation_count=1 image=postgres:18.0-bookworm`。这验证了合成逻辑归档可恢复，以及恢复数据能保留“外部结果待对账”的状态；它没有执行 WAL/PITR、生产 schema、备份期间故障、RTO/RPO 测量或真实副作用重投递。结果记录使用容器 tag 而非镜像 digest，因此不能独立证明两次运行使用了内容完全相同的镜像构建。
+
+该脚本先后导出两个独立数据库，期间没有并发业务写入；它没有证明应用库与接收方库能获得同一时点的一致快照。真实系统要把快照时间窗、跨服务事件和恢复后的对账纳入演练，否则两边各自可恢复也可能拼不成一致的业务历史。
+
+在隔离环境中，数据库恢复演练至少验证：
+
+1. 选定备份时间与恢复目标，记录目标时间、时区和允许的数据丢失窗口；
+2. 校验备份文件及 manifest，记录 PostgreSQL 主版本与工具版本。`pg_verifybackup` 的 WAL 检查依赖对应备份版本的工具；PostgreSQL 18 文档还说明该检查目前只支持 plain 格式，tar 格式应使用 `--no-parse-wal`。无论校验是否通过，都要继续做实际恢复和数据正确性检查；
+3. 恢复到独立实例，检查服务能启动、schema 版本正确、关键表行数/业务不变量合理；
+4. 用业务查询确认任务状态、审批记录、动作日志、outbox 和幂等键一致；
+5. 比较恢复点前后发生过的外部动作，逐一确认已执行、未执行或结果未知；
+6. 记录实际恢复用时、数据缺口和步骤偏差，再决定是否满足 RTO/RPO。
+
+不要直接在生产数据目录上练习恢复命令。恢复目标不清、WAL 不连续、权限不正确或连接指错实例，都可能带来数据丢失。具体命令和切换流程应根据 PostgreSQL 版本、备份工具、托管服务和组织 runbook 在隔离环境验证。这里不假设任何云厂商或目标集群配置。
+
+## 依赖中断与恢复判定
+
+模型 API 或 MCP server 中断时，测试三种情况：调用尚未发出、请求已发送但响应未知、结果已收到但尚未持久化。只有能证明调用尚未发出时，才可按策略重新发起；请求已发出但响应未知时，必须先确认幂等契约或查询提供方状态。结果已收到但尚未持久化时，本地仍没有可恢复的结果记录，应先把调用视为结果未知并对账；只有结果已经持久化，才能从该记录继续，不能重放危险副作用。读取类工具与写入类工具的恢复策略不同，工具名中有“create”或“send”时尤其不能仅凭超时重试。
+
+恢复演练的实际判据通常是业务不变量，而不是日志字符串：同一 tenant 下的同一个 HTTP 幂等键只有一个 task；审批批准的参数 hash 与执行动作一致；任务完成前所有必需动作都有 durable result；同一个 operation key 的接收方效果数不超过一；撤销的身份不能在恢复后沿用旧授权；恢复出的数据保留用户可见状态与审计链。每条都要有查询、断言或人工核对步骤。
+
+<Mermaid
+  chart={`
+flowchart TD
+  A[记录基线与版本] --> B[选择一个故障注入点]
+  B --> C[执行注入并保存原始证据]
+  C --> D{内部状态能否确定}
+  D -->|是| E[从 checkpoint 或 owner 安全恢复]
+  D -->|否| F[查询接收方与外部状态]
+  F --> G{外部结果已确认}
+  G -->|未执行| H[按幂等策略继续]
+  G -->|已执行| I[写回回执，不重发]
+  G -->|仍未知| J[停止自动动作并转人工对账]
+  E --> K[检查业务不变量与审计链]
+  H --> K
+  I --> K
+  J --> L[记录风险、负责人和下一步]
+`}
+/>
+
+## 把演练转成运维资产
+
+演练结束后不要只保留一张截图。保存时间线、关联 task id、owner/epoch、输入和输出摘要、数据库查询结果、接收方回执、采取的人工步骤和复盘项。敏感数据按运行日志规则脱敏；证据还应能定位到代码与 schema 版本。若测试失败，先冻结自动恢复或切回已验证版本，再按责任边界处理，不要为了让仪表盘变绿而直接把状态改成 completed。
+
+复盘分成三类：**检测失败**（系统没告警或告警太迟）、**恢复失败**（检测到却不能安全继续）、**证明失败**（看起来恢复了，但无法证明数据和副作用正确）。前两类要改系统和流程，第三类要补证据查询、审计字段或接收方契约。每个修复都新增一个可重复演练，成为回归集的一部分；原事故记录不被新通过结果覆盖。
+
+后端经验可直接迁移的是备份校验、故障注入、幂等键、RTO/RPO、runbook 和复盘。需要重新建立的判断是：在 agent 中，“请求失败”常常无法说明“动作没发生”；模型调用可能已消耗预算，工具调用可能已产生外部效果，任务状态可能在多轮之间变化。因此恢复协议必须覆盖调用边界与任务业务状态，不能只靠 HTTP 重试和进程重启。
+
+### 本节验收
+
+读者应能针对一个实际部署画出故障矩阵，指定每种故障的注入位置、持久状态、恢复动作、外部对账方式与业务不变量；在隔离环境完成至少一次数据库备份恢复和一次外部结果未知的演练；最后由另一位同事按记录独立复现并判断是否安全。未做过的真实环境演练要标 `unverified`，本地 SQLite 测试通过不能替它签字。

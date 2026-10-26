@@ -8,4 +8,5 @@ export const bodies = {
   'stateless-2026': () => import('./03-stateless-2026.mdx'),
   'build-a-server': () => import('./04-build-a-server.mdx'),
   'security-boundary': () => import('./05-security-boundary.mdx'),
+  'remote-authorization': () => import('./06-remote-authorization.mdx'),
 } as const;

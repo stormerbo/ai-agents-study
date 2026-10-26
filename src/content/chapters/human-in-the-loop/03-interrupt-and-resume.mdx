@@ -8,13 +8,13 @@ status: drafting
 
 ## 中断不是暂停
 
-一个常见的误解是把中断当成「暂停一个正在跑的东西」。**而实际上没有东西在跑** —— agent 的循环在等待时应该完全释放资源。
+一个常见的误解是把中断当成「暂停一个正在跑的东西」。更准确地说：**等待人的期间不应占着同步请求、worker、数据库事务或锁**；运行时可以保留一个被挂起的逻辑任务，但要能跨进程恢复时，状态不能只活在该进程的内存里。
 
-正确的模型是：**把执行状态持久化下来，结束这次请求，等人回答了再开一次新的。**
+一种常见模型是：**把执行状态持久化下来，结束这次请求，等人回答后由新的请求或 worker 恢复**；队列编排或 durable workflow 也可以实现同一生命周期。
 
 这个区别带来三个实际后果：
 
-- **等待时间可以很长**（几小时、几天），因为不占资源
+- **等待可以超过一次请求/worker 的生命周期**；是否采用 durable execution 取决于任务和运行时
 - **不能依赖进程内存**，状态必须在存储里
 - **要能跨进程恢复**，因为回答可能来自另一个实例
 
@@ -22,15 +22,15 @@ status: drafting
 
 ## 恢复时最容易出的两个错
 
-**错误一：重复执行。** 用户在审批界面点了两次「同意」（或者网络重试），于是同一个动作执行了两次。
+**错误一：重复提交或重复副作用。** 用户双击、浏览器重试、服务重启都可能让相同的请求再次到达；它们本身不必然产生重复副作用，是否重复取决于服务端状态转换、动作幂等键和接收端去重。
 
-第 11 章的实测数据是：朴素版写入 `u1, u2, u2, u3`（4 条，重复 1），幂等版 `u1, u2, u3`（3 条）。**而审批场景的重复概率比崩溃更高** —— 因为「点两次」是一个很自然的用户行为。
+第 11 章的历史实测记录是：朴素版写入 `u1, u2, u2, u3`（4 条，重复 1），幂等版 `u1, u2, u3`（3 条）。这组结果仅描述该章的本地故障注入，不代表所有审批服务的重复率。审批等待会带来较长的状态有效期和更多重放机会；不能据此断言它的重复概率高于崩溃。
 
-修法和第 11 章一样：**每个待审批的动作带一个唯一 id，执行前检查它是否已经执行过。**
+审批记录 ID、工作流动作 ID、外部接收端幂等键承担不同职责。服务端生成稳定的动作 ID 并持久化；执行时以原子状态转换防止重复领取。若效果在外部系统发生，还需接收端按同一键去重，或在结果未知时对账；本地“检查过未执行”不等于外部副作用只发生一次。
 
-**错误二：审批结果与上下文不匹配。** 用户同意的是「发给 zhangsan 的那封邮件」，但恢复时上下文已经变了（比如文档被更新过），于是实际执行的是另一个版本。
+**错误二：审批结果与上下文不匹配。** 用户同意的是「发给 zhangsan 的那封邮件」，但恢复时提案参数、目标对象版本、主体授权或策略已经变了；若仍按旧批准执行，可能产生过期或越权效果。
 
-修法：**待审批的动作要把「将要执行的东西」完整冻结下来**，而不是恢复时重新生成。用户同意的必须是那个具体的动作，不是一个「以后会生成的」动作。
+修法：**把足以界定本次动作的最小必要提案内容冻结下来**，或引用不可变的业务对象版本；恢复时除核对审批绑定内容，还要重新验证当前授权、期限和业务前置条件。敏感字段应受保护并设置保留策略。
 
 ## 恢复之后要不要重新规划
 
@@ -38,14 +38,14 @@ status: drafting
 
 | 人的回答 | 接下来做什么 |
 |---|---|
-| **同意** | 直接执行，不重新规划（省一次调用） |
-| **修改后同意** | 执行修改后的版本，不重新规划 |
-| **拒绝** | **要重新规划** —— 原计划里那一步没了，后面可能全都要变 |
-| **换个方式** | 要重新规划，且把人的意见作为约束 |
+| **同意** | 仅在身份、权限、审批状态、期限、策略和冻结提案都通过服务端复核后，执行同一版本 |
+| **提出修改** | 生成新版本、重新展示并要求对该版本作出新决定；旧批准不能沿用 |
+| **拒绝** | 遵守拒绝；若这是授权/策略拒绝或用户要求停止，就终止该动作/任务。只有策略允许且不会绕过拒绝时，才可提出替代方案重新审核 |
+| **主动改用其他方式** | 将人的约束纳入新计划，再对新计划中的受保护动作重新做权限与风险判断 |
 
-第二行容易被做错：如果「修改后同意」之后还去重新规划，模型可能「想」出第三个版本，而人的修改被覆盖掉了。**人的修改是约束，不是建议。**
+将修改后的内容直接执行同样危险：原批准绑定的是旧提案。必须把修改作为新提案，重新校验授权并取得针对新版本的批准；不能让模型在批准后悄悄改写参数。
 
-第三行也容易被做错：拒绝之后直接中止，而实际上用户拒绝的只是那一步 —— agent 往往可以换一条路完成同样的目标。**中止是最后手段，不是默认动作。**
+拒绝不能一概解释为“只拒绝了这一步”。拒绝原因可能是用户停止、权限不足、政策禁止或信息不足；尝试另一条路线之前必须判断拒绝范围，不能把重新规划变成绕过否决。
 
 ## 状态里要存什么
 
@@ -58,266 +58,269 @@ status: drafting
 4. 已经执行过的动作列表（恢复时不能重做）
 ```
 
-第 4 条是第 11 章那条结论的直接应用：**恢复时必须知道「哪些已经做了」**，否则会重复副作用。
+第 4 条是第 11 章故障注入场景的应用：恢复前要核对每一步的持久化状态和外部结果；工作流 checkpoint/动作账本可以记录已确认步骤，但单独保存“已执行列表”不足以消除“外部成功、本地未记账”的未知窗口。
 
 但"完整冻结"到底长什么样、这条记录写到哪、下一次请求怎么把它读回来 —— 这三步缺任何一步就做不出来。下面把它们补齐。
 
-## 落盘：键、值、以及下一次怎么读回来
+## 落盘：恢复状态与外部效果分开建模
 
-**存放位置：外部的键值存储或数据库，不是进程内存。** 用 Redis 的话，一条待审批记录就是这样一个键值对：
+等待期间必须释放 worker/请求资源，但“把数据写到外部存储”还不足以构成安全恢复。先定义谁拥有什么状态，以及恢复后如何证明审批仍有效。
 
-```text
-键：approval:ap_8f3c21        （带 TTL，比如 24 小时 —— 对应记录里的 expires_at）
-值（JSON，就是上一节那份结构的持久化形态）：
-{
-  "approval_id":   "ap_8f3c21",
-  "action":        "send_email",
-  "frozen_params": {"to": "zhangsan@example.com",
-                    "body": "订单 A-1001 已发货，物流显示派送中。"},
-  "params_hash":   "sha256:9f2a…",
-  "reversible":    false,
-  "scope":         "1 个外部收件人可见",
-  "why":           "邮件离开服务端后不可撤回",
-  "status":        "pending",
-  "executed_ids":  [],
-  "ts":            1786000000
-}
-```
-
-**注意 `executed_ids` 的形态：它是一份"已经执行过的 action id 列表"，而不只是"这条审批的状态"。** 差别在实际执行时显现 —— 同一批工作可能包含多个动作，其中两个已经跑完、一个在等审批；恢复时你要能跳过前两个、只跑第三个。
-
-**恢复请求怎么用 approval_id 找回这条记录：**
+一条持久化提案可包含以下字段；按数据最小化原则保存执行所需的最少内容，敏感参数应设置访问控制、加密与保留期限：
 
 ```text
-界面   → POST /approval/ap_8f3c21/approve      （四个选项各自一个端点，见下一节）
-服务端 → GET approval:ap_8f3c21                ← 从存储读回上面那条
-       → 核对 params_hash 与界面提交的参数是否一致
-       → 检查 executed_ids 里是否已有本次动作
-       → 同一事务内：写入副作用 + 追加 executed_ids + status=executed
-       → 删除该键（或等 TTL 自然过期）
+approval_id       服务端生成的不可猜引用；本身不是授权凭据
+tenant_id         所属租户/账户
+subject_id        发起任务的主体
+approver_policy   允许审批的角色/策略版本（仍需恢复时重新校验）
+action_id         稳定的动作标识，与 approval_id 区分
+proposal_version  每次编辑递增；批准绑定一个确定版本
+proposal_digest   服务端对规范化提案内容计算的摘要，含动作、目标与参数
+status            pending / approved / executing / succeeded / rejected / expired / unknown
+expires_at        过期时间；过期审批不能被重新激活执行
+checkpoint_ref    工作流检查点；恢复位置与已完成步骤的版本
 ```
 
-**"同一事务"是这条链路的关键，也是最容易漏的一步。** 检查与执行必须是原子的 —— 中间如果重启，检查过了但没执行，或者执行了但没记录，都会在下一次重试时出错。Redis 上对应的是 Lua 脚本或 `SET NX`，数据库上就是一个事务：
+摘要用于发现内容变化，不取代服务端授权，也不应信任浏览器传回的摘要。摘要必须由服务端对同一规范化提案计算；跨租户、动作类型或目标对象的差异必须进入绑定内容。审批记录 ID 只用于定位记录，服务端仍要验证当前调用者是否可查看、审批和执行该对象。
 
-```python
-# 检查与执行在同一事务里 —— 伪代码！
-# 省略了连接获取、重试与错误处理，重点是「原子」这个形状。
-def resume_and_execute(conn, approval_id, submitted_hash):
-    with conn.transaction():                      # 原子边界从这里开始
-        rec = conn.execute(
-            "SELECT frozen_params, params_hash, status, executed_ids"
-            " FROM approvals WHERE approval_id = %s FOR UPDATE",   # 行锁：挡住并发点击
-            (approval_id,)).one()
-
-        if rec is None:
-            return {"status": "not_found"}
-        if rec["params_hash"] != submitted_hash:
-            return {"status": "params_changed"}   # 用户批准的不是这一次要执行的东西
-        if rec["executed_ids"]:                   # 已经跑过 → 幂等返回，绝不重跑
-            return {"status": "already_executed"}
-
-        apply_side_effect(conn, rec["frozen_params"])     # 副作用与标记同一事务
-        conn.execute("UPDATE approvals SET status='executed', executed_ids=%s"
-                     " WHERE approval_id=%s", (["send_email@ap_8f3c21"], approval_id))
-    return {"status": "executed"}
+```text
+收到决定 → 校验身份/租户/审批角色、期限和当前授权策略
+         → 按 approval_id 锁定当前记录并校验 proposal_version 与服务端摘要
+         → 同意：pending → approved（记录人的决定，尚未执行副作用）
+         → 拒绝：pending → rejected
+         → 修改：创建新版本并回到 pending，旧批准不迁移
+         → 过期/权限撤销/参数变化：标记 expired 或 invalidated，不执行
 ```
 
-**三行判据，按顺序：** 记录不存在 → 404；`params_hash` 对不上 → 拒绝执行（这是"审批结果与上下文不匹配"那类错误的防线）；`executed_ids` 非空 → 幂等成功返回。
+**人的“同意”与副作用执行前的一次性授权消费是两个状态。** 执行组件应在紧邻受保护动作前，通过服务端原子状态转换验证该决定属于当前 actor 和精确的冻结提案、仍在有效期内、权限/策略仍允许，并原子消费本次 approval、把唯一一次执行权从 `approved` 消费为 `executing`（或等价状态）；只有成功消费的那一个 worker 才能发起动作。OWASP 的 [AI Agent Security 指引](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html)也要求校验并原子消费 approval，避免并发/重放复用。批准记录或浏览器里的 `user_confirmed` 标记本身都不够。
 
-**为什么必须 `FOR UPDATE`（行锁）。** 因为"用户点了两次同意"和"负载均衡把重试打到另一个实例"这两件事会**并发**发生。没有锁的话，两个事务可能都读到 `executed_ids` 为空，然后都执行 —— 幂等检查本身变成了竞态的牺牲品。
+若通过 outbox 异步执行，审批过期语义必须落到明确的边界。本节把 `expires_at` 定义为**执行 claim 的截止时间**：worker 真正领取动作时要重新核对，过期的待投递动作不得启动。若产品采用“决定在期限内即可排队”的其他语义，应显式命名并说明其风险边界。动作一旦启动后结果变为 `unknown`，过期不能证明外部效果没发生；只能先按稳定 action key 对账，不能因过期而重新消费审批并盲目重发。还要覆盖一个常被漏掉的崩溃窗口：接收端已经提交，但调用方在写入回执或 `unknown` 状态前崩溃，本地记录仍显示 `approved`。恢复时应先查询接收端的权威幂等账本；若找到同键同指纹的结果，就对账并补写成功状态，不得因本地状态陈旧或审批已过期而再次发送。接收端若不提供权威查询/幂等契约，查不到记录不能证明动作未发生。
+
+PostgreSQL 的 `SELECT ... FOR UPDATE` 会锁住返回行，阻塞对同一行的竞争更新/锁定直到当前事务结束；锁定读与事务隔离级别也会影响并发行为。它不替代状态条件、权限检查、过期检查，也不把数据库事务延伸到外部服务。应在短事务内重新验证记录并执行条件状态更新，检查恰好影响一行；不要在等待人工输入期间持有事务或行锁。[PostgreSQL 18 行锁文档](https://www.postgresql.org/docs/18/explicit-locking.html) 还提醒，长时间持有锁会阻塞其他事务。
+
+下面是**事务边界示意，不是可直接运行的完整 SQL**。应用在锁内校验当前用户/角色、租户策略和冻结提案；`UPDATE` 的条件再防止重复决定与审批过期竞态。只有检查确实返回一行才提交：
+
+```sql
+BEGIN;
+SELECT approval_id, proposal_version, proposal_digest, status, expires_at,
+       action_id, frozen_action
+  FROM approvals
+ WHERE approval_id = :approval_id AND tenant_id = :authenticated_tenant
+ FOR UPDATE;
+-- 服务端检查当前 approver 权限、策略、proposal_digest 与对象版本。
+UPDATE approvals
+   SET status = 'approved', decided_by = :authenticated_actor,
+       decided_at = clock_timestamp()
+ WHERE approval_id = :approval_id
+   AND tenant_id = :authenticated_tenant
+   AND status = 'pending'
+   AND proposal_version = :version_displayed_to_approver
+   AND expires_at > clock_timestamp()
+RETURNING action_id, frozen_action;
+-- 必须恰好返回一行；否则 ROLLBACK，不能执行。
+-- 外部效果：在此事务内 INSERT outbox(action_id, frozen_action, 'pending')。
+-- 同库效果：在此事务内写业务表，并将动作/审批状态记为 succeeded。
+COMMIT;
+```
+
+对外部效果，这个事务记录的是人的决定与待投递任务；它还没有许可 dispatcher 忽略后续状态。worker 应在真正发起副作用前，以条件更新/行锁原子地将 `approved` 消费为 `executing`，并复查 `expires_at`、冻结版本和当前权限；只有成功 claim 的 worker 才能发送。若 claim 后进程崩溃，必须根据接收端幂等键和 `unknown` 状态对账，不得重新把已消费的批准当作新的发送许可。示例将 `expires_at` 定义为 worker claim 截止时间；若系统将其定义为用户决定截止时间，应使用另一个明确字段描述执行期限。
+
+`clock_timestamp()` 用于在语句实际执行时检查期限；PostgreSQL 的事务时间函数 `now()` 固定为事务开始时间，锁等待较久时二者语义不同。[PostgreSQL 18 日期/时间函数文档](https://www.postgresql.org/docs/18/functions-datetime.html) 说明了这些时间函数的差异。生产实现还需定义冲突/死锁/重试处理，并用真实数据库测试条件更新及过期竞态。
+
+若受保护效果完全在同一数据库内，状态 claim、业务写入与成功标记可在一个数据库事务中完成。若效果在邮件、支付等外部系统，事务 outbox 可以原子保存“已授权待投递”的本地状态和投递任务，但 dispatcher 通常可能重复投递。接收方必须以稳定幂等键去重并对同键异参作出冲突处理；否则超时后应记录 `unknown`，查询有权威性的结果或人工对账，不能把“查不到”默认等同“没有发生”。本地数据库事务本身不提供跨服务 exactly-once。不同接收方对幂等键的保存和清理策略不同；例如 [Stripe API v1 会在至少 24 小时后清理幂等记录](https://docs.stripe.com/api/idempotent_requests)，过期后重用同一键仍可能变成新请求，因此重试期限必须符合具体下游契约。
+
+审批等待期间，任务上下文、账户授权、对象状态和策略都可能变化。恢复时应从持久化 checkpoint 载入，并对剩余动作按当前策略重新校验；对已经授权的某个冻结动作，不得让模型重写动作参数后沿用旧批准。
 
 ## 一个具体的失败形态
 
-我构造过一个例子：在「动作已执行、状态未落盘」之间注入中断。恢复后朴素版写入了 4 条记录（其中 1 条重复），而幂等版写入 3 条。
+第 11 章的教学 fixture 在本地注入“效果写入后、checkpoint 落盘前”中断，历史输出为朴素版 4 条（含 1 条重复）、去重版 3 条。它说明该 fixture 的恢复路径会重放动作；不代表每种数据库、队列或接收端都有相同结果。
 
-**审批场景里这个窗口比崩溃场景更宽。** 因为崩溃是一个瞬间事件，而审批的窗口从「提交审批」一直持续到「用户回答」—— 可能是几分钟到几小时。在这段时间里，任何重试、任何进程重启、任何用户重复点击，都会落进这个窗口。
-
-**所以审批场景的幂等不是可选项，是必需项。**
+审批等待期和执行故障窗口是两类风险：前者要求重新检查提案、身份、权限和期限；后者要求对账动作状态并处理重复投递。二者都需要持久状态，但不能用一个“执行过”布尔值或审批记录 ID 同时解决。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["执行到不可逆动作"] --> B["冻结该动作（含参数）<br/>生成唯一 id"]
-    B --> C["持久化状态<br/>结束本次请求（不占资源）"]
-    C --> D["等待人的回答（几分钟到几小时）"]
-    D --> E{"回答是什么？"}
-    E -->|同意| F["检查 id 是否已执行 → 执行"]
-    E -->|"修改后同意"| G["按修改后的参数执行<br/>不重新规划（人的修改是约束）"]
-    E -->|拒绝| H["重新规划<br/>中止是最后手段，不是默认"]
-    E -->|"换个方式"| I["重新规划，把人的意见当约束"]
-    F -.-> J["幂等：点两次不能执行两次"]
-    G -.-> J
-    K["审批窗口比崩溃窗口宽得多"] -.-> J
+    A["到达受保护动作前"] --> B["创建不可变提案版本<br/>记录 checkpoint/action_id"]
+    B --> C["持久化 pending 后释放请求/worker"]
+    C --> D["等待决定；期限内状态/权限仍可能变化"]
+    D --> E{"决定到达"}
+    E --> F["验证身份/租户/权限/期限<br/>重读并校验冻结提案"]
+    F --> G{"仍 pending 且同一版本？"}
+    G -->|否| H["拒绝/过期/冲突<br/>不产生副作用"]
+    G -->|批准| I["记录批准决定<br/>尚未执行副作用"]
+    G -->|修改| J["创建新版本，重新审批"]
+    G -->|拒绝| K["遵守拒绝；禁止绕过否决"]
+    I --> I2["执行前原子消费 approval<br/>重验 actor/权限/版本/期限"]
+    I2 --> L{"效果在哪？"}
+    L -->|同一数据库| M["同事务：业务写入 + 成功状态"]
+    L -->|外部服务| N["事务 outbox → 至少一次投递"]
+    N --> O["接收端幂等去重<br/>或 unknown 后对账"]
+    M --> P["从持久化 checkpoint 恢复后续步骤"]
+    O --> P
 `}
 />
 
-## 一个可观测性建议
+## 审批等待与故障窗口怎么观察
 
-审批的等待时间本身值得监控，因为它能告诉你一些抽象层面看不到的事：
-
-- **某类动作的审批等待特别长** → 用户不确定该怎么选，说明展示的信息不够
-- **审批在深夜积压** → 需要异步通知（否则任务卡到第二天）
-- **同一类动作用户总是「修改后同意」** → agent 的参数选择有系统偏差
-
-这三条都指向改进方向，而且它们都不需要读代码就能发现。
+可以按动作类型、风险级别和主体统计等待时长、批准/拒绝/修改/过期比例、队列积压和后续结果。它们是调查线索，不是单独的诊断：等待长可能来自通知、时区、排班或信息不足；频繁修改可能源于提案质量，也可能源于界面、策略或用户偏好。对日志做数据最小化，不默认长期保存完整 prompt、邮件正文或敏感参数。
 
 
 > **「抽象泄漏」的完整定义与三种形态在第 13 章第 3 节**（agent-frameworks/03-leaky-abstractions）。本节只需要它的一条推论：当错误语义被压平时，恢复逻辑会把「不知道」误判成「已完成」，所以恢复前必须先核对副作用记录。
-## 一个具体的数字：宽窗口的代价
+## 将等待期和副作用不确定窗口分开
 
-上面说"审批窗口比崩溃窗口宽得多"，可以量化一下。
+崩溃窗口没有固定的“微秒级”长度：它取决于实现、存储、网络和故障位置。审批等待则是一个可能较长的业务状态期，期间权限、对象版本、策略和提案时效都可能变化。它们不是同一个窗口，也不能仅按时长比较重复概率。
 
-崩溃场景的窗口是**微秒级**的 —— 它发生在两条语句之间，而且只在那一次执行里出现。
-
-审批场景的窗口是**分钟到小时级**，并且在这段时间里，下面每一件事都可能发生：
-
-```text
-· 用户刷新页面后重新提交
-· 用户点了两次「同意」
-· 前端超时后自动重试
-· 你的服务重启（部署、崩溃恢复）
-· 负载均衡把重试打到另一个实例上
-```
-
-五种事件里，前三种来自用户侧，后两种来自你的基础设施。**它们的共同点是都不受你控制** —— 你没法要求用户不刷新页面，也没法保证部署期间没有请求。
-
-所以"审批的幂等"不能靠"用户不会点两次"这种假设。它必须是一个**结构性的保证**：动作 id 由服务端生成、执行前检查、检查与执行在同一事务里。
+恢复流程至少要区分三件事：审批决定是否仍对当前提案有效；动作是否已被本地 worker claim；外部服务是否已产生效果。每一项都需要自己的持久状态和重试规则。刷新、重复提交或服务重启应返回同一审批/动作的既有状态；它们不能成为再次绕过状态门禁的路径。
 ## 完整可运行代码
 
-下面这段代码实现「中断 — 持久化 — 恢复」的流程，并演示重复点击同意时幂等保护如何生效。
-
-**先说清这段示例的边界：它内部用一个 `MemoryStore` 的 dict 实现，是为了让这段代码能直接复制运行 —— 它本身不是持久化。** 真正的做法是换一个实现同一个接口的存储（Redis / 数据库），而正文上一节已经给出了那个键值的形状。**所以不要把 `STORE = {}` 这种写法带进生产 —— 那正是本节开篇说的"不能依赖进程内存"。**
+下面的本地模型演示几个必须分开的状态：审批绑定提案摘要；编辑后产生新版本并使旧提案失效；执行前验证审批主体、租户和期限；外部接收端按稳定 `action_id` 去重。它**不是持久化、并发或跨服务事务的证明**，内存字典和模拟接收端不具备这些生产保证。
 
 ```python
-"""中断 — 持久化 — 恢复：幂等保护。
+"""本地状态机示例：批准绑定版本；外部收件端模拟幂等去重。
 
-纯本地。初版实跑状态：2026-10-09；
-2026-10-12 把内存储换成 store 接口后重跑，输出一致（上面三个场景的结论未变）。
-
-下面这段代码里有一个 MemoryStore 的内存实现，它只是为了让示例能直接跑。
-真实系统要换成实现了同一个接口的 RedisStore / SQLStore —— 因为进程内存
-在等待审批的这几分钟里可能已经不在了。
+实跑状态：纯 Python 标准库离线运行。此 fixture 不证明数据库持久性、
+并发安全、真实身份认证或外部服务的幂等能力。
 """
-import time
+import hashlib
+import json
 
 
-class MemoryStore:
-    """进程内实现 —— 仅用于演示，不能上生产（见正文）。"""
+def digest(tenant_id, action, params):
+    canonical = json.dumps(
+        {"tenant_id": tenant_id, "action": action, "params": params},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
+
+class Fixture:
     def __init__(self):
-        self.d = {}
+        self.approvals = {}
+        self.effects = {}  # fake receiver's persisted idempotency ledger
+        self.next_id = 0
 
-    def put(self, key, value):
-        self.d[key] = dict(value)
+    def create(self, tenant_id, action, params, now, ttl=60, version=1):
+        self.next_id += 1
+        approval_id = f"approval-{self.next_id}"
+        action_id = f"action-{self.next_id}"
+        self.approvals[approval_id] = {
+            "tenant_id": tenant_id, "action": action, "params": dict(params),
+            "digest": digest(tenant_id, action, params), "version": version,
+            "action_id": action_id, "expires_at": now + ttl, "status": "pending",
+        }
+        return approval_id
 
-    def get(self, key):
-        v = self.d.get(key)
-        return dict(v) if v else None
+    def decide(self, approval_id, actor_tenant, actor_id, expected_digest, now):
+        rec = self.approvals.get(approval_id)
+        if rec is None or rec["tenant_id"] != actor_tenant:
+            return "not_found_or_forbidden"
+        approvers_by_tenant = {"tenant-1": {"alice"}}
+        if actor_id not in approvers_by_tenant.get(actor_tenant, set()):
+            return "forbidden"
+        if now >= rec["expires_at"]:
+            rec["status"] = "expired"
+            return "expired"
+        if rec["status"] != "pending" or rec["digest"] != expected_digest:
+            return "stale_or_already_decided"
+        rec["status"] = "approved"
+        return "approved"
 
-    def cas(self, key, expect, update):
-        """带版本号的原子更新。返回 False 表示有人抢先改了（并发点击的防线）。
+    def edit_as_new_proposal(self, approval_id, new_params, now):
+        old = self.approvals[approval_id]
+        if old["status"] not in {"pending", "approved"}:
+            raise ValueError("only an unexecuted proposal can be edited")
+        old["status"] = "invalidated"
+        return self.create(
+            old["tenant_id"], old["action"], new_params, now,
+            ttl=max(1, old["expires_at"] - now), version=old["version"] + 1,
+        )
 
-        真实的 Redis 实现是 WATCH/MULTI 或 Lua 脚本；SQL 实现是
-        带 WHERE version=%s 的 UPDATE 并检查影响行数。
-        """
-        cur = self.d.get(key)
-        if not cur:
-            return False
-        if cur.get("version") != expect:
-            return False
-        nxt = dict(cur)
-        nxt.update(update)
-        nxt["version"] = expect + 1
-        self.d[key] = nxt
-        return True
-
-
-# 生产环境的形状（此处不真实连接，只示意接口一致）：
-#   import redis
-#   class RedisStore:
-#       def __init__(self, client): self.c = client
-#       def put(self, key, value):
-#           self.c.hset(key, mapping={k: json.dumps(v) for k, v in value.items()})
-#           self.c.expire(key, 24 * 3600)          # 对应记录里的 expires_at
-#       ...
-STORE = MemoryStore()
-_SEQ = [0]
-
-
-def freeze(action, params, reversible=False, why="", scope=""):
-    """冻结待审批动作：服务端生成 id，参数完整存下来。
-
-    注意 id 的来源：这里用序号，不是时间戳。
-    我第一版用 int(time.time() * 1000) % 100000 —— 同一毫秒内冻两个动作
-    就会得到同一个 id，于是第二次批准命中的是第一条记录。
-    幂等键必须真的唯一，而时间戳不是唯一来源（正文把它列为失败形态之一）。
-    """
-    _SEQ[0] += 1
-    aid = "ap_%08d_%s" % (_SEQ[0], action)
-    STORE.put(aid, {"action": action, "frozen_params": dict(params),
-                    "params_hash": "sha256:%d" % (abs(hash(repr(sorted(params.items())))) % 1000000),
-                    "reversible": reversible, "why": why, "scope": scope,
-                    "status": "pending", "executed_ids": [], "version": 1})
-    return aid
-
-
-def approve(aid, params=None):
-    """人点了同意（或修改后同意）。params 非空表示修改过。
-
-    这里演示的是「同一事务」的语义：检查 executed_ids 与写入副作用
-    在同一个 cas 里完成 —— 中间不会插进另一个请求。
-    """
-    item = STORE.get(aid)
-    if item is None:
-        return "❌ 未知的待审批动作"
-    if item["executed_ids"]:
-        return "✅ 幂等命中：%s 已经执行过，跳过" % aid
-    final = dict(item["frozen_params"])
-    if params:
-        final.update(params)
-    ok = STORE.cas(aid, expect=item["version"],
-                   update={"status": "executed", "executed_ids": [aid],
-                           "executed_params": final})
-    if not ok:
-        return "✅ 并发命中：另一个请求已经执行过，跳过"
-    return "执行 %s %s" % (item["action"], final)
+    def deliver(self, approval_id, now, lose_receipt=False):
+        rec = self.approvals[approval_id]
+        if rec["status"] not in {"approved", "unknown"}:
+            return rec["status"]
+        key = rec["action_id"]
+        fingerprint = rec["digest"]
+        prior = self.effects.get(key)
+        if prior and prior["fingerprint"] != fingerprint:
+            return "idempotency_key_conflict"
+        if prior is not None:
+            # Any authoritative receiver record wins, even if the caller crashed
+            # while the local approval still says approved.
+            rec["status"] = "succeeded"
+            return prior["result"]
+        if rec["status"] == "unknown":
+            return "unknown"  # absence is not proof unless receiver lookup is authoritative
+        if now >= rec["expires_at"]:
+            rec["status"] = "expired"
+            return "expired"
+        self.effects[key] = {"fingerprint": fingerprint, "result": "sent"}
+        if lose_receipt:
+            rec["status"] = "unknown"
+            return "unknown"
+        rec["status"] = "succeeded"
+        return self.effects[key]["result"]
 
 
-if __name__ == "__main__":
-    print("=== 场景一：用户重复点击「同意」 ===")
-    aid = freeze("send_email", {"to": "zhangsan@example.com", "body": "..."},
-                 why="邮件离开服务端后不可撤回", scope="1 个外部收件人可见")
-    print("  冻结动作：%s" % aid)
-    print("  第 1 次点击：%s" % approve(aid))
-    print("  第 2 次点击：%s" % approve(aid))
-    rec = STORE.get(aid)
-    print("  实际执行了 %d 次（应为 1）" % len(rec["executed_ids"]))
-    print()
-    print("=== 场景二：修改后同意 ===")
-    aid2 = freeze("send_email", {"to": "attacker@example.com", "body": "..."})
-    print("  冻结动作：%s（收件人 attacker）" % aid2)
-    print("  用户修改收件人后同意：%s" % approve(aid2, {"to": "zhangsan@example.com"}))
-    print("  → 执行的是修改后的参数，不是冻结时的那个")
-    print()
-    print("=== 场景三：恢复时状态与参数不匹配（反面示例）===")
-    print("  如果恢复时「重新生成」动作而不是「读取冻结的动作」：")
-    print("    用户同意的是发给 zhangsan 的版本，恢复后模型可能生成发给别人的版本")
-    print("    这就是为什么待审批动作必须完整冻结，而不是存一个「以后会生成的」引用")
-    print()
-    print("真实数据（第 11 章）：朴素恢复写入 u1,u2,u2,u3（4 条），幂等版 u1,u2,u3（3 条）")
+fx = Fixture()
+approval = fx.create("tenant-1", "send_email", {"to": "a@example.com"}, now=100, ttl=2)
+proposal_hash = fx.approvals[approval]["digest"]
+assert fx.decide(approval, "tenant-1", "mallory", proposal_hash, now=101) == "forbidden"
+assert fx.decide(approval, "tenant-1", "alice", "0" * 64, now=101) == "stale_or_already_decided"
+assert fx.approvals[approval]["status"] == "pending"  # mismatched view cannot consume the approval
+assert fx.decide(approval, "tenant-1", "alice", proposal_hash, now=101) == "approved"
+assert fx.deliver(approval, now=101, lose_receipt=True) == "unknown"
+assert fx.deliver(approval, now=103) == "sent"  # reconcile receiver result after approval expiry
+assert len(fx.effects) == 1
+
+old = fx.create("tenant-1", "send_email", {"to": "wrong@example.com"}, now=100)
+new = fx.edit_as_new_proposal(old, {"to": "right@example.com"}, now=101)
+assert fx.approvals[old]["status"] == "invalidated"
+assert fx.decide(old, "tenant-1", "alice", fx.approvals[old]["digest"], now=102) == "stale_or_already_decided"
+assert fx.approvals[new]["version"] == 2 and fx.approvals[new]["status"] == "pending"
+assert fx.decide(new, "tenant-1", "alice", fx.approvals[new]["digest"], now=102) == "approved"
+
+expired = fx.create("tenant-1", "send_email", {"to": "b@example.com"}, now=100, ttl=1)
+assert fx.decide(expired, "tenant-1", "alice", fx.approvals[expired]["digest"], now=101) == "expired"
+
+approved_then_late = fx.create("tenant-1", "send_email", {"to": "late@example.com"}, now=100, ttl=1)
+assert fx.decide(
+    approved_then_late, "tenant-1", "alice",
+    fx.approvals[approved_then_late]["digest"], now=100,
+) == "approved"
+effects_before_late_claim = len(fx.effects)
+assert fx.deliver(approved_then_late, now=101) == "expired"
+assert len(fx.effects) == effects_before_late_claim  # expired approval did not start a new side effect
+
+remote_committed_local_stale = fx.create(
+    "tenant-1", "send_email", {"to": "reconcile@example.com"}, now=100, ttl=1,
+)
+assert fx.decide(
+    remote_committed_local_stale, "tenant-1", "alice",
+    fx.approvals[remote_committed_local_stale]["digest"], now=100,
+) == "approved"
+stale = fx.approvals[remote_committed_local_stale]
+# Simulate receiver commit followed by a crash before the caller persists the receipt.
+fx.effects[stale["action_id"]] = {"fingerprint": stale["digest"], "result": "sent"}
+effects_before_reconcile = len(fx.effects)
+assert fx.deliver(remote_committed_local_stale, now=101) == "sent"
+assert stale["status"] == "succeeded"
+assert len(fx.effects) == effects_before_reconcile  # authoritative lookup reconciles; it does not resend
+print("PASS: unauthorized actor rejected; old approval invalidated after edit;")
+print("      expired approval rejected; lost receipt reconciled with one fake receiver effect.")
 ```
 
 ## 常见坑
 
 - **把中断当暂停。** 应该持久化状态、结束请求 —— 因为等待可能持续几小时。
-- **恢复时不检查幂等。** 用户点两次「同意」是很自然的行为，而审批窗口比崩溃窗口宽得多。
+- **恢复时只看审批记录，不核对动作结果。** 重复提交应返回已有决定；副作用是否发生还要检查本地动作状态和接收端回执。
 - **审批通过后重新生成动作。** 用户同意的是那个具体动作，必须完整冻结，不能恢复时再生成。
-- **「修改后同意」之后还重新规划。** 人的修改是约束，不是建议。
-- **拒绝之后直接中止。** 用户拒绝的只是那一步，agent 往往能换一条路完成目标。
-- **不监控审批等待时间。** 它是发现「展示信息不够」和「参数有偏差」的免费信号。
-- **用时间戳生成幂等键。** 同一毫秒内冻两个动作就会撞（我在写这段示例时真的撞了）—— 幂等键必须是真正唯一的来源，比如数据库序列或 UUID。
-- **只存"审批状态"，不存"已执行的动作列表"。** 那样无法判断"这一批里哪些已经跑完了"，重放时会重复副作用。
-- **幂等检查与执行不在一个原子操作里。** 两个并发请求会同时读到"未执行"，然后都执行 —— 幂等检查自己变成了竞态。
+- **修改后沿用旧批准，或批准后让模型改写参数。** 修改应创建新提案版本并重新授权/审批；批准必须绑定将要执行的内容。
+- **把拒绝当成自动改道信号。** 先判断拒绝的主体与范围；授权/政策拒绝不能通过另一工具或新计划绕过。
+- **把等待时长或修改率当作根因。** 它们是需分层调查的信号，不能单独证明界面信息不足或模型参数有偏差。
+- **把审批 ID 当幂等键。** 对外部副作用使用稳定动作键，并由接收端按键去重；持久 ledger 应对同键异参冲突拒绝。时间戳或 ID 难猜本身不能替代此机制。
+- **只存审批状态，不存 workflow checkpoint/动作结果。** 那样恢复时无法区分已完成步骤与结果未知步骤。
+- **把本地锁当成外部幂等。** 同一数据库可用短事务/条件更新防止并发 claim；外部效果仍要靠接收端去重或对账，二者不可互换。
 
 ## 这一层会怎么坏
 
@@ -326,7 +329,7 @@ if __name__ == "__main__":
 | 坏法 | 现象 | 怎么发现 |
 |---|---|---|
 | **状态在进程内存里** | 单实例测试全过，扩容或重启后"找不到待审批动作" | 部署两个实例后跑一遍审批流程 |
-| **幂等键不唯一** | 两次不同的审批互相命中（上面那个时间戳 bug） | 对 id 生成函数跑一次"同毫秒生成两个"的用例 |
-| **副作用与标记不在同一事务** | 偶发的重复执行，且只在并发或崩溃后出现 | 在检查与执行之间注入一次崩溃（第 11 章那个构造） |
+| **幂等键不唯一或被异参复用** | 不同动作被误合并，或重放时参数不一致 | 并发创建键、同键异参和超出保留期的重试测试；用唯一约束和接收端契约验证 |
+| **本地状态与本地副作用未原子提交** | 重启后可能重复本地业务写入 | 在事务提交前后注入故障，核对数据库状态与动作次数 |
 
-三者的共同点是**在单实例、低并发、不崩溃的开发环境里完全看不到** —— 所以它们必须靠**故意制造的坏条件**（多实例、并发、注入崩溃）来验证，而不是靠正常跑一遍。
+三者的共同点是**在单实例、低并发、不崩溃的开发环境里完全看不到** —— 所以它们必须靠**故意制造的坏条件**（多实例、并发、注入崩溃）来验证，而不是靠正常跑一遍。外部副作用另需分别注入“调用前失败”“远端成功但回执未落库”“超时但远端结果未知”，并检查 outbox、幂等查询与对账分支；数据库事务不能替代这些验证。

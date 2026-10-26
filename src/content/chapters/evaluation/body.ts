@@ -14,4 +14,5 @@ export const bodies = {
   traces: () => import('./09-traces.mdx'),
   confidence: () => import('./10-confidence.mdx'),
   regression: () => import('./11-regression.mdx'),
+  'provider-migration': () => import('./12-provider-migration.mdx'),
 } as const;

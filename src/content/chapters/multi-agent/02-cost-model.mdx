@@ -1,6 +1,6 @@
 ---
 lesson: multi-agent/cost-model
-title: 成本模型：内容 × 装载次数
+title: 多 Agent 成本估算：从输入量到账单
 status: drafting
 ---
 
@@ -31,10 +31,10 @@ status: drafting
 倍数 ≈ ((N+1)×B + ΣMᵢ + Iₛ + ΣOᵢ + Oₛ) / (B + ΣMᵢ + Oₛ_single)
 ```
 
-这个式子立刻给出两条结论：
+这个式子给出两个需要用实际调用验证的方向性预期：
 
-**第一，B 越大，重复输入量通常越高。** 共享背景在工人与主管的请求中重复出现时会重复计入输入 token；具体账单还取决于缓存与厂商计价。
-**第二，N 越大，额外调用和工人输出通常也越多。** 每多一个工人，B 多一次输入，并增加该工人的输入与输出；主管输入也包含它需要汇总的结果。
+**第一，B 越大，重复输入量可能越高。** 只有当请求确实重复包含这份背景时，才会增加对应输入用量；缓存、请求结构和提供商的 usage 口径会影响实际读数与账单。
+**第二，活跃工人越多，通常需要统计的调用与输出项越多。** 实际增量取决于调度是否真的调用这些工人、各自请求装入了什么，以及输出是否被重试或截断；不能只凭 N 推出固定倍数。
 
 若 B 相对私有材料很小，重复 B 带来的输入增量可能不显著；但多出来的请求、worker 输出和 supervisor 汇总仍须计入，token-volume 或账单倍数不保证趋近 1。
 
@@ -47,9 +47,9 @@ status: drafting
 | 小（57 字） | 4,270 | 8,161 | **1.91×** |
 | 大（3,489 字） | 9,734 | 19,380 | **1.99×** |
 
-（实跑数据，2026-10-09，`deepseek-flash`。两次运行分别复测过，倍数在 1.9 到 2.4 之间浮动。）
+（历史汇总，2026-10-09，登记模型名 `deepseek-flash`。逐次请求/响应、准确端点与模型快照、评分记录和账单未留存，当前无法独立复算；不得视为当前模型的可复现基线。）
 
-**在这组实验中，背景从 57 字增至 3,489 字，观测到的倍数仍接近（1.91× 与 1.99×）。** 仅凭这两次总量无法确定原因；要解释差异，必须拆开比较每一阶段的输入、工人输出、主管输入/输出和缓存 usage。
+**这份历史记录列出的两个倍数是 1.91× 与 1.99×。** 由于没有逐次 usage 轨迹，这些总量既不能证明背景规模对倍数影响很小，也不能解释为什么数值接近；要检验该假设，须逐请求记录输入、输出、重试、停止原因及缓存字段，并说明对照的完整边界。
 
 ## 汇总所有调用的输出
 
@@ -77,7 +77,7 @@ token-volume 倍数 = (总输入_multi + ΣOᵢ + Oₛ) / (总输入_single + O�
 所以设计时应该争取的形状是：**每个工人只装它真正需要的那一小份，而共享的背景尽量少、尽量小。** 具体做法：
 
 - 把共享背景里「其实只有一部分工人需要」的内容拆出去
-- 需要全局背景时，先让一个便宜的前置步骤把它压成很短的约定，再分发给工人。压成什么：一份逐条列出、不超过 10 条的清单（每条一行、只写会被反复引用的规则），由一个便宜的小模型跑一次 BG 生成；工人收到的是这份清单，不是原始 BG。代价是一次调用，收益是后面 N+1 次装载都变短。
+- 需要全局背景时，可以评估是否生成一份较短的共享摘要再分发。摘要长度、生成模型、是否值得增加一次调用，都没有通用阈值；先用目标任务的代表性样本检查关键信息保留、遗漏风险和端到端总用量，再决定是否替换原背景。
 - 工人生成的产出尽量短（结构化字段而不是长文）
 
 三条都旨在减少重复上下文或无用输出；**让 B 变小只是其中一项**，还要控制 worker 输出和 supervisor 汇总输入。
@@ -85,7 +85,7 @@ token-volume 倍数 = (总输入_multi + ΣOᵢ + Oₛ) / (总输入_single + O�
 <Mermaid
   chart={`
 flowchart TB
-    A["总成本 = 内容 × 装载次数"] --> B{"哪些内容被装了多次？"}
+    A["输入 token 量粗估 = 输入内容 × 重复装载次数"] --> B{"哪些输入被重复装载？"}
     B --> C["共享背景 B：装 N+1 次<br/>（每个工人 + 主管）"]
     B --> D["私有材料 M：各装 1 次"]
     B --> E["输出：累加 N 个 worker + supervisor 的输出"]
@@ -99,7 +99,7 @@ flowchart TB
 
 ## 一个反直觉的推论
 
-成本模型还解释了一件事：**为什么「工人越多越便宜」是错的。**
+成本模型还解释了一件事：**为什么「工人越多越便宜」并不必然成立。**
 
 一个常见的想法是「拆得越细，每个上下文越小，所以越省」。前半句对，后半句错 —— 因为**拆细的代价是共享内容被装更多遍**。
 
@@ -122,167 +122,210 @@ N 增大时分子线性增长，分母里 N×M 也在增长。谁占主导，取
 
 **跑单 agent 与多 agent 两种方案，收集每一次请求的 usage。** 先按一致口径汇总总 token volume；再用该模型/提供商当前的各类价格逐次加权，分别得到费用倍数。
 
-然后拿这个倍数去问一个问题：**这份并行或隔离带来的收益，值不值这个倍数？**
-
-- 如果倍数在 2 附近，而任务能因此并行、延迟从 sum 变成 max —— 值
-- 如果倍数接近份数（比如 4 份就是 4 倍），而任务本来就不需要并行 —— 不值
+然后把多 agent 与单 agent 放进同一套任务和验收标准中，比较端到端质量、完整输入/输出账单、延迟分布、失败与重试成本。只有在任务实际并发、子任务可独立推进且调度器能重叠其执行时，延迟才可能低于串行执行；并发执行也不保证总延迟等于各阶段耗时的最大值。是否值得由业务门槛决定，不存在通用的 2× 或 N× 成本分界线。
 
 这个办法的好处是**它测的是你的真实场景**，而不是套用一个别人的结论。第 3 章那 8.1 倍看起来很吓人，但它是「8 个子 agent 各自装一遍共享背景、输出又很短」这个特定形状下的结果；换成别的形状，数字会完全不同。
 
-最后提醒一句：**不要用一次运行的数字下结论。** 本次两次运行同一配置得到过 1.91 和 2.37 两个倍数 —— 采样波动不小。要看的是量级（2 倍还是 8 倍），不是小数点。
+最后提醒一句：**不要用一次运行的数字下结论。** 本节留存的成本表只列出 1.91× 和 1.99×；旧正文另有 2.37× 的说法，但没有对应的原始记录或登记数据支持，已撤下。当前无法估计运行间波动，也不能据此声称倍数稳定。
 
 ## 和缓存的关系
 
 最后补一个实际会影响账单的细节：有些端点支持缓存输入前缀。
 
-只有当具体提供商/模型的缓存规则、请求前缀和缓存时效都满足条件时，重复前缀才可能享受缓存计价；按 prompt 的文本相同不能直接断定命中。本节的两组成本实验没有提供可用来拆分 cache read/create 的账单证据，因此不把观测到的倍数差距归因于缓存。
+缓存只改变特定端点的计量或定价，不会自动消除多次请求、输出和协调成本。以 Anthropic Messages API 为例，`input_tokens`、`cache_read_input_tokens` 与 `cache_creation_input_tokens` 共同表示输入处理量，且读/写缓存采用各自计价；不能把这个字段约定直接套到兼容端点。DeepSeek 的 Anthropic 格式兼容文档当前把 `cache_control` 标为忽略，因此使用兼容 API 时必须检查该提供商自己的文档与返回 usage。本节历史成本摘要没有缓存读写拆分或账单证据，不能归因于缓存。
 
 若目标端点支持 prompt caching，可将稳定前缀放在适当位置，并通过 usage 验证命中；不要把缓存行为或折扣当作所有模型、厂商都相同的保证。
 ## 把 usage 拆开，自己复算一遍
 
-公式里的「输入」和「输出」不是估的，它们就在每次响应的 `usage` 里，而且要分成三类看：
+公式里的「输入」和「输出」不是估的，它们可从每次响应的 `usage` 中采集；先按目标 endpoint 文档归一化，再分别统计新输入、缓存读取、缓存写入与输出：
 
 ```python
-def split_usage(usage):
-    """一次响应的 usage 拆成四类。前两类是输入，第三类是缓存，第四类是输出。"""
-    return {
-        "new_input": usage.get("input_tokens", 0),                        # 新输入
-        "cache_read": usage.get("cache_read_input_tokens", 0),            # 命中缓存的前缀
-        "cache_creation": usage.get("cache_creation_input_tokens", 0),    # 写入缓存
-        "output": usage.get("output_tokens", 0),
-    }
+import math
+
+
+USAGE_KEYS = {
+    "input": "input_tokens",
+    "cache_read": "cache_read_input_tokens",
+    "cache_write": "cache_creation_input_tokens",
+    "output": "output_tokens",
+}
+
+
+def normalize_usage(raw_usage):
+    """把已由 endpoint adapter 校验过的互斥 usage 字段转成统一结构。"""
+    normalized = {}
+    for category, field in USAGE_KEYS.items():
+        value = raw_usage.get(field)
+        if type(value) is not int or value < 0:
+            raise ValueError(f"usage.{field} 缺失或不是非负整数")
+        normalized[category] = value
+    return normalized
 
 
 def token_volume(calls):
-    """累加归一化后的互斥 token 类别；传入本方案全部请求。"""
-    return sum(
-        usage.get("input_tokens", 0)
-        + usage.get("cache_read_input_tokens", 0)
-        + usage.get("cache_creation_input_tokens", 0)
-        + usage.get("output_tokens", 0)
-        for usage in calls
-    )
+    """累加一条方案的所有调用；传入项必须先经 provider-specific adapter 归一化。"""
+    return {
+        category: sum(call[category] for call in calls)
+        for category in USAGE_KEYS
+    }
 
 
 def weighted_cost(calls, rates_per_million):
-    """按互斥、已归一化的 usage 逐次计价；rates 按目标 provider/model 填写。"""
+    """按明确的 endpoint/model 单价，对互斥 usage 字段逐项计价。"""
+    if set(rates_per_million) != set(USAGE_KEYS):
+        raise ValueError("rates 必须包含 input/cache_read/cache_write/output 四类")
     total = 0.0
-    for usage in calls:
-        total += usage.get("input_tokens", 0) * rates_per_million["input"]
-        total += usage.get("cache_read_input_tokens", 0) * rates_per_million["cache_read"]
-        total += usage.get("cache_creation_input_tokens", 0) * rates_per_million["cache_write"]
-        total += usage.get("output_tokens", 0) * rates_per_million["output"]
+    for category, rate in rates_per_million.items():
+        if (isinstance(rate, bool) or not isinstance(rate, (int, float))
+                or not math.isfinite(rate) or rate < 0):
+            raise ValueError(f"{category} 单价必须是非负数")
+    for call in calls:
+        for category in USAGE_KEYS:
+            total += call[category] * rates_per_million[category]
     return total / 1_000_000
+
+
+sample = normalize_usage({
+    "input_tokens": 320,
+    "cache_read_input_tokens": 256,
+    "cache_creation_input_tokens": 0,
+    "output_tokens": 81,
+})
+assert token_volume([sample]) == {
+    "input": 320, "cache_read": 256, "cache_write": 0, "output": 81
+}
 ```
 
 用第 11 章第 1 节那次真跑的两个响应代入（本次实跑，2026-10-12）：新输入 320 + 175 = 495，缓存读取 256，输出 81 + 27 = 108。它们代表两次调用的观测字段，说明应分别累加 usage 类别；不能把其中一类乘上一个想象的「份数」代替统计所有请求。下面的代码假设端点适配器已将 input、cache-read 和 cache-write 归一化成互斥类别。
 
 这些 usage 数字不是本节多智能体成本实验的组成部分，也不足以推出一个统一倍数。复算时应分别收集单 agent 与多 agent 方案的全部请求，先比较 token volume，再按当前价目表和缓存 usage 分项估算账单。
 
-## 完整可运行代码
+## 完整示例代码
 
-下面这段代码并排跑单 agent 与主管 + 工人两条路线，并打印两种背景规模下的倍数。它就是上面那张表的来源。
+下面的脚本提供单 agent 与 supervisor/worker 的 usage 采集起点，打印每种方案的请求数、输入/输出 token 和本次 token-volume 比值。它**不是**上面历史表的来源；只有在配置好目标 endpoint 的凭据、核对响应语义后实际运行，才能得到新的工作负载样本。
 
 ```python
-"""单 agent vs 主管 + 工人：成本模型与边界信息损失。
+"""Usage 采集骨架。
 
-设计要点：
-  1. 文档 D2 里埋了一条**硬约束**（不要动生产库），看它能不能穿过多层摘要活到最后。
-  2. 共享背景做成两种规模 —— 因为成本倍数主要由「共享内容相对单份内容有多大」决定。
-
-实跑状态：2026-10-09，deepseek-flash。
+实跑状态：本轮未调用 provider；旧实验缺少逐次响应，无法复现正文历史表。
+本例按顺序调用，不测并行延迟或回答质量；请求不启用 prompt caching。
 """
+import json
 import os
-import json, os, urllib.request
+import urllib.request
 
-BG_SMALL = ("团队规范：所有对外输出用简体中文；数值保留两位小数；"
-            "不允许编造未在材料中出现的数字；每条结论必须标注来源文档编号。")
-
-# 大背景：模拟「团队规范 + 代码库约定 + 历史模板」这类真实共享上下文
-BG_LARGE = BG_SMALL + "\n\n" + "\n".join(
-    "约定 %d：服务命名用 kebab-case；配置项放 config/ 下；日志必须带 trace_id；"
-    "所有对外接口要有超时与重试；数据库变更走迁移脚本；异常不得吞掉。" % i
-    for i in range(1, 41))
-
+BASE_URL = os.environ["ANTHROPIC_BASE_URL"].rstrip("/")
+API_KEY = os.environ["ANTHROPIC_AUTH_TOKEN"]
+MODEL = os.environ["VERIFY_MODEL"]
+BG_SMALL = "团队规范：用简体中文；不编造材料外数字；结论注明来源。"
+BG_LARGE = BG_SMALL + "\n" + "\n".join(
+    f"约定 {i}：日志带 trace_id；接口设超时；数据库变更走迁移。"
+    for i in range(1, 41)
+)
 DOCS = {
-    "D1": "订单服务本周 P99 延迟 820ms，上周 610ms。排查发现新增的推荐调用占用了 34% 的时间。",
-    "D2": "数据库连接池上限为 20。注意：任何扩容操作都必须避开生产库，只能先在预发环境验证。",
-    "D3": "推荐服务的内存占用从 1.2GB 增长到 2.8GB，主要来自缓存未设上限。",
+    "D1": "订单服务本周 P99 延迟 820ms，上周 610ms；新增推荐调用占用 34% 时间。",
+    "D2": "数据库连接池上限 20；扩容先在预发验证，禁止直接改生产库。",
+    "D3": "推荐服务内存从 1.2GB 增至 2.8GB，主要来自无上限缓存。",
 }
+TASK = "根据材料写技术复盘，指出优先处理的问题并说明依据。"
+observed_calls = []  # 每个方案独立清空；即使响应不合格，也先保留本次已返回的 usage。
 
-TASK = "根据三份材料写一份技术复盘，指出三个最需要优先处理的问题，并说明理由。"
+
+def nonnegative_int(usage, field):
+    value = usage.get(field)
+    if type(value) is not int or value < 0:
+        raise RuntimeError(f"缺失或无效的 usage.{field}，停止汇总")
+    return value
 
 
-def call(messages, system, max_tokens=8000):
-    body = json.dumps({"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
-                       "system": system, "messages": messages}).encode()
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages", data=body,
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
+def call(messages, system):
+    payload = json.dumps({"model": MODEL, "max_tokens": 4000,
+                          "system": system, "messages": messages}).encode()
+    request = urllib.request.Request(
+        BASE_URL + "/v1/messages", data=payload,
+        headers={"content-type": "application/json", "x-api-key": API_KEY,
                  "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        d = json.loads(resp.read())
-    u = d.get("usage", {})
-    tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-           + u.get("cache_creation_input_tokens", 0))
-    text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    if not text.strip() and d.get("stop_reason") == "max_tokens":
-        raise RuntimeError("测量故障：空输出 + max_tokens，需调大预算，不是模型失败")
-    return text, tin + u.get("output_tokens", 0)
+    with urllib.request.urlopen(request, timeout=180) as response:
+        body = json.loads(response.read())
+    if not isinstance(body, dict):
+        raise RuntimeError("响应不是 JSON 对象，usage 未知，停止汇总")
+    usage = body.get("usage")
+    if not isinstance(usage, dict):
+        raise RuntimeError("响应缺少 usage 对象，usage 未知，停止汇总")
+    measured = {key: nonnegative_int(usage, key)
+                for key in ("input_tokens", "output_tokens")}
+    observed_calls.append(measured)
+    if body.get("stop_reason") != "end_turn":
+        reason = body.get("stop_reason")
+        raise RuntimeError(
+            f"响应未正常结束；usage 已保留：stop_reason={reason!r}"
+        )
+    text = "".join(block["text"] for block in body.get("content", [])
+                   if isinstance(block, dict) and block.get("type") == "text"
+                   and isinstance(block.get("text"), str))
+    if not text.strip():
+        raise RuntimeError("end_turn 响应没有文本块；需人工检查，不能当作有效答案")
+    return text, measured
 
 
-def arm_single(bg):
-    """一个 agent 读完三份材料，直接产出复盘。"""
-    material = "\n\n".join("%s：%s" % (k, v) for k, v in DOCS.items())
-    return call([{"role": "user", "content": bg + "\n\n" + material + "\n\n" + TASK}],
-                "你是一个严谨的技术分析助手。")
+def run_single(background):
+    material = "\n\n".join(f"{key}：{value}" for key, value in DOCS.items())
+    text, usage = call(
+        [{"role": "user", "content": f"{background}\n\n{material}\n\n{TASK}"}],
+        "你是严谨的技术分析助手。")
+    return text, [usage]
 
 
-def arm_multi(bg):
-    """三个工人各读一份（每人都要装一遍共享背景），主管汇总。"""
-    tok, partials = 0, []
-    for k, v in DOCS.items():
-        text, t = call([{"role": "user", "content":
-                         bg + "\n\n材料 %s：%s\n\n请提炼这份材料里对复盘有用的要点。" % (k, v)}],
-                        "你是一个提炼助手，只输出要点。")
-        tok += t
-        partials.append("%s 的要点：%s" % (k, text.strip()))
-    merged, t2 = call([{"role": "user", "content":
-                        bg + "\n\n" + TASK + "\n\n各工人的提炼：\n" + "\n".join(partials)}],
-                       "你是一个严谨的技术分析助手。")
-    tok += t2
-    return merged, tok, len(partials)
+def run_multi(background):
+    calls, partials = [], []
+    for key, value in DOCS.items():
+        text, usage = call(
+            [{"role": "user", "content":
+             f"{background}\n\n材料 {key}：{value}\n\n提炼事实、来源和不确定项。"}],
+            "你是资料提炼助手，只返回事实、来源与不确定项。")
+        calls.append(usage)
+        partials.append(f"{key} 工人结果：{text.strip()}")
+    merged, usage = call(
+        [{"role": "user", "content":
+         f"{background}\n\n{TASK}\n\n工人结果：\n" + "\n".join(partials)}],
+        "你是严谨的技术分析助手；区分材料事实与推断。")
+    calls.append(usage)
+    return merged, calls
 
 
-def run_pair(label, bg):
-    single, t1 = arm_single(bg)
-    multi, t2, n = arm_multi(bg)
-    alive = ("✅" if "生产库" in single else "❌") + " / " + ("✅" if "生产库" in multi else "❌")
-    print("%-14s %-10d %-12d %-9.2fx %s" % (label, t1, t2, t2 / t1, alive))
-    return single, multi
+def totals(calls):
+    return {"calls": len(calls),
+            "input_tokens": sum(item["input_tokens"] for item in calls),
+            "output_tokens": sum(item["output_tokens"] for item in calls)}
 
 
 if __name__ == "__main__":
-    print("任务：%s" % TASK)
-    print("三份材料共 %d 字" % sum(len(v) for v in DOCS.values()))
-    print()
-    print("%-14s %-10s %-12s %-10s %s" % ("共享背景", "单 agent", "主管+3 工人", "倍数", "硬约束存活"))
-    s1, m1 = run_pair("小（%d 字）" % len(BG_SMALL), BG_SMALL)
-    s2, m2 = run_pair("大（%d 字）" % len(BG_LARGE), BG_LARGE)
-    print()
-    print("看点：本样本里两个背景规模的总 token 倍数接近。")
-    print("这组总量不能单独识别输入、工人输出、主管汇总与缓存的贡献。")
-    print("要解释倍数，应按每个请求分别记录 usage，再按目标端点计价。")
-    print()
-    print("=== 大背景下的单 agent 输出（前 400 字）===")
-    print(s2.strip()[:400])
+    for label, background in (("small", BG_SMALL), ("large", BG_LARGE)):
+        observed_calls.clear()
+        try:
+            _, single_calls = run_single(background)
+            _, multi_calls = run_multi(background)
+        except RuntimeError as error:
+            # Preserve usage already returned before any later failure.
+            print(
+                f"{label}: incomplete; usage captured so far="
+                f"{totals(observed_calls)}; {error}"
+            )
+            raise
+        single, multi = totals(single_calls), totals(multi_calls)
+        single_volume = single["input_tokens"] + single["output_tokens"]
+        multi_volume = multi["input_tokens"] + multi["output_tokens"]
+        print(f"{label} single={single} multi={multi}")
+        print(f"{label} observed token-volume ratio="
+              f"{multi_volume / single_volume:.2f}x")
 ```
+
+本例只统计未启用缓存的请求所返回的输入与输出字段。换用带缓存的 endpoint 时，先按该 endpoint 的文档扩展 usage adapter，并分开记录 cache read/write；不能把“缺字段”默认为零。代码先校验并保留每个可解析响应的 input/output usage，再检查 `stop_reason` 与文本；因此 `max_tokens`、tool-use 等未完成响应以及空文本即使不能作为答案，也不会丢掉该响应已返回的 usage。Anthropic [Messages API 响应参考](https://platform.claude.com/docs/en/api/messages/create)明确指出空字符串响应仍可能有非零 `output_tokens`，所以不能先拒绝内容再丢弃计量（核对于 2026-10-22）。缺失或非法 usage 时用量未知，不能填 0；示例只把已收到的计数保存在进程内，并在失败时输出截至当时的部分累计值，生产系统还应逐调用持久化并将未知用量与已知费用分开对账。即使代码跑通，单次串行运行也只得到该次请求的用量样本，不代表质量、延迟或可推广的倍率。
 
 ## 常见坑
 
-- **只数「每个上下文多大」，不数「同一份内容装了几遍」。** 多智能体的成本几乎全部来自后者。
+- **只数「每个上下文多大」，不数「同一份内容装了几遍」。** 重复装载是一个可能的重要成本来源，但还要统计各阶段的新输入、缓存输入、输出、重试与协调开销。
 - **以为拆得越细越省。** 私有材料变小是收益，共享背景被多次装载是成本，两者要一起算。
 - **用输入公式估总成本。** 所有工人的输出与主管汇总都要加入总 token volume；账单另按 provider/model 计价规则加权。
 - **忽略每阶段的输入、输出与缓存 usage。** 同一个架构在不同任务上的 token 与费用倍数都可能不同，需逐次请求测量。
-- **为了并行而拆解，却没检查私有材料是否真的不同。** 如果每个工人看到的材料一样，拆解只有成本没有收益。
+- **为了并行而拆解，却没检查私有材料是否真的不同。** 如果每个工人看到的材料一样，就没有获得上下文隔离收益；独立搜索或冗余核验仍可能有价值，但需在相同任务上测质量、覆盖、延迟与总成本。

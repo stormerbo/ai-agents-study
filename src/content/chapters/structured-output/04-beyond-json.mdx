@@ -4,7 +4,7 @@ title: schema 之外：业务规则怎么兜
 status: drafting
 ---
 
-下面三条记录，格式全部合法、全部通过了 JSON 解析、全部通过了 schema 校验：
+假设 schema 分别只要求 `status` 是字符串、两日期符合日期格式、`issue_type` 来自一个有限枚举，这三条都可能通过解析与结构校验；这些检查不说明值是否真实、区间是否合理或类别是否正确。下面是用来说明边界的构造例子：
 
 ```json
 {"order_id": "A-1001", "status": "处理中"}
@@ -12,44 +12,44 @@ status: drafting
 {"issue_type": "refund"}
 ```
 
-第一条的状态是编的，第二条是一个时间上不可能的区间，第三条是模型在两个都不对的选项里挑了一个。
+这些是构造出来的反例：订单状态可能缺少来源，日期区间需要业务判断，枚举值也可能不适用于真实类别。结构校验只能检查已声明的条件。
 
-**它们的共同点是：没有任何一层会报错。** 这就是这一节要处理的问题 —— schema 能挡住的那类形状错误，恰恰是最容易被发现的一类；而上面这三种会一路流进数据库。
+如果应用只做语法、字段类型和枚举成员校验，这些值可能一路进入下游。结构合法不等于事实可信，也不等于业务规则通过。
 
-## 实测一：必填字段会逼出幻觉
+## 历史摘要一：必填字段与缺失事实
 
-给一段对话，里面**从头到尾没有出现过订单状态**。然后换三种做法：
+2026-10-08 的旧记录称，输入对话里没有订单状态，比较了三种做法。逐次请求/响应、完整 prompt、精确模型版本与 scorer 未归档，因此表格仅是历史摘要，不能证明模型普遍会编造：
 
-| 做法 | schema / 输入 | 5 次输出 |
+| 做法 | schema / 输入 | 旧记录中的 5 次输出摘要 |
 |---|---|---|
 | A 让模型自己判断状态 | `required: [order_id, status]` | `"处理中"` ×5 |
 | B 只让它抽取订单号 | `required: [order_id]` | `"A-1001"` ×5 |
-| C 代码查库后把事实注入，再让它填 | A 的 schema + 「已知事实：状态是已取消」 | `"已取消"` ×5 |
+| C 应用查库后将已知事实提供为上下文 | A 的 schema + 「订单系统查到状态：已取消」 | `"已取消"` ×5 |
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（历史记录摘要：`deepseek-flash`，2026-10-08；原始轨迹缺失，未独立复核。）
 
-A 组值得多看一会儿：模型**没有任何犹豫**，5 次给出同一个「处理中」，语气和它给真实答案时一模一样。你在日志里只看到 `{"status": "处理中"}`，没有任何办法分辨它是真是假。
+如果旧摘要属实，A 组五次都产出同一状态。但没有原始响应，无法判断其生成过程、语气差异或评分是否正确；生产日志若只保存该字段，也缺少证据来源，不能据此区分预测与事实。
 
-C 组同样干净：**把事实作为输入给它，它会原样采用。** 所以模型的问题从来不是「不听话」，而是**你在让它回答一个它无从知道的问题**。
+C 组旧摘要称模型复用了输入里提供的已知状态；这是小样本描述，不能推出普遍服从性或修正收益。可迁移的架构原则是：事实应由授权的数据源提供，若下游不需要模型处理，就由应用代码直接组合，不必再让模型复述。
 
-## 实测二：跨字段规则，说了就修，不说就照抄
+## 历史摘要二：跨字段规则
 
-同一份**本身就自相矛盾**的输入：「活动从 2026-10-15 开始，2026-10-01 结束。」
+旧记录称，输入含有矛盾日期；逐次请求/响应与评分规则缺失，以下数字不能独立复核，也不能单独证明 prompt 造成了输出差异：
 
-| prompt 里有没有要求归一化 | 5 次输出 |
+| prompt 里有没有要求归一化 | 旧记录中的 5 次输出摘要 |
 |---|---|
 | 没说 | `2026-10-15 → 2026-10-01` ×5，**区间不可满足** |
 | 说了「若结束早于开始请调换」 | `2026-10-01 → 2026-10-15` ×5，已合法 |
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（历史记录摘要：`deepseek-flash`，2026-10-08；原始轨迹缺失，未独立复核。）
 
-模型两个字段都填对了 —— 它忠实地**照抄**了输入里的矛盾。这不是模型犯的错，是**需求里没写这条规则**。JSON Schema 表达不了「end 必须不早于 start」（跨字段比较不在它的能力范围内），所以这条规则只能在业务层拦，而业务层拦不拦，取决于你有没有想到它。
+这类约束属于字段间的业务规则。JSON Schema 2020-12 没有通用关键字比较两个任意字段的值；`format: date` 是否运行断言还取决于校验器配置。应用应解析成日期类型并显式验证先后顺序。旧样本无法支持“说了就一定修好”的保证。
 
-## 实测三：enum 没有正确答案时
+## 历史摘要三：enum 缺少合适选项时
 
-这一条在第 2 节已经量过：`enum: ["refund", "repair"]` 遇到两类都不是的工单，6/6 静默选了错的；补上 `"other"` 之后，6/6 正确。
+第 2 节曾记录 `enum: ["refund", "repair"]` 及补入 `"other"` 前后的 6/6 结果；它们同样缺少逐次输出与 scorer，当前不能独立复核，也不能当作生成期约束的普遍效果。
 
-再加上第 2 节的 `currency` —— 原文里没说币种，schema 里 `enum: ["CNY", "USD"]` 硬要一个，模型就填了「CNY」。**一个带 enum 的必填字段，等于在信息缺失时强制模型编一个。**
+第 2 节还记录了币种缺失时输出 `CNY` 的案例，但缺少原始轨迹。工程上应区分“允许的已知值”与“输入没有证据”：可以表达 `unknown` / `not_provided` 并要求来源；若业务不允许未知，就拒绝或转人工。只增加 `other` 并不能证明生成内容正确。
 
 ## 三条修法
 
@@ -57,168 +57,228 @@ C 组同样干净：**把事实作为输入给它，它会原样采用。** 所�
   chart={`
 flowchart LR
     subgraph 反例["反例：模型既是抽取者又是事实来源"]
-        A1["对话原文"] --> A2["模型"] --> A3["status: 处理中<br/>（编造，5/5）"]
+        A1["对话原文"] --> A2["模型"] --> A3["status: 处理中<br/>（旧摘要称 5/5，未复核）"]
     end
     subgraph 正例["正例：模型只抽取，事实来自可验证数据源"]
         B1["对话原文"] --> B2["模型"] --> B3["order_id: A-1001"]
         B4["订单系统"] --> B5["你的代码"]
-        B3 --> B5 --> B6["status: 已取消<br/>（注入，5/5 原样采用）"]
+        B3 --> B5 --> B6["status: 已取消<br/>（应用从订单源读取）"]
     end
 `}
 />
 
-**第一条，也是最重要的一条：把事实来源移出模型。** 不要问「这个订单的状态是什么」，而是让它输出 `order_id`，由你的代码去数据库查状态、再拼进最终结果。模型负责它擅长的事（从一段散乱文本里认出标识符），事实负责在它能被验证的地方产生。上面 A 组与 C 组的对照就是这条规则的效果。
+**第一条：让权威系统负责提供事实。** 如果只需要订单状态，就直接按经过授权的 `order_id` 查询，不让模型猜或复述。若任务需要模型理解多份证据，应把带来源标识的证据交给模型，并在输出后验证引用；不要把模型输出本身当成事实。历史 A/C 对照未经复核，不能证明这项架构建议的效果幅度。
 
-**第二条：跨字段与业务规则集中在一处实现。** 解析通过之后立刻跑一遍业务校验（第 2 节的三层防线里的第三层）。放在一处而不是散落各调用点，是因为这类规则最容易在不同代码路径上被漏掉。
+**第二条：在可信写入边界执行业务规则。** 把校验集中到可复用模块有助于减少调用点遗漏，但模块本身不够；所有写入路径都必须经过它，并对绕过路径做测试。
 
-**第三条：每个 enum 留一个 `other` 或 `unknown`。** 让「信息不足」这个真实状态有地方落脚。没有出口时，你得到的不是报错，而是一个看起来正常的错误值。
+**第三条：为信息不足设计明确状态或拒绝路径。** 只有当 `other` 是真实业务类别时才添加它；`unknown`、缺失值、拒绝和人工处理的语义也应区分。枚举里存在一个兜底值，不会自动让模型选对。
 
 ## 完整可运行代码：抽取与事实分离
 
+Anthropic Messages API 的普通 `tool_choice` 可指定调用路径，但并非所有模型和设置都支持强制工具调用；普通 `input_schema` 也不等于生成端的 strict 约束。请按目标 endpoint 的[工具定义文档](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)确认能力，并始终在应用端校验。下面只展示 Anthropic 风格的接口形状与 FakeClient 控制流，不包含真实 provider 调用。
+
 ```python
 # extract_then_enrich.py
-"""模型只做抽取，事实由代码注入。
+"""模型只抽取标识符；订单状态由应用从授权的数据源读取。"""
 
-反例（本节实测 5/5 编造）：把 status 放进 schema 让模型填。
-正例：schema 里根本没有 status 这个字段。
-"""
-
-from typing import Type
-
-from pydantic import BaseModel
+from types import SimpleNamespace as NS
+from pydantic import BaseModel, ConfigDict
 
 
 class Extracted(BaseModel):
-    """模型唯一负责的事：从对话里认出订单号。"""
-
+    model_config = ConfigDict(strict=True)
     order_id: str
 
 
-def call_tool(client, model: str, ask: str, schema_cls: Type[BaseModel], tool_name: str):
-    """借工具通道把输出收窄成对象。
-
-    注意：这里**不执行任何业务函数**，只取模型的 input 当数据。
-    """
-    resp = client.messages.create(
+def call_tool(client, model: str, ask: str, schema_cls: type[BaseModel], tool_name: str):
+    """只消费指定 tool_use 的结构；不执行工具描述中的任何业务动作。"""
+    response = client.messages.create(
         model=model,
         max_tokens=1000,
-        thinking={"type": "disabled"},          # 强制工具调用的前提
         messages=[{"role": "user", "content": ask}],
-        tools=[
-            {
-                "name": tool_name,
-                "description": "保存从对话里抽取到的字段",
-                "input_schema": schema_cls.model_json_schema(),
-            }
-        ],
+        tools=[{
+            "name": tool_name,
+            "description": "从用户对话中只抽取订单号，不查询状态、不执行写入。",
+            "input_schema": schema_cls.model_json_schema(),
+        }],
         tool_choice={"type": "tool", "name": tool_name},
     )
-    block = next(b for b in resp.content if b.type == "tool_use")
-    return schema_cls.model_validate(block.input)
+    if response.stop_reason != "tool_use":
+        raise RuntimeError(f"抽取未返回 tool_use：{response.stop_reason}")
+
+    calls = [block for block in response.content if block.type == "tool_use"]
+    if len(calls) != 1 or calls[0].name != tool_name or not calls[0].id:
+        raise RuntimeError("工具响应不符合预期")
+    return schema_cls.model_validate(calls[0].input)
 
 
-def build_ticket(client, model: str, conversation: str, orders: dict):
-    """最终结果 = 模型抽取的字段 + 代码查到的**事实**。"""
-    extracted = call_tool(
-        client, model, conversation, Extracted, "save_order_id"
-    )
-
-    status = orders.get(extracted.order_id)
-    if status is None:
-        # 查不到就如实说查不到 —— 不要让模型替数据库回答
+def build_ticket(client, model: str, conversation: str, orders: dict) -> dict:
+    extracted = call_tool(client, model, conversation, Extracted, "extract_order_id")
+    order = orders.get(extracted.order_id)
+    if order is None:
         return {
             "order_id": extracted.order_id,
             "status": None,
-            "status_source": "orders:not_found",
+            "status_source": {"system": "orders", "lookup": "not_found"},
         }
 
     return {
         "order_id": extracted.order_id,
-        "status": status,
-        "status_source": "orders",      # 审计用：这条事实从哪来
+        "status": order["status"],
+        "status_source": {
+            "system": "orders",
+            "record_id": order["record_id"],
+            "revision": order["revision"],
+        },
+    }
+
+
+class FakeMessages:
+    def create(self, *, tools: list[dict], **request):
+        properties = tools[0]["input_schema"]["properties"]
+        assert set(properties) == {"order_id"}  # status 不属于模型输出 schema
+        return NS(stop_reason="tool_use", content=[
+            NS(type="tool_use", id="tool_demo", name="extract_order_id",
+               input={"order_id": "A-1001"})
+        ])
+
+
+class FakeClient:
+    messages = FakeMessages()
+
+
+if __name__ == "__main__":
+    result = build_ticket(
+        FakeClient(),
+        "fixture-model",
+        "订单 A-1001 怎么样了",
+        {"A-1001": {
+            "status": "已取消",
+            "record_id": "orders/A-1001",
+            "revision": "r18",
+        }},
+    )
+    print(result)
+```
+
+```text
+{'order_id': 'A-1001', 'status': '已取消', 'status_source': {'system': 'orders', 'record_id': 'orders/A-1001', 'revision': 'r18'}}
+```
+
+> **实跑状态**：两个 Python fence 在本地 Python 3.10 + Pydantic 2.9.2 下运行；第一个用 FakeClient 检查工具 schema 不含 `status`，并测试受控订单记录的拼装。未调用 provider；真实 SDK/endpoint 的强制工具选择能力与响应兼容性未实测。
+
+`status_source` 包含系统名、记录 ID 与版本，便于追溯；它仍只是应用写入的元数据，不构成真实性或授权证明。生产系统还应保留租户/查询范围、读取时间和权限判定证据，并在副作用前核对来源仍然有效。
+
+下面两条是把订单查询与独立审批策略组合后的**构造示例**，不是上一个 `build_ticket` 函数的直接输出。生产记录应分别保留每个事实和决策的来源；不能只靠 `status is null` 概括所有未知、拒绝和待审核状态：
+
+订单系统里有记录时（展示用 JSON）：
+
+```json
+{
+  "order_id": "A-1001",
+  "status": "已取消",
+  "status_source": {
+    "system": "orders",
+    "record_id": "orders/A-1001",
+    "revision": "r18"
+  },
+  "amount_minor_units": 482000,
+  "currency": "CNY",
+  "approval": "auto",
+  "policy_version": "demo_policy_v1",
+  "approval_rule": "CNY amount_minor_units <= 500000",
+  "approval_basis": "演示规则命中"
+}
+```
+
+订单或权威金额缺失时（展示用 JSON）：
+
+```json
+{
+  "order_id": "A-9999",
+  "status": null,
+  "status_source": {
+    "system": "orders",
+    "lookup": "not_found"
+  },
+  "amount_minor_units": null,
+  "currency": "CNY",
+  "approval": "hold",
+  "policy_version": "demo_policy_v1",
+  "approval_rule": "none",
+  "approval_basis": "缺少权威金额，暂停动作并补充证据"
+}
+```
+
+订单来源记录应携带可追溯的引用；审批记录则应包含规则版本和明确依据。标签只提供追踪线索，可信度还取决于数据源权限、完整性、时效与服务端执行边界。
+
+下面是一个独立的**演示审批函数**，不是生产额度建议（**构造示例**）。金额用人民币分整数表示；策略版本、阈值和输出字段均为演示值。缺失、负数或非 CNY 输入都暂停：
+
+```python
+# approval.py
+"""构造的审批策略示例；阈值和动作必须来自业务方审定的版本化规则。"""
+
+POLICY_VERSION = "demo_policy_v1"
+LIMIT_MINOR_UNITS = 500_000
+CURRENCY = "CNY"
+
+
+def approve(amount_minor_units: int | None, currency: str) -> dict:
+    """缺失或无法按本策略判断时暂停，不把未知输入默认为通过。"""
+    if amount_minor_units is not None and type(amount_minor_units) is not int:
+        return {
+            "approval": "hold",
+            "policy_version": POLICY_VERSION,
+            "approval_rule": "none",
+            "approval_basis": "金额类型无效，暂停并修复输入",
+        }
+    if amount_minor_units is None or amount_minor_units < 0:
+        return {
+            "approval": "hold",
+            "policy_version": POLICY_VERSION,
+            "approval_rule": "none",
+            "approval_basis": "金额缺失或为负数，暂停并补充证据",
+        }
+    if currency != CURRENCY:
+        return {
+            "approval": "hold",
+            "policy_version": POLICY_VERSION,
+            "approval_rule": "none",
+            "approval_basis": "币种不在演示策略范围内，转人工核对",
+        }
+    if amount_minor_units <= LIMIT_MINOR_UNITS:
+        return {
+            "approval": "auto",
+            "policy_version": POLICY_VERSION,
+            "approval_rule": "CNY amount_minor_units <= 500000",
+            "approval_basis": "演示规则命中",
+        }
+    return {
+        "approval": "human",
+        "policy_version": POLICY_VERSION,
+        "approval_rule": "CNY amount_minor_units > 500000",
+        "approval_basis": "超出演示阈值，转人工",
     }
 
 
 if __name__ == "__main__":
-    # 用假 client 演示结构：模型只被问到 order_id
-    print(build_ticket(None, "m", "订单 A-1001 怎么样了", {"A-1001": "已取消"}))
+    for amount_minor_units in (482_000, 1_200_000, None):
+        print(amount_minor_units, "->", approve(amount_minor_units, "CNY"))
 ```
 
 ```text
-{'order_id': 'A-1001', 'status': '已取消', 'status_source': 'orders'}
+482000 -> {'approval': 'auto', 'policy_version': 'demo_policy_v1', 'approval_rule': 'CNY amount_minor_units <= 500000', 'approval_basis': '演示规则命中'}
+1200000 -> {'approval': 'human', 'policy_version': 'demo_policy_v1', 'approval_rule': 'CNY amount_minor_units > 500000', 'approval_basis': '超出演示阈值，转人工'}
+None -> {'approval': 'hold', 'policy_version': 'demo_policy_v1', 'approval_rule': 'none', 'approval_basis': '金额缺失或为负数，暂停并补充证据'}
 ```
 
-> **实跑状态**：`Extracted.model_json_schema()` 与 `build_ticket` 的拼装逻辑在本地 Python 3.10 + Pydantic 2.9.2 上跑通（用假 client 注入抽取结果）；`client.messages.create` 那一段与实测采集脚本字段一致，未在官方端点跑过。
+这段小例子使用一条构造的演示策略，不是通用的金融审批规则。它有三个刻意的选择：
 
-注意返回结构里那个 `status_source` 字段。它看起来是多余的，但它让「这条状态是查出来的还是编出来的」在数据结构里可分辨 —— **这是把「不确定」显式化，而不是把它藏进一个看起来正常的字符串里。**
+1. **规则必须在可信副作用边界执行**；阈值配置可以版本化并审计。仅把常量写进某个代码文件不保证安全，仍需保证所有写入路径都调用该策略。
+2. **缺失、负数与无效输入单独处理** —— 缺失的事实不能因为「默认值方便」而变成一次放行。
+3. **返回值里带规则版本、规则和结果** —— 生产系统还要记录判定时用到的来源证据，才方便对照当时有效的策略。
 
-**最终入库的那条记录长这样**（构造示例，未实跑）。两条分支的唯一区别是 `status` 与 `status_source`，而下游只需要判断 `status` 是不是 `null`：
-
-```json
-// 分支一：订单系统里有这条记录
-{
-  "order_id": "A-1001",
-  "status": "已取消",
-  "status_source": "orders",
-  "amount": 4820,
-  "approval": "auto",
-  "approval_rule": "amount<=5000",
-  "approval_basis": "非不可逆动作，代码按明确规则放行"
-}
-
-// 分支二：订单系统里查不到 —— 不猜，如实标注
-{
-  "order_id": "A-9999",
-  "status": null,
-  "status_source": "orders:not_found",
-  "amount": null,
-  "approval": "hold",
-  "approval_rule": "none",
-  "approval_basis": "事实缺失，不能放行"
-}
-```
-
-`status_source` 只有两个取值（`orders` / `orders:not_found`），但它的作用是**让两类记录在库里长得不一样** —— 一旦这个字段缺省，编造的值与查到的值就再也分不开。`approval` 与 `approval_basis` 是同一个思路的第二次应用：把「谁依据什么规则做的判断」也写进记录，而不是留在代码里。
-
-上面表里「放行、金额、权限这类不可逆判断」那一行，规则本身没有示例，补一条最小的（**构造示例，未实跑**）：
-
-```python
-# approval.py
-"""不可逆动作的放行规则：代码 + 明确规则，逐条可审计。"""
-
-from typing import Optional
-
-
-def approve(amount: Optional[int], limit: int = 5000) -> dict:
-    """amount 为 None 时不放行 —— 缺失不等于 0，也不等于自动通过。"""
-    if amount is None:
-        return {"approval": "hold", "rule": "none",
-                "reason": "金额缺失，不能代替人工判断"}
-    if amount <= limit:
-        return {"approval": "auto", "rule": "amount<=%d" % limit,
-                "reason": "小额且可逆，代码放行"}
-    return {"approval": "human", "rule": "amount>%d" % limit,
-            "reason": "超出额度，交人工"}
-
-
-if __name__ == "__main__":
-    for amount in (4820, 12000, None):
-        print(amount, "->", approve(amount))
-```
-
-```text
-4820 -> {'approval': 'auto', 'rule': 'amount<=5000', 'reason': '小额且可逆，代码放行'}
-12000 -> {'approval': 'human', 'rule': 'amount>5000', 'reason': '超出额度，交人工'}
-None -> {'approval': 'hold', 'rule': 'none', 'reason': '金额缺失，不能代替人工判断'}
-```
-
-这条规则有三个刻意的选择，每一个都对应前面的一张表：
-
-1. **阈值写死在代码里**，不写进 prompt —— `amount <= 5000` 是可审计、可测试、可逐条评审的；写在系统提示里就只是一个建议。
-2. **`amount is None` 单独一条分支**，不落进 `else` —— 缺失的事实不能因为「默认值方便」而变成一次放行。
-3. **返回值里带 `rule` 字段** —— 事后有人问「这单为什么自动过了」，答案是数据本身，不需要去翻代码版本。
-
-`rejected` 这个动作同样要显式：**判断不可逆时默认拒绝，而不是默认放行。** 上面 `None -> hold` 就是这个默认值在代码里的样子。
+`hold`、`reject` 和 `human` 是不同的业务结果，应按产品策略分别定义。示例中的 `hold` 表示暂停后续动作，不代表订单已经被拒绝。
 
 ## 一个没有报错的「错误案例」
 
@@ -228,39 +288,39 @@ None -> {'approval': 'hold', 'rule': 'none', 'reason': '金额缺失，不能代
 {"start_date": "2026-10-15", "end_date": "2026-10-01"}
 ```
 
-它通过了 `type: string` 校验，通过了 `format: date`（而第 2 节实测 `format` 本来也不生效），通过了必填检查，被顺利写进库。真正发现它的时候，是某个下游报表算出了一个负的时长。
+假设解析器接受了 `type: string` 和 `format: date`，这也只说明字段类型/格式检查通过；它不能证明日期顺序合理或有可信来源。`format` 是否执行验证取决于所用校验器及配置（见 [JSON Schema Validation 2020-12](https://json-schema.org/draft/2020-12/json-schema-validation)），日期先后应由应用的日期类型与业务规则检查。真正发现区间错误的时候，可能已经是下游报表算出了负的时长。
 
 **排查这类问题的方向不该是「怎么让 schema 更严」，而是「这条规则到底该由谁保证」。** 时间区间的关系不该由模型或 schema 保证，它属于业务层 —— 而这正是本节三条修法里第二条的位置。
 
 ## 还有一类字段：能算的不要让模型算
 
-「模型不擅长算术」也是一句流传很广的话。在本章的实验里它同样没有复现：第 1 节的采购单任务要求模型自己算总价（`100 × 12.50 + 5 × 899.00 = 5745`），三个方案合计 23 次有效运行里，一次都没算错。
+第 1 节曾记录采购单任务中，模型计算 `100 × 12.50 + 5 × 899.00 = 5745` 的 23 次运行全部正确；逐次输出、模型快照与 scorer 未保存在当前工作树，因此这仍是不可独立复核的历史摘要。
 
-但正确的结论不是「模型算得对，所以可以让它算」，而是：**算术是可验证的，把它委托给一个概率模型没有收益。**
+可迁移的工程原则不是模型“做不到”，而是：**当运算规则明确且可执行时，让代码计算并用独立测试验证；让模型负责解析自然语言输入，再校验抽取结果。**
 
-- 让模型算：答案可能对，但除了重算一遍，**你没有别的办法确认它对不对** —— 而重算的成本比让它算更低。
-- 让代码算：输入是模型抽出来的原始数字，输出是确定的。
+- 让模型算：可用于解析或草拟；涉及金额与持久状态时，仍应由确定性计算和业务校验给出可审计结果。
+- 让代码算：先校验币种、单位、范围与输入来源，再用确定性运算生成可重算结果。
 
-所以字段归属应该按「能不能被验证」来分，而不是按「模型做得好不好」来分。这里的**可验证**有一个很小但很硬的操作定义：**你能不能用一段独立的代码把答案重算一遍，再和模型给的比。** 能，就是代码的活；不能（分类、摘要、归一化），才轮到模型。
+字段设计应明确三件事：谁产生候选值、谁验证它、哪个系统是权威来源。可确定计算交给代码；模糊抽取、分类或摘要可由模型提出候选，但仍要按标签定义、来源证据和风险选择验证方式。不要仅因某字段“适合模型”就让它成为事实或副作用的最终授权者。
 
 | 字段类型 | 谁来产生 | 理由 |
 |---|---|---|
 | 从文本里识别的标识符、日期、人名 | 模型 | 它的强项，且可回原文核对 |
 | 数据库里已有的值（状态、余额、库存） | 代码 | 可验证；模型无从知道 |
 | 计算与聚合（总价、时长、计数） | 代码 | 可验证；成本更低 |
-| 分类、摘要、归一化文本 | 模型 | 本来就没有唯一正确答案 |
+| 分类、摘要、归一化文本 | 模型可提出候选 | 按定义、来源证据与任务风险评估；分类未必没有正确标签 |
 | 放行、金额、权限这类不可逆判断 | 代码 + 明确规则 | 出错代价最高，规则必须可审计 |
 
-这张表比任何「模型能力清单」都稳定 —— 因为**它判断的是谁负责保证正确，而不是谁更聪明**，而后者会随模型版本变化。
+这张表是责任划分的起点，不是跨任务的固定规则；模型与数据源会变化，写入边界、评估集和业务规则仍需按具体任务复核。
 
 ## 常见坑
 
-**让模型回答它无从知道的事。** 实测 5/5 编造「处理中」，且语气与真实答案无异。这不是模型不可靠，是任务设计的问题。
+**让模型回答它无从知道的事实。** 旧摘要记录了五次相同输出，但数据缺失，不能据此量化编造率或推断语气；可靠的做法是从权威系统取值，保留可验证的来源。
 
-**以为 schema 校验通过就等于内容可用。** schema 管形状。本节三条记录全部通过了校验，全部是错的。
+**以为 schema 校验通过就等于内容可用。** schema 只能检查已启用的结构约束；事实来源、权限和跨字段业务规则还需在应用边界验证。
 
-**把跨字段规则交给 schema。** JSON Schema 表达不了 `end >= start` 这类比较。它能表达的部分（第 2 节实测）也不一定被强制。
+**把跨字段规则交给 schema。** 标准 JSON Schema 可表达不少局部条件和依赖关系，但不提供通用表达式来直接比较两个任意字段的值，例如 `end >= start`；把这类规则放在应用业务校验中，并确保写入边界执行。endpoint 是否强制其支持的 schema 子集，另按文档确认。
 
-**enum 不带 other 出口。** 6/6 静默选错。信息不足时，模型需要一个能被表达的「我不知道」。
+**enum 不带未知状态或拒绝路径。** 历史 6/6 结果无法复核；为信息不足定义合法状态，或停止并转人工，不能把 `other` 当作正确性保证。
 
-**不记录事实来源。** 一旦编造的值和查到的值在库里长得一样，你就永远失去了区分它们的能力。`status_source` 这种字段很便宜，但它决定了你事后能不能审计。
+**把来源标签当成真实性证明。** `status_source` 是应用写入的审计元数据；若不记录实际来源记录、查询范围、版本和时间，它本身不能证明状态是真的。

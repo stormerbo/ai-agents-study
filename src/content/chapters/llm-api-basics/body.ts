@@ -20,4 +20,5 @@ export const bodies = {
   'messages-api': () => import('./03-messages-api.mdx'),
   'model-selection': () => import('./04-model-selection.mdx'),
   'prompt-caching': () => import('./05-prompt-caching.mdx'),
+  'provider-contracts': () => import('./06-provider-contracts.mdx'),
 } as const;

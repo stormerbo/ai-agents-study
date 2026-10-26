@@ -1,363 +1,249 @@
 ---
 lesson: agent-paradigms/plan-and-execute
-title: 计划即契约，以及它为什么常常在第 3 步失效
+title: 计划是候选执行图，不是不可变契约
 status: drafting
 ---
 
-Plan-Execute 的想法很直白：**先让模型把整件事拆成一个完整计划，再由代码依次执行。** 这样你能在执行前看到全貌、能审计划、能并行、能预估成本。
+Plan-Execute（先规划、后执行）是把一次任务拆成两段：模型先提出一份计划，宿主程序检查并执行计划，再根据执行结果决定是否综合、继续或重规划。把它想成后端服务消费一份由外部提交的工作清单：清单是输入数据，不是可直接信任的程序，也不是已经完成的业务事实。
 
-代价是：**计划一旦定下，就成了一份契约。** 而契约的执行者（你的代码）没有能力修改它。
+“先列出全部步骤”不是所有 Plan-Execute 的共同实现。计划可以是线性列表、有依赖关系的有向无环图（DAG），也可以包含条件路由或阶段边界；宿主也可以在步骤执行后重新询问模型。真正需要设计的是计划允许表达什么、谁判断下一步、每一步执行前检查什么，以及新观察何时使旧计划失效。
 
-这一节用实测说明这份契约在什么任务上会碎。
+## 先拆清三个控制流
 
-## 两种任务形状
+设计一个天气查询任务：查北京和上海明天的最高温，再查温度较高城市后天的最高温。设北京明天 31°C、上海明天 27°C。第一批查询可以预先写出，但第三步的 `city` 要等到观测返回后才能确定。
 
-设计两组任务，区别只有一个：**下一步做什么，是否需要依赖上一步的结果。**
+这是一个依赖，不等于只能使用 ReAct。至少有三种实现：
 
-**T1（线性）**：查北京、上海、广州明天的最高温，报告最高与最低以及差值。三个查询互相独立，可以先全部列出来。
+1. **静态计划**：把已知的独立查询列出来，执行器验证后执行。若后续参数未知，执行器应暂停在边界，不能把描述句当成城市名。
+2. **代码条件路由**：先执行两个查询，再由确定性代码根据结构化结果挑出较高温城市，生成第三步。步骤图里可以有条件边；分支由代码根据状态计算。
+3. **模型重规划 / ReAct**：把新观察交给模型，让它提出下一步动作。宿主仍需验证动作、授权工具并决定是否执行。
 
-**T2（条件分支）**：查北京和上海明天的最高温；**哪个更高，就再查那个城市后天的温度**。第三个查询查谁，取决于前两个的结果。
+LangGraph 的 [条件边 API](https://reference.langchain.com/python/langgraph/graph/state/StateGraph/add_conditional_edges) 就是图状态上的条件路由 API；因此“DAG 无法表达分支”是错误的。一个依赖图可以无环，同时让路由函数按状态选择下一节点。只有当分支判据本身需要模型基于新观察做语义判断时，才需要模型参与该决策。即便如此，模型提出动作也不代表动作获得授权。
 
-T2 是刻意构造的 —— 它不是难题，只是一句话里带了一个 if。
+## 历史记录能支持什么
 
-## 实测：T2 上它同时输掉正确率和成本
+下表来自 2026-10-09 的旧摘要，声称每个条件各运行 3 次。原始逐次请求、响应、精确模型快照和完整评分记录没有归档，所以它们只能作为待复核历史，不足以估计准确率或推广成本。
 
-两个范式各跑 3 次：
+| 任务 / 方案 | 旧摘要 | 可保留的边界 |
+|---|---:|---|
+| T2 ReAct | 旧启发式检查器 3/3；平均 1,971 token | 评分器只看答案子串与调用列表；不能确认答案映射正确 |
+| T2 Plan-Execute | 旧启发式检查器 0/3；平均 3,087 token | 曾记录非法 `city` 参数样例；不能断言最终答案全错或普遍更贵 |
+| T1 Plan-Execute / ReAct | 旧 token 摘要 506 / 1,203 | 没有逐次 usage，不能归因于范式本身 |
 
-| 范式 | T2 答案正确 | 平均 token |
-|---|---:|---:|
-| ReAct | **3/3** | 1,971 |
-| Plan-Execute | **0/3** | **3,087** |
+旧记录中的三个 `city` 值分别写成“北京或上海中明天最高温更高的城市”“北京和上海中明天最高温更高的城市”及一个字符串形式的三元表达式。它们展示了一个有用的接口错误形状：把待计算的表达式塞进要求具体枚举值的字段。原始 response 不在归档中，不能再把这些字符串当作可复核的模型原始输出，也不能以它们证明某一范式失败。
 
-（实跑数据，2026-10-09，`deepseek-flash`。工具为确定性 mock。）
+## 计划需要四种不同检查
 
-**Plan-Execute 一次都没做对，而且比 ReAct 贵 57%。** 贵的原因是它多走了一轮「生成计划」，而那一轮并没有省下任何东西 —— 因为它生成的计划本身是无效的。
+JSON Schema 可以检查字段、类型与枚举；它不能单独证明计划覆盖了用户请求、依赖顺序正确、前提仍然新鲜或副作用获准。把这四类检查拆开，避免“JSON 合法”被误读成“可以安全执行”。
 
-## 三种失败签名
+| 检查 | 要回答的问题 | 例子 |
+|---|---|---|
+| 结构 | 形状、必填字段、ID 是否符合约定？ | `depends_on` 是数组，step ID 唯一 |
+| 可执行性 | 工具、参数、依赖是否在宿主能力范围内？ | `city` 属于宿主维护的城市表；引用的依赖 ID 存在 |
+| 完整性 | 计划是否覆盖任务要求、满足结果不变量？ | 两个基线查询和最终温差都被计算 |
+| 运行时授权 / 前提 | 此刻是否允许执行，原先观察是否仍有效？ | 用户权限仍有效；写操作基于当前版本且幂等键一致 |
 
-三次失败里，模型传给工具的 `city` 参数分别是：
-
-```text
-第 1 次： "北京或上海中明天最高温更高的城市"
-第 2 次： "北京和上海中明天最高温更高的城市"
-第 3 次： "${北京明天最高温 > 上海明天最高温 ? '北京' : '上海'}"
-```
-
-**三个都不是城市名。** 它们在表达同一件事：「这里要做一个判断，但我现在还不知道结果」。
-
-第三个尤其值得看：模型把**一个三元表达式**写进了工具参数 —— 那是编程语言里表达条件的写法。它显然试图用语法**构造**一个条件，因为**计划格式里没有条件这个结构**。
-
-这不是模型的错，是格式的错。JSON 数组能表达「依次做这几件事」，但表达不了「根据结果选一个分支」。当任务需要后者时，模型只能把那个待定的决策**塞进某个字段**里，然后指望有人替它解开 —— 而执行计划的是你的代码，它不会解。
-
-## 那它为什么还值得用
-
-因为在线性任务上它是**最省的**。同一个 T1 上：
-
-| 范式 | 结果 | token |
-|---|---|---:|
-| Plan-Execute | ✅ | **506** |
-| ReAct | ✅ | 1,203 |
-| Reflection | ✅ | 2,568 |
-
-**506 对 1,203 —— 2.4 倍的差距。** 原因前面讲过：一次请求把三个查询全排好，工具在前两轮里执行完，只需要一次综合。ReAct 要走「调一次、看一眼、再决定」的节奏，每个往返都重发上下文。
-
-所以结论不是「Plan-Execute 不好」，而是：
-
-**当任务的信息结构是「一次能看全」的时候，静态计划最省；一旦任务里有依赖中间结果的分支，静态计划会同时输掉正确率和成本。**
-
-判断方法很简单：**把任务的依赖画成图。** 如果它是线性的（每一步的输入都在开工前已知），静态计划合适；如果它是有分支的（第 N 步的输入来自第 N-1 步的输出），就必须用能逐步决策的范式。
-
-<Mermaid
-  chart={`
-flowchart TB
-    A["任务"] --> B{"第 N 步的输入<br/>依赖前面的结果吗？"}
-    B -->|"不依赖，开工前全已知"| C["静态计划可行<br/>实测 506 token，最省"]
-    B -->|"依赖，有分支"| D["静态计划必然失效"]
-    D --> E["模型把「待定的决策」塞进参数"]
-    E --> F["工具收到一个不是城市名的城市名"]
-    F --> G["❌ 实测 0/3<br/>而且比 ReAct 贵 57%"]
-    D --> H["改用 ReAct<br/>实测 3/3"]
-    D --> I["或：执行后重新规划<br/>代价是每轮多一次计划开销"]
-`}
-/>
-
-## 如果一定要用静态计划
-
-有一个缓解办法：**重规划（replanning）**。也就是每执行完一步，把结果和新任务状态一起发回去，让模型重新出一份计划。
-
-它确实能处理分支，但注意代价：**你把 Plan-Execute 退化成了 ReAct，同时保留了两者的开销** —— 每轮既要重新规划（多一次生成），又要重新观察（和 ReAct 一样重发上下文）。上表里 Plan-Execute 比 ReAct 贵的那 57%，就是这么来的。
-
-所以更实际的做法是：**只在真正需要计划的那一层用静态计划。** 这一层的判据是「内部线性、阶段之间可以分支」。 比如把任务拆成几个粗粒度阶段（每个阶段内部是线性的），阶段之间用代码判断下一步走哪个 —— 让分支留在你的代码里，而不是硬塞进 JSON。
-
-## 一个容易被忽略的细节：计划也是要校验的
-
-静态计划最大的卖点是「执行前能看到全貌」。但这个卖点只有在**你真的去审那份计划**时才成立。
-
-实测里那三次失败，如果执行前做一次最简单的校验，全都会被拦下来：**city 的取值必须在已知城市表里。** 那三个值一个都不在表里。
-
-所以计划模式的正确用法是三步，缺一不可：
-
-1. **生成**：让模型一次给出完整计划
-2. **校验**：按 schema 检查每个字段的类型与取值范围 —— 这一步是代码，不是模型
-3. **执行**：校验通过才执行，不通过就打回让模型重出（并把校验错误告诉它）
-
-第 2 步不是可选的。它既是安全边界（拦住越界的工具调用），也是质量边界（拦住「北京或上海中温度更高的那个」这种不是值的值）。少了它，静态计划就只剩「多花一轮钱」这一个特征了 —— 而且这个特征在本章的实测里已经量出来了：贵 57%，正确率 0/3。
-
-### schema 长什么样
-
-不要把「检查一下」写成语义描述，要写成机器可判的结构。下面是本节这个工具集的计划 schema（枚举值来自 `TOOLS` 的定义与你的城市表，**不是从模型嘴里问出来的**）：
+下面的 JSON 是给读者看的产物示例，数据与步骤是构造内容，尚未执行：
 
 ```json
 {
-  "type": "array",
-  "items": {
-    "type": "object",
-    "required": ["tool", "city", "day"],
-    "properties": {
-      "tool": { "type": "string", "enum": ["get_weather"] },
-      "city": { "type": "string", "enum": ["北京", "上海", "广州", "深圳"] },
-      "day":  { "type": "string", "enum": ["明天", "后天"] }
-    },
-    "additionalProperties": false
-  }
+  "steps": [
+    {"id": "bj-tomorrow", "tool": "get_weather", "city": "北京", "day": "明天", "depends_on": []},
+    {"id": "sh-tomorrow", "tool": "get_weather", "city": "上海", "day": "明天", "depends_on": []}
+  ],
+  "after_observation": "由宿主比较两项结果，再路由到胜出城市的后天查询"
 }
 ```
 
-### 校验函数
+这里没有让模型生成可执行代码或任意表达式。宿主只接受预先定义的工具和参数类型；“选择胜者”也不是传给天气工具的 `city` 字符串。若模型需要表达复杂条件，可用受限的条件 DSL，并为每个条件规定可引用字段、比较操作、类型和失败行为；不要用 `eval` 执行模型生成的表达式。
+
+## 从校验到执行：本地离线例子
+
+下面的完整 Python 例子用构造数据演示（实跑状态：Python 3.14.7，本地离线执行，2026-10-21）：先校验整份计划，再执行；依赖图由宿主拓扑排序；尚未知道的分支则在观察返回后用普通代码选择。它不调用模型、网络或真实天气服务，因此只验证本地控制逻辑，不代表模型或框架行为。
 
 ```python
-TOOL_NAMES = {"get_weather"}
-CITIES = ["北京", "上海", "广州", "深圳"]
-DAYS = ["明天", "后天"]
+"""Synthetic Plan-Execute fixture: Python 3 standard library only."""
+from collections import deque
+
+TEMPERATURES = {
+    ("北京", "明天"): 31,
+    ("上海", "明天"): 27,
+    ("北京", "后天"): 24,
+    ("上海", "后天"): 26,
+}
+ALLOWED_CITIES = {"北京", "上海"}
+ALLOWED_DAYS = {"明天", "后天"}
+TOOL = "get_weather"
+
 
 def validate_plan(plan):
-    """逐项检查并**收集全部错误**（不要遇到第一个就抛）。
-    返回 [] 表示通过。"""
-    errs = []
-    if not isinstance(plan, list):
-        return ["顶层不是数组"]
-    if not plan:
-        return ["计划为空"]
-    for i, step in enumerate(plan):
-        if not isinstance(step, dict):
-            errs.append("第 %d 步不是对象" % (i + 1))
-            continue
-        if step.get("tool") not in TOOL_NAMES:
-            errs.append("第 %d 步 tool=%r 不在注册表 %s" % (i + 1, step.get("tool"), sorted(TOOL_NAMES)))
-        if step.get("city") not in CITIES:
-            errs.append("第 %d 步 city=%r 不在城市表 %s" % (i + 1, step.get("city"), CITIES))
-        if step.get("day") not in DAYS:
-            errs.append("第 %d 步 day=%r 不合法（只允许 %s）" % (i + 1, step.get("day"), DAYS))
-    return errs
-```
+    if not isinstance(plan, list) or not plan:
+        raise ValueError("plan must be a non-empty list")
+    by_id = {}
+    for step in plan:
+        if not isinstance(step, dict) or set(step) != {
+            "id", "tool", "city", "day", "depends_on"
+        }:
+            raise ValueError("step shape is invalid")
+        step_id = step["id"]
+        if not isinstance(step_id, str) or not step_id:
+            raise ValueError("step id is invalid")
+        if step_id in by_id:
+            raise ValueError("duplicate step id")
+        if step["tool"] != TOOL:
+            raise ValueError("unknown tool")
+        if step["city"] not in ALLOWED_CITIES or step["day"] not in ALLOWED_DAYS:
+            raise ValueError("arguments are outside the host allowlist")
+        if not isinstance(step["depends_on"], list) or not all(
+            isinstance(dep, str) for dep in step["depends_on"]
+        ):
+            raise ValueError("depends_on must be a list of step ids")
+        by_id[step_id] = step
 
-### 一次完整的往返（本次真跑，2026-10-12）
+    indegree = {step_id: 0 for step_id in by_id}
+    children = {step_id: [] for step_id in by_id}
+    for step_id, step in by_id.items():
+        for parent in step["depends_on"]:
+            if parent not in by_id:
+                raise ValueError("unknown dependency")
+            indegree[step_id] += 1
+            children[parent].append(step_id)
 
-把 T2 那次实测的原始计划拿去校验：
-
-```text
-原始计划：[{"tool":"get_weather","city":"北京","day":"明天"},
-         {"tool":"get_weather","city":"上海","day":"明天"},
-         {"tool":"get_weather","city":"北京或上海中明天最高温更高的城市","day":"后天"}]
-
-validate_plan 返回 1 条错误：
-  第 3 步 city='北京或上海中明天最高温更高的城市' 不在城市表 ['北京', '上海', '广州', '深圳']
-```
-
-把错误和合法取值一起拼回消息重出。这里有一个**必须知道的坑**：第一次重出我把输出预算设成 3000，结果返回的是 `stop_reason=max_tokens` + **空文本** —— 长思考把预算吃光了。调大到 8000 才拿到合法计划：
-
-```text
-首轮生成计划：        stop=end_turn   input=120  output=1628  合计 1748
-第 1 次重出（3000）： stop=max_tokens input=253  output=3000  合计 3253   <- 空输出
-第 2 次重出（8000）： stop=end_turn   input=253  output=5616  合计 5869
-  新计划：[{"tool":"get_weather","city":"北京","day":"明天"},
-          {"tool":"get_weather","city":"上海","day":"明天"}]   <- 合法，但少了第 3 步
-
-一次成功的校验往返代价：1748 + 5869 = 7617 token
-```
-
-这次往返有两个结论：
-
-**一，校验往返不是免费的，而且可能比整个任务还贵。** 7617 token 对比第 2 节实测的 Plan-Execute 在 T2 上的平均 3087 token —— **一次「打回重出」比做完整件事还贵一倍多**。所以校验要尽量在**第一次生成时**就通过（把 schema 和合法取值写进提示词），而不是指望打回。
-
-**二，重出出来的计划是合法但不完整的。** 它把第 3 步（依赖分支的那一步）直接删了。这正是「计划格式表达不了分支」的同一个事实：校验只能保证「不非法」，保证不了「完整」。**依赖分支的那部分必须由你的代码补上**，不能指望模型写进计划。
-
-### 重出几次之后怎么办
-
-打回要有上限，否则会变成一个更贵的循环。规则写死：**同一个计划最多重出 2 次；第 3 次仍不过校验，就降级用 ReAct。** 判据是「连续两次重出都改不对」说明问题不在措辞，而在任务形状本身不适用静态计划 —— 这时候继续重出只是按次付费，而 ReAct 实测在 T2 上是 3/3。
-
-## 完整可运行代码
-
-下面这段代码把 ReAct 与 Plan-Execute 都实现出来，跑两个任务，并把模型的原始计划打印出来 —— 上面那三个失败签名就是这么抓到的。
-
-```python
-"""三种 Agent 范式跑同一个任务：ReAct / Plan-Execute / Reflection。
-
-工具是确定性的 mock（不联网），所以每一步都可复现、可精确判分。
-关键设计：任务 T2 有**条件分支** —— 下一步查哪个城市取决于上一步的结果。
-静态计划在它面前必然失效，这正是「计划即契约」的边界。
-
-实跑状态：2026-10-09，deepseek-flash。
-"""
-import os
-import json, os, urllib.request
-
-TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34,
-        ("深圳", "明天"): 29, ("北京", "后天"): 24, ("上海", "后天"): 26,
-        ("广州", "后天"): 33, ("深圳", "后天"): 30}
-
-TOOLS = [
-    {"name": "get_weather", "description": "查询某个城市某一天的最高气温（摄氏度）。",
-     "input_schema": {"type": "object",
-                      "properties": {"city": {"type": "string"},
-                                     "day": {"type": "string", "enum": ["明天", "后天"]}},
-                      "required": ["city", "day"]}},
-]
+    ready = deque(step_id for step_id, degree in indegree.items() if degree == 0)
+    order = []
+    while ready:
+        current = ready.popleft()
+        order.append(current)
+        for child in children[current]:
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                ready.append(child)
+    if len(order) != len(plan):
+        raise ValueError("dependency cycle")
+    return by_id, order
 
 
-def get_weather(city, day):
-    k = (city, day)
-    if k not in TEMP:
-        return {"error": "没有 %s%s 的数据" % (city, day)}
-    return {"city": city, "day": day, "temp_c": TEMP[k]}
+def execute_plan(plan, calls):
+    by_id, order = validate_plan(plan)  # whole-plan validation precedes dispatch
+    results = {}
+    for step_id in order:
+        step = by_id[step_id]
+        if any(dep not in results for dep in step["depends_on"]):
+            raise RuntimeError("dependency result is unavailable")
+        calls.append((step["tool"], step["city"], step["day"]))
+        results[step_id] = TEMPERATURES[(step["city"], step["day"])]
+    return results
 
 
-def call(messages, system, tools=None, max_tokens=1200):
-    body = {"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
-            "system": system, "messages": messages}
-    if tools:
-        body["tools"] = tools
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
-        data=json.dumps(body).encode(),
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        d = json.loads(resp.read())
-    u = d.get("usage", {})
-    tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-           + u.get("cache_creation_input_tokens", 0))
-    return d, tin + u.get("output_tokens", 0)
+def make_step(step_id, city, day, depends_on=None):
+    return {
+        "id": step_id,
+        "tool": TOOL,
+        "city": city,
+        "day": day,
+        "depends_on": [] if depends_on is None else depends_on,
+    }
 
 
-T1 = "查北京、上海、广州明天的最高温，报告最高的是哪个城市、最低的是哪个，以及两者差多少度。"
-T2 = ("查北京和上海明天的最高温。哪个城市更高，就再查那个城市后天的最高温。"
-      "最后报告：北京明天的温度、上海明天的温度、以及你额外查的那个城市后天的温度。")
+def main():
+    calls = []
+    first_phase = [
+        make_step("bj", "北京", "明天"),
+        make_step("sh", "上海", "明天"),
+    ]
+    observations = execute_plan(first_phase, calls)
 
+    # The condition is known only now; host code owns this deterministic route.
+    winner_id = max(observations, key=observations.get)
+    winner_city = {"bj": "北京", "sh": "上海"}[winner_id]
+    second_phase = [make_step("winner-next-day", winner_city, "后天")]
+    final_observation = execute_plan(second_phase, calls)["winner-next-day"]
+    print("winner=%s; tomorrow=%dC; next_day=%dC" % (
+        winner_city, observations[winner_id], final_observation
+    ))
+    print("host tool calls=%d; providerCalls=0; externalNetworkCalls=0" % len(calls))
 
-def react(task, tools=TOOLS, cap=10):
-    """ReAct：模型每一步自己决定调工具还是给答案。"""
-    sys = "你是一个会使用工具的助手。需要数据就调用工具，拿到足够信息后直接给出最终答案。"
-    msgs = [{"role": "user", "content": task}]
-    used, tok, steps = [], 0, 0
-    while steps < cap:
-        steps += 1
-        d, t = call(msgs, sys, tools)
-        tok += t
-        blocks = d.get("content", [])
-        if d.get("stop_reason") != "tool_use":
-            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-            return text, tok, steps, used
-        msgs.append({"role": "assistant", "content": blocks})
-        results = []
-        for b in blocks:
-            if b.get("type") == "tool_use":
-                args = b.get("input", {})
-                used.append(args.get("city"))
-                out = get_weather(args.get("city"), args.get("day"))
-                results.append({"type": "tool_result", "tool_use_id": b["id"],
-                                "content": json.dumps(out, ensure_ascii=False)})
-        msgs.append({"role": "user", "content": results})
-    return "（达到步数上限）", tok, steps, used
-
-
-def plan_execute(task, cap_plan=8):
-    """Plan-Execute：先一次性给出完整工具调用计划，再由代码执行，最后综合。"""
-    msgs = [{"role": "user", "content":
-             task + "\n\n请先给出完整的执行计划：一个 JSON 数组，每项形如 "
-             '{"tool":"get_weather","city":"...","day":"..."}。只输出 JSON 数组。'}]
-    d, tok = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
-    text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    if not text.strip() and d.get("stop_reason") == "max_tokens":
-        raise RuntimeError("测量故障：空输出 + stop_reason=max_tokens，需要调大预算，不是模型失败")
-    i = text.find("[")
+    invalid_batch = [
+        make_step("valid-first", "北京", "明天"),
+        make_step("invalid-second", "北京或上海中较高的城市", "后天"),
+    ]
+    before = list(calls)
     try:
-        plan, _ = json.JSONDecoder().raw_decode(text[i:])
-    except Exception:
-        plan = []
-    results, used = [], []
-    for step in plan[:cap_plan]:
-        if step.get("tool") == "get_weather":
-            used.append(step.get("city"))
-            results.append(get_weather(step.get("city"), step.get("day")))
-    msgs.append({"role": "assistant", "content": text})
-    msgs.append({"role": "user", "content": "计划已执行完毕，结果如下：\n"
-                 + json.dumps(results, ensure_ascii=False) + "\n\n请给出最终答案。"})
-    d2, tok2 = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
-    tok += tok2
-    final = "".join(b.get("text", "") for b in d2.get("content", []) if b.get("type") == "text")
-    return final, tok, 1 + len(plan), used
+        execute_plan(invalid_batch, calls)
+    except ValueError as exc:
+        assert calls == before  # no partial dispatch when any step is invalid
+        print("invalid batch rejected before dispatch: %s" % exc)
+    else:
+        raise AssertionError("invalid plan was accepted")
 
-
-def reflection(task):
-    """Reflection：ReAct 拿到答案后，再让模型自查并修订一次。"""
-    first, tok1, steps1, used = react(task)
-    msgs = [{"role": "user", "content": task + "\n\n第一位助手的答案：\n" + first
-             + "\n\n请检查这个答案是否有错。如果正确，原样输出；如果有错，给出修正后的答案。"}]
-    d, tok2 = call(msgs, "你是一个严格的事实核查者。")
-    tok = tok1 + tok2
-    final = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    return final, tok, steps1 + 1, used
-
-
-def check1(text):
-    """T1 判分：必须点出广州（34）、上海（27）、差 7 度。"""
-    ok = ("广州" in text and "上海" in text and ("7" in text))
-    return ok
-
-
-def check2(text, used):
-    """T2 判分：北京 31、上海 27；因为北京更高，所以额外查的必须是北京（后天 24）。"""
-    ok = ("31" in text and "27" in text and "24" in text)
-    branch_ok = "北京" in used
-    return ok, branch_ok
+    cycle = [
+        make_step("a", "北京", "明天", ["b"]),
+        make_step("b", "上海", "明天", ["a"]),
+    ]
+    before = list(calls)
+    try:
+        execute_plan(cycle, calls)
+    except ValueError as exc:
+        assert calls == before
+        print("cyclic plan rejected before dispatch: %s" % exc)
+    else:
+        raise AssertionError("cyclic plan was accepted")
 
 
 if __name__ == "__main__":
-    print("=== T1（线性任务）：三种范式 ===")
-    print("任务：%s" % T1)
-    for name, fn in [("ReAct", lambda: react(T1)), ("Plan-Execute", lambda: plan_execute(T1)),
-                     ("Reflection", lambda: reflection(T1))]:
-        text, tok, steps, used = fn()
-        print("  %-13s %s  token %-6d 步数 %-2d 查了 %s" % (name, "✅" if check1(text) else "❌",
-                                                            tok, steps, used))
-    print()
-    print("=== T2（条件分支任务）===")
-    print("任务：%s" % T2)
-    for name, fn in [("ReAct", lambda: react(T2)), ("Plan-Execute", lambda: plan_execute(T2))]:
-        text, tok, steps, used = fn()
-        ok, branch = check2(text, used)
-        print("  %-13s 答案 %s  分支 %s  token %-6d 步数 %-2d 查了 %s"
-              % (name, "✅" if ok else "❌", "✅" if branch else "❌（查错城市）", tok, steps, used))
-        print("      最终答案：%s" % text.strip().replace("\n", " ")[:150])
+    main()
 ```
 
-## 它和链式 workflow 只差一步
+```text
+winner=北京; tomorrow=31C; next_day=24C
+host tool calls=3; providerCalls=0; externalNetworkCalls=0
+invalid batch rejected before dispatch: arguments are outside the host allowlist
+cyclic plan rejected before dispatch: dependency cycle
+```
 
-注意 Plan-Execute 和链式 workflow 的距离非常近：**两者都是「先定步骤，再按步骤执行」。** 差别只有一个 —— 步骤是模型定的，还是你定的。
+这是构造 fixture 的真实本地输出；三次调用只表示本地字典查找，不是模型往返、线上 API 请求或端到端成功率。执行器本例串行处理拓扑序，生产系统可将同一就绪层的独立步骤并发调度，但必须另外处理限流、部分失败、取消和结果汇合；拓扑排序本身不提供并发安全或事务语义。
 
-这个差别带来两个后果，方向相反：
+## 运行时要防止过期与重复副作用
 
-- **好处**：模型能处理你没预料到的任务形状，而 workflow 只能处理你写死的那些。
-- **坏处**：你失去了对步骤的编译期检查。workflow 里调用一个不存在的函数会编译失败；模型给出一个不存在的工具名，只会在运行时变成一个 400。
+结构正确的计划也可能不完整：模型可以漏掉要求的检查，或者在重规划时忘记前面已完成的工作。因此，计划执行前还要用任务级不变量验证覆盖范围；执行后要验证最终答案满足业务条件。示例里的城市 allowlist 只能检查参数形状与许可范围，不能证明选出的城市符合用户要求。
 
-所以 Plan-Execute 的正确位置是：**任务形状会变、但每类形状内部是线性的。** 如果任务形状是固定的，写 workflow 更好 —— 它更便宜、更可测、也更安全。第 11 章会看到，把「计划」这一层换成代码里的函数调用，就是 workflow。
+计划也会过期。查询结果、权限、库存、文件版本、审批状态可能在生成计划后发生变化。每个可能改变外部状态的步骤应在执行时重新检查必要前提；若前提失效，暂停并明确地重新规划。不能靠“模型记得最初计划”解决状态漂移，也不应将旧计划中未完成的副作用盲目重放。
 
-## 常见坑
+执行中断时，要区分“未执行”“执行成功但响应丢失”和“结果未知”。对写操作，使用业务幂等键、持久化每步状态，并在重试前对账；计划 step ID 可用于追踪，但它本身不是外部系统支持的幂等保证。执行审批、租户隔离、权限撤销和预算也必须在副作用发生时检查，而不是只在计划生成时检查。
 
-- **用静态计划处理带分支的任务。** 实测 0/3，而且比 ReAct 贵 57%。判据：第 N 步的输入是否来自第 N-1 步的输出。
-- **看到「计划里写了城市名」就以为计划有效。** 实测里三次都「写了」，但写的是「北京或上海中温度更高的那个」—— 它是一段描述，不是一个值。校验计划时要按 schema 验，不要目测。
-- **以为重规划没有代价。** 它是「规划 + 观察」两份开销的叠加，而不是 Plan-Execute 加一点点。
-- **把计划当作可以事后修正的东西。** 计划是契约，执行者（代码）不会修改它。要修正，只能在下一轮重新生成一份。
-- **忽略执行前的校验。** 静态计划最大的优势是「执行前能看全貌」—— 但如果不对计划做 schema 校验、也不检查参数合法性，这个优势就被浪费了。
+把进度存成宿主维护的状态，而不是在每次重试时重新读一遍计划并从第一步开跑。最小记录通常需要任务 ID、计划版本、step ID、输入摘要、状态、尝试次数、结果引用和更新时间。状态至少要能区分尚未开始、正在执行、成功、确定失败、结果未知与因前置条件跳过；如果把“请求超时”一律记成失败，恢复程序就可能重复触发已经成功的副作用。
+
+例如发送退款请求后连接断开，客户端不知道服务端是否已经提交。此时把 step 标记为 `unknown`，先用业务订单号或接收方提供的操作键查询结果；查到已提交就补录结果，查到未提交且可安全重试时才重放，仍不能确定就暂停并转人工或对账流程。计划版本更新时，保留旧版本和已经完成的步骤，只将依赖变更部分重新校验；不要悄悄覆盖历史计划，否则无法解释哪些动作依据哪个假设执行。
+
+检查点不等于授权记录：权限可能被撤销，记录也可能过时。执行器应在每个敏感副作用前用当前调用者身份重查资源范围、审批状态和动作限额，并把拒绝原因写入可追踪事件。读操作也可能泄露跨租户数据，所以“无副作用”不代表“无安全影响”。这些机制需要与实际工具的事务边界和幂等契约对齐；离线示例没有验证这些生产性质。
+
+## 何时静态计划值得用
+
+先列出待解决的依赖，再判断哪一层负责路由：若下一步的输入已经确定，静态计划让执行前审查与批次校验更直接；若分支能从明确状态机械计算，使用代码条件路由；若要根据新观察作开放式判断，才让模型提出新动作或计划。三种方式可以组合，不存在由“线性/非线性”直接推出哪种范式更准、更便宜的普遍规则。
+
+真正的比较单位是同一任务与同一成功标准下的端到端 trace：用户请求、模型计划、每次观察、工具参数、执行结果、重规划、最终答案、usage 和失败原因都要保留。评测要同时检查答案、调用轨迹和业务不变量；只检查输出里出现某个城市或温度，会把字段对应错误也算成功。历史 T1/T2 的逐次 trace 未归档，无法据旧摘要重算这类比较。
+
+[Anthropic 的 Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) 与 LangGraph 条件边文档可帮助理解实现形状，但它们不证明某种模式在你的任务上更便宜或准确。选型后仍要用目标任务、生产授权边界、超时/重试语义和可恢复性做评测。本文示例仅验证宿主侧计划校验和确定性路由，不验证模型规划质量、LangGraph 运行行为或生产系统的恢复保证。
+
+<Mermaid
+  chart={`
+flowchart TD
+    U[任务与验收条件] --> P[模型提出候选计划]
+    P --> S{结构 / 工具 / 参数 / 依赖有效?}
+    S -->|否| R[拒绝执行并记录原因]
+    S -->|是| C{覆盖任务要求且满足约束?}
+    C -->|否| R
+    C -->|是| A{当前授权与执行前提仍有效?}
+    A -->|否| X[暂停、对账或重新规划]
+    A -->|是| E[宿主执行一个就绪步骤]
+    E --> O[保存结果与状态版本]
+    O --> D{是否需要下一步决策?}
+    D -->|代码可确定路由| G[宿主条件路由]
+    D -->|需要模型解释新观察| M[模型提出后续动作 / 计划]
+    G --> S
+    M --> S
+    D -->|无剩余步骤| V[按业务验收条件校验结果]
+    V -->|失败| X
+    V -->|通过| F[交付候选结果]
+`}
+/>

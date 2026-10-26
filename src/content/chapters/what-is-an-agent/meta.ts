@@ -30,8 +30,8 @@ export const chapter = {
       id: 'what-is-an-agent/why-now',
       chapterId: 'what-is-an-agent',
       slug: 'why-now',
-      title: '为什么是现在：三个条件同时成立了',
-      summary: '能力跃迁不是模型单方面变强的结果，而是三个条件恰好同时满足。',
+      title: '为什么现在更容易把 agent 做成工程系统',
+      summary: '用动作协议、上下文与状态管理、成本和延迟解释近年工程落地条件；这些是分析视角，不是必要且充分门槛。',
       estimatedMinutes: 6,
       difficulty: 'intro',
       hasBody: true,
@@ -41,12 +41,12 @@ export const chapter = {
         {
           id: 'three-conditions',
           question:
-            '让 agent 从「论文里能跑」变成「工程上可用」，除了模型本身变强，还需要哪两类条件？',
+            '本节的三类工程因素是 agent 上线的必要且充分条件吗？',
           answer:
-            '一是工具调用成为模型的可靠原生能力 —— 模型能稳定输出结构化的调用意图，而不是靠解析自由文本去猜；二是工程侧配套成熟，包括够用的沙箱隔离、可观测性方案与成本控制手段。只有模型强、缺后两者，agent 就只能停在演示阶段。',
+            '不是。它们是分析接口能力、上下文/外部状态管理、成本/延迟的观察框架；具体部署还要看任务风险、评估证据、授权隔离、可观测性、故障恢复和产品价值。较大的上下文窗口也不能替代状态管理或自动保证任务可靠。',
           basis: 'inferred',
-          note: '这是综述性判断，不是某份文档里的原话。Anthropic 的 Building effective agents 对「什么时候该用 agent」有更严格的标准，值得对照着读。',
-          resourceIds: ['anthropic-building-effective-agents'],
+          note: '这是工程分析框架，不是某份官方文档定义的必要条件。Anthropic 的 agent/workflow 建议与上下文文档可作为具体厂商的实例，但不能推广为所有系统的固定条件。',
+          resourceIds: ['anthropic-building-effective-agents', 'anthropic-context-windows', 'react-paper', 'deepseek-anthropic-api', 'deepseek-context-caching'],
         },
       ],
     },
@@ -55,7 +55,7 @@ export const chapter = {
       chapterId: 'what-is-an-agent',
       slug: 'what-counts-as-agent',
       title: '什么算 agent，什么不算',
-      summary: '一条判断标准：控制权在谁手里。以及为什么多数需求其实应该用 workflow。',
+      summary: '本文采用的架构分类：workflow 与 agent 的控制流差异、宿主执行边界，以及何时值得增加模型决策。',
       estimatedMinutes: 7,
       difficulty: 'intro',
       hasBody: true,
@@ -66,7 +66,7 @@ export const chapter = {
           id: 'agent-vs-workflow',
           question: '区分 agent 与 workflow 的那条标准是什么？',
           answer:
-            '控制权在谁手里。如果下一步做什么是你预先在代码里编排好的、LLM 只在固定环节被调用，那是 workflow；如果下一步做什么由模型根据当前观察结果自主决定、且路径长度不固定，那才是 agent。差别不是「高级 vs 低级」，而是可靠性、可预测性与成本的取舍 —— 多数需求其实用 workflow 就够了。',
+            '看控制流由谁编排。如果应用预先决定步骤与分支、LLM 只在固定位置提供能力，那是 workflow；如果模型会基于观察提出下一步动作，宿主再按状态、权限与预算决定是否执行或继续，这属于 agent loop。路径长度可能动态变化，但不是唯一判据；workflow 的成本通常更容易估算，不等于可以精确预知每次输出、缓存、重试的账单。',
           basis: 'documented',
           sourceIds: ['anthropic-building-effective-agents'],
           note: '区分标准出自 Anthropic 的 Building effective agents；该文还归纳了若干可组合的 workflow 模式，选型时值得对照。',
@@ -78,7 +78,7 @@ export const chapter = {
       chapterId: 'what-is-an-agent',
       slug: 'mindset-shift',
       title: '需要调整的三个后端直觉',
-      summary: '你的大部分经验可以直接迁移，但有三处直觉在这里会反过来咬人。',
+      summary: '后端经验大多仍然有用；输出可重复、成功响应等于任务成功、上下文等于精确状态这三种默认假设需要重新验证。',
       estimatedMinutes: 7,
       difficulty: 'intro',
       hasBody: true,
@@ -87,23 +87,32 @@ export const chapter = {
       checkpoints: [
         {
           id: 'deterministic-testing',
-          question: '为什么“为 LLM 输出写精确匹配断言的单元测试”是个坏主意？它应该怎么写？',
+          question: '测试 LLM 输出时，什么时候精确断言合适，什么时候需要别的判据？',
           answer:
-            '因为输出是概率性的——同一输入两次调用可能给出措辞完全不同的结果，精确匹配会随机失败，最终所有人都学会无视这个测试。正确做法是把断言写在结构性属性上：JSON 能否通过 schema 校验、关键字段是否被提取到、是否调用了预期工具、以及用一组样例统计成功率而非要求 100% 通过。',
+            '先按层次定义契约：不要比较仅格式不同的原始 JSON 字符串；解析后校验 schema；对必须精确的业务字段做精确断言；对容许措辞变化的自然语言使用经过校准的语义判据。质量/成功率结论需用代表目标任务的样本集与明确 grader 评估，不能因为输出存在变异就放弃精确的业务不变量。',
           basis: 'inferred',
           note: '这是工程判断。第 13 章会把它展开成完整的评估体系（轨迹评估、pass^k 这类可靠性指标）。',
         },
         {
           id: 'determinism-myth',
-          question: '过去人们习惯把 temperature 设为 0 来换取「确定性」，这条路现在还走得通吗？',
+          question: 'temperature=0 能保证输出逐字节可复现吗？参数行为应如何确认？',
           answer:
-            '走不通了，而且是双重的。第一，即使在支持该参数的旧模型上，temperature=0 也从来不保证逐字节可复现 —— 浮点运算、批处理与服务端版本更新都会带来差异；第二，对 Opus 4.6 之后发布的模型，temperature 根本不能再设（传非默认值直接返回 400）。所以「靠调参数换确定性」这个思路在当前模型上彻底失效，输出的稳定性要靠结构化校验、重试与统计意义上的成功率来保证。',
+            '不能。Anthropic Messages API 文档明确说明，即使 temperature=0，结果也不保证完全确定；同一 API 的参数支持还随模型版本变化，Opus 4.6 之后发布的模型对非默认 temperature 返回 400，而默认值 1 可兼容。这个结论只描述 Anthropic 文档范围，不能推广到其它 provider。应查目标 API/SDK 文档并在目标任务上评测；校验和重试只能处理各自定义的失败，不能保证模型输出稳定。',
           basis: 'documented',
-          sourceIds: ['claude-model-migration'],
-          note: '「temperature 不可再设」有官方文档依据。「旧模型上也不保证一致」是工程常识，我未在官方文档里找到对此的明确表述，故不作为主要论据。',
+          sourceIds: ['claude-messages-api', 'claude-model-migration'],
+          note: '限定为 Anthropic 当前 Messages API 文档说明；模型参数行为会变化，发布时应重新核对目标模型。',
+        },
+        {
+          id: 'context-position-scope',
+          question: 'Lost in the Middle 研究能支持什么结论？',
+          answer:
+            '该研究在特定模型的长上下文问答与键值检索任务中观察到相关信息位置影响；它不能证明所有模型和任务都有相同位置曲线，也不能把某次任务失败的根因归为注意力位置。需要在目标任务、模型和上下文长度上设计受控评测。',
+          basis: 'documented',
+          sourceIds: ['lost-in-the-middle'],
+          note: '来源是论文报告的实验范围；本站关于本地历史标记实验的描述仍不可独立复核。',
         },
       ],
-      resourceIds: ['anthropic-context-engineering'],
+      resourceIds: ['anthropic-context-engineering', 'lost-in-the-middle', 'claude-messages-api', 'claude-model-migration', 'anthropic-stop-reasons'],
     },
     {
       id: 'what-is-an-agent/how-to-use-this-site',
@@ -119,13 +128,23 @@ export const chapter = {
       checkpoints: [
         {
           id: 'stage-order',
-          question: '为什么阶段 4（生产化）不能提前学？',
+          question: '阶段顺序是硬性先修要求吗？如何判断能否跳读？',
           answer:
-            '因为评估、成本控制、沙箱这些都建立在前面阶段的具体机制之上 —— 你不知道一次 agent 循环会产生多少种失败模式，就没法设计评估指标；不知道工具调用与上下文是怎么消耗 token 的，就没法做成本优化。顺序在这里是有依赖的，不是难度递增。',
+            '不是。阶段表达本站建议的学习顺序和主要概念依赖，不表示后续阶段的每一章都以前面所有章节为先修。可以从知识地图查看具体连线，也可按目标走本文给出的只读工具调用短路径；涉及权限、生产副作用或成本决策时，再补齐对应先修知识与验证。',
           basis: 'inferred',
-          note: '这是本站的课程设计判断，不是外部事实。',
+          note: '这是本站的课程编排建议；读者的实际先修能力和项目目标不同。',
+        },
+        {
+          id: 'redirect-credential-boundary',
+          question: '为什么 first-loop 示例拒绝自动跟随 API 重定向？',
+          answer:
+            'Python urllib 的 Request 普通请求头会被添加到重定向请求。示例携带 x-api-key，因此显式拒绝重定向，避免凭据自动转发到新的 URL；遇到 302 时应核对可信的最终 endpoint 地址。',
+          basis: 'documented',
+          sourceIds: ['python-urllib-request'],
+          note: '这是 Python urllib 文档所述的客户端行为；该限制不等于完整的 SSRF 或目标主机安全策略。',
         },
       ],
+      resourceIds: ['claude-messages-api', 'python-urllib-request'],
     },
   ],
   resourceIds: [
@@ -135,20 +154,20 @@ export const chapter = {
     'twelve-factor-agents',
   ],
   backendMapping: {
-    analogy: 'LLM ≈ 一个没有 SLA、按 token 计费、且输出不确定的第三方依赖',
+    analogy: 'LLM API 是外部依赖；可用性、计费、版本承诺因 provider/套餐而异，生成内容还需按业务契约验证',
     transferable: [
-      '重试、超时、熔断、降级这套容错思路完全适用',
+      '超时、预算、重试、熔断与降级仍有用，但要按 provider 错误语义、任务 deadline 和副作用边界配置',
       '把不确定性隔离在边界内、让核心逻辑保持确定性的分层设计',
       '可观测性——日志、追踪、成本归因——同样是基本功',
     ],
     pitfalls: [
-      '按确定性函数的方式为 LLM 写测试：精确匹配断言会立刻碎掉',
+      '比较未经解析的整段模型文本；把格式变异与业务契约混为一谈',
       '把标称上下文容量当成实际可用能力：容量、注意力效果、成本与跨调用状态持久化都应分别按目标模型和 API 验证',
-      '把概率性输出直接当可信数据源用，不做校验与兜底',
+      '把模型提出的内容当成事实、授权或业务动作已成功，而不做独立校验',
     ],
     cost: 'low',
   },
   status: 'published',
-  updatedAt: '2026-09-24',
-  verifiedAt: '2026-09-24',
+  updatedAt: '2026-10-21',
+  verifiedAt: '2026-10-21',
 } satisfies Chapter;

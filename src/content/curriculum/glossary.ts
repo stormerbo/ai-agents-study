@@ -217,7 +217,7 @@ export const glossary: Record<TermId, Term> = {
     en: 'sandbox',
     zh: '沙箱',
     definition:
-      '隔离执行不可信代码的环境。隔离强度从弱到强大致是：同一进程 → 容器（Docker）→ 用户态内核（gVisor）→ 轻量虚拟机（Firecracker）。选型取决于你能承受多大的逃逸风险。',
+      '用于约束代码可见资源与副作用的执行环境。讨论时可区分进程内、语言层限制、独立进程、共享宿主内核的容器、以及带 guest kernel 的 VM/microVM；这些不是自动成立的安全等级。应按信任来源、数据与副作用、租户隔离、宿主配置和可验证的运行时边界选型。',
   },
   'model-context-protocol': {
     id: 'model-context-protocol',

@@ -4,71 +4,61 @@ title: JSON Schema 与约束解码
 status: drafting
 ---
 
-上线两周后你发现库里有几条折扣率是 150% 的记录。你翻回代码，schema 里明明写着：
+假设一个常见故障：上线两周后，库里出现折扣率为 150% 的记录。代码里的 schema 明明写着：
 
 ```json
 { "discount_percent": { "type": "number", "maximum": 100 } }
 ```
 
-模型也确实调用了工具，返回的 JSON 也通过了你的解析。**问题出在一个常见的误解上：你以为 `input_schema` 是一道闸门，实际上它只是一份说明书。**
+模型也确实调用了工具，返回的 JSON 也通过了你的解析。**问题在于把“请求里带了 schema”误当成“这个 endpoint 一定会强制执行 schema”。** 有些接口只把它作为模型上下文，有些接口提供受支持子集的严格约束；必须按具体 API 格式与 endpoint 确认。无论哪种，都要在副作用入口前做应用侧校验。
 
 这一节会撞上四个名词，先按它们各自管什么分开：
 
-- **token**：模型按**词表切分后的片段**逐段生成输出（第 1 章）。理解这一点就够了 —— 屏蔽一个 token，等于否决一次候选；`type: integer` 这种约束的代价，最终都要折算成「每一步要检查多少 token」。
-- **`oneOf` / `$ref` / `additionalProperties`**：你现在可以直接把它们当成**你熟悉的 HTTP 接口校验库里的关键字**：`oneOf` 相当于联合类型（多选一），`$ref` 相当于「引用另一个类型定义」，`additionalProperties: false` 相当于「不许出现接口没声明的字段」。后端读者对这套东西的直觉基本可迁移。
-- **约束解码**（constrained decoding）：**采样阶段**就按 schema 屏蔽掉会导致非法输出的 token（下一小节展开）。
-- **Pydantic**：Python 里做运行时类型校验的库。你在本节看到的用法等价于把 JSON Schema 写成一个类，由它负责「解析 + 校验 + 报错」这三件事。
+- **token**：模型生成文本时使用的词表单元（第 1 章）。在一种常见的约束解码实现里，系统会根据当前语法状态限制下一步可选 token；具体实现、编译成本和支持范围由服务端决定，不能仅凭“按 token 生成”推断某个 schema 关键字会被强制。
+- **`oneOf` / `$ref` / `additionalProperties`**：它们是 JSON Schema 的关键字，可分别表达组合分支、复用定义和额外属性规则。它们的标准语义可迁移；某个 provider 的受限 schema 子集、递归支持和执行方式则不能直接类比成你本地 HTTP 校验器。
+- **约束解码**（constrained decoding）：生成过程受语法或 schema 约束的一类方法；具体保证取决于 endpoint 支持的模式和 schema 子集（下一小节展开）。
+- **Pydantic**：Python 的数据解析与校验库。模型类可以生成 JSON Schema，但 Pydantic 的运行时校验行为并不与所有 provider 的 schema 子集完全等价；本节用它展示应用侧解析和校验。还要明确类型转换策略：默认 lax 模式可能把 JSON 字符串 `"1200"` 转成整数 `1200`，如果应用要求输入本身满足 JSON 类型，可显式启用 `ConfigDict(strict=True)`；Pydantic 2.9 的 [strict mode 文档](https://docs.pydantic.dev/2.9/concepts/strict_mode/)说明了转换边界。是否转换应由接口契约决定，而不是把解析成功等同于输入类型正确。
 
-## 实测：schema 到底强制了什么
+## 历史记录摘要：schema 关键字的行为
 
-方法：每种关键字单独建一个工具，输入**故意引诱模型违反该约束**，然后用强制工具调用跑 3 次（关闭思考，让 schema 成为唯一约束来源）。
+以下是 2026-10-08 历史记录中的摘要，不是本轮复现结果。当前仓库没有逐次请求/响应、精确模型快照、完整 schema 与可重算 scorer；`deepseek-flash` 也不足以唯一确定当时的模型版本和 API 路由。因此表中每项都是**待核实的历史观察**，不能据此认定关键字失效或推广到其他 endpoint。旧记录称每项强制工具调用 3 次，`additionalProperties` 5 次，并称当时关闭思考；请求形态和评分细节缺失，无法独立确认。
 
-| 关键字 | 我给的输入 | 实测输出 | 被强制了吗 |
+| 关键字 | 旧记录中的输入摘要 | 旧记录中的输出摘要 | 旧报告判断（本轮未复核） |
 |---|---|---|---|
-| `enum: [low, medium, high]` | 「十万火急」 | `high` | 合规 |
-| `required: [owner]` | 原文**没提**负责人 | `""` 或 `"未提及"` | **没有 —— 逼出假值** |
+| `enum: [low, medium, high]` | 「十万火急」 | `high` | 旧摘要称输出为枚举值；未独立复核 |
+| `required: [owner]` | 原文**没提**负责人 | `""` 或 `"未提及"` | 字段存在；schema 不判断内容是否有证据 |
 | `type: number` | 「一百九十九元」 | `199`（number） | 类型转换成功 |
-| `maximum: 100` | 「折扣力度是 150%」 | `150` | **没有** |
-| `pattern: ^1[0-9]{10}$` | 座机 `010-12345678` | `"01012345678"` | **没有**（还吞掉了连字符） |
-| `additionalProperties: false` | 原文多给了邮箱、手机、公司、职位 | 5/5 只返回 `["name"]` | 遵守 |
-| `type: integer` | 「买了 2.5 箱」 | `2` 或 `3` | **没有，且静默取整** |
+| `maximum: 100` | 「折扣力度是 150%」 | `150` | 旧摘要称输出 150；不代表当前 endpoint 能力 |
+| `pattern: ^1[0-9]{10}$` | 座机 `010-12345678` | `"01012345678"` | 旧摘要称出现此输出；未独立复核 |
+| `additionalProperties: false` | 原文多给了邮箱、手机、公司、职位 | 5/5 只返回 `name` | 这 5 次遵守；小样本不构成保证 |
+| `type: integer` | 「买了 2.5 箱」 | `2` 或 `3` | 输出都满足 integer；取整方向是语义选择，不是 Schema 验证结果 |
 | `minItems: 3` | 清单里只有 2 项 | 2 项 | 没有，但**没有编造第 3 项** |
 | `format: date` | 「下周三交货」 | `"2025-11-19"` 或 `"下周三"` | **没有** |
 | `type: ["string","null"]` | 「（没有备注）」 | `"无"` 或 `"null"`（**字符串**） | 端点接受 |
 | `oneOf` | — | 正常返回 | 端点接受 |
 | 顶层递归 `$ref` | 树形目录 | **HTTP 400** | 端点拒绝 |
 
-（实测数据，`deepseek-flash`，2026-10-08，每个关键字 3 次。）
+（来源：本仓库未归档原始轨迹的历史摘要；模型快照、endpoint 路由、schema 原文及评分脚本缺失。本轮没有重跑 provider 请求。）
 
-这张表里最值得注意的是**两件事的方向相反**：
+这张旧表不能把“字段是否出现”“输出类型是否符合”“业务值是否合理”“内容是否有证据”混为一个 Schema 结果。表中有关缺失字段时生成空字符串或 `"未提及"` 的内容，也只是未复核摘要；不过 [JSON Schema 2020-12 的 `required`](https://json-schema.org/draft/2020-12/json-schema-validation) 标准语义很明确：它要求属性出现，不要求值非空、真实或有来源。`type: integer` 只检查 JSON 类型，不会替业务决定 2.5 箱应如何处理。
 
-- `maximum` / `pattern` / `format` / `minItems` **完全不生效**。它们是写给读 schema 的人看的，不是写给采样器的。
-- `required` **太生效了**。当输入里根本没有这个信息时，模型不会说「不知道」，而是**填一个看起来合规的值**：空字符串，或者 `"未提及"`。
-
-**一个「不强制」的约束，加上一个「强制」的必填项，合起来就是在批量生产假数据。**
+**结构合规不能替代业务校验和事实核验。**
 
 ## 约束解码是什么，不是什么
 
-真正的**约束解码**（constrained decoding）发生在采样阶段：每一步都屏蔽掉会导致非法输出的 token，让「生成非法结构」在机制上不可能。这是编译器级别的保证。
+**一种常见实现思路**是把语法或 schema 编译成状态机/语法，再在生成时屏蔽当前状态下不合法的 token。不同服务可以采用不同实现；应用通常只看到 API 契约，不应假设自己能取得 provider 的 tokenizer 或掩码。
 
-**掩码是怎么来的**，决定了它为什么不是默认能力。链条是这样：
+这解释了两件工程事实：第一，约束保证只覆盖该 endpoint 声明支持的 schema 子集；第二，复杂 schema 可能增加编译成本或被拒绝，但影响取决于具体实现和限制，不能从“schema 更复杂”推出固定的内存、时延或费用规律。结构化最终输出也不等于模型没有内部推理；支持思考模式与严格结构输出的组合能力必须看 provider、API 格式和模型文档。
 
-1. 你的 schema 被**编译成一个状态机**（「下一步允许出现哪些字符」）。
-2. 状态机再被折算成**当前这一步允许的 token 集合**。
-3. 采样时把其余 token 的概率压成 0。
+**按 provider 文档区分接口。** 截至 2026-10-21，DeepSeek 文档把 strict tool-call 模式标为 Beta，要求走 `https://api.deepseek.com/beta` 的 Chat Completions function 形态，并在 `function` 上设置 `strict: true`；其列出的子集包括 `maximum`、字符串 `pattern` 和递归 `$ref`，且说明 V3.2 起支持 thinking mode 下的 tool use。它与下方历史记录里的 Anthropic 风格 `input_schema` 请求不是同一个 API 形态。
 
-第 2 步是全部代价的来源：**约束是字符级的，而模型是按 token 生成的**，两者必须逐 token 对齐。于是：
+[Anthropic strict tool use 文档](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use)则把 `strict: true` 用于受支持子集内的严格工具输入；[Structured Outputs 文档](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)把 JSON 文本输出 schema 作为单独的 `output_config.format` 功能，并明确列出不支持递归 schema 和数值 `minimum`/`maximum`。这正说明能力必须按 provider、API 格式、模型和 schema 子集分别确认；不能把某个旧 endpoint 的观察当成行业通则。
 
-- **它必须用这家厂商自己的 tokenizer 编译。** tokenizer 不同，同一个 schema 编译出的掩码就不同 —— 这就是为什么它没法像 JSON Schema 那样「写一次到处用」。
-- **schema 的表达力越强，状态机越大。** 递归类型要让状态机自我引用、联合类型（`oneOf`）要并行维护多个候选分支，编译时间和内存都会往上走。
-- **中文边界尤其贵。** 一个汉字可能是一个 token，也可能是半个多字节 token；`enum` 里放中文取值时，掩码必须在 token 粒度上把这些切法全部覆盖。
-- **它会压缩模型的表达空间。** 模型不能先输出一段自然语言「想清楚」，因为那些 token 不在允许集合里 —— 这就是第 1 节「强制工具调用必须关掉思考」在机制层的同一条原因。
+JSON Schema 可表达字段类型、数值范围、字符串模式、数组约束和一部分依赖/条件关系；标准本身不能替你判断抽取内容是否有证据，也不能一般性地表达任意两个字段之间的大小比较。provider 严格模式只负责文档所列子集，应用仍应在解析后执行本地 schema 与业务校验。
 
-**哪些产品真的做了这件事**（以下为已知产品特性的方向性对照，不是本书实测）：OpenAI 的 Structured Outputs 在支持的模型上用约束解码，并把自己的 schema 子集明确写成文档；llama.cpp 走的是另一条路 —— 你写一份 GBNF 文法（也可以用它的 `json_schema` 转换），它按文法在本地约束采样。两者的共同点是：**支持的关键字是有限的、且随版本变**。所以「换一家就自动有结构保证」这个假设，在任何厂商那里都不成立。
+**“严格”也不代表每个响应都一定是符合 schema 的业务结果。** 以 Anthropic 当前 JSON structured outputs 文档为例：安全拒绝可返回 HTTP 200 且 `stop_reason="refusal"`，拒绝文本可能不符合 schema；达到 `max_tokens` 时内容可能被截断；字符串 `enum` / `const` 还存在大小写边界。复杂 schema 也受服务端语法编译复杂度限制，首次编译会增加延迟，超限可能失败。实现时先检查传输/API 状态与 provider 的结束原因，再提取预期内容、解析并在本地校验；不能因 HTTP 200、SDK 返回对象或启用了 `strict` 就跳过这些步骤。工具 strict 约束的是工具名和参数，不自动约束最终文本。上述是 Anthropic 的当前接口例子，不应外推为所有 provider 的统一行为；部署时按实际 endpoint 文档更新处理分支。
 
-而工具调用的 `input_schema` 是一份**给模型看的接口说明**。在这个端点上，它的行为更像「模型读了这份说明并尽量遵守」，而不是「采样器照着它屏蔽 token」—— 上表里 `maximum` 与 `pattern` 的结果就是证据。
-
-顺带排除一个常见的指望：`strict: true`。
+旧记录还声称：在 Anthropic 风格的工具定义中加入 `strict: true` 后，该请求仍返回 200 并输出 `150`。原始请求与响应缺失，因此这只是**未能独立复核的历史观察**；而且它不能代表 DeepSeek 现在的 Beta strict Chat Completions 路径。下面保留的是旧记录所示请求形态，不是当前 DeepSeek strict 模式的正确示例：
 
 ```json
 {
@@ -83,205 +73,140 @@ status: drafting
 }
 ```
 
-实测：加上它仍然返回 200，仍然输出 `150`。**参数被接受了，然后被静默忽略。** 跨厂商时更不能假定它生效 —— 你至少要在自己的代码里兜一层。
+目前能确定的只有：这条历史摘要没有足够原始证据供本轮复核。不要从它推断 endpoint 接受/忽略字段的现状；部署时按目标接口文档构造正确请求，再测试支持边界，并在应用层执行校验。
 
 ## 所以要把三件事分开
 
 <Mermaid
   chart={`
 flowchart TB
-    M["模型的输出"] --> L1{"第一层：形状"}
-    L1 -->|"对象？字段名对？类型对？"| A1["schema + 解析器<br/>能机械保证"]
+    M["模型的输出"] --> L1{"第一层：能否解析"}
+    L1 -->|"合法 JSON 与目标结构？"| A1["本地解析 + schema 校验<br/>验证应用实际收到的值"]
     L1 -->|"不对"| X1["解析失败<br/>→ 重试（下一节）"]
-    A1 --> L2{"第二层：约束"}
-    L2 -->|"范围 / 格式 / 长度<br/>跨字段关系"| A2["自己写校验<br/>schema 不保证"]
+    A1 --> L2{"第二层：业务约束"}
+    L2 -->|"范围 / 格式 / 长度<br/>及跨字段条件"| A2["用 schema 或应用规则表达<br/>并在本地执行校验"]
     L2 -->|"越界"| X2["校验失败<br/>→ 带反馈重试"]
     A2 --> L3{"第三层：语义"}
-    L3 -->|"这个值是真的吗"| A3["schema 完全无能为力<br/>→ 改变任务设计（下一节）"]
+    L3 -->|"这个值是真的吗"| A3["schema 不能证明事实有依据<br/>→ 来源核验 / 任务设计（下一节）"]
 `}
 />
 
 三条线要分清楚，因为它们的**处理方式完全不同**：
 
-1. **形状**：字段名、类型、是否对象。schema 加解析器能机械保证。
-2. **约束**：范围、格式、长度、跨字段关系。schema 表达不了或表达得不保证，必须自己校验。
-3. **语义**：字段内容是否与事实相符。谁也保证不了，只能改任务设计。
+1. **形状**：字段名、类型、是否对象。应用必须解析并在本地校验；不能只假设模型遵循 schema。
+2. **约束**：范围、格式、长度、跨字段关系。JSON Schema 可表达其中许多条件，但要确认目标端点支持并在本地执行校验。
+3. **事实依据**：字段内容是否有可信来源，schema 本身无法证明；需保留来源、核对外部事实，或改变任务设计。
 
 ## 完整可运行代码：用 Pydantic 把第二层补上
 
 ```python
 # validated_refund.py
-"""schema 保证形状，Pydantic 保证约束，业务规则再兜一层。"""
-
+"""Pydantic 在应用侧解析和校验；业务规则另行实现。"""
+import json
+from datetime import date
 from typing import Literal
-
-from pydantic import BaseModel, Field, ValidationError
-
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 class Refund(BaseModel):
+    # 让本地输入类型与 JSON Schema 的 JSON 类型边界一致；默认 lax 模式会尝试转换部分输入。
+    model_config = ConfigDict(strict=True)
+
     amount: int = Field(multiple_of=100, description="报销金额，必须是 100 的整数倍")
     issue_type: Literal["refund", "repair"]
-    start_date: str
-    end_date: str
+    start_date: date
+    end_date: date
 
-    def check_business_rules(self) -> list[str]:
-        """第三层：schema 与 Pydantic 都表达不了的规则。"""
+    def check_business_rules(self) -> list[dict[str, str]]:
         problems = []
         if self.end_date < self.start_date:
-            problems.append("end_date 早于 start_date：区间不可满足")
+            problems.append({"type": "business_rule", "field": "end_date", "msg": "end_date 早于 start_date：区间不可满足"})
         return problems
 
-
-RAW = """{
-  "amount": 1234,
-  "issue_type": "question",
-  "start_date": "2026-10-15",
-  "end_date": "2026-10-01"
-}"""
-
+RAW = """{"amount":1234,"issue_type":"question","start_date":"2026-10-15","end_date":"2026-10-01"}"""
 try:
     refund = Refund.model_validate_json(RAW)
     problems = refund.check_business_rules()
 except ValidationError as exc:
-    # 失败路径：把每个错误拆成结构化的一份，交给下一节的重试或降级分支
-    problems = [{"type": e["type"], "field": e["loc"][0], "msg": e["msg"],
-                 "input": e.get("input")} for e in exc.errors()]
+    # 对下游只暴露字段路径与错误类型/消息；不默认转发原始输入值。
+    problems = [{"type": error["type"], "field": ".".join(map(str, error["loc"])), "msg": error["msg"]} for error in exc.errors(include_url=False, include_context=False, include_input=False)]
     refund = None
+print("校验结果：", "通过" if refund and not problems else "不通过")
+print("问题清单：", json.dumps(problems, ensure_ascii=False))
 
-print("校验结果：", "通过" if refund else "不通过")
-print("问题清单：", problems)
+valid = Refund.model_validate_json("{\"amount\":1200,\"issue_type\":\"refund\",\"start_date\":\"2026-10-01\",\"end_date\":\"2026-10-15\"}")
+print("通过时的下游对象：", valid.model_dump_json())
+business_case = Refund.model_validate_json("{\"amount\":1200,\"issue_type\":\"refund\",\"start_date\":\"2026-10-15\",\"end_date\":\"2026-10-01\"}")
+print("跨字段业务规则问题：", json.dumps(business_case.check_business_rules(), ensure_ascii=False))
 ```
 
-真实运行输出：
-
-```text
-2 validation errors for Refund
-amount
-  Input should be a multiple of 100 [type=multiple_of, input_value=1234, input_type=int]
-    For further information visit https://errors.pydantic.dev/2.9/v/multiple_of
-issue_type
-  Input should be 'refund' or 'repair' [type=literal_error, input_value='question', input_type=str]
-    For further information visit https://errors.pydantic.dev/2.9/v/literal_error
-```
-
-**校验通过之后，下游拿到的到底是什么？** 这是第二层最容易被含糊过去的一步。它是两个东西：一个**结构化的问题清单**（失败时），以及一个**可以直接落库的对象**（成功时）。上面那段代码把它们都打了出来：
+本地运行输出（Python 3.10 + Pydantic 2.9.2）：
 
 ```text
 校验结果： 不通过
-问题清单： [{'type': 'multiple_of', 'field': 'amount', 'msg': 'Input should be a multiple of 100', 'input': 1234}, {'type': 'literal_error', 'field': 'issue_type', 'msg': "Input should be 'refund' or 'repair'", 'input': 'question'}]
-
-通过时的下游对象：
-  业务规则问题： []
-  落库用： {'amount': 1200, 'issue_type': 'refund', 'start_date': '2026-10-01', 'end_date': '2026-10-15'}
+问题清单： [{"type": "multiple_of", "field": "amount", "msg": "Input should be a multiple of 100"}, {"type": "literal_error", "field": "issue_type", "msg": "Input should be 'refund' or 'repair'"}]
+通过时的下游对象： {"amount":1200,"issue_type":"refund","start_date":"2026-10-01","end_date":"2026-10-15"}
+跨字段业务规则问题： [{"type": "business_rule", "field": "end_date", "msg": "end_date 早于 start_date：区间不可满足"}]
 ```
 
-注意「问题清单」的每一项都是 `type` / `field` / `msg` / `input` 四个字段 —— 它有三个消费方，缺一个都不行：
+> **实跑状态**：以上示例在本地 Python 3.10 + Pydantic 2.9.2 上运行；没有调用模型 endpoint。历史模型实验未在本轮复现。
 
-1. **写法务日志**：`field` 与 `input` 决定了你能不能事后回答「是哪个字段一直过不去」。
-2. **喂给模型重试**：`msg` 是唯一能告诉模型「错在哪」的东西（下一节实测：只说「没通过校验」的修正率是 0/6，给了这一项才是 6/6）。
-3. **做降级决策**：`type` 决定这次失败属于哪一类 —— 形状 / 约束 / 业务规则。三类走不同的分支，下一节会给完整的实现。
 
-而下面这段是**跨字段业务规则失败**的样子：格式和约束全过，问题清单里只剩第三层。
+**校验通过之后，下游拿到什么？** 失败时得到字段路径、错误类型和可安全展示的消息；成功时得到已解析的数据对象。这个示例刻意不把 `input` 原值放进问题清单，因为输入可能包含个人信息或秘密。Pydantic 的 [`ValidationError.errors()`](https://docs.pydantic.dev/2.9/errors/errors/) 默认可能包含输入值、上下文和文档链接；是否记录这些字段应依据数据分类，而不是无条件打印或发给模型。
 
-```text
-校验结果： 不通过
-问题清单： [{'type': 'business_rule', 'field': 'end_date', 'msg': 'end_date 早于 start_date：区间不可满足'}]
-```
+跨字段规则是在类型解析后由应用代码执行的。上面的 `business_case` 给出日期先后错误；比较使用 `datetime.date`，避免把任意字符串当日期并依赖字典序。
 
-（上面是跨字段示例：构造数据，未实跑。）
+校验器只报告结果，不应擅自决定重试、人工审核、拒绝还是写入。调用方应结合错误类别、重试预算和业务风险制定策略。下面只展示一个不执行副作用的决策边界：
 
 ```python
-def consume(refund, problems):
-    """下游唯一该看的一行代码：先看问题清单，为空才落库。"""
-    if problems:
-        return {"action": "retry", "report": problems}
-    return {"action": "store", "payload": refund.model_dump()}
+def decide(refund: Refund | None, problems: list[dict[str, str]]) -> dict:
+    if refund is None or problems:
+        return {"action": "needs_review", "problems": problems}
+    return {"action": "validated", "payload": refund.model_dump(mode="json")}
 ```
 
-`consume` 之所以值得单列出来，是因为它把「谁来消费校验结果」这件事写死了：**校验器绝不自己重试、也绝不自己落库** —— 它只返回清单，由调用方按清单分流。这样重试上限、降级路径、埋点位置才有唯一一处可以放。
+本节后续旧重试表报告过“只给错误原因时 6/6 修正”等数字，但逐次输入/输出、评分器和模型快照需要单独复核；不要把它当成通用修正率。
 
-注意这段输出里有两类信息，它们在下一节会派上不同的用场：
+## 如何解读递归 `$ref` 的旧 400 摘要
 
-- **给人看的**是上面这种带换行和缩进的报告。
-- **给模型看的**应该是结构化的形式 —— Pydantic 可以直接给：
+旧记录称，一个树形递归 `$ref` 工具 schema 收到 HTTP 400，并摘录了服务端提示根节点 `type` 为 `null`。但原始请求、完整 schema、协议路由和未经截断的响应都没有归档，所以无法判断触发点是根 schema 没有 `type: object`、递归引用不受支持，还是其他格式问题；不能据此得出“这个 endpoint 不支持 `$ref`”或“树形结构必须扁平化”的通用结论。
 
-```python
-print(exc.json(include_url=False))
-```
+当前不同 API 的限制也不相同：DeepSeek strict Beta 文档说明支持递归 `$ref`；Anthropic Structured Outputs 文档支持 `$ref`，但不支持递归 schema。应按目标 endpoint 的文档构造 schema，并在应用里做本地校验，而不是从一条缺少请求上下文的 400 推导规则。[DeepSeek Tool Calls](https://api-docs.deepseek.com/guides/tool_calls/) · [Anthropic Structured Outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
 
-```json
-[{"type":"multiple_of","loc":["amount"],"msg":"Input should be a multiple of 100","input":1234,"ctx":{"multiple_of":100}},{"type":"literal_error","loc":["issue_type"],"msg":"Input should be 'refund' or 'repair'","input":"question"}]
-```
+## `description` 能引导模型，但不等于硬约束
 
-> **实跑状态**：以上两段输出都是在本地 Python 3.10 + Pydantic 2.9.2 上真实运行得到的。
+`description` 会成为工具定义的一部分，可能帮助模型理解字段用途和期望格式；它本身不是验证器。严格模式是否会按某个字段约束输出，要看 endpoint 是否支持该关键字并启用了相应模式。反过来，不能笼统地说 `maximum`、`pattern` 或 `format` 都只是“没人读的注释”：DeepSeek strict 文档明确列出部分 `maximum`、`pattern` 和格式支持，而 Claude Structured Outputs 明确不支持数值边界但支持有限字符串格式与模式。
 
-## 一个真实的 400：schema 不是任意 JSON Schema
+下面的双语对照是旧记录摘要，未保留逐次请求、响应和 scorer；本轮无法独立复核，因此不作 5/5 成功率或因果结论：
 
-把树形结构写成递归 `$ref`（这是 JSON Schema 里很自然的写法），端点直接拒绝：
-
-```json
-{
-  "error": {
-    "message": "Invalid schema for function 'save': schema must be a JSON Schema of 'type: \"object\"', got 'type: null'. (request_id: ...)",
-    "type": "invalid_request_error"
-  }
-}
-```
-
-读法：**工具参数的 schema 顶层必须是一个 `type: "object"`**，用 `$ref` 指过去不行。树形数据要换成「用扁平列表 + parent_id 表达层级」，或者干脆放弃这一个工具的结构保证。
-
-同样的道理适用于所有厂商的「严格模式」子集限制：能用的关键字各家不同、还会随版本变。**以官方文档为准，别照抄博客。**
-
-## 真正管用的是 description，不是这些关键字
-
-上面那张表里还有一条线索：`enum`、`additionalProperties` 这类**结构性**关键字被遵守了，而 `maximum`、`pattern`、`format` 这类**校验性**关键字没有。
-
-那模型到底靠什么决定怎么填？答案是**你写的那段 description** —— 这一点和上一章的结论完全一致：工具描述就是 prompt。
-
-| schema 里的 description | 给它的输入 | 实测输出（5 次全部一致） |
+| schema description | 旧记录输入摘要 | 旧记录输出摘要 |
 |---|---|---|
 | `必须用英文填写公司名` | 「公司叫启明电子」 | `"Qiming Electronics"` |
 | `必须是 11 位手机号，纯数字，不要连字符` | 「电话是 010-12345678」 | `"01012345678"` |
 
-第二行值得多看一会儿：模型**遵守了「纯数字、不要连字符」**，却没有满足「11 位手机号」—— 因为那做不到，输入是个 10 位座机号。
+第二条即便记录准确，也只说明格式要求可能影响生成，不能把 10 位座机校验成有效 11 位手机。需要硬校验时，在已验证的 strict schema 子集内加约束，并在应用侧执行真实号码规则。
 
-所以 description 的效力是「引导模型的表达方式」，不是「施加一个可验证的约束」：
+## `enum` 的风险：没有“未知”时，合法值也可能是错值
 
-> **`description` 是 prompt，模型会读；`maximum` / `pattern` / `format` 是注释，没人读。**
+枚举能把允许的值域写清楚；只有在目标 endpoint 的对应 strict schema 子集确实强制它时，才可依赖其结构保证。无论是否严格，合法枚举值都不代表模型选对了业务含义。若业务确实存在“未知/不适用”状态，应把它建模为明确成员，并在应用层处理；不要机械地给每个枚举追加 `other`，因为这可能不是合法业务状态。
 
-把它和上一章接起来：schema 决定**能填哪些字段**，description 决定**填成什么样**。你上一章学到的「把边界条件写进描述」，在这里直接决定输出质量。
+旧记录称 `refund/repair` 两值时 6 次都选错，添加 `other` 后 6 次都选对；原始问题、逐次输出、模型快照和 scorer 未归档。这些数字只保留为待核实历史摘要，不能证明补充 `other` 会带来普遍提升。
 
-## enum 是个双刃剑
+## 选型看 endpoint 契约和应用校验
 
-`enum` 是这套工具里最像「约束」的关键字，它确实能排除非法值。但它同时会**排除掉「我不知道」这个正确答案**。
+不同产品在 API 格式、strict 开关、受支持的 schema 子集、拒绝方式和响应状态上有差异；版本变化也会改变边界。当前 DeepSeek strict tool calls、Anthropic strict tool use 与 Claude JSON structured outputs 是不同的接口契约，不能把其中一个接口的结果套用到另一个。
 
-给一个只有两个取值、而输入两个都不是的场景，跑 6 次：
-
-| schema | 实测输出 | 结果 |
-|---|---|---|
-| `enum: ["refund", "repair"]` | `refund` ×5、`repair` ×1 | **6/6 静默选了错的** |
-| `enum: ["refund", "repair", "other"]` | `other` ×6 | **6/6 正确** |
-
-第一行里的模型不是在乱猜 —— 它在完成你交给它的任务：**必须从这两个里选一个**。它没有任何办法表达「都不对」。第二行只是把一个「它做不到的任务」换成了「它做得到的任务」。
-
-**设计规则：给每一个 `enum` 留一个 `other` 或 `unknown` 成员。** 这不是为了对模型宽容，而是为了让「信息不足」这个真实状态有地方落脚。没有这个出口，你得到的不是报错，而是一个看起来完全正常的错误值 —— 然后它被写进数据库。
-
-（这个问题在下一节会以更严重的形式出现：连 `other` 都没有的必填字段，会逼出彻底的幻觉。）
-
-## 为什么不是所有厂商都做约束解码
-
-以下是我的判断，不是实测结论：约束解码要把你的 schema 编译成一张 token 级的合法掩码，而各家的 tokenizer 不同、schema 表达能力也不同。对简单结构它很便宜；碰到递归、联合类型、以及中文分词边界就不那么便宜。它还会压缩模型「先想再写」的表达空间。所以厂商更倾向于提供 JSON 模式加上文档级建议，把强约束留给少数明确支持的场景与 schema 子集。
-
-工程含义只有一句：**别把「结构保证」当成跨厂商默认可移植的能力。** 每换一个端点，都要重新验一遍你的 schema 子集 —— 上表里 `$ref` 被 400 拒绝就是例子。
+工程上按三步处理：查当前官方文档确认模型/API/子集；用边界值测试实际请求和拒绝路径；在写数据库或调用外部工具前执行本地 schema、业务规则与授权检查。历史离线小样本只能说明当时的特定观察，不能替代这三步。
 
 ## 常见坑
 
-**以为写了 `maximum` / `pattern` / `format` 就有人管。** 实测全都不生效。这些关键字在 schema 里是文档，不是闸门。
+**把 schema 字段存在请求里，当成 endpoint 一定执行。** 确认使用的 API 格式、模型和 strict 模式，再验证应用实际收到的数据。
 
-**以为 `required` 只影响「字段在不在」。** 它还会影响「字段里的内容是不是真的」—— 输入缺失时模型会填一个假值来满足它。
+**把 `required` 当成事实校验。** 它检查字段是否出现；不能证明值非空、真实或有来源。
 
-**以为 `strict: true` 打开了强制。** 端点接受了参数但静默忽略，实测输出不变。
+**把一个关键字的历史结果推广到所有厂商。** `maximum`、`pattern`、`format`、`$ref` 等的支持范围按 endpoint 文档逐项确认。
 
-**把厂商的严格模式当成可移植能力。** 各家的子集不同，且 `$ref` 这类常用写法可能直接被 400 拒绝。
+**把类型合规当成业务正确。** 整数可能仍是错误的取整；日期格式有效也不代表日期有证据或符合跨字段规则。
 
-**只用 schema 校验，不写第二层。** 上表的 `maximum`、`pattern`、`format`、跨字段区间 —— 全部会漏过去。
+**把 Pydantic 异常全文写日志或发回模型。** 错误对象可能包含原始输入；只传递必要、脱敏的字段路径和错误类别。
+
+**只在模型端约束。** 所有副作用入口前都要有应用侧解析、校验和授权边界。

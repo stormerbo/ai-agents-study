@@ -4,532 +4,255 @@ title: ReAct 的本质与失效模式
 status: drafting
 ---
 
-ReAct 是「Reasoning + Acting」的缩写，但名字容易让人以为重点是「推理」。它的本质其实更简单：
+ReAct 是 **Reasoning + Acting**。原论文把模型生成的推理轨迹与动作交替起来，让环境返回的观察能够进入下一轮生成；这里的“推理文本”是模型输出，不等于完整、可信的内部推理。工程上最重要的变化不是多了一种工具协议，而是把“根据新观察选下一步”放进一个循环。
 
-**让模型根据当前观察提出下一步动作或结束信号，再由宿主决定是否执行。**
+现代工具 API 中，模型提出工具调用，宿主解析并决定是否执行；执行结果再回到对话。模型可以提出动作或结束信号，但身份、授权、参数校验、预算、工具执行和任务验收仍由宿主控制。[ReAct 原论文](https://arxiv.org/abs/2210.03629)描述的是思考与行动交替的任务方法；下面的工具协议示例则是一个离线教学夹具，不是论文复现，也不是任何 provider 的性能测试。
 
-## 它长什么样
+## 一轮循环里有哪些东西
 
-一轮 ReAct 只有三个动作：
+一次模型响应不一定等于一次工具调用：一个响应可能提出多个工具调用，也可能不含工具调用而正常结束。实现时把不同计数分开：
 
-1. 把当前上下文（任务 + 之前所有工具结果）发给模型
-2. 模型产出一个动作提议或结束信号；宿主解析响应，并检查工具名、参数、授权、策略与预算
-3. 只有宿主准许时才执行工具，把结果作为新消息追加后继续；拒绝、超时、预算耗尽或模型结束都由宿主按明确状态处理
+- **模型回合**：宿主向模型请求并收到响应的次数。
+- **工具调用**：宿主实际准许并执行的动作数；一回合可以是 0、1 或多次。
+- **任务完成**：满足业务验收条件的任务数。`end_turn` 只表示模型结束当前生成，不证明答案正确或任务已完成。
 
-关键在第 2 步：模型根据上下文提出下一步动作，或给出结束信号；这让决策具有动态性。**信号不是宿主执行工具的授权，也不把控制权整体移交给模型。** 宿主仍负责状态转移、工具执行、授权与安全策略、预算、超时及异常处理。ReAct 与固定链式 workflow 的区别，在于模型参与逐步选择动作；原始 ReAct 论文描述了模型交替产生推理与动作（[Yao et al., 2022](https://arxiv.org/abs/2210.03629)），而现代工具 API 的 `stop_reason` / tool call 是一种结构化动作信号，不会替代宿主的执行和授权边界。
+对 Anthropic Messages API，`stop_reason=tool_use` 表示响应请求客户端工具；宿主执行后用对应的 `tool_use_id` 回填 `tool_result`。`end_turn` 表示自然结束；`max_tokens` 与 `model_context_window_exceeded` 是不完整状态；`refusal` 是拒绝；`pause_turn` 用于服务端工具循环，不是客户端 `tool_use` 的替代值。枚举和恢复动作属于 API 契约，其他 provider 需单独适配，未知值不能默认当作成功。[Anthropic stop reasons 文档](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)
 
-```python
-"""三种 Agent 范式跑同一个任务：ReAct / Plan-Execute / Reflection。
+| 响应状态 | 宿主应该做什么 | 不应该据此推出什么 |
+|---|---|---|
+| `tool_use` | 校验整批调用，再逐个授权、限额、执行，并按 ID 回填结果 | 模型有权直接执行动作 |
+| `end_turn` | 抽取最终候选，再按任务契约校验 | 任务已正确完成；文本一定非空 |
+| `max_tokens` / 上下文超限 | 标记不完整，按策略失败、续写或重试 | 这是 JSON 格式错误或模型能力结论 |
+| `refusal` / 未知值 | 进入拒绝或未知状态处理 | 可以继续执行残缺工具块 |
+| `pause_turn` | 仅对支持服务端工具的 API 按其契约继续 | 等同客户端工具调用 |
 
-工具是确定性的 mock（不联网），所以每一步都可复现、可精确判分。
-关键设计：任务 T2 有**条件分支** —— 下一步查哪个城市取决于上一步的结果。
-静态计划在它面前必然失效，这正是「计划即契约」的边界。
+## 什么时候循环有帮助，什么时候会失效
 
-实跑状态：2026-10-09，deepseek-flash。
-"""
-import os
-import json, os, urllib.request
+如果下一步依赖尚未得到的工具结果，逐步决策可能比执行一个预先写死的计划更直接。例如先查两个城市的明日温度，再根据比较结果决定查哪个城市的后天温度。若分支能够由确定性代码直接计算，就应比较代码路由与模型决策；ReAct 本身不保证更准确、更快或更便宜。
 
-TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34,
-        ("深圳", "明天"): 29, ("北京", "后天"): 24, ("上海", "后天"): 26,
-        ("广州", "后天"): 33, ("深圳", "后天"): 30}
+循环还会带来一组宿主必须处理的失败路径：
 
-TOOLS = [
-    {"name": "get_weather", "description": "查询某个城市某一天的最高气温（摄氏度）。",
-     "input_schema": {"type": "object",
-                      "properties": {"city": {"type": "string"},
-                                     "day": {"type": "string", "enum": ["明天", "后天"]}},
-                      "required": ["city", "day"]}},
-]
+1. **无进展重复**：模型连续提出相同动作，工具每次返回相同观察。指纹或业务状态可用于检测，但重复读取有时是合法的；重复规则只能作为策略信号，不能代替最大回合、最大工具调用、截止时间和资源预算。
+2. **错误结果被当成事实**：工具失败若被包装成普通成功结果，模型可能继续基于错误状态行动。协议支持时应显式标记工具错误，并返回可操作、经过脱敏的错误信息。
+3. **过早结束或空答案**：模型可能在验收条件满足之前结束；某些 API 也允许空的自然结束响应。宿主需要独立的完成校验，空响应应单独处理。
+4. **上下文和费用增长**：若调用方每轮重发完整历史，输入处理量会随历史增长；缓存、服务端会话、截断策略和 provider 计费语义会改变实际测量。应从目标 endpoint 的 usage 与账单测量，不能把轮数直接当 token 或费用。
 
+历史记录曾报告一个线性任务 2 个模型回合、条件任务 3 个模型回合，以及一个卡住样本 8 回合、5,926 token；同一摘要还把正常线性任务记为 1,296 token。这些数字缺少逐次请求/响应、模型快照、usage 原件和评分器，**无法独立复算**。它们只留下待检验的现象线索，不支持“ReAct 必然几步完成”“失败成本是成功的固定倍数”或生产失败率结论。下面的离线夹具会展示相似的控制流形状，但其合成结果不能验证这些历史观察。
 
-def get_weather(city, day):
-    k = (city, day)
-    if k not in TEMP:
-        return {"error": "没有 %s%s 的数据" % (city, day)}
-    return {"city": city, "day": day, "temp_c": TEMP[k]}
+## 从响应到动作：先校验整批，再执行
 
-
-def call(messages, system, tools=None, max_tokens=1200):
-    body = {"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
-            "system": system, "messages": messages}
-    if tools:
-        body["tools"] = tools
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
-        data=json.dumps(body).encode(),
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        d = json.loads(resp.read())
-    u = d.get("usage", {})
-    tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-           + u.get("cache_creation_input_tokens", 0))
-    return d, tin + u.get("output_tokens", 0)
-
-
-T1 = "查北京、上海、广州明天的最高温，报告最高的是哪个城市、最低的是哪个，以及两者差多少度。"
-T2 = ("查北京和上海明天的最高温。哪个城市更高，就再查那个城市后天的最高温。"
-      "最后报告：北京明天的温度、上海明天的温度、以及你额外查的那个城市后天的温度。")
-
-
-def react(task, tools=TOOLS, cap=10):
-    """ReAct 教学循环：模型提出调用或回答，宿主处理返回信号。"""
-    sys = "你是一个会使用工具的助手。需要数据就调用工具，拿到足够信息后直接给出最终答案。"
-    msgs = [{"role": "user", "content": task}]
-    used, tok, steps = [], 0, 0
-    while steps < cap:
-        steps += 1
-        d, t = call(msgs, sys, tools)
-        tok += t
-        blocks = d.get("content", [])
-        if d.get("stop_reason") != "tool_use":
-            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-            return text, tok, steps, used
-        msgs.append({"role": "assistant", "content": blocks})
-        results = []
-        for b in blocks:
-            if b.get("type") == "tool_use":
-                args = b.get("input", {})
-                used.append(args.get("city"))
-                out = get_weather(args.get("city"), args.get("day"))
-                results.append({"type": "tool_result", "tool_use_id": b["id"],
-                                "content": json.dumps(out, ensure_ascii=False)})
-        msgs.append({"role": "user", "content": results})
-    return "（达到步数上限）", tok, steps, used
-
-
-def plan_execute(task, cap_plan=8):
-    """Plan-Execute：先一次性给出完整工具调用计划，再由代码执行，最后综合。"""
-    msgs = [{"role": "user", "content":
-             task + "\n\n请先给出完整的执行计划：一个 JSON 数组，每项形如 "
-             '{"tool":"get_weather","city":"...","day":"..."}。只输出 JSON 数组。'}]
-    d, tok = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
-    text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    if not text.strip() and d.get("stop_reason") == "max_tokens":
-        raise RuntimeError("测量故障：空输出 + stop_reason=max_tokens，需要调大预算，不是模型失败")
-    i = text.find("[")
-    try:
-        plan, _ = json.JSONDecoder().raw_decode(text[i:])
-    except Exception:
-        plan = []
-    results, used = [], []
-    for step in plan[:cap_plan]:
-        if step.get("tool") == "get_weather":
-            used.append(step.get("city"))
-            results.append(get_weather(step.get("city"), step.get("day")))
-    msgs.append({"role": "assistant", "content": text})
-    msgs.append({"role": "user", "content": "计划已执行完毕，结果如下：\n"
-                 + json.dumps(results, ensure_ascii=False) + "\n\n请给出最终答案。"})
-    d2, tok2 = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
-    tok += tok2
-    final = "".join(b.get("text", "") for b in d2.get("content", []) if b.get("type") == "text")
-    return final, tok, 1 + len(plan), used
-
-
-def reflection(task):
-    """Reflection：ReAct 拿到答案后，再让模型自查并修订一次。"""
-    first, tok1, steps1, used = react(task)
-    msgs = [{"role": "user", "content": task + "\n\n第一位助手的答案：\n" + first
-             + "\n\n请检查这个答案是否有错。如果正确，原样输出；如果有错，给出修正后的答案。"}]
-    d, tok2 = call(msgs, "你是一个严格的事实核查者。")
-    tok = tok1 + tok2
-    final = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    return final, tok, steps1 + 1, used
-
-
-def check1(text):
-    """T1 判分：必须点出广州（34）、上海（27）、差 7 度。"""
-    ok = ("广州" in text and "上海" in text and ("7" in text))
-    return ok
-
-
-def check2(text, used):
-    """T2 判分：北京 31、上海 27；因为北京更高，所以额外查的必须是北京（后天 24）。"""
-    ok = ("31" in text and "27" in text and "24" in text)
-    branch_ok = "北京" in used
-    return ok, branch_ok
-
-
-if __name__ == "__main__":
-    print("=== T1（线性任务）：三种范式 ===")
-    print("任务：%s" % T1)
-    for name, fn in [("ReAct", lambda: react(T1)), ("Plan-Execute", lambda: plan_execute(T1)),
-                     ("Reflection", lambda: reflection(T1))]:
-        text, tok, steps, used = fn()
-        print("  %-13s %s  token %-6d 步数 %-2d 查了 %s" % (name, "✅" if check1(text) else "❌",
-                                                            tok, steps, used))
-    print()
-    print("=== T2（条件分支任务）===")
-    print("任务：%s" % T2)
-    for name, fn in [("ReAct", lambda: react(T2)), ("Plan-Execute", lambda: plan_execute(T2))]:
-        text, tok, steps, used = fn()
-        ok, branch = check2(text, used)
-        print("  %-13s 答案 %s  分支 %s  token %-6d 步数 %-2d 查了 %s"
-              % (name, "✅" if ok else "❌", "✅" if branch else "❌（查错城市）", tok, steps, used))
-        print("      最终答案：%s" % text.strip().replace("\n", " ")[:150])
-```
-
-## 实测：它用几步做完
-
-同一个线性任务（查三城天气），ReAct 用 **2 步**完成：
-
-- 第 1 步：模型一次性并发调用了 3 个 `get_weather`，`stop_reason=tool_use`
-- 第 2 步：拿到三个结果后给出最终答案，`stop_reason=end_turn`
-
-而条件分支任务（先比北京和上海，再决定查哪个城市）用了 **3 步** —— 因为第 2 步必须等数据回来才能决定第 3 步查谁。
-
-这说明一件重要的事：**ReAct 的步数不是固定的，它随任务的「需要多少轮信息才能决定」而变。** 这是它相对静态计划的核心优势，也是第 3 节那个失败案例的成因。
-
-## 三个失效模式
-
-**一、绕圈子。** 模型反复调用同一个工具、反复拿到同样的结果。你没有代码里的硬停止条件，这个循环就不会结束。这和第 9 章界面 agent 的卡死是同一类问题 —— 解法也一样：步数上限 + 重复检测。
-
-这条不是推断 —— 我构造了一个**永远查不出结果**的任务来把它逼出来（本次真跑，2026-10-12）：任务是「提交记录 R-1，然后确认它的状态变成 done，只有看到 done 才算完成」，而两个 mock 工具 submit_record 与 get_status **永远返回 status=pending**。轨迹是：
-
-```text
-轮 1  submit_record(R-1)   stop=tool_use   in=377  out=69
-轮 2  get_status(R-1)      stop=tool_use   in=482  out=53
-轮 3  get_status(R-1) ★    stop=tool_use   in=561  out=52
-轮 4  get_status(R-1) ★    stop=tool_use   in=639  out=51
-轮 5  get_status(R-1) ★    stop=tool_use   in=716  out=51
-轮 6  get_status(R-1) ★    stop=tool_use   in=793  out=56
-轮 7  get_status(R-1) ★    stop=tool_use   in=875  out=98
-轮 8  get_status(R-1) ★    stop=tool_use   in=999  out=54
--> 撞上 8 步上限：总 5,926 token，其中「工具名+参数」完全相同的调用重复了 7 次
-```
-
-三个细节值得对着看：
-
-**第一，重复从第 3 轮就开始了，而且指纹完全一致。** `(get_status, {"id": "R-1"})` 这一对从第 3 轮到第 8 轮一次不差。所以「连续两步工具+参数相同」这个判据在这里**第 4 轮就能触发**，比步数上限早 4 步、省掉一半的钱。
-
-**第二，输入 token 每轮都在涨。** 377 → 482 → 561 → … → 999 —— 就是失效模式三（历史重发）在同一个轨迹里的表现。这两件事是叠加的：绕圈子不仅不结束，还每一步都在变贵。
-
-**第三，成本是正常轨迹的 4.6 倍。** 同一个模型跑线性任务（本节实测的 2 步轨迹）这次花了 1,296 token（2026-10-12），而绕圈子花了 5,926。**而这还是在第 8 步被上限拦下的结果** —— 没有上限的话它不会自己停。
-
-**二、工具结果没有被理解成「事实」。** 工具返回的错误被当成正常数据继续往下推理 —— 而循环里这个动作会被放大，因为后面每一步都建在它上面。第 4 章讲过这个（不标 `is_error` 会让模型把错误写进结果），在循环里它会放大 —— 因为后面每一步都基于这个错误继续走。
-
-**三、上下文膨胀。** 每一步都要重发之前所有内容。这是第 9 章第 2 节实测里那条「每步 +300 token」的同一个机制，只是文本任务的基数更小 —— 界面 agent 每步多一张截图，文本 agent 每步多几段工具结果，但累积的形状完全一样。
-
-三者里第一个最危险，因为它的表现是「程序不结束」，而第二、三个是「钱变多」。
+执行前的顺序很重要。先检查 stop 状态，再解析完整工具批次；确认所有 ID 唯一、工具名和参数符合允许范围，并且整批不超过剩余预算，然后才能开始 dispatch。否则一个坏 ID、未知工具或预算超限，可能在一部分副作用已经发生之后才被发现。真实系统还要处理取消、超时、重放安全、授权撤销和部分执行；此处只用只读天气查询演示校验边界。
 
 <Mermaid
   chart={`
-flowchart TB
-    A["任务 + 历史"] --> B["发给模型"]
+flowchart TD
+    A["任务 + 已验证历史"] --> B["请求模型"]
     B --> C{"stop_reason"}
-    C -->|"tool_use"| D["执行工具"]
-    D --> E["把结果追加进历史"]
-    E --> B
-    C -->|"end_turn"| F["最终答案"]
-    B -.-> G["⚠️ 失效一：绕圈子<br/>反复调同一个工具"]
-    D -.-> H["⚠️ 失效二：错误结果被当事实<br/>后面每一步都建在它上面"]
-    E -.-> I["⚠️ 失效三：历史每轮重发<br/>成本随步数累积"]
+    C -->|"tool_use"| D["校验整批 ID / 工具 / 参数 / 预算"]
+    D -->|"通过"| E["逐项授权并执行"]
+    D -->|"不通过"| X["拒绝整批，不 dispatch"]
+    E --> F["按 tool_use_id 回填结果"]
+    F --> B
+    C -->|"end_turn"| G["提取候选答案"]
+    G --> H{"业务验收通过？"}
+    H -->|"是"| I["任务完成"]
+    H -->|"否"| J["失败 / 补证 / 人工处理"]
+    C -->|"截断 / 拒绝 / 未知"| K["显式失败状态"]
 `}
 />
 
-## 判别停止的那一行代码
+## 完整可运行代码：离线控制流夹具
 
-整个 ReAct 循环里只有一行是真正关键的：
-
-```python
-def should_continue(d):
-    # 整个循环里只有这一行是真正关键的
-    if d["stop_reason"] != "tool_use":      # ← 这一行决定循环继续还是结束
-        return False                        # 模型给了最终答案，循环结束
-    return True                             # 还有工具要调，继续
-```
-
-为什么不能改成「看文本里有没有出现工具名」或者「看内容里有没有 tool_use 块」？
-
-第一种是把协议判断退化成了对自然语言的猜测 —— 模型只要在回答里提到某个工具名，就会被误判。第二种看起来更稳，但 `stop_reason` 是**厂商在协议层给出的结论**，它比你自己去数内容块更可靠，也更省事。
-
-注意 `stop_reason` 除了 `tool_use` 和 `end_turn`，还有一个必须处理的值：`max_tokens`。它表示**输出被预算截断了**。这时候返回的文本可能是空的，而它长得跟「模型做不到」一模一样 —— 我在写这一章时就差点因此报出一个假结论（见下面的实测说明）。
-
-规则很简单：**没确认 `stop_reason` 之前，不要解释任何「没答出来」的结果。**
-
-## 一次真实的 ReAct 轨迹
-
-把条件分支任务的 3 步展开，能看清「逐步决定」是怎么发生的：
-
-```text
-第 1 轮  模型：并发调用 get_weather(北京,明天) 和 get_weather(上海,明天)
-        stop_reason = tool_use
-第 2 轮  模型：看到 31 和 27 → 北京更高 → 调用 get_weather(北京,后天)
-        stop_reason = tool_use
-第 3 轮  模型：看到 24 → 给出最终答案
-        stop_reason = end_turn
-```
-
-**关键是第 2 轮。** 查哪个城市这件事，在模型看到 31 和 27 之前是无法确定的。ReAct 天然能处理它，因为「决定」被推迟到了拿到数据的那一刻。
-
-而静态计划做不到这一点 —— 第 3 节会看到它失败的三种具体形态，其中包括模型把「北京和上海中温度更高的那个」当成一个城市名直接传给了工具。
-
-（实跑数据，2026-10-09，`deepseek-flash`。三种范式在同一组任务上各跑 1 到 3 次。）
-
-## 停止条件：不能只设 max_steps
-
-第 9 章讲过界面 agent 需要三个终止条件。ReAct 同样需要，原因一样：**模型不能作为唯一的停止判据。**
-
-**一、模型自然停止。** `stop_reason=end_turn`。这是正常路径，也是最不可靠的一条 —— 它可能在信息不足时就给出答案。
-
-**二、步数上限。** 硬兜底。它防的是「绕圈子」，但代价是：到那时钱已经花了。
-
-**三、重复检测。** 识别「连续两步调用完全相同的工具、参数也相同」。这一条比步数上限更早触发，也更省。
-
-实现上，重复检测最简单的做法是给「工具名 + 参数」算一个指纹，连续两次相同就判定为卡住：
+**实跑状态：Python 3.14.7，本地离线执行**。示例使用固定的 `FakeProposer` 产生响应，不会联网，也不会调用模型。天气数据、模型响应和输出答案都是合成夹具，因此可用来验证宿主分支与评分器，不能作为模型质量证据。
 
 ```python
-seen = []
-for step in range(max_steps):
-    ...
-    for b in tool_use_blocks:
-        fp = (b["name"], json.dumps(b["input"], sort_keys=True))
-        if seen and seen[-1] == fp:
-            raise RuntimeError("同一个工具+同一组参数连续两次，判定为绕圈子")
-        seen.append(fp)
-```
+import json
 
-注意这里和第 9 章熔断的差别：界面 agent 比的是**截图**（因为观测就是画面），ReAct 比的是**动作**（因为观测是结构化的，可以直接比较）。判据要跟着观测的形态走，而不是照搬。
-
-还有一条容易被忽略的：**上限该按失败路径定，不是按成功路径定。** 第 9 章实测失败路径是成功路径的 2.4 到 5.3 倍；ReAct 同理 —— 线性任务 2 步，一旦卡住就是 10 步。
-
-### 只属于 ReAct 的那 40 行
-
-上面的完整文件是三种范式合在一起的；如果你只想把 ReAct 拎出来，需要的就是下面这些 —— 工具定义、循环、`stop_reason` 判据、`tool_result` 回填、指纹去重，正好是「第 4 章的调用 + 一个循环」：
-
-```python
-"""最小 ReAct：工具定义 + 循环 + 停止判据 + 指纹去重。自包含，可单独复制运行。
-
-环境变量：ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / VERIFY_MODEL（写在 .env.local）。
-实跑状态：与本节其余代码同源，2026-10-12 跑通。
-"""
-import json, os, urllib.request
-
-TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27}
-TOOLS = [{"name": "get_weather", "description": "查某城市某天最高温。",
-          "input_schema": {"type": "object",
-                           "properties": {"city": {"type": "string"}, "day": {"type": "string"}},
-                           "required": ["city", "day"]}}]
+WEATHER = {
+    ("北京", "明天"): 31,
+    ("上海", "明天"): 27,
+    ("北京", "后天"): 24,
+}
 
 def get_weather(city, day):
-    if (city, day) not in TEMP:
-        return {"error": "没有 %s%s 的数据" % (city, day)}
-    return {"temp_c": TEMP[(city, day)]}
+    value = WEATHER.get((city, day))
+    if value is None:
+        return {"error": "没有对应天气记录"}
+    return {"city": city, "day": day, "temp_c": value}
 
-def call(msgs, max_tokens=1200):
-    body = {"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
-            "system": "需要数据就调用工具，够了就给出最终答案。",
-            "tools": TOOLS, "messages": msgs}
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
-        data=json.dumps(body).encode(),
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as r:
-        return json.loads(r.read())
+class FakeProposer:
+    """逐次返回预置的 API 形状响应；耗尽时显式报错。"""
+    def __init__(self, responses):
+        self.responses = list(responses)
 
-def react(task, max_steps=6):
-    msgs = [{"role": "user", "content": task}]
-    seen = []
-    for step in range(1, max_steps + 1):
-        d = call(msgs)
-        if d.get("stop_reason") != "tool_use":        # <- 唯一的停止判据
-            return "".join(b.get("text", "") for b in d["content"] if b["type"] == "text")
-        msgs.append({"role": "assistant", "content": d["content"]})
+    def __call__(self, _history):
+        if not self.responses:
+            raise RuntimeError("合成响应耗尽")
+        return self.responses.pop(0)
+
+def tool_call(call_id, city, day):
+    return {
+        "type": "tool_use",
+        "id": call_id,
+        "name": "get_weather",
+        "input": {"city": city, "day": day},
+    }
+
+def run_react(proposer, max_turns, max_tool_calls, dispatch_log=None):
+    """演示宿主控制；真实应用还须接入身份授权、deadline 与任务验收。"""
+    history = []
+    executed = []
+    last_batch = None
+    turns = 0
+    log = dispatch_log if dispatch_log is not None else []
+
+    while turns < max_turns:
+        turns += 1
+        response = proposer(history)
+        reason = response.get("stop_reason")
+        blocks = response.get("content", [])
+
+        if reason == "end_turn":
+            answer = "".join(
+                block.get("text", "")
+                for block in blocks
+                if block.get("type") == "text"
+            ).strip()
+            status = "candidate_response" if answer else "completed_without_text"
+            return {
+                "status": status, "answer": answer,
+                "turns": turns, "tool_calls": len(executed),
+            }
+        if reason in ("max_tokens", "model_context_window_exceeded"):
+            return {"status": "incomplete", "turns": turns, "tool_calls": len(executed)}
+        if reason == "refusal":
+            return {"status": "refused", "turns": turns, "tool_calls": len(executed)}
+        if reason != "tool_use":
+            return {"status": "unknown_stop", "turns": turns, "tool_calls": len(executed)}
+
+        calls = [block for block in blocks if block.get("type") == "tool_use"]
+        ids = [call.get("id") for call in calls]
+        if (
+            not calls
+            or any(not isinstance(call_id, str) or not call_id.strip() for call_id in ids)
+            or len(set(ids)) != len(ids)
+        ):
+            return {"status": "invalid_tool_batch", "turns": turns, "tool_calls": len(executed)}
+
+        normalized = []
+        for call in calls:
+            args = call.get("input")
+            if (
+                call.get("name") != "get_weather"
+                or not isinstance(args, dict)
+                or set(args) != {"city", "day"}
+                or (args.get("city"), args.get("day")) not in WEATHER
+            ):
+                return {"status": "invalid_tool_batch", "turns": turns, "tool_calls": len(executed)}
+            normalized.append((args["city"], args["day"]))
+
+        # 整批预算预检，避免超限时先执行部分调用。
+        if len(executed) + len(calls) > max_tool_calls:
+            return {"status": "tool_budget_exhausted", "turns": turns, "tool_calls": len(executed)}
+
+        # 精确重复只是一个无进展信号；生产策略需考虑合法重复读取的场景。
+        if normalized == last_batch:
+            return {"status": "repeated_action", "turns": turns, "tool_calls": len(executed)}
+        last_batch = normalized
+
         results = []
-        for b in d["content"]:
-            if b["type"] != "tool_use":
-                continue
-            fp = (b["name"], json.dumps(b["input"], sort_keys=True))
-            if seen and seen[-1] == fp:                 # <- 指纹去重
-                raise RuntimeError("连续两次相同的工具+参数，判定为绕圈子：%s" % (fp,))
-            seen.append(fp)
-            out = get_weather(**b["input"])
-            results.append({"type": "tool_result", "tool_use_id": b["id"],
-                            "content": json.dumps(out, ensure_ascii=False)})
-        msgs.append({"role": "user", "content": results})
-    raise RuntimeError("达到步数上限 %d" % max_steps)
-```
+        for call in calls:
+            args = call["input"]
+            log.append({"name": call["name"], "input": dict(args)})
+            result = get_weather(**args)
+            executed.append(call)
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": call["id"],
+                "content": json.dumps(result, ensure_ascii=False),
+                "is_error": "error" in result,
+            })
+        history.extend([{"role": "assistant", "content": blocks}, {"role": "user", "content": results}])
 
-## 它其实只是第 4 章的那个调用，套了个循环
+    return {"status": "turn_budget_exhausted", "turns": turns, "tool_calls": len(executed)}
 
-一个容易忽略的事实：**ReAct 里没有任何新东西。**
+def main():
+    linear = FakeProposer([
+        {"stop_reason": "tool_use", "content": [
+            tool_call("a1", "北京", "明天"),
+            tool_call("a2", "上海", "明天"),
+        ]},
+        {"stop_reason": "end_turn", "content": [{
+            "type": "text",
+            "text": '{"beijing":31,"shanghai":27}',
+        }]},
+    ])
+    conditional = FakeProposer([
+        {"stop_reason": "tool_use", "content": [
+            tool_call("b1", "北京", "明天"),
+            tool_call("b2", "上海", "明天"),
+        ]},
+        {"stop_reason": "tool_use", "content": [
+            tool_call("b3", "北京", "后天"),
+        ]},
+        {"stop_reason": "end_turn", "content": [{
+            "type": "text",
+            "text": '{"extra_city":"北京","extra_temp_c":24}',
+        }]},
+    ])
+    repeating = FakeProposer([
+        {"stop_reason": "tool_use", "content": [tool_call("c1", "北京", "明天")]},
+        {"stop_reason": "tool_use", "content": [tool_call("c2", "北京", "明天")]},
+    ])
+    truncated = FakeProposer([
+        {"stop_reason": "max_tokens", "content": []},
+    ])
 
-它用的工具定义、`tool_use` 内容块、`tool_result` 回填格式、错误标记方式 —— 全部是第 4 章已经讲过的那个往返结构。ReAct 唯一增加的是：**把那个往返放进一个循环里，并让模型的动作/结束信号参与宿主的循环决策。** 宿主仍要在执行动作前做授权与预算检查，也可因超时、取消或风险策略停止。
-
-所以第 4 章那些结论在这里一条都不用改就能用：
-
-- 工具描述要写得像文档而不是提醒（第 4 章第 2 节）
-- 错误要标 `is_error`、并且说明原因（第 4 章第 4 节实测：不标则 3/3 被当成数据）
-- 工具数量影响的是成本而不是选择准确率（第 4 章第 5 节实测：8 到 86 个都是 8/8）
-
-差别只在于**这些结论现在会被放大**：一次性调用里一个错误影响一个答案，在循环里它会影响后面每一步。这也是为什么本节把「工具结果没有被理解成事实」列为第二个失效模式。
-
-反过来说，如果你在第 4 章把工具层打好了，那么写一个 ReAct 循环大约只需要几十行 —— 而第 11 章会真的写一遍，并量出这几十行里哪些地方最容易出问题。
-
-## 完整可运行代码
-
-下面是 ReAct 的最小实现，跑两个任务：一个线性的、一个带条件分支的。
-
-```python
-"""三种 Agent 范式跑同一个任务：ReAct / Plan-Execute / Reflection。
-
-工具是确定性的 mock（不联网），所以每一步都可复现、可精确判分。
-关键设计：任务 T2 有**条件分支** —— 下一步查哪个城市取决于上一步的结果。
-静态计划在它面前必然失效，这正是「计划即契约」的边界。
-
-实跑状态：2026-10-09，deepseek-flash。
-"""
-import json, os, urllib.request
-
-TEMP = {("北京", "明天"): 31, ("上海", "明天"): 27, ("广州", "明天"): 34,
-        ("深圳", "明天"): 29, ("北京", "后天"): 24, ("上海", "后天"): 26,
-        ("广州", "后天"): 33, ("深圳", "后天"): 30}
-
-TOOLS = [
-    {"name": "get_weather", "description": "查询某个城市某一天的最高气温（摄氏度）。",
-     "input_schema": {"type": "object",
-                      "properties": {"city": {"type": "string"},
-                                     "day": {"type": "string", "enum": ["明天", "后天"]}},
-                      "required": ["city", "day"]}},
-]
-
-
-def get_weather(city, day):
-    k = (city, day)
-    if k not in TEMP:
-        return {"error": "没有 %s%s 的数据" % (city, day)}
-    return {"city": city, "day": day, "temp_c": TEMP[k]}
-
-
-def call(messages, system, tools=None, max_tokens=1200):
-    body = {"model": os.environ["VERIFY_MODEL"], "max_tokens": max_tokens,
-            "system": system, "messages": messages}
-    if tools:
-        body["tools"] = tools
-    req = urllib.request.Request(
-        os.environ["ANTHROPIC_BASE_URL"].rstrip("/") + "/v1/messages",
-        data=json.dumps(body).encode(),
-        headers={"content-type": "application/json",
-                 "x-api-key": os.environ["ANTHROPIC_AUTH_TOKEN"],
-                 "anthropic-version": "2023-06-01"})
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        d = json.loads(resp.read())
-    u = d.get("usage", {})
-    tin = (u.get("input_tokens", 0) + u.get("cache_read_input_tokens", 0)
-           + u.get("cache_creation_input_tokens", 0))
-    return d, tin + u.get("output_tokens", 0)
-
-
-T1 = "查北京、上海、广州明天的最高温，报告最高的是哪个城市、最低的是哪个，以及两者差多少度。"
-T2 = ("查北京和上海明天的最高温。哪个城市更高，就再查那个城市后天的最高温。"
-      "最后报告：北京明天的温度、上海明天的温度、以及你额外查的那个城市后天的温度。")
-
-
-def react(task, tools=TOOLS, cap=10):
-    """ReAct 教学循环：模型提出调用或回答，宿主处理返回信号。"""
-    sys = "你是一个会使用工具的助手。需要数据就调用工具，拿到足够信息后直接给出最终答案。"
-    msgs = [{"role": "user", "content": task}]
-    used, tok, steps = [], 0, 0
-    while steps < cap:
-        steps += 1
-        d, t = call(msgs, sys, tools)
-        tok += t
-        blocks = d.get("content", [])
-        if d.get("stop_reason") != "tool_use":
-            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-            return text, tok, steps, used
-        msgs.append({"role": "assistant", "content": blocks})
-        results = []
-        for b in blocks:
-            if b.get("type") == "tool_use":
-                args = b.get("input", {})
-                used.append(args.get("city"))
-                out = get_weather(args.get("city"), args.get("day"))
-                results.append({"type": "tool_result", "tool_use_id": b["id"],
-                                "content": json.dumps(out, ensure_ascii=False)})
-        msgs.append({"role": "user", "content": results})
-    return "（达到步数上限）", tok, steps, used
-
-
-def plan_execute(task, cap_plan=8):
-    """Plan-Execute：先一次性给出完整工具调用计划，再由代码执行，最后综合。"""
-    msgs = [{"role": "user", "content":
-             task + "\n\n请先给出完整的执行计划：一个 JSON 数组，每项形如 "
-             '{"tool":"get_weather","city":"...","day":"..."}。只输出 JSON 数组。'}]
-    d, tok = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
-    text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    if not text.strip() and d.get("stop_reason") == "max_tokens":
-        raise RuntimeError("测量故障：空输出 + stop_reason=max_tokens，需要调大预算，不是模型失败")
-    i = text.find("[")
-    try:
-        plan, _ = json.JSONDecoder().raw_decode(text[i:])
-    except Exception:
-        plan = []
-    results, used = [], []
-    for step in plan[:cap_plan]:
-        if step.get("tool") == "get_weather":
-            used.append(step.get("city"))
-            results.append(get_weather(step.get("city"), step.get("day")))
-    msgs.append({"role": "assistant", "content": text})
-    msgs.append({"role": "user", "content": "计划已执行完毕，结果如下：\n"
-                 + json.dumps(results, ensure_ascii=False) + "\n\n请给出最终答案。"})
-    d2, tok2 = call(msgs, "你是一个先做计划再执行的 agent。", max_tokens=3000)
-    tok += tok2
-    final = "".join(b.get("text", "") for b in d2.get("content", []) if b.get("type") == "text")
-    return final, tok, 1 + len(plan), used
-
-
-def reflection(task):
-    """Reflection：ReAct 拿到答案后，再让模型自查并修订一次。"""
-    first, tok1, steps1, used = react(task)
-    msgs = [{"role": "user", "content": task + "\n\n第一位助手的答案：\n" + first
-             + "\n\n请检查这个答案是否有错。如果正确，原样输出；如果有错，给出修正后的答案。"}]
-    d, tok2 = call(msgs, "你是一个严格的事实核查者。")
-    tok = tok1 + tok2
-    final = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
-    return final, tok, steps1 + 1, used
-
-
-def check1(text):
-    """T1 判分：必须点出广州（34）、上海（27）、差 7 度。"""
-    ok = ("广州" in text and "上海" in text and ("7" in text))
-    return ok
-
-
-def check2(text, used):
-    """T2 判分：北京 31、上海 27；因为北京更高，所以额外查的必须是北京（后天 24）。"""
-    ok = ("31" in text and "27" in text and "24" in text)
-    branch_ok = "北京" in used
-    return ok, branch_ok
-
+    for label, proposer in (
+        ("linear", linear),
+        ("conditional", conditional),
+        ("repeating", repeating),
+        ("truncated", truncated),
+    ):
+        print(label, run_react(proposer, max_turns=5, max_tool_calls=4))
 
 if __name__ == "__main__":
-    print("=== T1（线性任务）：三种范式 ===")
-    print("任务：%s" % T1)
-    for name, fn in [("ReAct", lambda: react(T1)), ("Plan-Execute", lambda: plan_execute(T1)),
-                     ("Reflection", lambda: reflection(T1))]:
-        text, tok, steps, used = fn()
-        print("  %-13s %s  token %-6d 步数 %-2d 查了 %s" % (name, "✅" if check1(text) else "❌",
-                                                            tok, steps, used))
-    print()
-    print("=== T2（条件分支任务）===")
-    print("任务：%s" % T2)
-    for name, fn in [("ReAct", lambda: react(T2)), ("Plan-Execute", lambda: plan_execute(T2))]:
-        text, tok, steps, used = fn()
-        ok, branch = check2(text, used)
-        print("  %-13s 答案 %s  分支 %s  token %-6d 步数 %-2d 查了 %s"
-              % (name, "✅" if ok else "❌", "✅" if branch else "❌（查错城市）", tok, steps, used))
-        print("      最终答案：%s" % text.strip().replace("\n", " ")[:150])
+    main()
 ```
+
+```text
+linear {'status': 'candidate_response', 'answer': '{"beijing":31,"shanghai":27}', 'turns': 2, 'tool_calls': 2}
+conditional {'status': 'candidate_response', 'answer': '{"extra_city":"北京","extra_temp_c":24}', 'turns': 3, 'tool_calls': 3}
+repeating {'status': 'repeated_action', 'turns': 2, 'tool_calls': 1}
+truncated {'status': 'incomplete', 'turns': 1, 'tool_calls': 0}
+```
+
+这里的回合数是脚本固定的响应数；它只证明该控制器按预置路径处理了这些状态。它没有验证模型是否会选择正确分支、真实工具是否安全、业务答案是否正确，也没有测量 provider 的 token、费用或延迟。
+
+## 重复检测与预算的判据
+
+精确重复可以通过工具名和规范化参数形成指纹；上面的夹具比较相邻两个模型回合的整批动作。更复杂的运行时可能用任务状态、工具结果摘要或窗口化频次做进展判断，但这些启发式有误报和漏报。将它与硬边界组合：最大模型回合、最大工具调用数、deadline、token/费用预算，以及失败后的停止或交接策略。多工具响应要先按整批做预算预检，不能把“最大回合数”误当成最大工具调用数。
+
+## ReAct 与一次工具调用的关系
+
+工具 schema、动作块和结果回填沿用工具调用章节的协议；ReAct 增加的是宿主循环，以及把新观察送回下一轮。这个组合让模型有机会根据真实工具结果调整下一步，但错误结果也可能影响后续决策。应用应保留来源、执行状态和错误标记；在有副作用的动作前，每一轮都要重新检查当前主体授权、参数、幂等策略和剩余预算。
+
+## 一次超时之后，工具结果可能仍是未知
+
+模型提出工具调用，宿主开始执行，但网络在响应到达前断开。此时不是“工具失败”，而是**调用结果未知**：接收端可能还没收到请求，也可能已经提交了动作，只是回执丢失。把同一个调用再发一次，是否安全取决于工具的幂等契约、业务键和接收端去重，不能从模型回合或 `tool_use_id` 自身推断。该 ID 用于把 `tool_result` 和原调用配对，不自动成为跨请求、跨服务的幂等键。
+
+可以把宿主状态至少分成“已提议、已校验、执行中、结果已知、结果未知、已完成”。每个工具结果要关联调用 ID 和本地执行状态；超时后先按业务操作 ID 查询或对账，若无法确认则保留未知状态并交由恢复策略决定。盲目重试可能重复副作用；直接把超时包装成成功结果也会让模型基于虚构事实继续。只读查询通常比转账、发信或写库更容易安全重试，但仍要看目标接口对缓存、时效和一致性的定义。
+
+同一响应里的多个调用也不构成事务。全批静态校验和预算预检可以避免参数错误或明显超限后才开始执行；然而真实授权可能在执行时变化，前一个副作用成功后，后一个动作仍可能被拒绝或失败。需要全有或全无时，应由业务服务提供事务或显式协调协议；否则逐项记录状态，并设计部分成功后的恢复与人工处理。
+
+模型看到的上一轮授权结果也可能过期；资源归属、权限或审批状态变化后，宿主应在实际副作用前按当前主体和对象重新判断。历史消息中的“已同意”不能代替这次检查。
 
 ## 常见坑
 
-- **用「文本里有没有出现工具名」判断该不该执行。** 应先按协议解析 `stop_reason` / tool call，而不是猜文本意图；这个信号说明模型请求工具或结束，宿主仍需校验策略并决定是否执行。
-- **忘了把工具结果作为新消息追加。** 只把结果打印到日志里，模型下轮看不到，就会重复调用同一个工具。
-- **不给步数上限。** 绕圈子时循环不会自己停 —— 第 9 章实测过模型在卡住时会一直重试。
-- **把工具错误当普通数据回填。** 第 4 章实测：不标 `is_error`，模型 3/3 把错误写进了结果表格。循环里这个错误会一路传下去。
-- **假设步数固定。** 实测同一个范式在线性任务上 2 步、在条件任务上 3 步 —— 步数取决于任务的信息结构，不取决于范式。
+- **把模型文本当作工具请求**：按目标 API 协议解析结构化调用，不从自然语言猜动作；协议请求仍须经过宿主校验。
+- **把任何非 `tool_use` 都当完成**：截断、拒绝、未知 stop 状态与正常结束不同；`end_turn` 也仍需要任务级验收。
+- **先执行再检查整批**：同一响应可能含多个动作。先验证 ID、工具、参数和总预算，再开始副作用。
+- **把失败包装成成功数据**：按协议标出工具错误，并对返回内容做隐私最小化；模型不能替代宿主的事实与权限检查。
+- **只限制模型回合**：单个响应可有多个工具调用，因此还需要独立的工具调用、时间和资源上限。
+- **把精确重复直接等同于循环**：同一只读请求可能是合理的；重复检测是启发式，须与目标状态和硬预算配合。
+- **把历史样本当作普遍基准**：本节旧 provider 摘要没有原始轨迹，不能推出稳定成功率、费用倍率或 ReAct 相对静态计划的普遍优势。

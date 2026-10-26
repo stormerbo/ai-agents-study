@@ -6,15 +6,15 @@ status: drafting
 
 记忆系统最容易被跳过的一步是**写入规则**。多数实现的做法是「把这一轮值得记的东西抽出来存进去」—— 抽什么，交给模型判断。
 
-而这就是问题的起点。我把两种写入策略放在同一段对话上跑了一遍。
+而这就是问题的起点。旧记录称曾把两种写入策略放在同一段对话上比较；但逐次请求、响应、模型路由与评分材料未归档，本轮无法复现或独立核对数字，以下只作为历史摘要。
 
-## 实测：同一段对话，两种写入策略
+## 历史对照摘要：同一段对话，两种写入策略
 
-对话里有 7 句话，我事先标注好了「正确答案」：
+保留下来的对话脚本有 7 句。历史评分把一些关键词当作候选标记，但没有保存逐条模型输出、任务映射和 scorer，因此不能把关键词命中当成独立记忆条目的准确率：
 
 - **该记的 3 条**（满足跨会话 + 稳定 + 用户明说）：偏好表格输出、团队用 PostgreSQL、部署环境是 k8s
 - **一次性信息 3 条**（本轮用完即弃）：看看报表、今天有点热、翻回上一页
-- **模型推断 2 条**（用户没说，只是「可能」）：对价格敏感
+- **模型推断 1 句**（用户没说，只是「可能」）：对价格敏感；旧脚本用“价格”“敏感”两个子串计数，不能据此称为 2 条记忆
 
 两种写入指令，同样的对话：
 
@@ -22,49 +22,47 @@ status: drafting
 |---|---|---|
 | 该记的 3 条 | 3/3 | 3/3 |
 | 记住了一次性信息 | **3 项全中** | 无 |
-| 把推断当成事实存下 | **2 项** | 无 |
+| 推断关键词子串（“价格”“敏感”） | 历史评分摘要记为 **2 个标记命中**，不是可核实的条目数 | 无 |
 
-（实跑数据，2026-10-08，`deepseek-flash`。脚本见本节末尾。）
+（仅存 2026-10-08 的结果摘要，标识为 `deepseek-flash`；原始请求/响应、准确端点与模型后端、输出和 scorer 未归档，不能独立复算。当前正文脚本的默认模型与鉴权配置也不能证明它复现了当时的运行。）
 
-注意第一行：**两种策略在「该记的」上完全一样，都是 3/3。** 差别全在「不该记的」那一侧。
+历史摘要报告两种策略的三个目标关键词均出现（3/3），并称筛选策略较少出现一次性信息与推断标记。由于输出与评分器缺失，这只能描述旧摘要的报告值，不能证明策略准确率或因果效果。
 
-这也是为什么很多团队觉得「无差别记录」没问题 —— 你抽查它记住了什么，会发现该记的都在，看起来工作正常。问题要到几个月后才浮现：
+这组设计展示了一个需要验证的风险：只检查“有用信息是否出现”，可能漏掉无关或推断信息也被持久化。旧材料不足以说明这一风险在团队中的发生率；若要验证，应保存逐条候选、人工标签、实际写入事件与后续任务结果。
 
-- 那次「今天有点热」被写成了一条记忆，之后每次对话都可能被召回进去
-- 「我可能对价格比较敏感吧」被整理成了「用户对价格较敏感」—— 一个带保留的猜测，变成了一条确凿的事实
+- 历史摘要声称「今天有点热」等短期内容曾被写入；原始输出与写入事件未保存，无法确认条目文本或后续是否被召回。
+- 摘要还称对价格敏感的推断被当作事实；原始输出缺失，不能核实实际写入条数或措辞。
 
-第二条是最危险的。**推断一旦被写成事实，你就再也分不清哪些记忆来自观察、哪些来自模型的猜测。** 而后续所有决策（包括「该不该向用户确认」）都建立在「这条是事实」这个前提上。
+如果 schema 丢掉来源和置信边界，后续系统就可能把推断读成事实。因此要保留来源证据，并让模型推断与用户明确陈述在数据和策略上可区分；这并不意味着所有系统观测都可信，也不意味着用户陈述永远有效。
 
-## 三条标准，以及为什么必须是三条
+## 一组写入启发式：价值、有效期与来源
 
-一条信息要值得写进长期记忆，需要**同时**满足：
+下面三项适合作为个人偏好/项目事实记忆的初筛问题，不是跨产品的充分条件或通用规则；持久化还需要符合产品的授权、隐私、安全、租户范围与删除策略。
 
-**一，跨会话仍然有效。** 「今天有点热」「先看这个报表」不满足 —— 它们只在当前任务里成立。这条标准的操作化问法是：**这条信息在三个月后的另一次会话里还有用吗？**
+**一，未来会话中仍有预期用途。** 「今天有点热」通常只对当前任务有用；「下周出差」则可能在短期内跨会话有用。不要用固定的“三个月后还有效吗”代替判断：记录可以带明确的适用范围与 `valid_until`，到期后复核或删除。
 
-**二，相对稳定。** 「用户现在在用 k8s」满足；「用户当前正在看第 3 页」不满足。稳定不等于永远不变 —— 它意味着变化足够慢，值得存下来再更新。
+**二，价值足以抵偿存储与维护成本。** 一条暂时性但即将有用的信息可短期保存；一条长期偏好也可能因用户更改而失效。将“稳定”当作更新频率与有效期的判断因素，而不是硬性准入条件。
 
-**三，可归因。** 这条是三条里最容易被忽略的：**你能说清它是从哪来的吗？** 用户明说的、系统观测到的、还是模型推断的？三者混在一起，就没法在下游做分级处理。
-
-三条缺一不可。只有第一条会漏掉「用户正在看第 3 页」；只有第二条会漏掉「用户下个月要出差」（会变，但重要且可以更新）；缺第三条则会让推断悄悄混入。
+**三，来源可追溯。** 用户明说、经授权的系统观测与模型推断是不同证据类型。推断不能悄悄升级成事实；系统观测也应带可追溯证据、采集时间和适用范围。
 
 ## 每条记忆都该带来源
 
-第三条标准落到数据结构上，就是**每条记忆必须带来源字段**。这不是洁癖 —— 它是第 3 节「召回闸门」能工作的前提：你可以规定「只注入用户明说的记忆」，把推断类整体挡在上下文之外。本次实验里，来源闸门一次性挡掉了 2 条（两条推断），而它的行为是完全确定的、可预测的。
+来源字段让后续策略能够区分证据类型，但单独一个枚举不能证明事实真实、已获授权或仍有效。若产品策略只允许明确陈述进入某些场景，可以在宿主侧按来源类型做确定性阻断；历史结果摘要不足以证明旧实验确实发生了两条推断记忆写入。
 
 这也和第 5 章那个 `status_source` 字段解决的是同一个问题：**让「这条信息从哪来」在数据结构里可分辨**，而不是靠你记住。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["一段对话"] --> B["逐句过三条标准"]
-    B --> C{"跨会话仍然有效？"}
-    C -->|否| X["丢弃：一次性上下文"]
-    C -->|是| D{"相对稳定？"}
+    A["候选信息"] --> B["检查用途、授权与范围"]
+    B --> C{"授权与敏感级别允许？"}
+    C -->|否| X["拒绝持久化或改用短期状态"]
+    C -->|是| D{"未来用途和有效期明确？"}
     D -->|否| X
-    D -->|是| E{"可归因？"}
+    D -->|是| E{"来源证据可追溯？"}
     E -->|"模型推断"| Y["不写为事实<br/>（要写就显式标注来源）"]
-    E -->|"用户明说 / 系统观测"| F["写入，并记录来源与时间戳"]
-    X --> G["结果：写入量下降，<br/>但召回时的噪声同比下降更多"]
+    E -->|"来源可追溯"| F["宿主策略通过后保存，并记录来源与范围"]
+    X --> G["候选写入减少；后续噪声与任务影响仍需评估"]
     Y --> G
     F --> G
 `}
@@ -72,14 +70,21 @@ flowchart TB
 
 ## 一条记忆记录长什么样
 
-「每条记忆必须带来源字段」这句话落到工程上，需要一整条记录，而不是一个字段。下面这份 schema 和示例可以直接抄（**示例：构造数据，未实跑**）：
+「每条记忆必须带来源字段」这句话落到工程上，需要一整条记录，而不是一个字段。以下是讨论用 schema，不是可直接投产的完整安全设计。默认不要把密码、API key、私钥、session token 等凭据写入普通长期记忆；医疗、财务等受限个人信息也不应因“用户说过”就自动持久化。若产品确有保存需求，应先定义用途、用户控制、最小化范围、访问限制、保留与可验证删除。
+
+下面的记录还需限定 owner/project/tenant scope，并区分记录修改时间、事实确认时间和业务有效期（**示例：构造数据，未实跑**）：
 
 ```json
 {
   "id": "m_7f3a91",
   "text": "团队使用 PostgreSQL，不要 MySQL 方案。",
   "source": "user_stated",
+  "source_ref": "conversation:turn-184",
+  "scope": "project:demo",
+  "sensitivity": "ordinary",
   "status": "active",
+  "last_confirmed_at": "2026-09-28T10:12:03+08:00",
+  "valid_until": null,
   "created_at": "2026-09-28T10:12:03+08:00",
   "updated_at": "2026-09-28T10:12:03+08:00",
   "superseded_by": null,
@@ -91,48 +96,69 @@ flowchart TB
 | 字段 | 类型 | 一句话用途 | 支撑哪一节的功能 |
 |---|---|---|---|
 | `id` | TEXT 主键 | 召回日志里引用它 | 第 3 节的注入轨迹 |
+| `scope` | TEXT | 限定用户、项目或租户的适用范围 | 隔离与授权策略 |
+| `sensitivity` | ENUM | 按产品数据策略标记普通/受限信息 | 写入与访问控制 |
 | `text` | TEXT | 注入进上下文的那句话 | 全部 |
-| `source` | ENUM | 这条是谁说的：`user_stated` / `system_observed` / `model_inferred` | 第 3 节**来源闸门** |
+| `source` | ENUM | 证据类型：`user_stated` / `system_observed` / `model_inferred` | 第 3 节**来源闸门** |
+| `source_ref` | TEXT 可空 | 指向受控的来源记录，不复制原始对话 | 来源审计 |
 | `status` | ENUM | `active` / `superseded` / `deleted` | 第 4 节失效标记与删除 |
 | `created_at` | ISO 8601 带时区 | 首次写入时间 | 审计 |
-| `updated_at` | ISO 8601 带时区 | 最近一次确认的时间 | 第 3 节**时效闸门** |
+| `updated_at` | ISO 8601 带时区 | 最近一次记录修改时间 | 审计 |
+| `last_confirmed_at` | ISO 8601 带时区，可空 | 最近一次明确核实的时间 | 事实新鲜度 |
 | `superseded_by` | TEXT 可空 | 被哪条取代 | 第 4 节冲突裁决 |
-| `ttl_days` | INTEGER | 多少天后该复核 | 第 4 节 TTL |
+| `ttl_days` | INTEGER | 多少天后触发复核 | 第 4 节 TTL |
+| `valid_until` | ISO 8601 可空 | 事实的显式失效时间 | 过期判断 |
 | `dedup_key` | TEXT | 同主题归一化键，查重用 | 本节去重 |
 
-**时间戳用 ISO 8601 带时区（`+08:00`），不用「秒」或「天」这种相对值。** 理由很实际：第 3 节的时效闸门要算天数、第 4 节的裁决要比较先后，而相对值一旦跨了进程就没有参照点。
+**时间戳用 ISO 8601 带时区（`+08:00`），并给记录明确的 `scope` 与可选 `valid_until`。** `ttl_days` 是复核策略，不等于事实仍然有效的证明；过期检查、用户撤回、租户隔离和删除传播都必须由应用实现并验证。
 
-**这里有一个和下一节的口径冲突，必须显式处理。** 第 3 节的代码里 `source` 写的是中文字符串（`"用户明说"`），而上面这个 schema 用的是英文枚举（`user_stated`）。两种口径不能混用：
+**第 3 节为了便于阅读使用中文来源标签，schema 则保存英文枚举 `user_stated`。** 如果直接把展示值拿去做 `source in ALLOWED`，会因值不一致而误拒绝；在持久化边界用显式映射归一化。下面 `normalize_source()` 示范这一映射，但格式正确仍不代表来源真实或已获授权。
 
-- **如果在同一套系统里混用**，来源闸门的 `source in ALLOWED` 就会因为字符串不等而永远拦下或者永远放行 —— 一个静默的、不可能靠抽查发现的 bug。
-- **选法**：写进库的用英文枚举（稳定、不受语言与大小写影响），只在 prompt 与日志展示时映射回中文。下面 `to_record()` 就是那个唯一的映射点。
+## 把一小部分初筛规则写成代码：`should_write()`
 
-## 把三条标准写成代码：`should_write()`
-
-三条标准（跨会话 / 稳定 / 可归因）在正文里是问句，落到代码里是布尔判断。**可归因是唯一一条不需要模型介入的 —— 它只是查一个枚举。**
+下面的正则和长度规则只是教学用的候选过滤器：它无法判断语义稳定性、敏感程度、事实是否真实或是否应获授权。示例额外要求持久记忆功能已启用，并由可信调用方传入敏感级别；生产策略还需按业务、用户控制、数据分类和租户范围做校验。
 
 ```python
 # should_write.py
-"""三条标准 → 布尔判断；通过后写一条带来源的记录。
+"""教学用初筛 → 生成一条带来源和 scope 的记录。
 
 自包含：纯本地逻辑，不需要网络。
-实跑状态：本机 Python 3.10 实跑（2026-10-12）。"""
+实跑状态：本机 Python 3.14 实跑（2026-10-21）；结果只验证本地过滤器，不证明模型抽取或策略效果。"""
 
+import hashlib
 import json
 import re
 from datetime import datetime, timezone, timedelta
 
 CN = timezone(timedelta(hours=8))
-WRITEABLE_SOURCES = ("user_stated", "system_observed")   # model_inferred 不允许作为事实写库
+WRITEABLE_SOURCES = ("user_stated", "system_observed")   # 来源标签必须由可信采集链路提供
+SOURCE_ALIASES = {
+    "用户明说": "user_stated",
+    "系统观测": "system_observed",
+    "推理得到": "model_inferred",
+}
 
-# 稳定性门槛：命中「一次性」词表 → 判断只在本轮成立
+
+def normalize_source(source):
+    """把界面/提示中的展示值映射到存储枚举；类型异常值原样交给下游 fail closed。"""
+    if not isinstance(source, str):
+        return source
+    return SOURCE_ALIASES.get(source, source)
+
+
+# 仅用于演示的词面候选过滤器，不是语义有效期判定
 ONE_OFF = re.compile(r"今天|刚才|这一页|这次|临时|顺便")
 
 
-def should_write(text, source):
-    """返回 (是否能写, 原因)。三条标准缺一不可。"""
-    if not text.strip():
-        return False, "空内容"
+def should_write(text, source, *, memory_enabled, sensitivity="ordinary"):
+    """返回初筛结果；通过不代表事实已验证或写入已获授权。"""
+    if not isinstance(memory_enabled, bool) or not memory_enabled:
+        return False, "持久记忆未启用"
+    if sensitivity != "ordinary":
+        return False, "受限信息不进入默认记忆"
+    source = normalize_source(source)
+    if not isinstance(text, str) or not text.strip():
+        return False, "空内容或类型非法"
     if source == "model_inferred":
         return False, "不可归因：推断类不作为事实写入"
     if source not in WRITEABLE_SOURCES:
@@ -141,18 +167,39 @@ def should_write(text, source):
         return False, "不稳定：只在本轮成立"
     if len(text) < 4:
         return False, "信息量不足，跨会话没有价值"
-    return True, "可写"
+    return True, "通过初筛；仍需业务策略与证据校验"
 
 
-def to_record(text, source, dedup_key, ttl_days=90):
-    now = datetime.now(CN).isoformat(timespec="seconds")
+def to_record(text, source, dedup_key, scope, source_ref, ttl_days=90, now=None):
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("text must be a non-empty string")
+    source = normalize_source(source)
+    if not isinstance(scope, str) or not scope.strip():
+        raise ValueError("scope must be a non-empty string")
+    if not isinstance(source_ref, str) or not source_ref.strip():
+        raise ValueError("source_ref must point to controlled provenance metadata")
+    if not isinstance(source, str) or source not in WRITEABLE_SOURCES:
+        raise ValueError("source must be supplied by a trusted collection path")
+    if not isinstance(dedup_key, str) or not dedup_key.strip():
+        raise ValueError("dedup_key must be a non-empty string")
+    if not isinstance(ttl_days, int) or isinstance(ttl_days, bool) or ttl_days < 1:
+        raise ValueError("ttl_days must be a positive integer")
+    now = now or datetime.now(CN)
+    if now.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    now = now.astimezone(CN).isoformat(timespec="seconds")
     return {
-        "id": "m_" + re.sub(r"\W", "", dedup_key)[:8],
+        "id": "m_" + hashlib.sha256((scope + ":" + dedup_key).encode("utf-8")).hexdigest(),
         "text": text,
         "source": source,            # 英文枚举入库
+        "source_ref": source_ref,    # 指向受控记录，不复制原始对话
+        "scope": scope,
+        "sensitivity": "ordinary",
         "status": "active",
         "created_at": now,
         "updated_at": now,
+        "last_confirmed_at": now if source == "user_stated" else None,
+        "valid_until": None,
         "superseded_by": None,
         "ttl_days": ttl_days,
         "dedup_key": dedup_key,
@@ -161,82 +208,86 @@ def to_record(text, source, dedup_key, ttl_days=90):
 
 if __name__ == "__main__":
     samples = [
-        ("团队使用 PostgreSQL，别给我 MySQL 的方案。", "user_stated", "tech_stack.postgresql"),
-        ("今天有点热。", "system_observed", "weather.today"),
-        ("用户可能对价格比较敏感吧。", "model_inferred", "user.price_sensitivity"),
+        ("团队使用 PostgreSQL，别给我 MySQL 的方案。","user_stated", "tech_stack.postgresql"),
+        ("今天有点热。","system_observed", "weather.today"),
+        ("用户可能对价格比较敏感吧。","model_inferred", "user.price_sensitivity"),
+        ("用户的医疗信息属于受限类别。","user_stated", "user.medical", "restricted"),
     ]
-    for text, source, key in samples:
-        ok, why = should_write(text, source)
+    fixed_now = datetime.fromisoformat("2026-10-21T00:00:00+08:00")
+    for sample in samples:
+        text, source, key = sample[:3]
+        sensitivity = sample[3] if len(sample) == 4 else "ordinary"
+        ok, why = should_write(text, source, memory_enabled=True, sensitivity=sensitivity)
         print("%-8s %s  <- %s" % ("写入" if ok else "丢弃", why, text))
         if ok:
-            print("         ", json.dumps(to_record(text, source, key), ensure_ascii=False))
+            print("         ", json.dumps(to_record(text, source, key, scope="project:demo", source_ref="conversation:turn-4", now=fixed_now), ensure_ascii=False))
 ```
 
 ```text
-写入     可写  <- 团队使用 PostgreSQL，别给我 MySQL 的方案。
-          {"id": "m_tech_sta", "text": "团队使用 PostgreSQL，别给我 MySQL 的方案。", "source": "user_stated", "status": "active", "created_at": "2026-10-12T15:54:30+08:00", "updated_at": "2026-10-12T15:54:30+08:00", "superseded_by": null, "ttl_days": 90, "dedup_key": "tech_stack.postgresql"}
-丢弃     不稳定：只在本轮成立  <- 今天有点热。
-丢弃     不可归因：推断类不作为事实写入  <- 用户可能对价格比较敏感吧。
+写入       通过初筛；仍需业务策略与证据校验  <- 团队使用 PostgreSQL，别给我 MySQL 的方案。
+          {"id": "m_68908ecebff62428cdce6faae495532c1573f878039b941ab0ad9cae49fb9d6a", "text": "团队使用 PostgreSQL，别给我 MySQL 的方案。", "source": "user_stated", "source_ref": "conversation:turn-4", "scope": "project:demo", "sensitivity": "ordinary", "status": "active", "created_at": "2026-10-21T00:00:00+08:00", "updated_at": "2026-10-21T00:00:00+08:00", "last_confirmed_at": "2026-10-21T00:00:00+08:00", "valid_until": null, "superseded_by": null, "ttl_days": 90, "dedup_key": "tech_stack.postgresql"}
+丢弃       不稳定：只在本轮成立  <- 今天有点热。
+丢弃       不可归因：推断类不作为事实写入  <- 用户可能对价格比较敏感吧。
+丢弃       受限信息不进入默认记忆  <- 用户的医疗信息属于受限类别。
 ```
 
-注意 `should_write()` 里**第一条就拦推断**，而且没有给模型留任何裁量空间 —— 这正是它可靠的原因。模型在写入环节只负责一件事：**从原文里抽出候选文本并打上来源标签**；「要不要写」由这个函数决定。
+`should_write()` 只拒绝少数已显式标记的候选，不足以单独决定持久化。建议把模型输出限定为提案；宿主再核对来源证据、用户记忆设置、敏感级别、scope、有效期、冲突及删除策略，并把通过/拒绝记录为可审计的决策。
 
 ## 去重阈值怎么定
 
 「相似度过阈值就合并」是一句空话，除非你把两件事定下来：**用什么相似度**，以及**阈值多少**。
 
-- **用什么**：词法（Jaccard / 字符重合）能抓「同一句话的改写」，抓不住「同义表述」；嵌入能抓语义，但引入模型依赖。务实做法：**先用词法做第一层，`dedup_key` 做第二层** —— 后者是人定的归一化主题（`tech_stack.postgresql`），它对「说法变了但主题没变」免疫。
-- **阈值多少**：这是**你的语料决定的**，不能从别处抄。定法是取 20 组「同一件事的两种说法」和 20 组「相邻主题」，看这两批的分数分布有没有重叠区，阈值取在中间。本站第 6 章实测过词法在改写查询上的词面重合只有 0.012 到 0.041 —— **它意味着纯词法的合并阈值在中文改写上几乎无处可放**，这也正是要补 `dedup_key` 的原因。
+- **用什么**：词面分数只适合候选生成，不能证明语义等价；嵌入分数也要按任务校准。`dedup_key` 可以表达业务定义的规范主题，但它依赖可靠的解析与映射，并非天然免疫改写或冲突。合并前还需检查来源、范围、时间有效性和冲突。
+- **阈值多少**：要用目标语料和误合并/漏合并的任务成本来定。20 组正例与 20 组相邻主题最多是探索性试点；阈值应在标注校准集上选择，再用独立留出集测误合并、漏合并及其任务影响。本站第 6 章实测过词法在改写查询上的词面重合只有 0.012 到 0.041 —— **它意味着纯词法的合并阈值在中文改写上几乎无处可放**，这也正是要补 `dedup_key` 的原因。
 
-**合并不等于覆盖**：命中去重时更新 `updated_at` 并累加「确认次数」，而不是重写 `text` —— 第 4 节的时效闸门依赖 `updated_at`，你把它改掉，等于让一条老记忆看起来像新的。
+**重复出现不等于再次确认。** 只有在用户明确重申或系统按既定策略完成核实后，才更新 `last_confirmed_at`；普通近似命中只记录为待合并候选，避免把旧事实伪装成新鲜信息。`updated_at` 表示记录修改时间，不应代替事实确认时间。
 
 ## 写入的时机：每轮写，还是结束时写
 
-三条标准决定「记什么」，但还有一个同样重要的问题：**什么时候执行写入**。三种做法各有代价。
+初筛策略决定「候选是什么」，但还有一个同样重要的问题：**什么时候执行写入**。三种做法各有代价，具体取舍取决于丢失、延迟和重复写入的业务后果。
 
-**每轮都写。** 每轮结束都调用一次「提取记忆」。它最及时 —— 会话中途崩溃也不会丢。代价是成本：把这一步计入第 1 节那张表，每次对话的调用数接近翻倍，而大部分轮次其实没有值得记的东西。
+**每轮都写。** 每轮结束都调用一次「提取记忆」。它可缩短信息待写入窗口，但仍可能在调用失败、存储失败或进程崩溃时丢数据。代价还包括额外调用和重复处理历史；只有测量目标请求形态与增量变化后，才能估算成本。
 
-**会话结束时写。** 只在结束时做一次提取。便宜得多，风险是会话如果意外中断（关掉页面、超时、报错），这次会话的所有信息都丢了。
+**会话结束时写。** 只在结束时做一次提取，可减少提取调用；如果会话中断且尚无持久 checkpoint，尚未提取的候选可能丢失。是否便宜取决于每次请求的输入长度与缓存/计费口径。
 
-**显式触发。** 由用户或某个明确条件触发（「记住这个」、或检测到一段陈述句）。它最省，可靠性取决于触发条件的质量。
+**显式触发。** 由用户明确要求、或经产品预先说明并获授权的条件触发。它可能减少不必要的提取；“检测到一段陈述句”本身不等于用户同意持久保存。
 
-实践上的折中是**两者组合**：会话结束时做一次完整提取作为兜底，同时对明确的用户陈述（「我们用 PostgreSQL」「以后都用表格」）即时写入。判断依据很简单：**如果这条信息丢了会让你后悔，就即时写；否则等结束。**
+一种可测试的折中是：对用户明确要求记住、且通过授权和安全策略的候选即时处理；对其他候选在可恢复的会话边界做批量提取。是否即时落库仍要经过相同的校验、幂等和冲突处理，避免“明确陈述”自动等于“已同意长期保存”。
 
-**这笔差可以用第 1 节的成本模型直接算。** 「每轮写」意味着第 t 轮要把当前上下文再发一遍给提取调用；而第 1 节实测过：**历史每轮重发，12 轮累计是「只发一次」的 6.5 倍**，50 轮是 24 倍。把它套到写入上：
+**可以先用一个明确假设估算这笔成本。** 若每轮都把截至当轮的全部历史重发，且每 token 价格相同、输入长度均匀增长，那么 n 轮输入总量约为 n(n+1)/2；与只在结束时处理同等长度的完整历史相比，倍率是 (n+1)/2。12 轮是 6.5 倍，50 轮是 25.5 倍。它是简化算术，不是对任一 provider 账单的预测；缓存、提取提示、输出 token 与调用策略都会改变实际成本。
 
 | 写入时机 | 12 轮对话的提取调用 | 相对成本 | 失败时丢什么 |
 |---|---|---:|---|
-| 结束时写一次 | 1 次，带全部历史 | 1x（基准） | 会话中断 → 整段丢 |
-| 每轮写 | 12 次，每次带当轮为止的全部历史 | 约 6.5x（沿用第 1 节的 12 轮倍数，未单独实测） | 最多丢最后几轮 |
+| 结束时写一次 | 1 次，带全部历史 | 1x（基准） | 尚未持久化的候选可能丢失 |
+| 每轮写 | 12 次，每次带当轮为止的全部历史 | 简化模型 6.5x；不是账单实测 | 最多丢最后几轮 |
 
-所以「每轮写」贵的不是调用次数（12 次），而是**每次都要重发历史**。这也是为什么本节开头说「大多数轮次其实没有值得记的东西」——你为 12 次里可能只有 2 次有产出的提取，付了 6.5 倍的钱。
+在这个假设下，重复发送历史可能比单次结束提取增加输入量；实际调用数和成本还需按增量提取、缓存及 provider usage 实测。
 
 ## 还要做去重
 
-写入规则有一个容易漏的副作用：**同一条偏好会被反复写入**。用户每次说「我喜欢表格」，都可能生成一条新记忆。一个月后库里躺着 20 条几乎一样的偏好，而召回时它们会占掉 top-k 的名额 —— 你花了 5 个位置，只拿到 1 条信息。
+写入规则有一个容易漏的副作用：**同一条偏好会被反复写入**。用户每次说「我喜欢表格」，都可能生成一条新记忆。例如，同一偏好若被重复保存多次，可能占用有限的召回候选位置；这只是风险示例，需用实际去重与召回日志确认。
 
 两种处理方式，按成本排序：
 
-- **写入前查重**：新条目与已有条目相似度过阈值就合并（更新时间戳），而不是新增。
-- **合并成偏好强度**：把「说过几次」作为权重存下来 —— 因为**反复强调的偏好比说过一次的重要**，而这个信号只有在合并那一刻才能拿到，事后无法重建。
+- **写入前查重**：高相似度只生成合并候选；宿主再比较来源、scope、有效期和冲突，不能仅凭阈值覆盖已有记录。
+- **保留可追溯的重复确认事件**：它可作为后续复核信号，但出现次数本身不等于重要性、同意或当前有效；不要仅凭频次提高注入权重。
 
-注意这里和第 6 章用到了同一套相似度判断，所以纯词法的局限也一并带过来了：词面重合对改写几乎无效（第 6 章实测：10 条口语化查询里，正确段落进 top-5 的是 0 条）。
+候选去重与文档检索的目标分布不同。第 6 章记录的 10 条口语化查询 top-5 命中摘要本身也缺逐次轨迹，且不能直接验证记忆去重；不要把该结果外推成此处词法合并的效果证明。
 
 ## 一句话总结写入规则
 
-把三条标准和时机合起来，写入侧其实只有一句话：**在写入那一刻做减法，并且记住每一条是从哪来的。**
+把用途、授权、范围、有效期、来源和维护成本一起考虑；模型只提出候选，宿主策略决定是否保存、更新或拒绝。
 
-减法比事后清理容易得多。已经存进去的推断，你没法在不重新审视全部历史的前提下把它挑出来；而写入时多问一句「这是用户说的，还是我猜的」，成本几乎为零。
-## 完整可运行代码
+写入时保留来源与范围，能降低事后定位成本；若历史已有索引、审计轨迹和删除映射，仍可执行追溯清理。记忆写入与删除都应由可验证的应用策略控制。
+## 可选的新一轮 API 对照脚本
 
-写入脚本里用到的两个字段（第 5 章讲过，这里再用一次）：`max_tokens` 是请求里设的本次生成长度上限，`stop_reason` 是响应里说明为什么停下来的字段 —— 遇到 `max_tokens` 就说明输出被截断了，那一轮的结果不能计入统计。
+下面脚本只会调用配置的 Anthropic-compatible endpoint，并打印子串标记；它不写数据库，也不等价于重跑历史实验。历史端点/模型配置缺失，任何新调用都只能算新实验。按 Anthropic Messages API 契约，只有 `end_turn` 才进入本脚本的标记统计；`max_tokens`、拒绝、工具调用、未知或缺失停止原因一律跳过。
 
 ```python
-"""两种写入策略的对照：无差别记录 vs 按规则筛选。
+"""两种提示策略的探索性对照；只统计文本标记，不做语义评分或持久化。
 
-它把正文里那组实测跑一遍。需要 .env.local 里的凭据。
-
-实跑状态：2026-10-08，deepseek-flash，已跑通。
+需要设置 VERIFY_MODEL、ANTHROPIC_BASE_URL 和 ANTHROPIC_AUTH_TOKEN。
+新调用不是对历史 2026-10-08 记录的复现。
 """
 
 import json
@@ -257,19 +308,20 @@ NAIVE = "你是一个带长期记忆的助手。把用户对话里所有的信�
 
 RULE = "\n".join([
     "你是一个带长期记忆的助手。从用户对话里提炼值得长期记住的信息。",
-    "判断标准（三条必须同时满足）：1) 跨会话仍然有效；2) 相对稳定；3) 是用户明确说过的，不是你的推断。",
-    "不满足的不要写。每条标注来源：用户明说 / 推理得到。推理得到的一律不写入。",
+    "只提出候选，不执行持久化。若记忆未启用、来源不明、信息受限、scope 不明或有效期不明，就拒绝或交由宿主策略处理。用户明确说过不自动代表同意长期保存。",
+    "输出候选文本与来源证据；模型自报标签需由宿主验证。敏感信息、凭据和其他禁止类别不得输出为长期记忆。",
     "输出格式：每行一条，形如「- 内容 [来源]」。",
 ])
 
-# 人工标注的「正确答案」：只有这三条同时满足三条标准
+# 词面提示仅用于探索性标记，不是独立记忆条目的 gold label
 STABLE = ["表格", "PostgreSQL", "k8s"]
 ONE_OFF = ["今天有点热", "报表", "翻页"]
 INFERRED = ["价格", "敏感"]
 
 
 def ask(system, user, max_tokens=6000):
-    body = json.dumps({"model": os.environ.get("VERIFY_MODEL", "claude-haiku-4-5"),
+    model = os.environ["VERIFY_MODEL"]
+    body = json.dumps({"model": model,
                        "max_tokens": max_tokens, "system": system,
                        "messages": [{"role": "user", "content": user}]}).encode()
     req = urllib.request.Request(
@@ -283,54 +335,38 @@ def ask(system, user, max_tokens=6000):
     return text, data["stop_reason"]
 
 
-def insert(out):
-    """按上面那条记录的形状接收写入。真实系统里这行是 INSERT。"""
-    for line in out.splitlines():
-        text = line.strip().lstrip("- ").split(" [")[0]
-        if not text:
-            continue
-        for keyword, key, source in (
-            ("表格", "output.format_table", "user_stated"),
-            ("PostgreSQL", "tech_stack.postgresql", "user_stated"),
-            ("k8s", "deploy.k8s", "user_stated"),
-        ):
-            if keyword in text:
-                ok, why = should_write(text, source)
-                if ok:
-                    print("  写入:", json.dumps(to_record(text, source, key), ensure_ascii=False)[:120], "...")
-
-
 def audit(label, text):
-    hit = lambda kws: [k for k in kws if k in text]
-    stable = hit(STABLE)
+    def marker_hits(markers):
+        return [marker for marker in markers if marker in text]
+
     print("[%s]" % label)
-    print("  该记的（3 条）:", stable, "→ 命中 %d/3" % len(stable))
-    print("  一次性信息（不该记）:", hit(ONE_OFF) or "无")
-    print("  模型推断（不该记）:", hit(INFERRED) or "无")
-    insert(text)      # 只有通过 should_write 的才会真的落库
-    print()
+    print("  稳定候选关键词标记:", marker_hits(STABLE))
+    print("  一次性内容关键词标记:", marker_hits(ONE_OFF) or "无")
+    print("  一条推断语句中的关键词标记:", marker_hits(INFERRED) or "无")
+    print("  以上是子串命中，不是记忆条目准确率或写入结果；本脚本不持久化数据。")
 
 
 if __name__ == "__main__":
     for label, sys in [("无差别记录", NAIVE), ("按规则筛选", RULE)]:
         text, stop = ask(sys, "对话记录：\n" + CONVO)
-        if stop == "max_tokens":
-            print("[%s] 警告：stop_reason=max_tokens，结果不可用" % label)
+        if stop != "end_turn" or not text.strip():
+            print("[%s] 跳过评分：stop_reason=%r 或输出为空" % (label, stop))
+            continue
         audit(label, text)
 ```
 
-实跑输出（2026-10-08）：
+旧记录中保留的输出摘要（2026-10-08，无法独立复核）：
 
 ```text
 [无差别记录]
   该记的（3 条）: ['表格', 'PostgreSQL', 'k8s'] → 命中 3/3
   一次性信息（不该记）: ['今天有点热', '报表', '翻页']
-  模型推断（不该记）: ['价格', '敏感']
+  一条推断陈述的关键词子串（不是两条记忆）: ['价格', '敏感']
 
 [按规则筛选]
   该记的（3 条）: ['表格', 'PostgreSQL', 'k8s'] → 命中 3/3
   一次性信息（不该记）: 无
-  模型推断（不该记）: 无
+  一条推断陈述的关键词子串（不是两条记忆）: 无
 ```
 
 ## 给写入规则做一次回归测试
@@ -339,14 +375,14 @@ if __name__ == "__main__":
 
 构造 10 到 20 段短对话，每段事先标注三类条目（该记 / 一次性 / 推断）。每次改动写入指令后跑一遍，看三个数字：**该记的命中率**、**一次性信息的误入数**、**推断的误入数**。
 
-关键是后两个数字。本次实测里两种策略的「该记命中率」都是 3/3 —— 只看这一个指标，你会以为两种策略没差别。真正的差别全在误入数上（一次性信息 3 项对 0 项、推断 2 项对 0 项）。
+把它作为本地探索性回归集，而不是模型总体准确率：逐条标注候选及其来源、用途、scope、有效期和敏感级别；每次改 prompt 后在独立留出集评估误写、漏写、误合并、授权与删除行为。单段对话的小样本不能支持通用比例。
 
 这和检索那章的教训是同一个：**指标要选在那个能看见问题的地方。** 而「该记的有没有记住」恰好是最看不见问题的那一个 —— 它几乎总是满分。
 
 这个测试的成本很低（十几段对话、几十次调用），而它防的是「改了一条写入指令，悄悄开始记录一切」这类退化 —— 那类退化在抽查时完全看不出来。
 ## 常见坑
 
-- **把「提取记忆」整件事交给模型。** 实测里，两种策略在「该记的」上都是 3/3 —— 差别全在噪声那侧，而噪声在抽查时看不出来。
+- **把「提取记忆」整件事交给模型。** 单次历史摘要声称两种策略在若干目标关键词上都是 3/3；该数值无法从现存逐条轨迹与评分材料复核。
 - **不区分「用户明说」与「模型推断」。** 推断被写成事实后，你再也无法分辨，也无法在下游按来源分级。
 - **用「这条有用吗」当唯一标准。** 一次性信息也有用 —— 只是用在当前这一轮，不属于长期记忆。判据要加上「跨会话」。
 - **无差别记录然后指望检索过滤。** 检索能过滤不相关的，但过滤不掉「同主题的过时信息」—— 而那恰恰是推断与陈旧偏好最常见的样子。

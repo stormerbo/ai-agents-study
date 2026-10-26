@@ -38,7 +38,7 @@ client = anthropic.Anthropic(
 resp = client.messages.create(
     model=os.environ["VERIFY_MODEL"],
     max_tokens=600,
-    max_tokens=600,   # 输出长度硬上限：达到就停，不会给你一个完整结构
+    # 输出长度上限：达到后可能拿到不完整文本/工具参数，必须检查 stop_reason
     messages=[{"role": "user", "content": "只回复两个字：收到"}],
 )
 
@@ -57,21 +57,15 @@ blocks: ['thinking', 'text']
 
 **三个数字先把后面的内容锚住：**
 
-1. `input_tokens = 35`，而这句提示只有 7 个字符 —— 这就是本节开头那张表的形态，下面会解释多出来的部分从哪来。
+1. `input_tokens = 35`，而这句提示只有 7 个字符 —— 这是该 endpoint 对这次完整请求的 usage 记录；不能仅凭差值把 token 归因给消息封装。
 
-> 顺带把第一个字段定义掉：`max_tokens` 是**单次响应的输出长度硬上限**（不是总长度、也不是提示）。请求里那一行 `max_tokens=600` 就是它；它下面承担着「截断」这个失败形态。
-2. `blocks = ['thinking', 'text']`：**模型先思考再回答**，思考是单独一个块。这是「为什么 CoT 提示不再提准确率」的原因（第 3 章会实测）。
-3. `stop_reason` 是这次调用是否完整的唯一判据。把它设成 64 再跑一次，会撞上一个很典型的失败：
+> 顺带把第一个字段定义掉：`max_tokens` 是**单次响应允许生成的输出 token 上限**，不是输入长度或整个会话的上限。达到它时，结果可能不完整；如何确认要看该 API 的停止原因和任务级校验。
+2. `blocks = ['thinking', 'text']`：这次特定 DeepSeek 响应包含 `thinking` 与 `text` 两种内容块。内容块类型不能推出 CoT 提示的效果，也不应把 thinking 当成面向用户的正文。
+3. `stop_reason` 用来解释协议层为什么结束，不是任务成功的唯一判据。把这次请求的 `max_tokens` 降到 64 后，历史记录出现了下面的结果：
 
-```json
-{
-  "content": [{"type": "thinking", "thinking": "The user wants me to reply with only two characters..."}],
-  "stop_reason": "max_tokens",
-  "usage": {"input_tokens": 35, "output_tokens": 64}
-}
-```
+（本地历史响应记录，`deepseek-flash`，小 `max_tokens` 探测：HTTP 200、`stop_reason=max_tokens`、`output_tokens=5`，内容只有非文本 block，没有 text block。原始报告包含 provider 返回的内部 reasoning 字段；这里不展示其内容。它只说明这次探测没有可见答案，不能推广到其他模型/provider。）
 
-（**本次实跑，2026-10-12**，`deepseek-flash`，把 `max_tokens` 设成 64。）注意 `content` 里**只有一个 thinking 块、没有 text 块** —— 额度被思考吃光了，你一行回答都没拿到，而 HTTP 状态码是 200。这就是本节后面「静默截断」那个坑的最小形态：**不看 `stop_reason` 就发现不了它。**
+处理时至少分两步：先按 provider 协议处理 `stop_reason`（如截断、工具交接、拒绝或正常结束），再用业务判据校验期望产物。即使是 `end_turn`，也只说明该 API 的生成轮次自然结束，不证明答案正确或动作成功。
 
 ---
 
@@ -87,44 +81,45 @@ blocks: ['thinking', 'text']
 
 （数据来源：DeepSeek 的 Anthropic 兼容端点，模型 `deepseek-flash`，2026-09-24 实测。完整脚本见本章附录。）
 
-这张表里有三件违反直觉的事：
+这张表是 **2026-09-24 在一个 DeepSeek Anthropic-compatible endpoint 上得到的五条历史单次记录**。它展示同一个端点里，几个不同字符串的计数可以差很多；它不是对语言、模型或 tokenizer 的受控比较。
+
+这组数里有三个直观观察：
 
 **第一，7 个字符的短句要 35 个 token。** 如果 token 和字符是简单比例关系，这个数字应该是 5 左右。
 
-**第二，10 个英文单词（20 字符）比 7 个汉字（7 字符）消耗的 token 还多。** 按照「英文更省」的常识，这说不通。
+**第二，短英文样本（20 字符）比短中文样本（7 字符）多 2 个 token。** 两个句子字符数、内容和分词边界都不同，不能据此得出中英文谁更省。
 
-**第三，中英文的每字符消耗差了两倍多**（0.80 vs 0.36），但短句上的差距却被抹平了。
+**第三，长样本的 token/字符比不同**（0.80 vs 0.36），但文本是重复短语，仍不足以代表一般中文、英文或业务文本。
 
-这三个现象指向同一个解释：**存在一个约 30 token 的固定开销，它与你的文本长度无关。**
+这几条记录**不能单独识别固定请求开销**。不同 tokenizer 切分、消息封装、服务端自动加入内容、输入数据和 endpoint 计量口径都可能影响 `input_tokens`；要确认结构开销，需要受控的成对请求、完整请求参数与原始 usage。
 
 算一下：短句 35 token 减去 7 个字符的「真实内容」（约 5 token），剩下约 30。英文短句同理：37 减去约 5，还是约 30。
 
-**这个「约 5」不是估的，是同一张表里量出来的。** 做法是把同一个模型对「内容相同、长度不同」的输入各数一遍，用两个方程解出固定项：
+下面的方程只演示一种**假设下的拟合**，不是由这两行观测证明了固定开销：
 
 ```text
 7   字符 → 35 token        （短句）
 350 字符 → 280 token        （同一个短句 × 50）
 
-设 每字符 ≈ a、固定项 ≈ b：
+假设每个字符的成本线性且有一个固定项：
    7a + b = 35
  350a + b = 280
 相减： 343a = 245  →  a ≈ 0.714
-代入： b = 35 - 7×0.714 ≈ 30.0        ← 固定开销约 30
-所以 7 个字符的「真实内容」= 7 × 0.714 ≈ 5.0 token
+代入： b = 35 - 7×0.714 ≈ 30.0
+这只是两参数模型对两条数据的精确拟合；它没有检验线性假设，也没有证明 b 来自消息结构
 ```
 
-（推导用的两行数字来自本节表格的实测，`deepseek-flash`，2026-09-24；`a ≈ 0.714` 与 `b ≈ 30` 是本次给出的**拟合结果**，不是官方字段。长中文那一列是 ×50 的重复文本，所以 `a` 在这里接近中文的稳态密度，与下文「每字符 0.80」的差别来自短样本的量化误差。）
+（数据来自本地留存的 2026-09-24 历史报告；请求快照、服务端模型指纹与可重复试验未归档。`a` 和 `b` 是人为选定线性形式后算出的参数，不是 API 字段或已确认的机制。重复 50 次同一短语也不能证明字符成本恒定。）
 
-这个固定开销来自请求的结构本身 —— `role`、`content` 这些包装字段，以及服务端在消息前后自动附加的内容。它不随你的文本变化，但**每一次调用都要付**。
+不要把拟合出的 `b` 直接解释成 `role`、`content` 等字段的 token 费用，更不要把它当作每次调用都固定发生的账单。若要估算生产成本，应记录目标 endpoint 的响应 usage，并对照该 endpoint 当前的计费字段与规则。
 
 一旦理解这一点，前面三个现象就都通了：
 
-- 短句之所以「不划算」，是因为 30 token 的固定成本摊在了 5 token 的内容上
-- 长文本的每字符消耗之所以更低，是因为固定成本被摊薄了
-- 中英文之所以在短句上看不出差距，是因为固定开销盖过了字符差异
-- 只有把文本拉长（350 字符 vs 1050 字符），真实的语言差异才显现出来：**中文的 token 密度约是英文的两倍**
+- 仅凭字符数不能推算 token；应使用目标模型/tokenizer 的计数方式
+- 真实工作负载应按相同 endpoint、模型、请求结构和任务采样，报告计数与 usage 的口径
+- 模型间迁移时，不复用未经核验的历史 token/char 比率
 
-> 这个固定开销是我实测出来的推论，不是官方文档里写明的数字。不同模型、不同服务端的开销可能不同，你应该用本章附录的脚本对自己的场景测一遍。
+> 历史观测和拟合本身不能确定开销来源。若你关心输入计数，使用对应 provider 的计数端点或实际响应 usage，并在版本变化后重测。
 
 这一节要讲的就是这个单位：它怎么来的、怎么算、以及为什么它是后面所有成本与容量问题的根源。
 
@@ -132,11 +127,11 @@ blocks: ['thinking', 'text']
 
 最直接的问题是：模型为什么不直接处理字符？
 
-因为**序列长度是模型最昂贵的资源**。注意力机制的计算量随序列长度呈平方增长 —— 序列翻倍，计算量变四倍。如果按字符处理，一段 350 字的中文就是 350 个位置；而按 token 处理后（实测 280），差别还不算大。但如果按**字节**处理，同样的文本是 1050 个字节，位置数变成三倍。
+模型以离散 token ID 序列作为输入。tokenizer 的一个重要作用，是在词表规模与序列长度之间做工程折中：更大的子词单元可缩短某些常见文本的序列，但也增大词表/embedding 与输出层等成本；具体取舍由模型设计决定。
 
-所以需要一个折中：**词汇表不能太大**（否则输出层的矩阵会爆炸），**序列也不能太长**（否则注意力计算扛不住）。
+计算成本也不能简化成“token 数翻倍就总成本四倍”。以**标准 dense self-attention 的 prompt prefill**为例，注意力计算随序列长度呈二次增长；使用 KV cache 的自回归解码中，每个新 token 的注意力仍需读取已有上下文，整体成本还取决于输入长度、输出长度、模型结构与实现。工程上用 token 作为容量和成本核算的重要指标，但实际开销以目标模型/API 的规格、usage 与测量为准。
 
-分词器就是这两者之间的权衡产物。
+字符与 UTF-8 字节数也不等于模型位置数。模型处理的是 tokenizer 编出的 token 序列，所以本地 `len(text)` 只能用于展示样本长度，不能用来推断模型上下文占用。
 
 <Mermaid
   chart={`
@@ -145,61 +140,57 @@ flowchart LR
     B --> C["token 序列<br/>[48512, 9871, 3324, 20089]"]
     C --> D["嵌入层<br/>查表转成向量"]
     D --> E["模型计算<br/>注意力随序列长度平方增长"]
-    C -.-> F["计费<br/>按 token 数结算"]
-    C -.-> G["容量<br/>占用上下文窗口"]
+    C -.-> F["Usage 与计价<br/>按 provider 规则解释"]
+    C -.-> G["上下文占用<br/>按模型窗口与 API 规则"]
 `}
 />
 
-注意这张图的最后两个分支：**同一串 token 序列，既是计费单位，也是容量单位**。这不是巧合 —— 它意味着「省钱」和「省上下文」在你的系统里往往是同一件事，优化一个通常也优化了另一个。
+注意这张图的最后两个分支：输入 token 通常会同时影响容量规划与 usage，但**容量计数和账单口径不保证相同**。缓存读写、图像/音频等模态、推理 token、工具费用与 provider 定价可能改变账单；容量与费用要分开核对。
 
 ## token 是怎么切出来的
 
-现代分词器普遍采用**子词**（subword）方案，主流是 BPE（Byte Pair Encoding）及其变体。
+tokenizer 把输入文本编码成模型使用的 token ID 序列。BPE、Unigram 等子词方案很常见，但不同模型可能使用不同词表、预分词规则和编码细节，不能仅凭一套通俗算法解释所有 tokenizer。
 
-思路很朴素：
+以 BPE 的一种典型训练思路为例：
 
 1. 从单个字符（或字节）开始，每个都是独立单元
 2. 统计语料里哪两个相邻单元出现最频繁，把它们合并成一个新单元
 3. 重复第 2 步，直到词汇表达到预设大小
 
-结果是：**高频片段被合并成一个 token，低频内容保持碎片状态**。这解释了你在实践中看到的几乎所有现象：
+这类训练过程会让某些常见片段容易成为 token，但具体编码结果仍由目标 tokenizer 决定：
 
 | 内容 | 典型切法 | 原因 |
 |---|---|---|
-| `the`、`什么` | 1 个 token | 语料里出现极频繁 |
-| `idempotency` | 可能 3~4 个 token | 生僻词，被切成常见子串 |
-| `fmt.Println` | 可能是 3 个以上 | 代码标识符不在自然语料的高频表里 |
-| 一串随机字符 | 几乎逐字符 | 没有任何可复用的片段 |
+| 常见英文词 | 某些 tokenizer 可能编码成少量 token | 取决于词表、大小写和边界规则 |
+| 生僻术语 | 可能被拆成多个子词或字节 token | 取决于模型训练的 tokenizer |
+| 代码标识符 | 可能按常见片段、标点或字节拆分 | 代码格式和 tokenizer 都会影响结果 |
+| 随机字符串 | 可能需要较多 token | 具体数量须用目标 tokenizer 测量 |
 
-**关键推论**：token 的切法与语义无关，只与频率有关。`1234567` 和 `7654321` 消耗的 token 数相同，哪怕前者在你的业务里是个有意义的订单号。
+**关键推论**：token 是 tokenizer 对表面输入的编码单位，不是可靠的语义边界。语义相近的词可能切法不同，语义无关的字符串也可能有相同切法；同长度的 `1234567` 和 `7654321` 也不保证 token 数相同。不要用数字长度或语言类别代替实际计数。
 
-这也直接解释了实测数据里代码样本的表现：36 个字符消耗 40 个 token（每字符 1.11），效率比英文长文本差三倍 —— 代码里的符号、驼峰命名、标点密度都远高于自然语言。
+历史表格中的代码样本为 36 字符、40 token，但它只是一个字符串的一次记录。不能据此断言代码通常比英文贵三倍；要比较应对目标仓库/提示做成组采样，并保持模型和请求结构一致。
 
-## 中文为什么更贵
+## token/字符比为什么不能跨文本外推
 
-回到实测数据：长中文每字符 0.80 token，长英文每字符 0.36 token。
+历史记录中，一条重复中文短语为 350 字符 / 280 input tokens，一条重复英文短语为 1,050 字符 / 381 input tokens。
 
-原因在于**训练语料中的语言分布**。主流大模型的语料以英文为主，BPE 合并出的高频片段大多是英文单词。于是：
+这两个样本不是语义等价的中英对照，长度也不同，因此**不能证明中文普遍更贵**。token/字符比会受 tokenizer、具体文本、标点、代码、空白与模型版本影响。对业务容量规划，选取代表性文本并用目标模型测量；不要套用本节两个比率。
 
-- 英文的常见词（`the`、`and`、`is`）几乎都是 1 个 token
-- 中文的一个常用词可能是 1 个 token，但一个汉字平均要 0.8 个 token 左右
-- 换句话说，表达同样信息量时，中文的序列长度通常更长
+要比较语言差异，可构造意义相同的句子对，控制长度与领域，覆盖多条样本，再记录模型名、tokenizer/API、输入结构与测量日期。即便如此，结论也只适用于该样本集合；上下文容量不要按“字符数”换算。
 
-这有个很实际的后果：**如果你的应用面向中文用户，你和面向英文用户的应用，在同样的上下文窗口下能装的内容量是不一样的。** 官方文档给出的「100 万 token ≈ 55.5 万英文单词」这个换算，对中文并不成立，中文要按更保守的数字估。
+## 新分词器：一次约 30% 的 token 计数变化
 
-## 新分词器：一次约 30% 的成本变化
+这里说明一项可能影响容量与费用估算的变化。
 
-这里要插入一个正在发生的变化，因为它会让很多现成的成本估算失效。
-
-Claude 4.7 及之后的模型引入了**新的分词器**。据官方文档（[Token counting](https://platform.claude.com/docs/en/build-with-claude/token-counting)、[模型总览](https://platform.claude.com/docs/en/about-claude/models/overview)）：**同样的输入文本，在新分词器下产生的 token 数比之前大约多 30%**。
+Anthropic 当前 token-counting 文档明确列出的共享该 tokenizer 的型号是 Claude Fable 5.1、Mythos 5.1、Fable 5 与 Mythos 5；文档称它由 Opus 4.7 引入，并说明同一提示在这四个型号上的计数一致，且相较 Opus 4.7 之前的模型约高 30%，具体增幅取决于内容。不要把这句话扩展为“所有 4.7 及之后的 Claude 型号”或 Mythos Preview；需要比较其他型号时，按目标型号重新计数。[Token counting 文档](https://platform.claude.com/docs/en/build-with-claude/token-counting)（核对日期：2026-10-22）。
 
 这不是小事。它意味着：
 
-1. **从旧模型迁移时不能复用旧的 token 计数。** 拿旧数字估算新模型的成本与容量占用，会系统性低估 30%。官方给的做法是用你打算用的那个 `model` 重新数一遍。
+1. **从旧模型迁移时不要直接复用计数。** 对官方所述同一输入，token 数平均变化约 30%，具体工作负载要单独核实；官方建议用目标模型重新数。
 2. **旧教程里的经验法则会失效。** 「一份文档大概多少 token」这类直觉是绑定在某个分词器上的，换个模型就可能不准。
-3. **它同时影响成本和容量。** 30% 更多的 token，意味着同样的钱能处理的内容少了 30%，同样的窗口能装的内容也少了 30%。
+3. **成本和容量都要重新核算。** 如果某个输入计数恰好增加 30%、单价不变且没有阶梯或缓存等因素，该输入部分的 token 费用会随计数增加 30%；在固定 token 窗口里，同类内容能装入量的理想化比例是 `1 / 1.3 ≈ 76.9%`（约少 23.1%），实际还取决于内容分布、窗口和计价规则。
 
-> 这个数字（约 30%）来自官方文档，但我**没有在新旧模型上实测验证**（本机可用的端点是 DeepSeek，不涉及这次分词器变更）。你在做容量规划前，值得用两个模型各测一遍自己的典型输入。
+> 以上 30% 是官方对其特定模型 tokenizer 的近似说明，不是本项目的新旧模型实测。迁移前应按目标模型对同一组请求重计数，并检查费率、缓存与长上下文阈值。
 
 ## 上下文窗口：一个有上限的工作台
 
@@ -215,16 +206,11 @@ Claude 4.7 及之后的模型引入了**新的分词器**。据官方文档（[T
 
 它回答的是「请求能否装入上下文」，不是「账单会如何计量」。上下文占用和 billable usage 是两种口径：缓存读写、图像/音频等模态、reasoning tokens、工具调用的独立费用或运行时费用，可能以供应商特定字段或 SKU 计量。例如 Anthropic 的 usage 会分别列出 cache read / write tokens，OpenAI Responses API 会提供 input、output 及 reasoning-token 明细；它们的价格规则也不同（见 [Anthropic 定价文档](https://platform.claude.com/docs/en/about-claude/pricing) 和 [OpenAI Responses API usage 字段](https://developers.openai.com/api/docs/api-reference/responses/object#responses/object-usage)）。核算成本时按端点返回的 usage 字段与当前价格规则逐项计算，不要把 `input_tokens + output_tokens` 当作通用账单公式；设置运行预算时也应明确它约束的是上下文容量、可计费 token、金额还是其他运行资源。
 
-当前 Claude 主力模型的窗口是 100 万 token，Haiku 4.5 是 20 万（[模型总览](https://platform.claude.com/docs/en/about-claude/models/overview)）。用官方给的换算：
+上下文窗口属于模型规格，型号升级后可能变化，不能从模型家族名或旧章节表格推断。以 2026-10-21 查阅的 [Anthropic Context Windows](https://platform.claude.com/docs/en/build-with-claude/context-windows) 和[模型总览](https://platform.claude.com/docs/en/models/overview)为例，当前列出的 Opus 5.5、Sonnet 5.5、Haiku 5.5 为 1M token；Haiku 4.5 为 200K。要用于容量规划，先按部署平台与精确 model ID 核对官方模型页或 Models API。
 
-| | 100 万 token 约等于 |
-|---|---|
-| 英文单词 | 约 55.5 万个 |
-| Unicode 字符 | 约 250 万个 |
+**不要把 1M token 换算成固定的中英文字符数或书本页数。** 同一个窗口能容纳多少自然语言、代码、工具定义、图像内容或历史消息，取决于实际 tokenizer 和输入结构。按代表性请求做 token count，再为输出、工具结果、系统消息和安全余量留容量。
 
-按前面实测的中文 token 密度（每字符约 0.8 token）反推，**100 万 token 大约能装 125 万个中文字符** —— 比英文的字符数少一半。这些换算都是量级估算，别当精确值用。
-
-100 万 token 是什么概念？大约是一本中等厚度技术书的体量。这确实很大，大到足以产生一种危险的错觉。
+1M token 是很大的名义窗口，但这会带来一种危险的错觉：能装下不代表适合全部塞进去。
 
 ## 危险之处：「能装下」不等于「能用好」
 
@@ -271,17 +257,17 @@ flowchart LR
 
 **「窗口还有空间」不能作为继续塞内容的理由。** 这是第 3 章「上下文工程」要解决的核心问题 —— 那一章会讲具体的压缩、检索与隔离策略。
 
-## 完整项目：一个 token 成本估算器
+## 完整项目：一个输入 token 估算器
 
-前面所有概念，落到工程上就是一个工具：**在发请求之前，算出这次调用要花多少 token。**
+前面所有概念，落到工程上就是一个工具：**在发请求之前，估算目标模型会收到多少输入 token。** 计数结果不是账单金额，也不能单独预估未知长度的生成输出。
 
 这类工具的价值在批量任务上尤其明显。等你跑完一万次调用再看账单，已经晚了。
 
-下面是本章的完整示例，可以直接运行：
+下面的脚本调用 Anthropic 官方 Messages token-counting endpoint；它不是跨 provider 通用实现。运行前安装 Anthropic Python SDK，并提供官方 API key 和当前有效的 model ID。Python 3.10 或更高版本可直接运行：
 
 ```python
-# token_estimator.py
-"""在发请求前估算 token 消耗与成本。"""
+# input_token_estimator.py
+"""用 Anthropic 官方 endpoint 估算请求的输入 token；不估金额或生成输出。"""
 
 import os
 
@@ -292,33 +278,24 @@ api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(
     "ANTHROPIC_AUTH_TOKEN"
 )
 
-client = anthropic.Anthropic(
-    api_key=api_key,
-    base_url=os.environ.get("ANTHROPIC_BASE_URL"),  # 留空用官方端点
-)
+if not api_key:
+    raise RuntimeError("请设置 ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN")
 
-MODEL = os.environ.get("VERIFY_MODEL", "claude-sonnet-5")
+client = anthropic.Anthropic(api_key=api_key)  # 本脚本面向 Anthropic 官方 endpoint
+
+MODEL = os.environ["VERIFY_MODEL"]  # 填当前官方 Models API 支持的 ID/alias
 
 
-def count(text: str, system: str | None = None) -> int:
-    """返回这次调用会消耗的输入 token 数。
-
-    count_tokens 端点接受与创建消息相同的参数结构，
-    所以 system、tools、图片都能算进去。
-    """
-    kwargs = {"model": MODEL, "messages": [{"role": "user", "content": text}]}
-    if system:
+def count_input(messages: list[dict], system: str | None = None,
+                tools: list[dict] | None = None) -> int:
+    """估算给定 Anthropic Messages 输入的 input_tokens。"""
+    kwargs = {"model": MODEL, "messages": messages}
+    if system is not None:
         kwargs["system"] = system
-
-    # ⚠️ 这个方法挂在哪个对象上取决于 SDK 版本（2026-10-09 实测）：
-    #   anthropic >= 1.0  → client.messages.count_tokens
-    #   anthropic 0.3x    → client.beta.messages.count_tokens
-    #     0.39.0 的 client.messages 上**根本没有** count_tokens，
-    #     写死 client.messages.count_tokens 会直接 AttributeError。
-    fn = getattr(client.messages, "count_tokens", None) or client.beta.messages.count_tokens
-    result = fn(**kwargs)
-    # 返回类型也随版本变：1.x 是 MessageTokensCount，0.3x 是带 .json() 的对象
-    return getattr(result, "input_tokens", None) or result.json()["input_tokens"]
+    if tools is not None:
+        kwargs["tools"] = tools
+    result = client.messages.count_tokens(**kwargs)
+    return result.input_tokens
 
 
 def main() -> None:
@@ -335,7 +312,8 @@ def main() -> None:
     print("-" * 36)
 
     for label, text in samples.items():
-        tokens = count(text)
+        messages = [{"role": "user", "content": text}]
+        tokens = count_input(messages)
         print(f"{label:<10}{len(text):>8}{tokens:>8}{tokens / len(text):>9.2f}")
 
 
@@ -343,29 +321,23 @@ if __name__ == "__main__":
     main()
 ```
 
-运行它（三个环境变量都要在，见本节开头的表）：
+运行它（还需在本节开头的环境变量中设置 Anthropic 官方 key 与一个当前有效的官方模型 ID；本脚本不设置 `ANTHROPIC_BASE_URL`）：
 
 ```bash
-export ANTHROPIC_AUTH_TOKEN="sk-..."                      # 或 ANTHROPIC_API_KEY
-export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"   # 用官方端点则留空不设
-export VERIFY_MODEL="deepseek-flash"
-python3 token_estimator.py
+export ANTHROPIC_API_KEY="..."
+export VERIFY_MODEL="<当前支持的 Anthropic model ID>"
+python3 input_token_estimator.py
 ```
 
-（`ANTHROPIC_BASE_URL` 不设时，`os.environ.get()` 返回 `None`，SDK 就会走官方端点 —— 这就是「留空」的实现方式。）
+DeepSeek 的 Anthropic-compatible 文档没有承诺与 Anthropic 官方相同的 `/v1/messages/count_tokens` 能力。若改用兼容端点，应先独立验证计数请求与版本；也可以在真实 Messages 响应中记录 DeepSeek 返回的 `usage`，但这发生在创建消息之后，不能称为免费预估。
 
-输出就是本节开头那张表。你可以直接改 `samples` 里的文本，换成你自己的真实输入 —— 这是最有价值的一步，因为**你的业务文本的 token 特性，只有测了才知道。**
+输出是每条输入的 token-count estimate，不保证与实际 message usage 完全相同。你可以改 `samples`，加入与线上一致的系统提示、客户端工具定义和历史消息；若要计数图像或 PDF，按 Anthropic 文档要求使用 base64 source。注意该 endpoint 不接受部分 server tools、MCP connector，以及 URL/file source 的 image/document block；这些请求应以实际 Messages 响应中的 usage 为准，不能把示例扩写成“支持所有多模态输入”。即便计数准确，它仍只覆盖输入，金额估算还要使用对应模型的当前输入/输出/缓存费率，并为输出量建立独立假设。
 
-> **实跑状态**：**数据与脚本都已实跑**（2026-10-09，DeepSeek 的 Anthropic 兼容端点）。
-> 脚本产出的五个样本与上方数据表逐行一致：7 字符 → 35 token（5.00/字符）、1050 字符 → 381 token（0.36/字符）。
->
-> 验证过程中修掉了一个真实的 bug：原脚本写的是 `client.messages.count_tokens`，而**在 anthropic 0.39.0 上这个方法不存在**，
-> 它挂在 `client.beta.messages` 上，会直接 `AttributeError`。现在的写法用 `getattr` 先试前者、回退到后者，
-> 在 0.39.0 与 1.12.1 上都能跑（见上方代码里的注释）。
+> **实跑状态**：上方 token 数来自 DeepSeek Anthropic-compatible endpoint 的 2026-09-24 历史记录；原始本地报告保存在被 git 忽略的 `verify-output/report.json`，未作为可复现数据集提交。代码示例在本轮未对 provider 发请求；应先在干净环境按目标 SDK 版本运行，再标记该环境实跑。历史 SDK 0.39.0 / 1.12.1 的调用路径观察只适用于当时版本，不再作为当前 SDK 接口保证。
 
-## 三个真实的错误案例
+## 历史错误探测
 
-下面三段错误响应都来自实测，不是编造的。
+以下状态码来自 2026-09-24 的 DeepSeek 兼容端点历史报告。除错误响应摘录外，正文只列出能从归档中核实的字段；不要把这组记录视为当前 provider 契约。
 
 ### 案例一：模型名写错
 
@@ -386,36 +358,43 @@ HTTP 状态码 400。
 
 **给你自己的 API 设计的启示**：错误信息应该包含「调用方能据此采取行动」的信息。这条能做到，很多 API 做不到。
 
-### 案例二：`max_tokens` 导致的静默截断
+### 案例二：小 `max_tokens` 后没有可见文本
 
-现象：请求返回 200，但解析结果时报 `JSONDecodeError`。
+2026-09-24 的 DeepSeek `deepseek-flash` 历史探测中，`max_tokens=64` 的请求返回 HTTP 200，`stop_reason=max_tokens`、`output_tokens=5`，响应里没有可见文本块。原始归档没有记录 JSON 解析过程，因此不能把它写成真实发生过的 `JSONDecodeError`，也不能仅凭这次响应断言模型内部为何没有生成文本。
 
-排查过程（这正是真实排查的样子）：
+可复用的工程结论更窄：对 Anthropic Messages API，`stop_reason=max_tokens` 表示生成达到请求上限；它是需要由调用方处理的完成状态之一。不要把“HTTP 200”当作业务输出完整的证明，也不要假设每种截断都必然形成半截 JSON。先按目标 API 的返回结构收集文本与停止原因，再决定重试、降级或报错。
 
-1. **先看原始响应**，而不是只看解析后的结果 —— 发现输出被腰斩在半截 JSON 上
-2. **再查 `stop_reason`** —— 值是 `max_tokens`，而不是 `end_turn`
-3. 确认了是长度截断，不是模型能力问题
-
-根因：`max_tokens` 是**硬截断**。达到上限就停，不会给你一个完整结构。你要求输出 JSON，但额度不够，拿到的就是半截字符串。
-
-修复要同时做两件事：
+下面是一个最小的 Anthropic Messages API 检查示例：
 
 ```python
+import os
+
+import anthropic
+
+client = anthropic.Anthropic()
+MODEL = os.environ["VERIFY_MODEL"]
+prompt = "只回复两个字：收到"
+
 response = client.messages.create(
     model=MODEL,
     max_tokens=2048,                      # 1. 留足余量，别卡着预期长度设
     messages=[{"role": "user", "content": prompt}],
 )
 
-# 2. 检查停止原因，而不是盲目解析
+# 检查停止原因，并显式提取文本 block
 if response.stop_reason == "max_tokens":
-    # 走重试（提高上限）或降级路径，不要直接 json.loads
-    raise TruncatedOutputError("输出被截断，请提高 max_tokens 或拆分任务")
+    raise RuntimeError("生成达到 max_tokens；按应用策略重试或降级")
 
-data = json.loads(extract_json(response.content[0].text))
+text_blocks = [block.text for block in response.content if block.type == "text"]
+if not text_blocks:
+    raise RuntimeError(f"响应没有文本内容，stop_reason={response.stop_reason!r}")
+text = "".join(text_blocks)
+# 只有在应用明确要求 JSON、且 API 返回了可解析文本时，才调用 json.loads(text)
 ```
 
-**关键点**：`stop_reason` 字段就是为这个场景存在的。不检查它，你就只能靠解析失败来发现截断 —— 而那时已经浪费了一次调用。
+> **实跑状态**：代码可通过语法检查；本轮未使用 Anthropic 凭据调用 provider。接入应用前，应按当前 SDK 和目标模型执行集成验证。
+
+**关键点**：检查 `stop_reason` 是协议状态处理的一部分，但需结合 API 的内容块与其他终止状态解释；不同 provider 的字段语义必须查各自文档。
 
 ### 案例三：跨厂商的意外行为
 
@@ -425,50 +404,49 @@ data = json.loads(extract_json(response.content[0].text))
 
 | 实验 | Anthropic 官方行为 | DeepSeek 兼容端点实测 |
 |---|---|---|
-| 不传 `max_tokens` | **报错**（必填参数） | **返回 200**，有默认值 |
-| 传 `temperature: 0.2` | **报错 400**（新模型已移除该参数） | **返回 200**，参数生效 |
-| 模型名写错 | 报错 | 报错，且列出可用模型名 |
+| 不传 `max_tokens` | Anthropic Messages API reference 将其列为必需参数 | 2026-09-24 历史探测：HTTP 200；不能推广为当前默认行为 |
+| 传 `temperature: 0.2` | Claude 4.7+ / Mythos Preview：非默认值返回 400 | 2026-09-24 历史探测：HTTP 200；不能由状态码判断参数是否生效 |
+| 空模型名 | 由目标模型和 API 校验规则决定 | 2026-09-24 历史探测：HTTP 400，并回报支持的模型名 |
 
-两项的**行为完全相反**。
+这两次观测提醒我们：兼容端点需要按版本重新验证；它们只是 2026-09-24 的 HTTP 响应记录，不足以证明语义完全相反或参数生效。
 
 这个结果有两层意义：
 
-**第一层，实践层面。** 你的代码如果只在 DeepSeek 上测过，迁移到 Claude 时会在 `max_tokens` 上撞墙；反过来，如果代码里传了 `temperature`，在 DeepSeek 上跑得好好的，换到 Claude 新模型就 400。**「兼容 Anthropic API」不代表行为一致** —— 兼容的是接口形状，不是语义。
+**第一层，实践层面。** 你的代码如果只在某一兼容端点上测过，迁移到 Anthropic 或另一版本时仍需核对必填参数、参数约束和终止状态。HTTP 200 只证明该次请求被接受，不能证明参数按预期生效。**「兼容 Anthropic API」不代表行为一致** —— 兼容的是接口形状，不自动保证语义。
 
-**第二层，架构层面。** 这正是为什么需要适配层。如果业务代码里直接散落着 `if provider == 'deepseek'` 这样的判断，每接一家厂商就要改一遍业务逻辑。正确做法是把差异**收拢到一处**（本站的做法见第 8 章），让上层只面对统一接口。
+**第二层，架构层面。** 这正是为什么需要适配层。如果业务代码里直接散落着 `if provider == 'deepseek'` 这样的判断，每接一家厂商就要改一遍业务逻辑。正确做法是把差异**收拢到一处**（见本章第 6 节「Provider Contracts」），让上层只面对有明确能力边界的接口。
 
 ## 常见坑
 
-**按字符数估算 token。** 实测数据显示每字符消耗在 0.36 到 5.0 之间浮动，取决于文本类型和长度。任何固定的换算系数都是错的，用 `count_tokens`。
+**按字符数估算 token。** 本节五个 2026-09-24 历史样本的 token/字符比在 0.36 到 5.0 之间；它们不是受控对照，也不能代表其他文本或模型。容量规划应使用目标 provider 的 tokenizer/计数接口，或以目标请求的实际 usage 校准。
 
-**忽略固定开销。** 每次调用都有约 30 token 的结构开销。做小请求的成本估算时如果不算上它，会低估得离谱 —— 短句场景下它可能占总额的 85%。
+**把样本差异当成固定开销。** 历史短句样本不能证明每次调用都有固定约 30 token 的结构开销。若关心具体请求形状，应计入 system、tools、消息结构与多模态内容，并在目标 provider 上实测。
 
 **把上下文窗口当「输入预算」。** 输出也占额度。要求结构化输出时要留出充足空间。
 
 **把 `max_tokens` 卡在预期长度附近。** 输出的长度是概率性的，卡得太紧就会间歇性截断，表现为「偶尔报 JSON 解析错误」这种极难定位的 bug。
 
-**不检查 `stop_reason`。** 它是你判断「这次输出是否完整」的唯一可靠依据。
+**不检查 `stop_reason`。** 对本节使用的 API，按其协议状态判断输出是否正常完成、被截断或需其他处理；不能只凭文本内容推断完整性。不同 API 的字段和值应由适配层分别解释。
 
-**假设跨厂商行为一致。** 案例三实测证明了两家可以在同一个参数上行为相反。凡是跨厂商的部分，都要单独验证。
+**假设跨厂商行为一致。** 一次兼容端点探测只能提供日期明确的局部证据；凡是跨厂商的部分，都要对目标模型与 API 版本单独验证。
 
-**以为「窗口够大」就不用做取舍。** 容量不是瓶颈，注意力是。
+**以为「窗口够大」就不用做取舍。** 容量充足不保证任务表现；检索、位置、干扰项、模型和任务都会影响结果，应针对目标场景测量，而不是把问题简化成单一的「注意力瓶颈」。
 
 ---
 
 ## 附录：数据采集脚本
 
-本节开头那张表，以及三个错误案例的原始响应，都是用下面这个脚本得到的。
+本节开头的历史样本与错误探测汇总来自一次 2026-09-24 DeepSeek 兼容端点记录。下面的简化脚本展示如何记录 Messages API 原始响应；它不是当时原始采集脚本的逐字复现，也未在本轮对 provider 实跑。
 
-它比正文里的成本估算器更「原始」一些 —— 直接打原始响应，不走 SDK 的封装。当你需要确认「服务端到底返回了什么」时，这种写法比任何封装都可靠。
+它直接请求 Messages API 并显示响应摘要，适合观察该次 HTTP 结果；它不是比 SDK 更可靠的通用方案，认证、重试、超时和响应解析仍需应用明确处理。
 
 ```python
 # collect_token_stats.py
 """采集 token 消耗数据与原始错误响应。
 
-用法：
-    export ANTHROPIC_BASE_URL="https://api.deepseek.com/anthropic"   # 可选
-    export ANTHROPIC_AUTH_TOKEN="..."
-    export VERIFY_MODEL="deepseek-flash"
+用法（Anthropic 官方端点）：
+    export ANTHROPIC_API_KEY="..."
+    export VERIFY_MODEL="<当前支持的 Anthropic model ID>"
     python3 collect_token_stats.py
 """
 
@@ -477,13 +455,7 @@ import os
 
 import anthropic
 
-client = anthropic.Anthropic(
-    api_key=(
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    ),
-    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-)
+client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 MODEL = os.environ["VERIFY_MODEL"]
 
@@ -498,14 +470,12 @@ SAMPLES = {
 
 
 def count_tokens(text: str) -> int:
-    # 同上方 count()：方法位置随 SDK 版本变，0.3x 挂在 beta 下
-    fn = getattr(client.messages, "count_tokens", None) or client.beta.messages.count_tokens
-    result = fn(
+    # Anthropic 官方 token counting endpoint；结果是估算值，不代表账单金额。
+    result = client.messages.count_tokens(
         model=MODEL,
         messages=[{"role": "user", "content": text}],
     )
-    # SDK 版本不同，返回类型可能是对象也可能是可 json() 的包装
-    return getattr(result, "input_tokens", None) or result.json()["input_tokens"]
+    return result.input_tokens
 
 
 def report_samples() -> None:
@@ -540,10 +510,7 @@ def probe_errors() -> None:
         },
     }
 
-    # ⚠️ 不要用 client._client.post(...) —— 2026-10-09 实测（anthropic 0.39.0）：
-    #   它的默认头只有 accept / user-agent 等，**认证头是 SDK 在每次请求内部加的**。
-    #   直接 post 会一路 401「Authentication Fails」，把真实错误行为全遮住。
-    #   要看原始 HTTP，就自己带上头。
+    # 用单独的 httpx 客户端观察 HTTP 状态；不把 SDK 私有 client 当作稳定接口。
     import httpx
 
     headers = {
@@ -554,7 +521,7 @@ def probe_errors() -> None:
     }
     print("\n错误行为探查：\n")
     with httpx.Client(
-        base_url=os.environ["ANTHROPIC_BASE_URL"], headers=headers, timeout=60
+        base_url="https://api.anthropic.com", headers=headers, timeout=60
     ) as raw:
         for label, body in probes.items():
             resp = raw.post("/v1/messages", json=body)
@@ -568,22 +535,13 @@ if __name__ == "__main__":
     probe_errors()
 ```
 
-> **实跑状态**：**数据与脚本都已实跑**（2026-10-09，anthropic 0.39.0 + DeepSeek 的 Anthropic 兼容端点）。
->
-> 验证时修掉了脚本里一个**原理性的错误**：原代码用 `client._client.post(...)` 打原始请求。实测发现
-> `client._client` 的默认头里**没有认证字段**（只有 `accept` / `user-agent` 等）—— SDK 是在每次请求内部加认证头的，
-> 所以直接 post 会**一路 401**，把真实的错误行为全遮住。现在改成自己带 `x-api-key` 的 httpx 客户端。
->
-> 修好之后探到了三条真实行为：空模型名 → **HTTP 400**（错误信息会列出该端点支持的模型名）；
-> **缺 `max_tokens` → HTTP 200**；**传 `temperature` → HTTP 200**。后两条与 Anthropic 官方端点不同 ——
-> 官方要求 `max_tokens`、且新模型会对 `temperature` 报 400。这正是本节「兼容不等于一致」那句话的又一例。
+> **实跑状态**：历史结果来自 2026-09-24、anthropic SDK 0.39.0 与 DeepSeek `deepseek-flash` Anthropic-compatible endpoint。正文中的脚本已按 Anthropic 当前公开接口重写，代码在本轮未执行；请在部署前用当前 SDK 版本运行。历史记录只保留该次 HTTP 状态与 usage 数值，不将它们视作当前行为保证。
 
 ### 怎么用这个脚本建立自己的成本直觉
 
 把 `SAMPLES` 换成**你自己业务里的真实文本**，然后跑一遍。这一步比读任何文章都有用，因为：
 
 - 你的文本的 token 特性（中英比例、代码密度、结构重复度）是独一无二的
-- 你能直接看到固定开销占总额的比例 —— 如果占比很高，说明你的请求太小，**合并请求**可能比优化 prompt 更有效
-- 你能算出「每万次调用要多少 token」，再乘官方定价，就是个量级正确的预算
+- 你能观察同类请求在目标 provider 的 input usage 如何随 prompt 变化；要估计金额，还需分别核对当前输入、输出与缓存费率
 
-最后一个提醒：这个脚本用的是 `count_tokens`，它**免费**。你可以在 CI 里跑它，把每次发布前的 token 预算做成一个回归测试 —— 当某次改动让 prompt 膨胀了 40% 时，你会立刻知道。
+Anthropic 官方 token-counting endpoint 当前说明为免费但受速率限制；这一点不能推广到其他 provider。可在 CI 中对固定请求样本做 token 回归测试，并将其与实际账单/usage 监控分开。

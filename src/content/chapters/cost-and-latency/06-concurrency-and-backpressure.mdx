@@ -1,0 +1,105 @@
+---
+lesson: cost-and-latency/concurrency-and-backpressure
+title: 并发与背压：让拥塞有边界
+status: drafting
+---
+
+## 本节要解决什么
+
+Agent 一次任务会展开成多轮模型请求、并行工具调用、重试和后台任务。如果入口请求都直接扔进无界队列，并在每次超时后立即重试，短暂的上游变慢就会变成排队膨胀、成本放大和更长的尾延迟。本节交付物是一个有界 admission policy：限制并发、限制等待队列、在接纳时预留任务预算，并在 deadline 内安排有上限的重试。验收判据是：系统达到容量后明确排队或拒绝；永久性 quota/billing 错误不会盲目重试；服务端 Retry-After 不会被早于提示的请求违反；过期任务在重试前停止。
+
+## 先区分四种容量
+
+Agent 服务至少有四种不同的容量约束：**并发槽**决定同一时刻能有多少请求占用 worker 或连接；**速率额度**限制一段时间内的请求数；**token 吞吐**限制输入与输出消耗；**任务预算**限制某个用户或 Agent 流程最多花费多少资源。它们相互影响，但不是一个数字。把并发槽从 10 调到 100，不会提高 provider 的 RPM/TPM；而一个并发很小的长队列仍可能让用户等待数十分钟。
+
+入口应实施 admission control：先检查整个任务 deadline 和可用预算，再决定立即运行、进入有界等待队列，还是明确拒绝。队列必须同时限制长度与可等待时间，满载时不要继续接受任务并占着连接；返回可重试时间、排队状态或过载错误，由上游调用者决定是否稍后再试。多租户系统还需要公平策略或每租户配额，避免一个租户把全局槽位全部占满。优先级可以支持业务分级，但必须设防饥饿，不能让低优先级工作永远排不到。
+
+预算应在接纳时预留，而不是完成后才发现超额。预留值可以来自任务上限或估算上界；结束时按实际 usage 结算，未用部分释放。若模型请求还会触发工具调用，预算要为后续步骤保留余量。每个请求也要有**端到端 deadline**：单次 HTTP timeout 只约束一次尝试，并不自动限制排队、退避和下一次尝试加起来的总时间。
+
+## 429 不是统一的“睡一会儿再试”
+
+HTTP 状态码只是分类线索，重试决策还要看 endpoint 的错误体、响应头和 SDK 版本。OpenAI 当前文档把临时限速与模型过载区分为 `429 slow_down` 和 `503 server_is_overloaded`；提示文字可能给出最短等待时间，但 quota、billing 等需要人工处理的问题不能靠重发解决。Anthropic 当前文档也指出，`429` 可能是速率限制或 spend cap；其 spend-cap 429 没有 `retry-after`，并会持续失败到额度恢复。以上是各自官方 API 的当前行为，不是所有兼容端点的通用协议；不写动态 RPM/TPM 数字，接入时要核对实际 endpoint 和 SDK。
+
+`Retry-After` 是 HTTP 的响应字段：[RFC 9110 §10.2.3](https://www.rfc-editor.org/rfc/rfc9110.html#section-10.2.3) 允许它是整数秒数，也允许绝对 `HTTP-date`。OpenAI 文档示例描述的是秒数，Anthropic 的 rate-limit 文档也把它解释为秒数；若自己处理原始 HTTP 响应，要按 RFC 9110 解析两种形式，不能把日期字符串当成秒数。得到有效等待值后，将它视为**最早重试时间**；服务端没有给出或字段无效时，才使用指数退避与随机抖动。若值超过本地支持的最大等待、任务 deadline 或内存队列等待上限，应持久化为延后任务、返回可恢复状态或拒绝；不要截短等待时间后提前重试。OpenAI 与 Anthropic 当前行为分别见[OpenAI Rate Limits](https://developers.openai.com/api/docs/guides/rate-limits)和[Claude API Rate Limits](https://platform.claude.com/docs/en/api/rate-limits)。
+
+重试还要限制总尝试次数与任务 deadline。配置中的 `maxAttempts` 应说明是否包含首个请求；本节约定它**包含首个请求**。超时必须覆盖排队、退避和每次网络尝试的累计时间，单次 HTTP timeout 不等于业务 deadline。对需要配置或修复的 quota、账单上限、无效参数等错误应停止重试并呈现原因。SDK 可能已内置重试；若应用再包一层，网络调用次数会相乘，因此要选定一个重试 owner，或将 SDK 尝试计入统一上限。SDK 对长 `Retry-After` 的处理可能受版本与配置影响，应核对当前实现。
+
+还要区分“请求没开始”和“请求已发出但结果未知”。连接尚未建立时仍要遵守 deadline 和尝试上限；请求发出后客户端超时，服务端可能已经处理，重发可能造成重复计费或重复副作用。**结果未知时默认不重放**，只有幂等键、可查询的操作状态或其他证据能证明重放安全，才按策略重试。OpenAI 的流式请求若在响应开始后遇到错误，也要按流事件与已消费内容处理，不能把整个请求自动重放；详见[错误缓解文档](https://developers.openai.com/api/docs/guides/rate-limits)。对有副作用的工具要使用幂等键、状态查询或对账流程。Agent 主循环遇到工具返回的 rate-limit 错误时，不要让模型决定立即重复调用；宿主应把重试时刻、attempt 计数和幂等状态写入调度记录，再按 deadline 决定继续、延后或收尾。
+
+<Mermaid
+  chart={`
+flowchart TD
+    R[任务到达] --> D{deadline 仍有效？}
+    D -->|否| X[拒绝并说明已过期]
+    D -->|是| B{预算可预留？}
+    B -->|否| X2[拒绝或降级]
+    B -->|是| C{并发槽可用？}
+    C -->|是| S[执行一次请求]
+    C -->|否| Q{有界队列有空间？}
+    Q -->|否| X3[过载拒绝]
+    Q -->|是| W[排队至 deadline]
+    S --> O{结果类别}
+    O -->|成功| F[结算 usage 并释放槽位]
+    O -->|临时限流/过载| T[释放槽位并计算 Retry-After / 退避]
+    O -->|额度/参数永久错误| X4[停止重试并记录]
+    T --> D
+`}
+/>
+
+## 离线 admission 与重试判定模型
+
+`examples/concurrency-backpressure/admission.py` 用确定性纯函数示范 admission 与重试判定。它接收调用方传入的活跃数、队列数和剩余预算快照，返回分类及建议预留额；它本身没有维护队列、原子扣减共享预算、释放并发槽或执行真实调度，也不运行协程、线程池或 provider SDK。`max_queue_wait` 按调用方给定的预测等待时间判断，不是队列系统的运行测量。重试 helper 对连接错误默认不建议重放；调用方只有能证明请求可安全重放时，才显式传 `request_replay_safe=True`。生产代码必须在同一个可恢复的存储/协调层完成状态转换与预算预留，并针对真实运行时另做故障注入。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s examples/concurrency-backpressure -v
+```
+
+14 个本地测试全部通过。容量、队列长度与 attempt 次数是离散计数，helper 只接受整数并显式拒绝布尔值和小数；Python 的 `bool` 是 `int` 子类型，所以只用 `isinstance(value, int)` 会让 `True` 被当成 1。实跑状态：Python 标准库离线模型。判定输出示例：
+
+```text
+active=3/3 queued=1/2 -> queued
+active=3/3 queued=2/2 -> queue_full
+temporary_429 retry_after=5s deadline=60s -> retry_in=5s
+quota_exhausted -> stop_retrying
+overloaded retry_after=3s deadline_in=2s -> stop_retrying
+```
+
+这组结果只证明当前纯函数对合成输入按规则分类，不能证明 HTTP 客户端正确解析了 RFC 9110 的两种 header 格式、SDK 会透传字段、provider 会按预期响应，或分布式 worker 实际只占用设定数量的并发槽。预算预留也只是返回一个候选额度；调用方需要在原子事务中检查剩余额度并记录预留，完成、取消和恢复时再幂等地结算或释放。不同语言的布尔类型与整数类型关系不同，迁移此检查时要使用目标语言的精确整数判定。
+
+策略配置也应当可审查、可版本化，而不是散落在每个 Agent tool handler 中。以下配置记录代表一道服务端限制；`reservedBudget` 是接纳时要原子预留的上限，完成后按 usage 结算；`maxAttempts` 包含首次请求；`retryPolicy.owner` 说明只有应用调度器负责业务层重试。`jitter: true` 表示生产调度器需抽取随机抖动；离线 helper 为了可重复，只接收确定性的 `jitter_seconds` 数值，不能证明随机退避的分布效果：
+
+```json
+{
+  "provider": "provider-a",
+  "scope": "tenant",
+  "maxActive": 3,
+  "maxQueue": 2,
+  "maxQueueWaitSeconds": 20,
+  "reservedBudget": 0.8,
+  "retryPolicy": {
+    "owner": "application",
+    "maxAttempts": 4,
+    "respectRetryAfter": true,
+    "jitter": true,
+    "deadlineSeconds": 60
+  }
+}
+```
+
+配置要和运行信号一起看：并发槽常满但队列很短，可能说明工作耗时长；队列年龄持续增加说明 admission 高于服务速率；429 上升时可先降低并发与到达速度，而不是先增加 worker。`Retry-After` 是**重试调度**，最大队列等待是**初次 admission**，两者不是同一时钟；如果建议重试时间晚于任务 deadline，应停止，晚于内存等待能力但任务仍有效时则持久化延后调度。
+
+## 落地检查清单
+
+1. 分别测量每 provider / model 的活跃请求、RPM/TPM 响应头、等待队列长度、排队年龄、429/503/529 比例、重试次数和端到端 deadline 违约。
+2. 给入口队列设明确上限和拒绝行为；按用户或租户实施公平配额，避免单租户占满全局 worker。
+3. 接纳任务前预留预算并记录预留值；完成、取消或拒绝时结算或释放，异常恢复也不能重复扣减。
+4. 选定 SDK 或应用中的一个重试策略 owner；记录 SDK 隐式重试，计算实际的最大网络尝试次数。
+5. 按 HTTP-date 或秒数解析 `Retry-After`；加随机 jitter 和退避上限；对缺失/无效 header、quota/billing、deadline 快到、未知请求结果与非幂等副作用分别定义行为。
+6. 重试等待时释放并发槽，把延迟任务重新放入受限调度器；只有即将执行下一次 attempt 时才重新占槽。
+7. 故障注入 provider 429、503、连接中断、慢响应和调用方取消，验证队列不会失控、请求不会超出 deadline、预算不会被重复预留。
+
+验收产物是一张容量与重试策略表，列出限制维度、作用域、队列上限、重试 owner、每类错误的动作、最大尝试次数、deadline 与预算结算规则。观察到 429 后首先检查它是暂时速率限制、上游过载还是额度错误；“总是重试”不构成恢复策略。
+
+## 后端经验迁移
+
+可以直接迁移的是 semaphore、线程池、有限队列、速率限制、deadline、熔断、配额预留和重试预算。容易失效的直觉是把 API timeout 当作整个业务 deadline，把 429 都看作短暂拥塞，或认为 SDK 的 retry 和应用层 retry 会自动合并。Agent 还会在一次用户请求内串联许多模型与工具步骤，所以必须在任务边界统一计算成本与时间，而不是让每个工具独立重试到成功为止。

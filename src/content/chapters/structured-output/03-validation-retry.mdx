@@ -6,11 +6,11 @@ status: drafting
 
 上一节的校验器拦下了一条记录：金额 1234 不是 100 的整数倍。
 
-**接下来发生什么，才是这套系统真正的分水岭。** 大多数第一版实现到这里就把异常往上抛了 —— 而这一节想说的是：抛出去之前，你手里其实有足够的信息让模型自己改对。
+**接下来发生什么，决定了系统能否安全处理失败。** 校验器提供了具体反馈，模型可以据此尝试修复；但重试不是正确性保证，每一轮结果都必须重新校验，耗尽预算后还要进入明确的失败路径。
 
-## 实测：三种「重试」的差别大到不像同一件事
+## 历史摘要：三种「重试」当时记录了不同结果
 
-设计要点：**业务规则不写进 prompt**，只有校验器知道（这样首轮必然不合格，三种策略才有区分度）。
+设计思路：把一个业务约束放在本地校验器里，用于观察错误反馈能否帮助模型修改输出。但现有仓库没有保存 2026-10-08 的逐次请求/响应、完整 prompt、精确模型版本和评分脚本，因此不能证明各组首轮都按设计失败，也不能重算表中的修正率。
 
 | 策略 | 第二次请求里多了什么 | 首轮不合格 | 两轮内修正 |
 |---|---|---:|---:|
@@ -18,7 +18,7 @@ status: drafting
 | 空洞重试 | 「上一次没通过校验，请重新输出」 | 6/6 | **0/6** |
 | 带错误信息 | 上次的输出 + 「amount 必须是 100 的整数倍，实际是 1234」 | 6/6 | **6/6** |
 
-三组的轨迹：
+旧笔记还保留了以下轨迹摘要；由于原始逐次日志缺失，它不是可独立核查的原始输出：
 
 ```text
 原样重发   1234 → ✗ , 1234 → ✗ , 1234 → ✗ , 1234 → ✗ , 1234 → ✗ , 1234 → ✗
@@ -26,15 +26,15 @@ status: drafting
 带错误信息 1234 → 1200 , 1234 → 1200 , ...（6 次全部修正）
 ```
 
-（实测数据，`deepseek-flash`，2026-10-08，每组 6 次，`temperature=1`。）
+（2026-10-08 的历史摘要：每组据称 6 次、`temperature=1`；原始轨迹与 scorer 未归档，数据无法独立复核，不能当作可复现的模型成功率。）
 
-`temperature` 是采样参数里最常被提到的一个：**它控制每次采样从概率分布里挑 token 时的随机程度** —— 设成 0，模型几乎总是挑概率最高的那个，输出最确定；设成 1，低概率候选也有机会被挑到，输出更发散。本节的实验把它固定为 1，理由不是「1 更好」，而是**让三组策略面对同样的随机性**：如果一组用 0、一组用 1，修正率的差别里就混进了一个与策略无关的变量。这也是后文反复出现「6 次采样、`temperature=1`，噪声完全可能有这个量级」那句话的来源。
+旧记录称各组固定使用 `temperature=1`。控制同一实验中的采样设置有助于减少一个已知混杂因素；但没有原始调用记录，无法确认这个参数在当时 endpoint 上的实际含义或是否每次一致，也不能用温度解释组间差异。不同 provider 对采样参数的支持与行为应按 endpoint 文档确认。
 
-「原样重发」为什么是 0？因为**重试这个动作本身不携带任何新信息**。模型面对的是完全相同的输入，它只能重新采样一次 —— 那是在掷骰子，不是在解决问题。而它每一次都掷出了同一个结果，恰恰说明模型认为 1234 就是对的。
+原样重发不会向模型提供新的约束或证据；若每次都重发相同上下文，它只能基于相同条件重新生成。但历史摘要里“6 次相同”无法说明模型为什么输出 1234，也不能证明模型认定该值正确。更稳妥的工程结论是：**如果本地校验器知道具体失败原因，就把经过筛选的错误反馈传回；不要把一次小样本观察写成普遍修正规律。**
 
-## 到底是哪个成分起作用
+## 哪个成分起作用：旧摘要不足以分离因果
 
-「跟上次输出」和「说明错在哪」通常是打包在一起的。分开测一次：
+历史记录还摘要了三种反馈组合，但没有保留逐次输入、输出或评分规则。下表只能作为不可复核的旧记录，不能用于分离因果：
 
 | 第二次请求里给什么 | 修正率 |
 |---|---:|
@@ -44,21 +44,22 @@ status: drafting
 
 （同一组设置，每组 6 次。）
 
-结论很干净：**起作用的是「错在哪」，不是「你上次输出了什么」。** 模型自己知道上次输出了什么 —— 那部分信息对它没有增量。
+这组旧摘要与“错误原因可能比重复粘贴旧输出更有用”的假设相容，但不足以证明因果：没有逐次轨迹，且“只给错误原因”与“两者都给”的小样本差异可能来自随机波动或其他未记录因素。工程上应通过可重放的配对评估验证反馈格式，而不是把这张表当成普遍规律。
 
 第三行反而略低于第二行，我没有足够证据解释它（6 次采样、`temperature=1`，噪声完全可能有这个量级）。**不要据此得出「少给更好」的结论** —— 但也不该跳过这个数字不提，它至少说明「信息给得越多越好」也是一句没被验证过的直觉。
 
 ## 哪些错误值得重试，哪些不值得
 
-重试不是对所有失败都有效。按「错误里有没有可执行的信息」分三类：
+重试不是对所有失败都有效。按失败来源分四类；处理方式也要分层，不能把 API 重试和模型校验重试混为一谈：
 
-| 错误类型 | 例子 | 重试有用吗 |
+| 失败类别 | 例子 | 处理原则 |
 |---|---|---|
-| 形状错误 | 输出里混进说明文字、JSON 被截断 | 有用，但先确认 `stop_reason`；截断要加大预算 |
-| 约束越界 | 金额不是 100 的整数倍 | 有用 —— 把越界的值发回去（本节 6/6） |
-| 信息缺失 | 原文根本没有负责人，schema 却标了 required | **没用 —— 重试也只能再编一个假值** |
+| 结构/本地约束失败 | 字段缺失、金额不是 100 的倍数 | 可返回脱敏的字段路径与约束类别；每次重试后重新校验 |
+| provider 终止状态 | refusal、`max_tokens` 截断、上下文超限 | 先按 `stop_reason` 分流；拒绝通常停止，截断只有在预算策略允许时才增加输出预算 |
+| API/传输失败 | 超时、限流或服务端错误 | 使用单独的退避、重试与总预算策略，不当作模型校验错误 |
+| 信息缺失 | 原文无负责人且没有可信外部来源 | 重试不能新增证据；询问、补充来源或表达未知 |
 
-第三类的处理方式与前两类完全不同：它不该重试，该改 schema 或改任务设计。一个必须填、但输入里并不存在的字段，重试多少次都只会得到另一个看起来合规的假值（上一节实测：`""` 或 `"未提及"`）。这类问题的出口只有三个 —— 改成可选、允许 `null`、或者去别处取这个信息。
+本例的 `extract_refund` 只捕获 Pydantic `ValidationError`；`client.messages.create` 抛出的传输异常会向外传播，由调用方的 API/runtime 层按错误码、请求是否可安全重放和总预算处理，不会被误当成 schema 反馈再次喂给模型。第四类（信息缺失）不能靠模型重试补出证据，应改 schema、请求补充材料或查询可信来源。一个必须填、但输入里并不存在的字段，重试不会新增证据；上一节提到的空字符串或 `"未提及"` 只是未复核的历史摘要，不能据此估计模型编造率。信息不足时应允许显式未知状态，再由应用决定是否继续。
 
 判断方法可以浓缩成一句话：**问自己「如果模型足够聪明，它能不能从输入里推出这个值」。** 不能推导出来的，就不是重试能解决的问题。
 
@@ -66,19 +67,19 @@ status: drafting
 
 重试是安全网，不是主干。
 
-我把同一条业务规则换个地方放，首轮合格率差了一个数量级：
+另一份同日历史摘要声称，把同一条业务规则放在 prompt 或仅放在校验器时，首轮通过率不同；同样缺少请求、原始输出和 scorer，不能据此断言差异幅度或因果：
 
 | 规则放在哪 | 首轮合格率 |
 |---|---|
 | 写进 prompt | 3/5 ～ 4/5（取决于措辞） |
 | 只在校验器里（prompt 不提） | 0/6 |
 
-所以正确的做法是两件事一起做：
+因此可作为默认设计原则的是两件事一起做，而不是旧成功率本身：
 
-1. **能写进 prompt 的规则就写进 prompt** —— 它把首轮合格率抬上去，直接省掉重试的钱。
-2. **写不进去、或不可靠的靠校验器兜** —— 它保证最终正确，并给模型一次自我修正的机会。
+1. **能写进 prompt 的规则就写进 prompt** —— 它可能提高首轮通过率；具体收益需要用同一评估集测量。
+2. **写不进去、或不可靠的靠校验器兜** —— 它阻止未通过本地校验的值进入下游，并给模型一次受预算限制的修正机会；校验器不能证明字段内容有事实依据。
 
-只做第一条，你迟早会在某一次没被拦住的输出上出事；只做第二条，你会把大部分成本花在重试上。
+只做第一条，你迟早会在某一次没被拦住的输出上出事；只做第二条，可能增加重试成本；应在评估集中同时看首轮通过率、最终通过率、重试次数与端到端成本。
 
 ## 状态机
 
@@ -96,204 +97,334 @@ flowchart TB
 `}
 />
 
-## 先澄清一件事：这里的工具调用没有被执行
+## 这里没有业务副作用，但 Messages API 仍有工具调用协议
 
-本节的代码里出现了 `tools` 和 `tool_choice`，但它和上一章的「工具调用」有一个关键区别：
+本节把一个工具 schema 当作结构化输出通道：模型返回 `tool_use` 后，应用只做本地解析与校验，不调用退款或保存函数。它和真实的业务工具有不同的副作用边界，但仍然是 Messages API 的 client-tool turn。
 
-- 上一章：模型发出调用意图 → **你执行真正的函数** → 回填结果 → 再问一次。
-- 本节：模型发出调用意图 → **你只取它的 `input` 当作结构化数据** → 结束。
+校验通过时，本例直接结束抽取流程，不再发后续请求，所以无需回填工具结果。**校验失败并准备沿同一段对话重试时，必须把刚才的 assistant `tool_use` 与紧接着的 user `tool_result` 配对**；结果内容可以报告本地校验失败，并设置 `is_error: true`，这表示调用未通过验证，不代表执行过业务副作用。Anthropic 的[工具调用处理文档](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)要求工具结果紧跟对应的 `tool_use`，并说明可用 `is_error` 返回错误。DeepSeek 或兼容端点也应按各自协议验证，不能默认与 Anthropic 完全一致。
 
-这里的工具是一个**借用的通道** —— 用来把输出收窄成对象，函数体从头到尾不存在。所以本节不需要回填 `tool_result`，不存在幂等问题，重试也是干净的操作。
-
-`tool_result` 是标准工具调用里的一个消息块，形状大致是 `{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "...", "content": "..."}]}` —— **它的作用是把「你执行函数得到的返回值」送回给模型**。本节没有函数可执行，所以这个块永远不会出现；模型给出 `tool_use` 之后，这次对话就结束了。区分这一点很重要：一旦你把它和真正的工具调用混起来，就会开始怀疑「不回填结果是不是不合规」，而实际上这里根本没有第二个回合。
-
-这个区别值得单独记住，因为两种用法在代码上几乎一模一样，语义上却完全不同：**一个是「让模型动手」，一个是「让模型交一份填好的表」。**
+工具强制选择与 thinking 模式还受模型/API 支持范围限制。下面展示的是 Anthropic Messages API 风格的调用形态；选定模型前请核对[强制工具选择限制](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)，本例没有连 provider 实测。若所用端点没有这种能力，应改用其文档支持的 JSON structured-output API，而不要假装工具循环已经验证。
 
 ## 完整可运行代码
 
 ```python
 # retry_with_feedback.py
-"""校验失败之后，把错误本身变成下一次的输入。"""
+"""用本地校验反馈修复结构化 tool_use；不执行任何业务副作用。"""
 
-from pydantic import BaseModel, Field, ValidationError
+import json
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 MAX_ATTEMPTS = 3
+TOOL_NAME = "save_refund"
 
 
 class Refund(BaseModel):
+    model_config = ConfigDict(strict=True)
     amount: int = Field(multiple_of=100)
     reason: str
 
 
-def extract_refund(client, model: str, ask: str, schema: dict):
-    """返回校验过的 Refund；上限内仍失败时返回 None，调用方走降级。"""
+def safe_report(exc: ValidationError) -> list[dict[str, str]]:
+    """只返回校验类型、字段路径与标准消息，不回传 input/context/doc URL。"""
+    return [
+        {
+            "type": error["type"],
+            "field": ".".join(map(str, error["loc"])),
+            "message": error["msg"],
+        }
+        for error in exc.errors(
+            include_url=False,
+            include_context=False,
+            include_input=False,
+        )
+    ]
+
+
+def classify(report: list[dict[str, str]]) -> str:
+    kinds = {item["type"] for item in report}
+    constraint_errors = {
+        "multiple_of", "greater_than", "greater_than_equal",
+        "less_than", "less_than_equal", "string_too_short",
+        "string_too_long", "string_pattern_mismatch",
+    }
+    shape_errors = {
+        "missing", "int_type", "string_type", "list_type", "dict_type",
+        "bool_type", "float_type", "model_type", "tuple_type",
+        "extra_forbidden", "int_parsing", "string_parsing",
+    }
+    if kinds & constraint_errors:
+        return "constraint"
+    if kinds and kinds <= shape_errors:
+        return "shape"
+    return "validation_other"
+
+
+def extraction(
+    value: Refund | None,
+    attempts: int,
+    first_round_ok: bool,
+    error_type: str | None = None,
+    last_report: list[dict[str, str]] | None = None,
+) -> dict:
+    return {
+        "result": value,
+        "attempts": attempts,
+        "first_round_ok": first_round_ok,
+        "error_type": error_type,
+        "last_report": last_report or [],
+    }
+
+
+def extract_refund(client, model: str, ask: str, schema: dict) -> dict:
+    """返回真实尝试次数；非 tool_use 终止状态不当成 schema 错误盲目重试。"""
     messages = [{"role": "user", "content": ask}]
+    last_report: list[dict[str, str]] = []
+    last_error: str | None = None
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        resp = client.messages.create(
+        response = client.messages.create(
             model=model,
             max_tokens=2000,
-            thinking={"type": "disabled"},   # 强制工具调用的前提，见本章第 1 节
             messages=messages,
             tools=[{
-                "name": "save_refund",
-                "description": "保存报销单",
+                "name": TOOL_NAME,
+                "description": "只把报销信息整理为候选对象；不会执行报销或写入操作。",
                 "input_schema": schema,
             }],
-            tool_choice={"type": "tool", "name": "save_refund"},
+            tool_choice={"type": "tool", "name": TOOL_NAME},
         )
-        block = next(b for b in resp.content if b.type == "tool_use")
+
+        if response.stop_reason != "tool_use":
+            reason = {
+                "refusal": "refusal",
+                "max_tokens": "truncated",
+                "model_context_window_exceeded": "context_limit",
+            }.get(response.stop_reason, "unexpected_stop_reason")
+            return extraction(None, attempt, False, reason)
+
+        calls = [block for block in response.content if block.type == "tool_use"]
+        if len(calls) != 1 or calls[0].name != TOOL_NAME or not calls[0].id:
+            return extraction(None, attempt, False, "unexpected_tool_output")
+        block = calls[0]
 
         try:
-            return Refund.model_validate(block.input)
+            value = Refund.model_validate(block.input)
         except ValidationError as exc:
+            last_report = safe_report(exc)
+            last_error = classify(last_report)
             if attempt == MAX_ATTEMPTS:
-                break
-            # 两个要点：
-            #   1. 把 assistant 的 content 原样带回（消息历史必须完整）
-            #   2. 用 exc.json() 而不是 str(exc) —— 前者机器可读，
-            #      后者带换行、缩进和 pydantic 文档链接，是给人看的
+                return extraction(None, attempt, False, last_error, last_report)
+
+            # 复用同一段 Messages API 对话时，工具调用错误也要配对 tool_result。
+            feedback = json.dumps(
+                {"error": "validation_failed", "issues": last_report},
+                ensure_ascii=False,
+            )
             messages += [
-                {"role": "assistant", "content": resp.content},
+                {"role": "assistant", "content": response.content},
                 {
                     "role": "user",
-                    "content": (
-                        "上一次提交被校验器退回了。错误明细（JSON）：\n"
-                        + exc.json(include_url=False)
-                        + "\n请只修正这些问题，然后重新调用工具。"
-                    ),
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": feedback,
+                        "is_error": True,
+                    }],
                 },
             ]
+            continue
 
-    return None   # 重试耗尽，交给降级路径
+        return extraction(value, attempt, attempt == 1)
+
+    raise AssertionError("MAX_ATTEMPTS must be at least 1")
 
 
 if __name__ == "__main__":
-    # 真实报错原文（Pydantic 2.9）：注意它包含两类信息 ——
-    # 机器可读的 loc / msg / input，以及给人看的文档链接
     try:
         Refund.model_validate({"amount": 1234, "reason": "打车"})
     except ValidationError as exc:
-        print("str(exc) 给模型看太长：")
-        print(str(exc))
-        print()
-        print("exc.json() 才是该发回去的形式：")
-        print(exc.json(include_url=False))
+        print("给模型的脱敏问题：")
+        print(json.dumps(safe_report(exc), ensure_ascii=False))
 ```
 
 ```text
-str(exc) 给模型看太长：
-1 validation error for Refund
-amount
-  Input should be a multiple of 100 [type=multiple_of, input_value=1234, input_type=int]
-    For further information visit https://errors.pydantic.dev/2.9/v/multiple_of
-
-exc.json() 才是该发回去的形式：
-[{"type":"multiple_of","loc":["amount"],"msg":"Input should be a multiple of 100","input":1234,"ctx":{"multiple_of":100}}]
+给模型的脱敏问题：
+[{"type": "multiple_of", "field": "amount", "message": "Input should be a multiple of 100"}]
 ```
 
-> **实跑状态**：报错原文与 `exc.json()` 的输出均在本地 Python 3.10 + Pydantic 2.9.2 上实跑得到。上面的 SDK 调用片段与实测采集脚本字段一致，但未在官方端点跑过。
+> **实跑状态**：以上错误摘要由 Python 3.10 + Pydantic 2.9.2 在本地运行得到，没有调用 provider。真实请求/响应格式、强制工具选择能力以及错误反馈后的模型修正都没有在官方 endpoint 上实测。默认报告不包含 input、context 或文档 URL；若使用自定义 validator，仍须审查其消息是否会泄露敏感值。
 
 ## 重试耗尽之后：降级分支与埋点
 
-上面那个 `extract_refund` 只回答了「怎么重试」，没回答**重试耗尽之后那一步**。而那张降级表的三行选择，落到代码里就是三个不同的返回值 —— 它们必须在写代码之前定下来。
+`extract_refund` 返回实际调用次数、首轮状态、失败类别和脱敏问题列表；调用方仍要决定失败后走哪种业务策略。下面的控制流示例接收一个已绑定 client/model/schema 的抽取函数，并将**观测结果**与**业务降级策略**分开。
 
 先定义这套系统的**产物**，也就是无论成功失败都会产生的那条记录（**构造示例，未实跑**）：
 
 ```json
 {
   "request_id": "req_8f21",
-  "task": "extract_refund",
   "attempts": 3,
   "first_round_ok": false,
   "error_type": "business_rule",
   "action": "human_queue",
-  "payload": {"raw_input": "...", "last_report": [{"type": "business_rule", "field": "end_date", "msg": "end_date 早于 start_date"}]}
+  "payload": {
+    "case_ref": "case_92ab",
+    "last_report": [
+      {"type": "business_rule", "field": "end_date", "message": "日期区间无效"}
+    ]
+  }
 }
 ```
 
-它的字段就是埋点的四件事：**试了几次**（`attempts`）、**首轮是否合格**（`first_round_ok`）、**错在哪一类**（`error_type`）、**最后走去哪**（`action`）。`error_type` 的取值与上面那张表一一对应：`shape` / `constraint` / `information` / `business_rule`。
+记录包含四项观测：**实际请求次数**（`attempts`）、**首轮是否通过**、**校验问题类别**和**最终动作**。`information` 是应用对“源材料缺少证据”的判断，不是 Pydantic 错误类型；重试器不能仅凭 schema exception 推断它。埋点不含原始请求、模型输出或完整 payload。人工队列通过受控的 `case_ref` 回到授权存储；按数据分级设置访问控制、保留期限和脱敏规则。
 
 ```python
 # degrade.py
-"""重试耗尽之后：降级分支 + 埋点。
-
-用假 client 演示控制流：三个字段的埋点、以及三种降级分支各自的载荷。
-本地 Python 3.10 + Pydantic 2.9.2 上跑通（未连官方端点）。
-"""
+"""将验证结果交给显式的失败策略；指标只记录最少字段。"""
 
 import json
-import uuid
-from typing import Optional
-
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Refund(BaseModel):
+    model_config = ConfigDict(strict=True)
     amount: int = Field(multiple_of=100)
     reason: str
 
 
-def classify(exc: ValidationError) -> str:
-    """把 Pydantic 的错误类型映射到四类之一 —— 分类决定走哪条降级分支。"""
-    kinds = {e["type"] for e in exc.errors()}
-    if "multiple_of" in kinds or "greater_than" in kinds:
-        return "constraint"
-    if kinds & {"missing", "string_type", "int_type"}:
-        return "shape"
-    return "business_rule"
+_MISSING = object()
 
 
 def emit(event: dict) -> None:
-    """埋点：每次尝试都落一行。真实系统里这行进日志或时序库。"""
+    # 不把原文、模型候选或业务 payload 写入普通指标日志。
     print("[metric] " + json.dumps(event, ensure_ascii=False))
 
 
-def run(ask: str, extract) -> dict:
-    """包住 extract：负责埋点与降级，extract 只管重试。
+def run(
+    ask: str,
+    extract,
+    *,
+    request_id: str,
+    fallback_policy: str,
+    case_ref: str | None = None,
+    default_value=_MISSING,
+    split_fields: tuple[str, ...] = (),
+    remaining_attempts: int = 0,
+) -> dict:
+    """extract(ask) 返回上一段的 outcome；策略配置由业务风险决定。"""
+    outcome = extract(ask)
+    value = outcome["result"]
+    attempts = outcome["attempts"]
+    first_ok = outcome["first_round_ok"]
+    error_type = outcome["error_type"]
+    report = outcome["last_report"]
 
-    extract 是上一段代码里的函数，返回 (Refund | None, 首轮是否合格, 最后一次的错误类型)。
-    """
-    request_id = "req_" + uuid.uuid4().hex[:4]
-    result, first_ok, error_type = extract(ask)
-    attempts = 1 if first_ok else 3          # 简化：没首轮通过就按打满上限记
-
-    if result is not None:
-        record = {"request_id": request_id, "attempts": attempts,
-                  "first_round_ok": first_ok, "error_type": None,
-                  "action": "store", "payload": result.model_dump()}
+    if value is not None:
+        action = "validated"
+        payload = value.model_dump(mode="json")
+    elif fallback_policy == "human_queue":
+        if not case_ref:
+            raise ValueError("human_queue requires an ACL-protected case_ref")
+        action = "human_queue"
+        payload = {"case_ref": case_ref, "last_report": report}
+    elif fallback_policy == "conservative_default":
+        if default_value is _MISSING:
+            raise ValueError("conservative_default requires an explicit default_value")
+        action = "conservative_default"
+        payload = {"value": default_value, "is_uncertain": True}
+    elif fallback_policy == "split_retry":
+        if not case_ref or not split_fields or remaining_attempts < 1:
+            raise ValueError("split_retry requires case_ref, fields, and remaining budget")
+        action = "split_retry"
+        # 这是交给有预算限制的字段级 worker 的计划，不在此函数中隐式加轮次。
+        payload = {
+            "case_ref": case_ref,
+            "fields": list(split_fields),
+            "remaining_attempts": remaining_attempts,
+        }
     else:
-        # 三种降级分支：不可逆动作进人工队列，可容忍误差给保守默认值，
-        # 大 schema 里只有个别字段过不去就拆小重试。
-        action = "human_queue" if error_type in ("business_rule", "information") else "conservative_default"
-        record = {"request_id": request_id, "attempts": attempts,
-                  "first_round_ok": first_ok, "error_type": error_type,
-                  "action": action,
-                  "payload": {"raw_input": ask, "last_report": "见上一次尝试的 exc.json()"}}
+        raise ValueError(f"Unsupported fallback policy: {fallback_policy}")
 
-    # 关键：无论成功失败都发同一条事件，只是 action 不同
-    emit({k: record[k] for k in ("request_id", "attempts", "first_round_ok", "error_type", "action")})
-    if record["action"] == "human_queue":
-        # 入队载荷必须自带原始输入 —— 处理的人不该去翻日志找它
-        print("[queue] 入队:", json.dumps(record["payload"], ensure_ascii=False))
+    record = {
+        "request_id": request_id,
+        "attempts": attempts,
+        "first_round_ok": first_ok,
+        "error_type": error_type,
+        "action": action,
+        "payload": payload,
+    }
+    emit({key: record[key] for key in (
+        "request_id", "attempts", "first_round_ok", "error_type", "action"
+    )})
     return record
 
 
 if __name__ == "__main__":
-    # 假 client：模拟「首轮越界、第二轮修正」与「三轮都做不到」两种情况
-    def fake_extract_fixed(ask: str):
-        return Refund(amount=1200, reason=ask), False, None
+    # 控制流夹具，不调用 provider；实际 requests 是从 outcome 中计数。
+    def fake_extract_fixed(ask: str) -> dict:
+        return {
+            "result": Refund(amount=1200, reason="已脱敏示例"),
+            "attempts": 2,
+            "first_round_ok": False,
+            "error_type": None,
+            "last_report": [],
+        }
 
-    def fake_extract_failed(ask: str):
-        return None, False, "business_rule"
+    def fake_extract_failed(ask: str) -> dict:
+        return {
+            "result": None,
+            "attempts": 3,
+            "first_round_ok": False,
+            "error_type": "business_rule",
+            "last_report": [{
+                "type": "business_rule",
+                "field": "amount",
+                "message": "金额与来源规则冲突",
+            }],
+        }
 
-    for label, extract in (("两轮内修正", fake_extract_fixed),
-                           ("重试耗尽", fake_extract_failed)):
-        print("==", label)
-        print("  ->", json.dumps(run("打车费 1234 元", extract), ensure_ascii=False))
+    cases = [
+        ("两轮内修正", fake_extract_fixed, "human_queue", "case_demo", _MISSING, (), 0),
+        ("重试耗尽转人工", fake_extract_failed, "human_queue", "case_demo", _MISSING, (), 0),
+        ("不确定默认值", fake_extract_failed, "conservative_default", None, None, (), 0),
+        ("字段拆分计划", fake_extract_failed, "split_retry", "case_demo", _MISSING, ("amount",), 1),
+    ]
+    for label, extract, policy, case_ref, default, fields, budget in cases:
+        record = run(
+            "仅供测试的输入",
+            extract,
+            request_id="req_demo",
+            fallback_policy=policy,
+            case_ref=case_ref,
+            default_value=default,
+            split_fields=fields,
+            remaining_attempts=budget,
+        )
+        print(label, json.dumps({
+            "attempts": record["attempts"],
+            "first_round_ok": record["first_round_ok"],
+            "error_type": record["error_type"],
+            "action": record["action"],
+            "payload_fields": sorted(record["payload"]),
+        }, ensure_ascii=False))
 ```
 
-`classify` 这个小函数值得单独看一眼 —— 它把「Pydantic 报了什么错」翻译成「走哪条降级分支」：
+本地假 client 的输出（不含原始输入或业务 payload）：
+
+```text
+[metric] {"request_id": "req_demo", "attempts": 2, "first_round_ok": false, "error_type": null, "action": "validated"}
+两轮内修正 {"attempts": 2, "first_round_ok": false, "error_type": null, "action": "validated", "payload_fields": ["amount", "reason"]}
+[metric] {"request_id": "req_demo", "attempts": 3, "first_round_ok": false, "error_type": "business_rule", "action": "human_queue"}
+重试耗尽转人工 {"attempts": 3, "first_round_ok": false, "error_type": "business_rule", "action": "human_queue", "payload_fields": ["case_ref", "last_report"]}
+[metric] {"request_id": "req_demo", "attempts": 3, "first_round_ok": false, "error_type": "business_rule", "action": "conservative_default"}
+不确定默认值 {"attempts": 3, "first_round_ok": false, "error_type": "business_rule", "action": "conservative_default", "payload_fields": ["is_uncertain", "value"]}
+[metric] {"request_id": "req_demo", "attempts": 3, "first_round_ok": false, "error_type": "business_rule", "action": "split_retry"}
+字段拆分计划 {"attempts": 3, "first_round_ok": false, "error_type": "business_rule", "action": "split_retry", "payload_fields": ["case_ref", "fields", "remaining_attempts"]}
+```
+
+> **实跑状态**：以上输出由本地 Fake client 构造，使用 Pydantic 2.9.2，不调用 provider；字段级重试只输出有预算的 dispatch 计划，实际 worker 由调用方实现。
+
+`classify` 只把标准 Pydantic 校验错误映射为约束、形状或其他校验类别；未知错误类型不会被猜成业务规则。真正的 `business_rule` 应来自应用自己的领域校验器；拒绝、截断和传输失败则在 API 响应层另行处理。类别用于诊断，不自动决定业务降级策略：
 
 ```text
 amount=1234（constraint）        -> constraint
@@ -301,20 +432,17 @@ reason 缺失（shape）             -> shape
 end_date 早于 start_date（业务）  -> business_rule
 ```
 
-（分类结果上示：本地 Python 3.10 + Pydantic 2.9.2 实跑得到；分支动作是上表的直接翻译。）
+（分类契约示意：前两行对应上面的 Pydantic 校验错误；第三行必须由应用自己的领域校验器生成，当前代码不把它伪装成 Pydantic 输出。分支动作由调用方显式映射。）
 
-这段代码里有两个设计决定值得单独说：
+代码把校验错误分类和动作策略拆开：`error_type` 描述失败，业务策略由调用方明确传入。不能让某一种错误类别自动决定是否可写入或走默认值；同一类错误在退款、推荐和数据标注任务中的风险不同。成功与失败都发出同结构的**最小化指标事件**，因此可以计算首轮通过率，而不必把原始数据塞进日志。
 
-1. **降级分支由 `error_type` 决定，不由调用方临时判断。** 「信息缺失」与「业务规则冲突」进人工队列，「约束越界」给保守默认值 —— 因为后者还能事后补救，而前者不能。
-2. **成功与失败发同一条事件。** 只在失败时埋点，你就永远算不出首轮合格率（分母丢了）。下一小节会说明它是这套系统最有价值的指标。
+**人工处理需要能安全地回到必要上下文。** 这不等于把原文复制进普通队列或日志：只传权限受控的 `case_ref`，由授权页面按需读取原始材料；没有合规存储、访问控制和保留策略时，应拒绝入队或改走其他业务流程。
 
-**入队载荷里必须带原始输入。** 处理队列的人不应该被迫去翻日志、把上下文拼回来 —— 那是把成本从系统转嫁给人，而人工队列的单价是这套链路里最高的。
-
-最后一条纪律：**降级路径也要有测试。** 触发它最简单的方式是把上限设成 0（`MAX_ATTEMPTS = 0`），跑一遍主流程，确认入队载荷与埋点事件都正确 —— 否则这条分支只有在上线后第一次真出事时才会被执行。
+最后一条纪律：**降级路径也要有测试。** 用 Fake client 返回持续无效的 tool input，耗尽正常的正数重试预算，确认实际尝试次数、脱敏报告与各降级动作都正确；不要把上限设为 0，否则主流程会跳过所有模型调用。
 
 ## 重试不是万能的：降级路径必须在设计阶段定
 
-上面「带错误信息」那一组是 6/6 —— 但另一组同样设置的运行里是 4/6。**总会有修不好的情况。** 重试耗尽之后只有三种选择，它们必须在写代码之前就定下来，因为临时补的兜底通常既没有测试覆盖也没人知道它存在：
+历史摘要把“只给错误原因”记为 6/6，把“错误原因和上次输出都给”记为 4/6；两种反馈形态并不相同，而且都缺少原始轨迹，不能独立复核。**重试可能耗尽。** 下面列出三种示例降级策略，系统也可以选择明确拒绝或中止；具体行为必须在写代码之前定下来，因为临时补的兜底通常既没有测试覆盖也没人知道它存在：
 
 | 降级方式 | 代价 | 适用场景 |
 |---|---|---|
@@ -322,26 +450,26 @@ end_date 早于 start_date（业务）  -> business_rule
 | 返回保守默认值并标注不确定 | 可能不准 | 推荐位、标签这类可容忍误差的 |
 | 拆小重试（先只抽一个字段） | 多一轮成本 | 大 schema 里只有一两个字段过不去 |
 
-最不能选的是第四种：**把异常抛给用户。**
+不要把内部堆栈、原始输入或 provider 错误原样展示给用户；应返回清楚、可操作且符合业务风险的失败状态，例如请求补充信息、进入人工审核或说明本次无法完成。
 
 ## 重试的成本要算进去
 
-每次重试都是一次完整往返，而且输入更长 —— 它是「原任务 + 上一次的输出 + 错误明细」，比首次请求更贵。第 1 章的算式在这里同样成立：多轮对话的累计输入是 O(N²)，因为每一轮都要把之前的内容重新发一遍。
+每次重试都会增加请求与输出成本。若每轮都把完整历史重新发送，且每轮新增内容规模近似固定，n 轮请求所累计处理的输入长度会按等差数列增长；这是一个特定消息策略下的复杂度模型，不适用于有状态 API、不同缓存计费口径或固定上下文窗口的所有 endpoint。实际费用按 provider 返回的 usage 字段逐次累计。
 
-所以在设计阶段就要定两件事：**上限设几次**（2 到 3 次是常见选择），以及**哪些失败值得重试**（上一小节）。一个没有上限的重试循环，在模型确实做不到的任务上会稳定地把钱烧完 —— 而它在监控面板上看起来只是一直在「努力重试」。
+所以在设计阶段要明确：最大尝试数、可重试错误类型、单次与总预算，以及耗尽后的动作。代码里的 3 次只是示例配置，不是跨 provider 的经验门槛。每个重试都必须受调用次数、时间与费用预算约束；真实业务工具还要另外处理执行结果未知时的幂等与对账。
 
-还有一个不花钱的收益：**把首轮合格率记下来。**
+还有一个无需额外模型调用的收益：**把首轮合格率记下来。**
 
-重试次数的分布是这套系统最有价值的指标之一。首轮合格率很低（比如 40%），说明你的字段说明或 schema 本身有问题 —— 该去改 prompt，而不是让重试来兜。首轮合格率高、偶发重试，那才是健康状态。只统计「最终成功率」会把这两件事混成一个数字，让你永远看不到前一种问题。
+重试次数的分布是这套系统最有价值的指标之一。首轮通过率偏低是一个诊断信号，但原因也可能是输入分布、模型/API 变更、评估集设计或字段定义不合适；应结合错误类型、分层样本与人工标注排查，不能单凭一个百分比断定 prompt 有问题。只统计最终通过率会掩盖重试成本，因此还应一起记录首轮通过率、最终通过率、尝试次数分布和人工接管率。
 
 ## 常见坑
 
-**校验失败就原样重发。** 实测 0/6 修正。重试动作本身不携带信息，等于再掷一次骰子。
+**校验失败就原样重发。** 本节保留的 0/6 是无法复核的历史摘要。相同上下文不会增加新证据；是否会改变输出取决于采样和 endpoint，需在自己的评估集验证。
 
-**只说「没通过校验，请重试」。** 同样 0/6。模型需要知道**具体哪个字段、期望什么、实际是什么**。
+**只说「没通过校验，请重试」。** 旧摘要记为 0/6，未独立复核。反馈应指出安全可公开的字段路径与约束类别；仅在经过数据分类和脱敏后才附实际值，不要把错误对象中的原始 input 无差别发回。
 
-**把 `str(exc)` 直接发回去。** 它带换行、缩进和文档链接，是给人看的。用 `exc.json()` 这类结构化形式，模型才抓得住重点。
+**把完整异常对象直接发回去。** 它可能包含原始 input、context 或实现细节。先按字段白名单构造错误反馈；机器可读不代表可以安全披露。
 
 **不设重试上限。** 每次重试都是一次完整往返，在模型确实做不到的任务上会持续烧钱。
 
-**没想好降级路径。** 上线后才发现的兜底分支通常不被测试覆盖；而在 `temperature=1` 下，失败是必然会出现的一类事件，不是异常事件。
+**没想好降级路径。** 上线后才发现的兜底分支通常不被测试覆盖；而即使失败概率很低，生产流程也应设计并测试失败分支；温度参数本身并不能保证失败必然发生。

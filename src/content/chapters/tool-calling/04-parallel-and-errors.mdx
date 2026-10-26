@@ -4,11 +4,11 @@ title: 并行调用、错误处理与幂等
 status: drafting
 ---
 
-模型可以在一轮里请求多个工具。这带来效率，也把一整套你熟悉的问题一起带了过来：顺序、失败、重复执行。
+模型可以在一轮里请求多个工具。协议允许宿主并行、串行或混合执行；是否并发要由工具依赖、副作用和资源上限决定。一次超时也不等于操作没有发生，因此还要考虑失败回填、重试和业务幂等。
 
-这一节的三组实验有一个共同的意外之处：**模型在这些场景里比传言中谨慎得多**。但风险并没有消失，只是换了地方。
+本节保留了 2026-10-08 的三组历史模型观察，但原始逐次响应和评分器没有归档。它们只能说明当时摘要记录了什么，不能证明模型通常会如何处理错误或不确定结果。可靠行为要由协议处理、宿主策略和接收方幂等共同保证。
 
-## 实测一：它确实会并行调用
+## 历史观察一：一次响应可以请求多个工具
 
 给两个工具（查汇率、查订单金额），问一个需要四个查询的问题：
 
@@ -22,25 +22,25 @@ status: drafting
   get_rate({"from":"USD","to":"CNY"})
 ```
 
-（实测数据，`deepseek-flash`，2026-10-08。对照：只问一个订单时，一轮里只发起 1 个调用。）
+（2026-10-08 `deepseek-flash` 历史 stdout 摘要；逐次请求、响应和 scorer 未归档。本节无法独立重放，也不能把该摘要当作当前模型的并行率。）
 
-**一次响应里带多个 `tool_use` 块** —— 你要做的是把它们全部执行、全部回填，而不是只处理第一个。
+Anthropic Messages API 的一个 assistant turn 可以包含多个 `tool_use` 块。对每个 client tool call 都要返回匹配的 `tool_result`，并在同一条 user 消息中把结果放在文本之前；API 不规定你必须并行执行。独立的只读操作适合并发，有依赖、有共享状态或有副作用的操作则应按宿主策略串行或混合执行。[Anthropic Parallel tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use)、[Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)。
 
-这带来一个你在别处也遇到过的问题：**并行执行意味着「部分成功」是常态。** 四个查询里有一个失败，是很正常的事。怎么把这种「三个成功一个失败」回填给模型，决定了它接下来会做什么。
+并发会带来部分成功：批次里的一个操作失败，不代表其他操作也失败。宿主要逐项保留结果和 `tool_use_id` 对应关系；如果依赖或安全策略导致某项没有执行，也应按协议返回该项的失败结果，而不能把它悄悄丢掉。
 
-## 实测二：失败结果怎么回传，行为完全不同
+## 历史观察二：失败结果的回填
 
 三个调用里让中间那个失败（查询一个不存在的 SKU），只改**失败结果的形态**：
 
-| 变体 | 失败的 `tool_result` | 模型接下来的行为（各跑 3 次） |
+| 变体 | 失败的 `tool_result` | 旧摘要记录的行为（每组称跑 3 次） |
 |---|---|---|
 | **A** | 不标 `is_error`，内容只有 `{"error":"500"}` | 不重试 ×3 |
 | **B** | 标 `is_error: true`，内容同样只有 `{"error":"500"}` | 不重试 / **重试 1 次** / **重试 1 次** |
 | **C** | 标 `is_error: true`，内容说明原因与下一步 | 不重试 ×3 |
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（2026-10-08 `deepseek-flash` 历史 stdout 摘要。）
 
-三种行为都不同，每一种都有问题——只有 C 是对的。
+以上是历史摘要，不是可复核的逐次实验：原始响应、请求参数、样本映射与评分器未归档，分母口径也无法独立确认。本节没有测量普遍重试倾向。下面只讨论这份摘要报告了什么，不估算一般错误率，不推断 `is_error` 或错误文案对其他模型的因果效果。
 
 ### A：把错误当数据汇报了
 
@@ -53,32 +53,29 @@ status: drafting
 | SKU-3 | 7 |
 ```
 
-**它把那条错误条目当成了「查询结果」写进了表格。** 用户会看到一个把错误混在数据里的回复。
+旧摘要称，它把那条错误条目当成了「查询结果」。若错误只是一个未标记的普通结果，调用方也难以区分业务数据与执行失败；但本例没有原始响应，不能证明其他模型或提示下会出现相同行为。
 
 ### B：做了一次无意义的重试
 
-标了 `is_error` 之后，模型知道这是失败 —— 于是它**用完全相同的参数又调了一次**。同一个不存在的 SKU，同样的请求，注定再失败一次。3 次里有 2 次是这样。
-
-这是一个很典型的模式：**知道「失败了」，但不知道「为什么失败」，于是选择重试。** 而重试的代价是实打实的（一次往返 + token），收益是零。
+旧摘要称，标了 `is_error` 之后，模型有 2 次用完全相同的参数又调了一次。是否重试会随 provider、模型、上下文和错误类型而变；`is_error` 是工具执行错误的协议标记，不是可靠的重试指令。[Anthropic Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)。
 
 ### C：带信息量的错误
 
-第三个变体把原因写清楚了（「系统中不存在 SKU-404，可能是编码错误或已下架」），模型就不重试了 —— 它知道重试不会有不同结果，直接按「这一项查不到」来处理。
+旧摘要称，第三种文案下模型没有重试。对确定性的 `sku_not_found`，解释失败原因和下一步通常比返回裸错误码更有用；这仍不能保证模型一定采取预期动作。宿主应独立分类可重试错误、限制重试次数，并验证最终结果。
 
 <Mermaid
   chart={`
 flowchart TB
-    F["一个工具调用失败了"] --> A{"回填时标了<br/>is_error 吗"}
-    A -->|"没标"| A1["模型当作查询结果<br/>把错误混进数据里展示"]
-    A -->|"标了"| B{"错误内容里<br/>有原因吗"}
-    B -->|"只有错误码"| B1["模型知道失败了<br/>但只能原地重试一次"]
-    B -->|"有原因与下一步"| C1["模型知道重试无意义<br/>按失败处理并继续"]
+    F["工具调用执行失败"] --> A["宿主按协议回填 is_error"]
+    A --> B["提供安全的错误类别与可行下一步"]
+    B --> C["宿主按错误类型/预算决定是否重试"]
+    C --> D["验证业务后置条件，再向用户报告"]
 `}
 />
 
-**所以回填失败结果时有两件事要做，缺一不可：标 `is_error`，以及写清原因。** 只做第一件比不做还糟 —— 它会触发一次注定失败的重试。
+回填时应准确标记工具执行错误，并提供足以理解问题的安全信息。面向模型的提示只是建议；是否重试、最多重试几次、何时停止，都由宿主策略控制。不要把原始异常、凭据或内部细节直接回填。
 
-## 实测三：重复执行的风险不在模型这一侧
+## 历史观察三：状态未知时的重复风险
 
 带副作用的工具（下单、发消息、转账）最怕重复执行。我让退款工具在第一次调用后返回「**超时，状态未知**」：
 
@@ -87,65 +84,145 @@ flowchart TB
 | 「已创建，退款单号 RF-77」 | 1 次 | 正常汇总 |
 | 「请求超时，无法确认是否已创建」 | **1 次** | 明确说「我不会贸然重试」并解释原因 |
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（2026-10-08 `deepseek-flash` 历史 stdout 摘要；原始请求、响应和 scorer 未归档，1/1 观察无法独立复核。）
 
-第二种情况才是关键：状态未知时，模型**主动选择了不重试**，理由是「退款是不可撤销的资金操作，如果已经成功过账，重试会造成重复退款」。它甚至把这个不确定性明确告诉了用户。
+摘要称，该次状态未知时模型选择不重试。单次反应不能说明模型通常谨慎，也不能消除重复风险：模型可能再次提出动作，SDK、网关、队列或恢复逻辑也可能重放请求。调用方超时只表示没有收到确认，不等于接收方没有提交副作用。
 
-**这意味着重复执行的风险主要不在模型这一侧。** 该防的是另外两层：
+重复执行可能来自多个边界：
 
 1. **你自己的代码层重试** —— HTTP 客户端、网关、任务队列都可能因为超时而重发
 2. **流式连接中断后整轮重放** —— 客户端没收到完整响应，把整个请求重发一遍
 
-这两层里，模型没有参与决策。**所以幂等键仍然是必须的**：让调用方带一个唯一标识，服务端按标识去重，重复请求返回首次的结果而不是再执行一遍。
+需要让重试复用一个稳定的**业务动作 ID**。这个 ID 由可信宿主为已持久化的操作意图创建，并在同一动作的每次重试中复用；不能直接拿模型的 `tool_use.id` 当持久化幂等键，因为它只负责把协议结果配回本次工具调用。接收方必须原子地保存幂等键、请求摘要和首次结果；同键不同请求应拒绝。Stripe 文档展示了一种 API 实现：保存首次请求的状态码与响应体，并在重复键时返回保存的结果。[Stripe idempotency](https://docs.stripe.com/api/errors/handling)。
 
-而幂等键应该由**代码层生成并注入**，不要指望模型每次都传对 —— 它可能换个措辞、换个顺序，那就成了一个新的键，去重就失效了。
+幂等的边界也要说清楚：当业务写入和幂等记录在同一个数据库事务内时，可以原子地完成本地去重；当副作用发生在另一个系统时，只有下游也支持同一稳定键，或采用 outbox、对账、补偿等协议，才能处理“对方已提交、我方没收到确认”的窗口。仅在调用方内存里缓存结果，不提供跨进程或崩溃后的 exactly-once 保证。
 
-而幂等键应该由**代码层生成并注入**，不要指望模型每次都传对 —— 它可能换个措辞、换个顺序，那就成了一个新的键，去重就失效了。
+下面的 SQLite 代码只演示接收方如何在同一个本地数据库事务里提交业务变化和首次响应；它本身不实现宿主的操作意图持久化。调用前，可信宿主必须先把稳定 `action_id` 绑定到已持久化的操作意图，并确保同一动作的重试继续使用该 ID。客户端 request id 也可以参与重放去重，但关键是重试能映射回同一个已持久化动作。
 
-### 在 LLM 循环里怎么注入幂等键
-
-分布式老手知道幂等键是什么，难的是它在这里的位置：工具是由模型「请求」的，而键必须由你的代码决定。做法是**在工具执行那一层包一层**，模型完全看不到键的存在。
+**幂等键不是身份凭据，也不授予访问权限。** 本示例把 `tenant_id` 当作普通输入，不实现身份认证或对象级授权。生产系统应从可信认证上下文确定租户，并在返回已保存结果或执行新副作用之前都做授权检查；不能因为请求命中了幂等记录就跳过授权。[OWASP Authorization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html) 建议对每个请求及其具体对象执行访问控制检查。
 
 ```python
+import hashlib
 import json
+import sqlite3
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-# 真实系统里换成 Redis：SETNX 占位 + 存首次结果。进程内字典只够演示。
-_done: dict[str, dict] = {}
+
+class IdempotencyConflict(ValueError):
+    pass
 
 
-def idempotent(scope_id: str, tool_call_id: str, fn):
-    """把「一次逻辑调用」映射到一个键：重复执行时返回首次结果。"
+def initialize(database: str) -> None:
+    with sqlite3.connect(database) as db:
+        db.executescript("""
+        CREATE TABLE IF NOT EXISTS balances (
+            tenant_id TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            credit_cents INTEGER NOT NULL,
+            PRIMARY KEY (tenant_id, account_id)
+        );
+        CREATE TABLE IF NOT EXISTS action_results (
+            tenant_id TEXT NOT NULL,
+            action_id TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            response_json TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, action_id)
+        );
+        """)
+        db.execute(
+            "INSERT OR IGNORE INTO balances VALUES (?, ?, 0)",
+            ("tenant-a", "account-1"),
+        )
 
-    键由两段拼成，各有作用：
-      scope_id      —— 一次用户请求（或一次 agent 任务）的 id
-      tool_call_id  —— 协议里那个 tool_use.id，天然唯一且与本次调用一一对应
-    这样同一个逻辑调用无论被重发多少次（客户端重试、网关重发、整轮重放），
-    都命中同一个键，副作用只发生一次。
-    """
-    key = f"{scope_id}:{tool_call_id}"
 
-    def wrapped(**kwargs):
-        if key in _done:
-            return _done[key]                 # 首次结果，不重复执行
-        result = fn(**kwargs)
-        _done[key] = result
-        return result
+def credit_once(
+    database: str, tenant_id: str, action_id: str, account_id: str, amount_cents: int
+) -> dict:
+    for field, value in (
+        ("tenant_id", tenant_id),
+        ("action_id", action_id),
+        ("account_id", account_id),
+    ):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{field} must be a non-empty string")
+    if isinstance(amount_cents, bool) or not isinstance(amount_cents, int) or amount_cents <= 0:
+        raise ValueError("amount_cents must be a positive integer")
 
-    return wrapped
+    request = {"account_id": account_id, "amount_cents": amount_cents}
+    canonical = json.dumps(request, sort_keys=True, separators=(",", ":"))
+    request_hash = hashlib.sha256(canonical.encode()).hexdigest()
+    db = sqlite3.connect(database, timeout=10)
+    try:
+        db.execute("PRAGMA busy_timeout = 10000")
+        db.execute("BEGIN IMMEDIATE")
+        existing = db.execute(
+            "SELECT request_hash, response_json FROM action_results "
+            "WHERE tenant_id = ? AND action_id = ?",
+            (tenant_id, action_id),
+        ).fetchone()
+        if existing:
+            if existing[0] != request_hash:
+                raise IdempotencyConflict("action_id was reused with different arguments")
+            db.commit()
+            return json.loads(existing[1])
+
+        updated = db.execute(
+            "UPDATE balances SET credit_cents = credit_cents + ? "
+            "WHERE tenant_id = ? AND account_id = ?",
+            (amount_cents, tenant_id, account_id),
+        )
+        if updated.rowcount != 1:
+            raise KeyError("account_not_found")
+        balance = db.execute(
+            "SELECT credit_cents FROM balances WHERE tenant_id = ? AND account_id = ?",
+            (tenant_id, account_id),
+        ).fetchone()[0]
+        response = {"account_id": account_id, "credited_cents": amount_cents, "balance_cents": balance}
+        db.execute(
+            "INSERT INTO action_results VALUES (?, ?, ?, ?)",
+            (tenant_id, action_id, request_hash, json.dumps(response, sort_keys=True)),
+        )
+        db.commit()
+        return response
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def local_checks() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        database = str(Path(directory) / "idempotency.sqlite3")
+        initialize(database)
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(pool.map(
+                lambda _: credit_once(database, "tenant-a", "action-1", "account-1", 100),
+                range(6),
+            ))
+        assert all(result == results[0] for result in results)
+        assert results[0]["balance_cents"] == 100
+        try:
+            credit_once(database, "tenant-a", "action-1", "account-1", 101)
+        except IdempotencyConflict:
+            pass
+        else:
+            raise AssertionError("same action_id with different arguments must fail")
+        second = credit_once(database, "tenant-a", "action-2", "account-1", 50)
+        assert second["balance_cents"] == 150
+
+
+if __name__ == "__main__":
+    local_checks()
+    print("SQLite idempotency checks passed")
 ```
 
-**键的作用域怎么选，比键本身更重要。** 三种常见选择，后果完全不同：
+此例只证明“同一 SQLite 数据库事务内”的并发重放和参数冲突行为。跨数据库或外部支付/消息系统仍需接收方幂等、持久化动作账本和未知结果对账；它不能证明全链路 exactly-once。
+## 一个历史 400：thinking 块的往返条件
 
-| 作用域 | 覆盖什么 | 风险 |
-|---|---|---|
-| 一次用户请求（推荐） | 该请求内的所有重试与重发 | 两次独立的用户请求不会被误去重 |
-| 单个 `tool_use.id` | 同一轮内的重发 | 粒度最细，但跨轮重放覆盖不到 |
-| 一整轮对话 | 整段会话 | 太粗 —— 用户真的想再下一单时会被当成重复 |
-
-还有一条容易踩空：**流式中断后整轮重放时，`scope_id` 必须来自客户端生成的 request id**，不能是服务端自增序号。用自增序号的话，重放会拿到一个新 id，去重直接失效 —— 而且你在监控上看到的是「两个正常请求」。
-## 一个真实的报错：手工拼消息历史会漏掉 thinking 块
-
-写这一节时我自己踩到的。为了构造「三个调用其中一个失败」的场景，我手工拼了一段 assistant 消息，里面只放了三个 `tool_use` 块：
+旧 stdout 摘要记录了一次构造失败场景时的 400。原始 HTTP 响应未归档，以下报错正文作为历史日志保留，不能当作当前 Anthropic API 的稳定错误文案：
 
 ```json
 {
@@ -156,37 +233,28 @@ def idempotent(scope_id: str, tool_call_id: str, fn):
 }
 ```
 
-HTTP 400。原因是这个模型的响应里带有 `thinking` 块，而**消息历史必须把 assistant 的完整 `content` 原样带回** —— 不能只挑你需要的那几个块。
+在 Anthropic Messages API 中，启用 extended thinking 并继续工具调用时，必须把 assistant turn 中的 `thinking` / `redacted_thinking` 块原样带回；`tool_result` 还必须按 ID 对应每个 client `tool_use`。不要把这个规则写成“所有 provider 都要求回传完整 content 数组”的通用结论。[Anthropic API errors](https://platform.claude.com/docs/en/api/errors)、[Extended thinking](https://platform.claude.com/docs/en/build-with-claude/extended-thinking)。
 
-这条和第 1 节的「常见坑」是同一条，但触发场景更隐蔽：**你并不是在手动改造模型的输出，只是在构造测试数据**。同样的规则仍然适用。
+> 历史脚本摘要称它把这个 400 吞掉并打印成空白。无论输出是否为空白，都应先检查 HTTP 状态、SDK 异常和 `stop_reason`；HTTP 错误与 HTTP 200 下的非终态 `stop_reason` 是不同故障面。[Anthropic stop reasons](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons)。
 
-> 顺带一个方法论上的教训：我的实验脚本把这个 400 吞掉了，打印出来是一行空白。**我差点把它解释成「模型在这个场景下不输出任何东西」。** 这和长上下文下 `max_tokens` 被吃光那次是同一类错误 —— **空白输出先查状态码与 `stop_reason`，再谈解释。**
+Anthropic 当前文档还记录了一种不同情况：Messages API 可能以 `end_turn` 返回空响应，尤其是工具结果之后；不要把相同的空响应原样回放并期待它自行续写。先检查工具结果消息形态；若确需继续，宿主可追加新的 user continuation prompt。下面的离线循环把无可展示文本作为 `completed_without_text` 交给调用方处理，不把它伪装成答案，也不自动重试。[Anthropic empty responses with `end_turn`](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons#empty-responses-with-end_turn)。
 
 ## 完整可运行代码
 
 ```python
 # parallel_tool_loop.py
-"""并行工具调用 + 部分失败的回填。
+"""离线演示 client-tool 并行调用、逐项错误回填与 stop_reason 分流。
 
-两个关键点：
-  1. 一轮里的**所有** tool_use 都要执行、都要回填（协议强制，漏一个就 400）
-  2. 失败的那条必须标 is_error，并且带上「为什么失败、下一步能做什么」
+ScriptedClient 让本文件可以直接运行，不读取密钥、不发 provider 请求。
+生产接入可注入实现相同 messages.create 接口的客户端。
 """
 
 import json
-import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Any
 
-import anthropic
-
-client = anthropic.Anthropic(
-    api_key=(
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    ),
-    base_url=os.environ.get("ANTHROPIC_BASE_URL"),
-)
-MODEL = os.environ["VERIFY_MODEL"]
+MAX_WORKERS = 4
 
 TOOLS = [
     {
@@ -203,6 +271,36 @@ TOOLS = [
 KNOWN = {"SKU-1": 42, "SKU-3": 7}
 
 
+@dataclass
+class Block:
+    type: str
+    id: str = ""
+    name: str = ""
+    input: object = None
+    text: str = ""
+
+
+@dataclass
+class Response:
+    stop_reason: str
+    content: list[Block]
+
+
+class ScriptedMessages:
+    def __init__(self, responses: list[Response]):
+        self.responses = iter(responses)
+        self.requests: list[dict[str, Any]] = []
+
+    def create(self, **request: Any) -> Response:
+        self.requests.append(request)
+        return next(self.responses)
+
+
+class ScriptedClient:
+    def __init__(self, responses: list[Response]):
+        self.messages = ScriptedMessages(responses)
+
+
 def get_stock(sku: str) -> dict:
     if sku not in KNOWN:
         # 返回结构化的失败，而不是抛异常 —— 模型看不到栈
@@ -216,77 +314,186 @@ class SkuNotFound(Exception):
         self.sku = sku
 
 
-def fill(block) -> dict:
-    """把一个 tool_use 变成 tool_result。**每个块都必须产出结果。**"""
+def tool_result(block: Block, payload: dict, *, is_error: bool) -> dict:
+    result = {
+        "type": "tool_result",
+        "tool_use_id": block.id,
+        "content": json.dumps(payload, ensure_ascii=False),
+    }
+    if is_error:
+        result["is_error"] = True
+    return result
+
+
+def fill(block: Block) -> dict:
+    """Convert one client tool call into its paired result, failing closed."""
+    if (
+        block.type != "tool_use"
+        or not isinstance(block.id, str)
+        or not block.id.strip()
+    ):
+        raise ValueError("cannot create a result without a valid tool_use id")
+    if block.name != "get_stock":
+        return tool_result(block, {"error": "unknown_tool"}, is_error=True)
+    if (
+        not isinstance(block.input, dict)
+        or set(block.input) != {"sku"}
+        or not isinstance(block.input.get("sku"), str)
+        or not block.input["sku"].strip()
+    ):
+        return tool_result(
+            block,
+            {"error": "invalid_arguments", "message": "Expected one non-empty sku string."},
+            is_error=True,
+        )
     try:
-        output = get_stock(**block.input)
-        return {
-            "type": "tool_result",
-            "tool_use_id": block.id,
-            "content": json.dumps(output, ensure_ascii=False),
-        }
+        return tool_result(block, get_stock(block.input["sku"]), is_error=False)
     except SkuNotFound as exc:
-        # 标 is_error + 写清原因与下一步。缺任一项，模型要么把错误当数据，
-        # 要么用同样的参数原地重试一次（本节实测）。
-        return {
-            "type": "tool_result",
-            "tool_use_id": block.id,
-            "is_error": True,
-            "content": json.dumps(
-                {
-                    "error": "sku_not_found",
-                    "message": f"系统中不存在编码 {exc.sku}。",
-                    "hint": "可能是编码输入错误，或该商品已下架。请向用户确认编码后重试。",
-                    "retryable": False,   # 明确告诉它：重试没有意义
-                },
-                ensure_ascii=False,
-            ),
-        }
+        return tool_result(
+            block,
+            {
+                "error": "sku_not_found",
+                "message": f"系统中不存在编码 {exc.sku}。",
+                "hint": "请先向用户确认编码；不要原样重试这个确定性错误。",
+            },
+            is_error=True,
+        )
+    except Exception:
+        # Do not leak exception details; the host still controls retry policy.
+        return tool_result(
+            block,
+            {"error": "internal_error", "message": "库存查询失败，请稍后确认状态再决定是否重试。"},
+            is_error=True,
+        )
 
 
-def run(question: str, max_rounds: int = 8) -> str:
+def run(client: ScriptedClient, question: str, max_rounds: int = 8) -> str:
     messages = [{"role": "user", "content": question}]
 
     for _ in range(max_rounds):
         resp = client.messages.create(
-            model=MODEL, max_tokens=4000, tools=TOOLS, messages=messages,
+            model="offline-fixture", max_tokens=4000, tools=TOOLS, messages=messages,
         )
+        if resp.stop_reason == "end_turn":
+            answer = "".join(
+                block.text for block in resp.content if block.type == "text"
+            )
+            return "completed: " + answer if answer.strip() else "completed_without_text"
         if resp.stop_reason != "tool_use":
-            return "".join(b.text for b in resp.content if b.type == "text")
+            # Truncation, refusal, pause, stop_sequence and unknown reasons are not success.
+            return f"not_completed: stop_reason={resp.stop_reason}"
 
-        # 整个 content 数组原样带回（含 thinking 块，少一个就 400）
+        blocks = [block for block in resp.content if block.type == "tool_use"]
+        ids = [block.id for block in blocks]
+        if (
+            not blocks
+            or not all(isinstance(block.id, str) and block.id.strip() for block in blocks)
+            or len(ids) != len(set(ids))
+        ):
+            return "not_completed: malformed_tool_use_response"
+
+        # Preserve the assistant content exactly; do not reconstruct selected blocks.
         messages.append({"role": "assistant", "content": resp.content})
-
-        blocks = [b for b in resp.content if b.type == "tool_use"]
-        # 并行执行：这些调用之间没有依赖
-        with ThreadPoolExecutor(max_workers=len(blocks)) as pool:
+        # This example's stock lookups are independent reads. Bound simultaneous workers.
+        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(blocks))) as pool:
             results = list(pool.map(fill, blocks))
-
+        # One user message contains every result, in original call order.
         messages.append({"role": "user", "content": results})
 
-    return f"达到 {max_rounds} 轮上限"
+    return f"not_completed: max_rounds={max_rounds}"
+
+
+def local_checks() -> None:
+    global get_stock
+    first = Response("tool_use", [
+        Block("tool_use", "call-1", "get_stock", {"sku": "SKU-1"}),
+        Block("tool_use", "call-404", "get_stock", {"sku": "SKU-404"}),
+        Block("tool_use", "call-invalid", "get_stock", {"sku": 12}),
+    ])
+    client = ScriptedClient([first, Response("end_turn", [Block("text", text="查询完成")])])
+    assert run(client, "查询 SKU 库存") == "completed: 查询完成"
+    assistant = client.messages.requests[1]["messages"][1]
+    assert assistant["content"] is first.content
+    results = client.messages.requests[1]["messages"][2]["content"]
+    assert [item["tool_use_id"] for item in results] == ["call-1", "call-404", "call-invalid"]
+    assert "SKU-1" in results[0]["content"] and "is_error" not in results[0]
+    assert results[1]["is_error"] is True and "sku_not_found" in results[1]["content"]
+    assert results[2]["is_error"] is True and "invalid_arguments" in results[2]["content"]
+    assert fill(Block("tool_use", "unknown-1", "not_registered", {}))["is_error"] is True
+
+    for reason in ("max_tokens", "refusal", "pause_turn", "stop_sequence", "unknown"):
+        client = ScriptedClient([Response(reason, [Block("text", text="partial")])])
+        assert run(client, "query") == f"not_completed: stop_reason={reason}"
+        assert len(client.messages.requests) == 1
+
+    empty = ScriptedClient([Response("tool_use", [Block("text", text="not a tool")])])
+    assert run(empty, "query") == "not_completed: malformed_tool_use_response"
+    capped = ScriptedClient([first, first])
+    assert run(capped, "query", max_rounds=1) == "not_completed: max_rounds=1"
+
+    no_text = ScriptedClient([Response("end_turn", [])])
+    assert run(no_text, "query") == "completed_without_text"
+
+    original_get_stock = get_stock
+    dispatched = []
+    def tracked_get_stock(sku: str) -> dict:
+        dispatched.append(sku)
+        return original_get_stock(sku)
+    get_stock = tracked_get_stock
+    try:
+        malformed = ScriptedClient([Response("tool_use", [
+            Block("tool_use", "duplicate", "get_stock", {"sku": "SKU-1"}),
+            Block("tool_use", "duplicate", "get_stock", {"sku": "SKU-3"}),
+        ])])
+        assert run(malformed, "query") == "not_completed: malformed_tool_use_response"
+        assert dispatched == []
+        assert len(malformed.messages.requests) == 1
+    finally:
+        get_stock = original_get_stock
+
+    for invalid_id in (None, 12, "", "   "):
+        try:
+            fill(Block("tool_use", invalid_id, "get_stock", {"sku": "SKU-1"}))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("fill must reject missing or malformed tool IDs")
+        malformed_id = ScriptedClient([Response("tool_use", [
+            Block("tool_use", invalid_id, "get_stock", {"sku": "SKU-1"}),
+        ])])
+        assert run(malformed_id, "query") == "not_completed: malformed_tool_use_response"
+        assert len(malformed_id.messages.requests) == 1
 
 
 if __name__ == "__main__":
-    print(run("查一下这三个 SKU 的库存：SKU-1、SKU-404、SKU-3。"))
+    local_checks()
+    client = ScriptedClient([
+        Response("tool_use", [
+            Block("tool_use", "call-1", "get_stock", {"sku": "SKU-1"}),
+            Block("tool_use", "call-404", "get_stock", {"sku": "SKU-404"}),
+            Block("tool_use", "call-3", "get_stock", {"sku": "SKU-3"}),
+        ]),
+        Response("end_turn", [Block("text", text="已返回两项库存，另有一项编码不存在。")]),
+    ])
+    print(run(client, "查询 SKU-1、SKU-404 和 SKU-3 的库存。"))
 ```
 
-> **实跑状态**：本文表格与报错报文是**实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。
+> **实跑状态（2026-10-20）**：本节两个 Python 围栏均在本地离线执行并通过 fixture；不读取 API Key、不访问 provider、不产生真实库存或资金副作用。2026-10-08 的数据与报错仅为历史 stdout 摘要，原始请求/响应和 scorer 未归档，无法独立重放。Anthropic 协议事实以旁注的官方文档为准。
 
-**并行调用之间不要共享可变状态。** 本节用线程池并行执行，前提是这些调用彼此独立。真实工具常常不是 —— 两个都写同一张订单、两个都改同一份文件。一旦存在依赖，就必须串行或加锁；而模型并不知道你的工具之间有依赖，它只会按「看起来能并行」来分组。
+**并行调用之间不要无界地共享写状态。** 只读、互相独立的查询通常可以并发；有顺序约束的工具要串行，有共享写入的工具要依据事务、锁或版本检查设计并发控制。单纯给代码加锁也不能解决跨进程一致性。API 返回多个调用时，宿主决定执行顺序与并发度。[Anthropic Parallel tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use)。
 
 ## 常见坑
 
-**只处理第一个 `tool_use`。** 一轮里可能有多个。所有的都要执行、都要回填 —— 漏一个就是 400（协议会拦，这是好事）。
+**只处理第一个 `tool_use`。** 一轮里可能有多个 client tool call。每个都要执行或明确拒绝，并在同一 user 消息里按 ID 回填；不应因为其中一项失败就丢掉其他结果。
 
-**回填失败结果时不标 `is_error`。** 实测：不标的话，模型会把那条错误**当成查询结果写进表格**展示给用户。3/3 都是这样。
+**把历史小样本写成稳定行为规则。** `is_error` 用来标记工具执行错误；错误说明能帮助后续处理，但模型是否重试由 provider、上下文和错误语义影响，宿主仍需规定重试范围和预算。
 
-**只标 `is_error` 但不写原因。** 实测：模型知道失败了，但只能**用同样的参数原地重试**（3 次里 2 次）。这次重试注定失败，纯粹浪费一次往返。
+**以为 `is_error` 会决定重试。** 它描述结果类别，不是宿主的重试控制器。确定性业务错误、临时传输错误和“效果未知”必须区分；需要重试时由代码按错误类别执行，且必须有上限。
 
-**以为重复执行的风险主要来自模型。** 实测：写操作返回「状态未知」时，模型**主动选择不重试**，还解释了原因。真正会重复发请求的是你的 HTTP 客户端、网关和任务队列 —— **幂等键该防的是它们**。
+**把一次模型不重试当成幂等证据。** 本节状态未知的旧记录只有单次摘要。工具重放、客户端重试和接收方提交之间的窗口仍需稳定 `action_id`、原子结果账本或下游幂等支持。
 
-**指望模型自己生成幂等键。** 它可能换个措辞、换个顺序，于是变成一个新的键，去重就失效了。幂等键由代码层生成并注入。
+**把 `tool_use.id` 当业务幂等键。** 它用于协议结果配对；业务幂等键应标识一个持久化动作意图，并在该动作的所有重试中稳定复用。
 
-**手工构造消息历史时只挑需要的块。** 实测报错：`The content[].thinking in the thinking mode must be passed back to the API.`（400）。assistant 的 `content` 必须原样带回。
+**把特定 thinking 报错泛化到所有 API。** Anthropic 在 extended thinking 工具续轮时要求 thinking 块原样往返；无论 provider 如何，先按它自己的协议处理消息配对与续轮状态。
 
 **看到空输出就下结论。** 本节那个 400 在我的脚本里显示为一行空白，差点被我解释成「模型什么都不输出」。**先查状态码和 `stop_reason`。**

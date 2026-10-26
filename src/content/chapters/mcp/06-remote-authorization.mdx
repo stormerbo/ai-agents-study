@@ -1,0 +1,122 @@
+---
+lesson: mcp/remote-authorization
+title: 远程授权：token 属于哪个资源
+status: drafting
+---
+
+## 本节要解决什么
+
+本地 stdio server 和远程 HTTP server 都能提供 MCP 工具，但它们不是同一套凭据流程。把 API Key 放进本地子进程环境变量，与让用户通过 OAuth 授权远程 MCP server，是两种不同的信任边界。本节交付物是一份按传输选择凭据的决策表、一次远程 HTTP 的授权链路，以及能区分认证失败和权限不足的最小判定模型。验收判据是：HTTP access token 有明确的目标 resource，服务端核对 audience 与权限；stdio 子进程只拿到明确允许的环境变量；任何情况下都不把一个 server 收到的 token 原样转发给另一个资源。
+
+## 先认清谁在向谁授权
+
+**认证**（authentication）回答“调用者是谁”；**授权**（authorization）回答“这个调用者能对哪个资源做什么”。OAuth authorization server（AS）负责交互并签发 access token；MCP server 在远程授权流程中是受保护资源（resource server），验证收到的 token；MCP client 代表用户访问它。MCP 不规定企业的用户目录、业务角色或每个工具的最终授权策略。token 验证通过后，工具执行前仍应根据可信 principal、租户、scope 和业务规则作出授权决定。
+
+Access token 不能只看“签名是真的”。它必须是由可接受 issuer 签发、在有效期内、且**面向当前 MCP server**的 token。audience（受众）就是 token 的目标资源边界：发给 `https://api.example.com` 的 token，不能因为同一个用户登录过，就当作发给 `https://mcp.example.com`。如果 MCP server 是 API 代理，MCP client 发给 MCP server 的 token 仍只授权访问 MCP resource；它不是下游 GitHub、工单或数据库 API 的凭证。代理需要为下游资源执行独立授权，不能偷懒做 token passthrough。
+
+## 两条传输路径，两种凭据管理
+
+| 场景 | MCP 规范边界 | 凭据从哪里来 | 主要检查 |
+| --- | --- | --- | --- |
+| 本地 stdio | 不使用 MCP HTTP OAuth 规范 | host 显式传给子进程的环境变量或本机凭据存储 | 子进程来源、操作系统权限、环境变量白名单、日志脱敏 |
+| 远程 Streamable HTTP | 按 MCP 授权规范实现可选的 OAuth 授权 | client 通过发现与授权流程取得发给该 MCP resource 的 token | issuer、有效期、audience、scope、业务 principal |
+
+stdio 的子进程通常以当前用户身份运行，因此能读取的文件、网络和环境变量取决于操作系统权限。不要把整个 host 环境无差别复制给 server；用明确白名单，只传它真正需要的凭据，并把日志写到 stderr。环境变量只是注入方式，不等于隔离或安全存储。涉及高权限本地能力时，还要靠容器、沙箱、独立账户或系统权限进一步缩小可达范围。
+
+远程 HTTP 的 OAuth 是可选能力；server 支持时，应按固定的 MCP 规范版本实现。2026-07-28 规范明确：HTTP-based transport 的实现 SHOULD 遵循授权规范；STDIO 实现 SHOULD NOT 照搬它，而应从环境中获取凭据。不要把本地传输的结论外推成“stdio 不需要任何授权”：stdio host 仍需决定是否启动这个程序、给它什么能力和秘密。
+
+## HTTP 授权的完整检查链
+
+<Mermaid
+  chart={`
+sequenceDiagram
+    participant C as MCP client
+    participant M as MCP server / resource
+    participant A as Authorization server
+    participant U as 用户
+    C->>M: 请求（无 token）
+    M-->>C: 401 + WWW-Authenticate / resource_metadata
+    C->>M: 读取 Protected Resource Metadata
+    M-->>C: authorization_servers + resource 标识
+    C->>A: 发现 metadata、取得 client_id、带 resource 参数授权
+    A->>U: 登录与授权确认
+    U-->>A: 同意
+    A-->>C: 发放面向 MCP resource 的 access token
+    C->>M: 每个 HTTP 请求携带 Bearer token
+    M->>M: 验签、issuer、有效期、audience、scope、业务授权
+    M-->>C: 成功；或 401/403 与适当 challenge
+`}
+/>
+
+流程里的 Protected Resource Metadata（PRM）让 client 找到可签发此 resource token 的 AS。开始授权前，client 必须通过预注册、CIMD 或 DCR 取得 client ID。若它支持多种方式，规范建议按此顺序选择：优先使用已为该 server 预注册的 client 信息；否则仅在 AS metadata 声明支持时用 CIMD；再以 AS metadata 声明的 registration endpoint 支持 DCR 作为回退；都不可用时提示用户提供 client 信息。client 与 AS SHOULD 支持 CIMD；DCR 为兼容场景 MAY 支持，且已 deprecated。预注册或 DCR 得到的凭据必须绑定到签发它的 issuer，不能在 AS 改变后跨 issuer 复用。教学重点不是手写完整 OAuth 客户端，而是读懂信任链：发现到的 issuer 必须来自经过验证的 metadata，token 的签发者和接收者不能由未经验证的 URL 或请求字段决定。
+
+client 必须把 MCP server 的 canonical resource URI 同时放入 authorization request 和 token request 的 `resource` 参数，即使 AS 不支持该参数也必须发送。它应尽量指向具体 server，例如 `https://mcp.example.com/agent`，而不是不相关的通用 API。服务端仍必须自己验证收到的 access token 的签名、issuer、过期时间和 audience；客户端在请求里写了 `resource` 并不能证明 token 一定发给了正确对象。
+
+授权码流程还必须使用 PKCE；client 在授权前要从 AS metadata 确认 PKCE 支持，若 metadata 未声明支持就必须拒绝继续。技术上可行时必须使用 `S256`。`state` 用于把响应关联回原授权请求，client SHOULD 发送并校验它。
+
+issuer mix-up 的检查也有明确边界：client 要先从已验证的 AS metadata 记录 issuer，并与同一请求的 PKCE verifier、`state` 绑定。若 metadata 声明 `authorization_response_iss_parameter_supported=true`，响应缺少 `iss` 就拒绝；只要响应带有 `iss`，无论 metadata 是否声明支持，都要与记录的 issuer 做精确字符串比较，不能大小写折叠、去掉默认端口或改写尾部斜杠。错误响应也要先过此验证；issuer 不匹配时不得信任或展示响应中的 OAuth error 字段。
+
+收到 token 后，client 在**每个 HTTP 请求**的 `Authorization: Bearer ...` header 中发送它，不能放进 URL query string。MCP server 只接受发给自己的、由它对应授权体系签发的 token；无效或过期 token 返回 HTTP 401。若 token 有效但权限不足，MCP 规范要求返回 HTTP 403；对于运行期的 scope 不足，规范 SHOULD 在 `WWW-Authenticate` Bearer challenge 中给出 `error="insufficient_scope"`、当前操作需要的 scope，以及 PRM 文档 URI 对应的 `resource_metadata`（例如 `resource_metadata="<PRM URI>"`）。不要把二者混成一个“工具调用失败”：401 需要重新认证或拒绝请求，403 需要增权、拒绝操作或向用户解释缺少的权限。
+
+## 401 与 403：先分清凭据问题还是授权问题
+
+下面是教学模型的本地判定结果；它只检查已经解析好的 claims，不执行 JWT 签名验证或 OAuth 流程。`authentication_required`、`invalid_audience` 等是本地模型的诊断标签，不是 MCP 规范规定的 HTTP 错误码或 Bearer challenge 参数；线上应按 OAuth Bearer Token 错误处理规范生成响应：
+
+```text
+本地判定标签                     -> HTTP 状态
+missing token / authentication_required -> 401
+wrong audience / invalid_audience       -> 401（无效 token）
+valid token, insufficient_scope        -> 403 + WWW-Authenticate challenge
+valid audience and scope               -> 200（教学模型）
+stdio env allowlist                    -> only MCP_API_TOKEN is passed
+```
+
+完整的离线复现位于 `examples/mcp-remote-auth/`。7 个测试覆盖缺 token、错误 issuer/audience、过期 token、scope 不足、有效授权和 stdio 环境变量白名单。实跑状态：Python 标准库离线模型，7/7 测试通过；上面的输出是合成 claims 的本地判定，不是 OAuth 互操作证明，也不验证 HTTP challenge 是否符合线上响应格式。生产环境还要在真实 HTTP middleware 中验证签名密钥轮换、issuer、expiry、resource/audience、scope 映射与 401/403 响应头，并用实际授权服务器跑完整授权码流程。
+
+最小判定示例：
+
+```python
+decision = authorize_http(
+    claims=verified_claims,  # 生产代码必须先完成密码学验签
+    expected_issuer="https://login.example.com",
+    expected_audience="https://mcp.example.com/agent",
+    required_scopes={"orders:read"},
+    now=1_800_000_000,
+)
+if decision.status == 401:
+    reject_authentication()
+elif decision.status == 403:
+    reject_authorization()
+else:
+    run_tool_as(decision.subject)
+```
+
+这个例子故意把 `verified_claims` 标出来：直接 decode 一个 JWT 只会读到客户端提供的字符串，不会证明签名可信。代码还应拒绝错误 issuer、过期 token 和错误 audience；scope 检查回答“是否允许这个操作”，不能替代租户级数据过滤或资源所有权检查。不能从客户端 JSON 参数中接受 `user_id` 或 `tenant_id` 来覆盖 token 中验证后的 principal。
+
+## 错误案例：把 MCP token 当成下游 API token
+
+一个常见但错误的代理写法是：MCP client 调用远程 server 时带上了 `Authorization: Bearer <mcp-token>`，server 又把这个 header 原样转发给下游 API。下游若碰巧不检查 audience，调用可能成功，使 MCP token 的权限意外扩展；若下游严格检查，通常会因受众错误返回 401。前一种“暂时可用”更危险，因为它掩盖了凭据边界破坏。
+
+安全处理方式是分清两条授权关系：第一条是 client → MCP resource，MCP server 验证面向自己的 token；第二条是 MCP server → 下游 API，server 通过独立的服务凭据、代理授权或明确的 OAuth 交换取得下游 token。若代表用户访问下游，应使用经过设计和授权的委托流程，不能把任意来路的 Bearer token 当作可转发凭据。
+
+| 观察到的结果 | 正确解释 | 下一步 |
+| --- | --- | --- |
+| 缺少/过期/签名无效/audience 不匹配，HTTP 401 | 身份凭据不可用于该 resource | 重新发现并走授权，或拒绝请求；检查 issuer 与 resource 配置 |
+| token 有效但 scope 不够，HTTP 403 | 调用者已认证，但当前操作未授权 | 按挑战请求所需 scope 做有限 step-up，或拒绝操作 |
+| MCP 请求成功、下游拒绝 | 第二条授权链缺失或不匹配 | 查 server 的下游凭据与 audience，禁止透传 MCP token |
+| stdio 子进程读到无关凭据 | host 传入环境过宽 | 改为显式白名单，旋转曾暴露的密钥并评估进程权限 |
+
+## 落地验收步骤
+
+1. 先画出调用者、MCP resource、authorization server、下游 API 四类主体；标明每个 token 是谁签发、谁接收、由谁验证。
+2. 若使用 stdio，列出子进程实际需要的环境变量；检查启动器没有把整个进程环境、用户配置文件或不相关 provider key 一起传下去。
+3. 若使用 HTTP OAuth，固定规范版本与 canonical resource URI；检查 PRM/AS discovery、client registration、`resource` 参数、PKCE/state、issuer response validation 与 scope challenge 的实现责任由哪一层承担。
+4. 对每条 protected request 验证 Authorization header、签名、issuer、expiry 和 audience；将未认证/无效 token 归为 401，将 scope 不足归为 403。
+5. 用错误 audience、过期 token、少 scope、伪造身份字段和下游 API 拒绝构造负向测试；确认这些请求不会到达工具业务逻辑或以 MCP token 调用下游。
+6. 观察日志与 tracing：不得记录完整 bearer token、refresh token 或授权码；只记录可关联的脱敏标识、失败类别、资源与所需 scope。
+
+验收产物是一张凭据流向图和一组负向请求结果。判据是 MCP server 只接受目标 audience 的凭据，身份与操作授权分层检查，stdio 只获得显式秘密，且下游授权由独立路径负责。如果 client、server 或 AS 的版本组合不支持同一种 registration/discovery 行为，应记录互操作矩阵和安全退路，不能默认为“OAuth 标准所以会自动兼容”。
+
+## 后端经验迁移
+
+可以直接迁移的是 OAuth resource server、JWT issuer/audience/expiry 校验、scope、HTTP 401/403 与最小权限。需要额外留心的是 MCP client 可能动态发现 AS，resource 由客户端请求参数参与授权，且一个 MCP server 可能再代理访问别的资源。不要把“JWT 能解码”当成“token 有效”，不要把“用户登录成功”当成“这个工具可执行”，也不要把“请求 MCP 的 token”当成“访问所有下游 API 的通行证”。

@@ -1,330 +1,190 @@
 ---
 lesson: llm-api-basics/sampling-params
-title: 采样参数的消失
+title: 采样参数的迁移与边界
 status: drafting
 ---
 
-假设你从一份 2024 年的教程里抄了一段代码，把 `temperature` 从 `0.7` 调到 `0.2` 想让输出更稳定。参数看起来合理，当年也确实管用。
+假设你从一份旧教程抄了 `temperature=0.2`，准备把模型输出变得更稳定。请求返回 400，或者 Python SDK 在本地直接抛 `TypeError`。先别把这两种错误当成同一原因：前者来自目标 API / 模型的请求契约，后者可能来自 SDK 方法签名。
 
-现在它返回 **400**。
+本节讲的不是“采样参数在所有接口里都已消失”，而是**同名参数在 API 版本、SDK 版本、模型和兼容端点上有不同契约**。迁移时要分别核对调用层与服务端，再用目标任务评测参数是否有帮助。
 
-不是你的代码写错了。是这三个参数被移除了。
+## 采样参数是什么
 
-## 先看这三个参数本来做什么
-
-要理解「为什么被移除」，得先知道它们解决的是什么问题。
-
-模型生成下一个 token 时，不是直接给出一个词，而是给**整个词表**上每个 token 打分（称为 logits）。然后从这些分数转成的概率分布里**采样**出一个。
+自回归模型每一步会为候选 token 计算 logits，再经 softmax 形成概率分布。采样参数是在这条过程中改写候选或分布的控制项。以下是常见实现的概念说明；具体应用顺序、默认值、取值范围及模型支持由 provider 定义。
 
 <Mermaid
   chart={`
 flowchart LR
-    A["输入上下文"] --> B["模型前向计算"]
-    B --> C["词表中每个 token 的<br/>原始分数 logits"]
-    C --> D{"采样策略"}
-    D -->|"temperature"| E["缩放分布的平坦度"]
-    D -->|"top_p"| F["截断到累积概率 p"]
-    D -->|"top_k"| G["截断到前 k 个"]
-    E --> H["最终概率分布"]
-    F --> H
-    G --> H
-    H --> I["采样出一个 token"]
+    A["上下文"] --> B["模型输出 logits"] --> C["provider 定义的采样变换"]
+    C --> T["temperature"]
+    C --> P["top_p"]
+    C --> K["top_k"]
+    T --> D["最终分布 / 选择"]
+    P --> D
+    K --> D
+    D --> E["下一个 token"]
 `}
 />
 
-三个参数各自作用在采样的不同环节：
-
-| 参数 | 作用 | 典型效应 |
+| 参数 | 常见概念 | 需要避免的误解 |
 |---|---|---|
-| `temperature` | 把所有 logits 除以温度值后再转概率 | 低 → 分布更尖（倾向最高分）；高 → 分布更平（低分 token 也有机会） |
-| `top_p`（核采样） | 只保留累积概率达到 p 的最小 token 集合 | 0.9 意味着只从「最可能的那 90% 概率质量」里采样 |
-| `top_k` | 只保留概率最高的 k 个 token | 硬性截断，与概率分布形状无关 |
+| `temperature` | 缩放 logits 后再形成概率分布；低值通常更集中，高值通常更分散 | 低温不等于可复现，也不直接保证正确 |
+| `top_p` | 按概率排序，保留累计概率达到阈值所需的候选集合 | `p=0.9` 不是固定 90% 的 token 数，也不是跨 provider 一致的实现细节 |
+| `top_k` | 将候选限制在概率最高的 k 项 | 结果仍依赖该请求的概率排序；不是与分布无关的硬编码词表 |
 
-**为什么当初需要它们？** 因为早期模型的能力不够稳。同一个提示，有时输出太死板（需要调高温度增加多样性），有时又跑偏（需要调低）。这些参数是给使用者的一根**补偿用的旋钮**。
+采样参数和 prompting 解决的问题不同。Prompt 描述目标、约束和风格；采样参数改变生成时如何选择候选。结构化输出、校验器与评测负责约束或衡量结果。Anthropic 的迁移文档在部分模型上建议省略已弃用参数并用 prompting 引导，但这不代表 prompt 是温度的等价替代，也不表示其他 provider 已取消采样参数。
 
-**为什么现在被移除？** 官方的迁移建议很直接：
+## 先分清 SDK 与 API 的契约
 
-> 删掉这些参数，改用 prompting 来引导模型行为。
+截至 **2026-10-22**，Anthropic 的[参数弃用说明](https://platform.claude.com/docs/en/about-claude/model-deprecations)与 [2026-10-21 API 迁移指南](https://platform.claude.com/docs/en/api/migration-2026-10-21)给出了两层边界：使用 API version `2026-10-21` 时，Messages 请求只要携带 `temperature`、`top_p` 或 `top_k` 中任意字段，即使值为默认值也会返回 400；较早 API version 仍允许省略字段，对 Claude 4.7 及之后的模型与 Mythos Preview 则会拒绝非默认值。不要把新 API version 的统一移除规则误写成所有历史 API version 的行为，也不要只按模型发布日期判断。
 
-背后的逻辑是：这些旋钮的调节是**盲目**的 —— 你在调一个你不了解内部机制的分布，效果无法预测，而且不同模型上的最优值各不相同。模型能力提升之后，用一两句明确的指令来控制输出风格（「只输出 JSON，不要解释」「用一句话回答」），比调温度更直接、更可预测，也更能跨模型迁移。
+Anthropic **Python SDK 1.0 及之后版本**也从 Messages 方法签名中移除了这三个参数。直接向 `client.messages.create(..., temperature=...)` 传参会在 SDK 本地抛 `TypeError`，还没发出 HTTP 请求。SDK 官方[迁移指南](https://github.com/anthropics/anthropic-sdk-python/blob/main/MIGRATION.md)说明 `extra_body` 可以把字段直接并入请求 JSON，但它只绕过 SDK 的类型签名，不绕过 API version / model 的服务端校验。SDK 2.0.0 默认切换到 API version `2026-10-21`；在该版本下，改用 `extra_body` 仍会得到 400。只有确实固定在较早 API version、旧模型仍支持非默认采样值且评测证明业务需要时，才考虑保留该字段；并把 SDK 版本、API version、model ID 一并锁定和测试。
 
-理解这三点之后，「被移除」这件事就不再意外了：**它移除的是一根不再需要的补偿旋钮，而不是一种控制能力。**
-
-## 发生了什么
-
-对 Claude Opus 4.6 之后发布的模型，`temperature`、`top_p`、`top_k` 不再被接受（[模型迁移指南](https://platform.claude.com/docs/en/about-claude/models/migration-guide)、[Messages API 参考](https://platform.claude.com/docs/en/api/messages)）：
-
-| 你传的值 | 结果 |
-|---|---|
-| `temperature` 非 1.0 | 400 错误 |
-| `top_p` 小于 0.99 | 400 错误 |
-| `top_k` 任意值 | 400 错误 |
-| `temperature: 1.0`、`top_p >= 0.99` | 为向后兼容被接受，但**不产生任何效果** |
-
-仍然接受这些参数的只有旧模型。SDK 层面也有变化：Python SDK 从 1.0 起不再定义这些参数，传了会抛 `TypeError`。
-
-### 一个容易被误判的失败模式
-
-**不同平台对同一件事的处理方式不一样**：
-
-- **直连 API** → 返回 400，你会立刻发现
-- **通过聚合层（如 OpenRouter）** → 参数被**静默忽略**。请求成功，但你调了半天温度，什么都没发生
-
-后者难排查得多。你会在「为什么调参数没效果」上浪费几个小时，而真相是这个参数根本不存在。**排查这类问题时，第一步永远是打原始响应看状态码** —— 只看 SDK 返回的对象，你甚至不知道服务端接收了什么。
-
-## 但"被移除"不等于"这个概念不存在了"
-
-这是本节最需要建立的认识。
-
-我实测了同一份请求在两个不同端点的行为：
-
-| 实验 | Anthropic 官方 | DeepSeek 兼容端点（实测） |
+| 场景 | 可能发生什么 | 应查哪里 |
 |---|---|---|
-| 传 `temperature: 0.2` | **400 错误**（已移除） | **200 成功**，参数生效 |
-| 不传 `max_tokens` | **报错**（必填） | **200 成功**，有默认值 |
+| 旧 Python SDK，方法签名仍有该参数 | 请求可能被发出，服务端按模型处理 | SDK 锁定版本与模型 API 文档 |
+| Anthropic Python SDK 1.0+ | 方法不接受这些关键字，调用前即 `TypeError` | SDK 迁移指南 |
+| API version `2026-10-21` 携带任一采样字段（任何模型、包括默认值） | API 返回 400 | API version 迁移指南与当前 SDK 默认版本 |
+| 更早 API version 上，Claude 4.7+ / Mythos Preview 的非默认采样值 | API 返回 400 | 模型弃用说明与模型迁移文档 |
+| DeepSeek Anthropic-compatible endpoint | 当前兼容表中 `temperature` 支持、`top_k` 忽略，`top_p` 随模型/模式变化 | [DeepSeek 当前兼容说明](https://api-docs.deepseek.com/guides/anthropic_api/) |
+| 其他聚合或自托管网关 | 可能转发、拒绝、忽略或改写字段 | 该网关的文档与端到端契约测试 |
 
-（DeepSeek 数据来源：`api.deepseek.com/anthropic`，模型 `deepseek-flash`，2026-09-24 实测。）
+所以不要写“Claude 已移除采样参数”或“兼容 Anthropic 就有相同语义”这种无范围的结论。记录 SDK 版本、provider、endpoint、model ID 与请求参数，再测试实际响应；成功返回也不证明参数产生了预期效果。
 
-同一个参数名，一边报错、一边正常；另一个参数，一边必填、一边可选。**「兼容 Anthropic API」兼容的是接口形状，不是行为语义。**
+## 历史样本能说明什么
 
-这有两层意义：
+项目的历史记录保存了一组 DeepSeek `deepseek-flash` 温度对比摘要：提示是为咖啡店起名，`temperature=0` 三次返回两种文本，`temperature=1` 三次返回三种文本，记录日期为 2026-09-24。这个观察与“温度会影响输出分布”相容，但它没有完整请求/响应、固定模型快照或可复核评分器，也只有每个设置三次；因此它**不能证明温度造成了这组差异、不能估计多样性概率，更不能推出温度 0 的跨时间可复现性**。原始数据与撤回范围见项目中的 `docs/DATA.md`。
 
-**实践层面** —— 你的代码如果只在 DeepSeek 上测过，迁到 Claude 时会在 `max_tokens` 上撞墙；反过来，代码里传了 `temperature`，在 DeepSeek 上跑得好好的，换到 Claude 新模型就 400。
+相同输入得到不同输出并不罕见，但不能用这三次记录归因于 GPU 浮点顺序、批处理、权重更新或其他具体原因。没有服务端 trace、模型版本和重复受控实验，这些都只是待验证假设。教学时应把“结果不保证逐字节复现”作为需要按 provider 合约和重复测试处理的工程边界，而不是把旧样本当作其原因的证明。
 
-**架构层面** —— 这正是需要适配层的原因。如果业务代码里散落着 `if provider == 'deepseek'` 这样的分支，每接一家厂商都要改一遍业务逻辑。正确做法是把差异收拢到一处（见第 8 章）。
+如果需要评估参数是否有用，先固定任务集、模型快照（若 provider 能固定）、prompt、解码参数、工具/环境版本与成功判据；随机化调用顺序，记录每次完整配置、终止状态、usage 与原始响应的受控哈希或脱敏记录。按题目或任务分层比较质量、格式错误率、延迟和费用，使用评估章节的方法确定样本量和不确定性。旧文曾给出“检测 10% 差异需上百次”这类无依据的固定样本数建议；样本量应按评估设计推导。
 
-## 实测：temperature 到底控制了什么
+## `effort` 是另一类控制，不是温度的替代品
 
-既然 DeepSeek 支持它，我们用真实数据看清这个参数的作用。
-
-同一个提示，分别在两个温度下各跑三次：
-
-```text
-提示：给一家只卖三种咖啡的小店起个名字，只回名字，不要解释。
-
-temperature = 0:
-   #1  三味咖啡
-   #2  三味咖啡
-   #3  三咖小馆          ← 注意这一次
-
-temperature = 1:
-   #1  三咖小铺
-   #2  三豆咖啡
-   #3  三杯就好
-```
-
-（实测数据，模型 `deepseek-flash`，2026-09-24。）
-
-这张表里藏着三个结论。
-
-### 结论一：温度确实在控制输出的发散程度
-
-`temperature=1` 三次全不同，`temperature=0` 三次里两次相同。趋势符合预期。
-
-### 结论二：`temperature=0` **不保证**可复现
-
-这是最容易被误解的一点，也是很多人写测试时踩的坑。
-
-如果温度 0 意味着「确定性」，那三次结果应该完全一致。但实测结果里**第三次不同** —— 前两次是「三味咖啡」，第三次是「三咖小馆」。
-
-原因不止一个：
-
-- **浮点运算的非确定性**：模型的推理涉及大量矩阵运算，在 GPU 上的执行顺序可能因批次大小、并行策略而变化，导致极小的数值差异被放大
-- **批处理的影响**：服务端会把多个并发请求打包处理，同一请求在不同批次里的计算结果可能有细微差别
-- **服务端版本更新**：模型权重或推理实现可能在你不知情时变化
-
-实践结论：**不要写依赖逐字节相等的测试**。要验证 LLM 输出的正确性，断言应该落在结构性属性上（能否通过 schema 校验、关键字段是否被提取到、是否调用了预期工具），并用一组样本统计成功率。
-
-> 顺带说一句：现在这个坑对你来说已经不是「温度调零够不够」的问题了 —— 在新一代 Claude 模型上 **`temperature` 根本无法设置**。但理解「为什么温度 0 也不可复现」仍然重要，因为同一个误解会以其他形式出现：以为固定了 prompt 就能复现、以为固定了模型版本就能复现。
-
-### 结论三：三次样本不足以得出任何结论
-
-我上面只跑了三次。严格来说，这个样本量**不足以**估计概率分布 —— 三次里两次相同，可能是 67%，也可能是 90%，你无法区分。
-
-这一点值得单独强调，因为它是 AI 应用评估里最常见的统计学错误：**拿三五个样本的对比结果当作结论**。
-
-如果你要判断「方案 A 是否比方案 B 稳定」，需要的样本量取决于你想检测的差异大小。粗略的经验法则：想可靠地发现 10% 的差异，至少需要上百次；发现 5% 的差异，需要上千次。第 13 章会讲完整的评估方法。
-
-## 现在用什么控制：effort
-
-采样参数在 Claude 上走了，但「控制模型花多少力气」这件事没有消失，只是换了杠杆 —— **effort**。
-
-它设置在 `output_config.effort`，有五个级别（[effort 文档](https://platform.claude.com/docs/en/build-with-claude/effort)）：
+Anthropic 的 `output_config.effort` 影响一次响应整体投入：文本、工具调用参数，以及启用 thinking 时的 thinking token 都会受影响。低 effort 往往产生更精简的响应和工具调用，但它是**行为信号**，不是输出 token 硬上限，也不是“确定性开关”。`max_tokens` 才是请求级生成上限；质量、延迟和费用变化要在目标任务上评测。
 
 ```python
+import os
+
 import anthropic
 
 client = anthropic.Anthropic()
-
+model = os.environ["VERIFY_MODEL"]  # 设为目标 endpoint 当前支持的 model ID
 response = client.messages.create(
-    model="claude-opus-5-5",
+    model=model,
     max_tokens=4096,
     messages=[{"role": "user", "content": "分析微服务与单体架构的取舍"}],
     output_config={"effort": "medium"},
 )
+
+print("stop_reason:", response.stop_reason)
+for block in response.content:
+    if block.type == "text":
+        print(block.text)
 ```
 
-| 级别 | 定位 |
-|---|---|
-| `max` | 不限制 token 消耗的绝对最强能力 |
-| `xhigh` | 长周期任务（30 分钟以上的 agentic / coding），token 预算以百万计 |
-| `high` | 按任务需要花费 token，追求最佳结果 |
-| `medium` | 平衡速度、成本与性能 |
-| `low` | 最省，适合简单任务与子智能体 |
+> **实跑状态**：代码结构按 Anthropic Python SDK 示例编写并做语法检查；本轮没有使用 provider 凭据发请求。运行前需安装并锁定 SDK 版本，设置 `VERIFY_MODEL`，并确认目标 endpoint / model 支持 `output_config.effort`。
 
-几个必须知道的细节：
+Effort 当前有 `low`、`medium`、`high`、`xhigh`、`max` 五个命名级别，但**不是每个模型都支持全部级别**。截至 2026-10-21，官方说明大多数支持 effort 的模型默认 `high`，Opus 5.5 与 Haiku 5.5 默认 `medium`；支持模型和能力持续变化，具体矩阵应以[官方 Effort 文档](https://platform.claude.com/docs/en/build-with-claude/effort)为准。显式值等于目标模型默认值时，行为与省略字段相同。
 
-**默认值因模型而异，而且变过。** 除 Opus 5.5 外的支持模型默认都是 `high`，**Opus 5.5 的默认是 `medium`**。这意味着从 Opus 5 迁到 Opus 5.5 时，如果你没显式设 effort，请求实际会在**低一档**的强度上运行 —— 这是个很隐蔽的行为变化。
+不要把 `effort` 与 thinking mode 混为一谈：thinking 配置说明是否以及如何输出 thinking block；在 adaptive thinking 下，effort 影响模型思考的频率和深度。不同模型默认模式不同，有的不能关闭 thinking，有的旧模式已弃用。迁移时应按当前[Thinking 文档](https://platform.claude.com/docs/en/build-with-claude/thinking)逐模型确认，不能照抄旧的 `thinking: {"type": "enabled", "budget_tokens": ...}` 示例。`adaptive` 是 thinking mode，不是 effort 值。
 
-**把 effort 设成默认值，等于没设。** 官方明确说明两者行为完全一致，所以不要为了让代码"看起来更明确"而重复默认值。
+### 旧 thinking 摘要：只能作为待复核线索
 
-**它影响的是全部输出 token**，不只是思考部分：文本、工具调用及其参数、思考都在内。降低 effort 会让工具调用更少、更简短 —— 如果任务依赖多次工具调用来探索，这会直接影响效果。
+本项目留有一组 2026-10-12 DeepSeek `deepseek-flash` 旧摘要：同一道注水算术题，在未显式设置 thinking 与 `thinking=disabled` 两种配置下各运行三次；摘要记录的 output token 数分别为 `63/83/75` 与 `3/3/2`，六次都显示答案“24小时”。摘要另记两种配置的 input usage 为 70 与 44。
 
-**Haiku 4.5 不支持 effort。**
+这些数字没有完整逐次请求/响应、模型快照、SDK 版本、终止原因和可复核 scorer。我们无法确认 `thinking` 的实际生效语义，也不能把 input 差异归因于 thinking 字段、把 output 差异归因于 reasoning 内容，或据此声称“准确率没变化”与“关闭思考节省成本”。这里保留它们作为历史记录审计案例，不用作效果证据；在该 endpoint/model 上重新测量前，结论是**未知**。
 
-> 再澄清一个易混点：`adaptive` 是 **thinking 的模式**，不是 effort 的取值。别把它写进 `output_config.effort`。
+如果要做这个对照，应先确认模型对 thinking 配置的当前支持情况，再保存匿名化配置与响应摘要，检查完整 `stop_reason`、内容块类型、usage 字段和答案判据；重复多个任务而不是对一个题做三次，并区分模型的 thinking token、可见文本、工具调用和账单字段。对不支持的配置要记录明确的 400/忽略行为，不能把“请求成功”当成参数生效。
 
-> **adaptive thinking 是什么**：**由模型自己决定这次要不要思考、思考多久**的模式 —— 任务简单就直接答，任务复杂就先生成一段推理。`thinking: {"type": "enabled"}` 是手动模式（要你给 `budget_tokens` 上界）；`{"type": "disabled"}` 是明确关掉。
-> **它的输出计入 `output_tokens`。** 思考不是免费的附属品，它和正文一样按输出 token 计费 —— 这正是下面这组实测要说明的事。
+## Effort 与 prompt caching 的交互
 
-配套的 beta header（形如 `mid-conversation-output-config-2026-07-01`）是**提前启用尚未默认开启的能力**的开关：请求时额外带一个 HTTP 头，服务端才按新语义解析。它是临时机制，能力稳定后会并进默认行为。
+Anthropic 当前缓存文档说明，**改变 `output_config.effort` 会使 message cache 失效**；改变顶层 effort 时，tool/system cache 是否同时失效取决于模型。显式设置为模型默认值等同于省略，不会造成失效；支持 per-message effort 的模型可通过 `messages` 中的 system message 改变轮次 effort 并保留缓存前缀，但这项能力仍是 beta，需逐模型、逐平台核实。如果会话依赖 prompt caching，先确认目标模型支持的方式，再测量缓存读写；不要只比较 effort 改变前后的总费用，因为输入、输出、模型和缓存状态都会影响账单。此规则属于 Anthropic API，不能外推到兼容端点或其他 provider。
 
-### 实测：thinking 开与关，output_tokens 差多少
+截至 2026-10-22，Anthropic 将 per-message effort 标为 beta：它要求指定 beta header，并且可用模型、云平台及 thinking 模式都有额外限制；官方称这种方式可保留缓存前缀。用之前请读当前 [Effort 文档](https://platform.claude.com/docs/en/build-with-claude/effort)的支持表和限制，不要把 beta 能力当成稳定的通用替代方案。
 
-「钱花在哪」可以量化。同一道需要两步的算术题（进出水管注水），同一天在同一个端点上各跑三次：
+## 一次完整的迁移：从旧调用到可验证调用
 
-```text
-（本次实跑，deepseek-flash，2026-10-12。提示 52 个字符，max_tokens=2000。）
-
-配置                 | run1 | run2 | run3 | 回答
-不给 thinking 字段    |  63  |  83  |  75  | 都是 24小时
-thinking=disabled    |   3  |   3  |   2  | 都是 24小时
-```
-
-配套的输入侧：不给 `thinking` 字段时 `input_tokens = 70`；`thinking=disabled` 时是 `44` —— 差 26 token，来自思考模式相关的请求结构。
-
-**两个结论，都直接回答「钱花在哪」：**
-
-1. **输出侧差一个数量级。** 开思考时输出 63~83 token，关掉后只有 2~3 token，**准确率没有任何变化（三次都是 24小时）**。多出来的几十个 token 全是思考文本。所以「output_tokens 为什么这么大」，很多时候答案就是「它在思考」。
-2. **思考是高方差的那部分。** 63 / 83 / 75 三次波动约 ±15%，而关掉后 3 / 3 / 2 几乎不动。做成本估算时，方差来自输出，输出的方差又主要来自思考长度 —— 这也解释了为什么 agent 的成本只能估上界。
-
-> 边界要说清：这里 `thinking=disabled` 被端点接受了，所以能测出上面的差。但在 Opus 5.5 上它**无法关闭**（传 `disabled` 直接 400），那时唯一的杠杆是 effort。另外，这一组只跑了 3 次 —— 足以说明「差一个数量级」，不足以估计精确的比例分布。
-
-## 一个容易踩的坑：effort 会让缓存失效
-
-这是本节最实用的一条。
-
-**顶层的 `output_config.effort` 参与 prompt 的渲染。** 因此如果你在同一个会话的不同请求之间改变它，**之前缓存的 prefix 会失效**（[effort 文档](https://platform.claude.com/docs/en/build-with-claude/effort)）。
-
-也就是说：为了省钱降低 effort，反而可能因为缓存失效而花更多钱。这个反直觉的后果在长会话里尤其明显。
-
-官方的建议：
-
-- 依赖 prompt caching 的长会话，**在开头就定好 effort 并保持不变**
-- 需要中途改变的话，用 **per-message effort**（beta 特性，需要 beta header `mid-conversation-output-config-2026-07-01`），它的设计目标正是保留缓存。支持它的模型包括 Fable 5.1、Mythos 5.1、Opus 5.5、Opus 5
-
-另一个相关行为：**在 Opus 5.5 上，adaptive thinking 始终开启、无法关闭**。传 `thinking: {"type": "disabled"}` 会返回 400。所以在这些模型上，effort 是控制「模型思考多少」的唯一杠杆。
-
-## 一次完整的迁移：从旧代码到能跑
-
-把前面的内容串起来，看一个真实的迁移过程。
-
-### 起点：一份当年能跑的代码
-
-从 2024 年的教程里抄来的：
+旧代码常把模型名称、SDK 版本和采样参数写在同一个调用里：
 
 ```python
+# 历史调用形状示意：旧 SDK + API version 2023-06-01；不要在当前 SDK/API version 原样运行。
 response = client.messages.create(
-    model="claude-3-5-sonnet-20241022",
+    model="claude-sonnet-4-6",  # 演示旧 API version 下的旧式调用形状
     max_tokens=1024,
-    temperature=0.3,      # 想让它稳定
+    temperature=0.3,
     top_p=0.9,
     system="你是一个严谨的技术助手。",
-    messages=[{"role": "user", "content": question}],
+    messages=[{"role": "user", "content": "解释幂等性"}],
 )
 ```
 
-当年它工作得很好。现在你换成了新模型。
+迁移第一步不是盲目删参数，而是把环境具体化：记录 `anthropic` 包的锁定版本、base URL / provider、实际模型 ID，以及传入的所有采样和 thinking 字段。再区分错误发生在哪层：
 
-### 第一步：报错（或者不报错）
+| 现象 | 可能原因 | 怎么确认 |
+|---|---|---|
+| Python 调用立刻 `TypeError`，没有 HTTP 请求 | 新版 SDK 方法签名不再接受 `temperature` / `top_p` / `top_k` | 检查锁文件与 SDK 迁移说明；查看客户端的 exception stack，而非猜服务端 400 |
+| 服务端返回 HTTP 400 | 该 model/API 拒绝请求中的非默认参数或 thinking 组合 | 记录目标 model ID、API 错误类型和 request ID；对照当前 model-specific 文档 |
+| 返回 2xx，改变参数却看不出差异 | 参数可能被忽略、固定、模型不支持，或当前任务无法测出效应 | 做可重复的能力探针与离线 eval；不要把 HTTP 成功当作参数生效 |
+| 改 effort 后缓存读数下降 | 顶层 effort 改变可能改变 Anthropic prompt-cache 前缀 | 在固定模型、提示和请求顺序下核对 cache usage；勿用单次总价推断因果 |
 
-直连 API 的话，你会看到：
-
-```text
-HTTP 400
-{"error":{"message":"temperature: Extra inputs are not permitted", ...}}
-```
-
-错误指向很明确：`temperature` 不被允许。
-
-**但如果走的是聚合层，你可能什么错误都看不到** —— 请求成功，温度被静默丢弃。那时你会开始怀疑自己的 prompt 写得不好，在完全错误的方向上排查。
-
-### 第二步：查文档确认
-
-搜「temperature deprecated」，找到官方的[模型迁移指南](https://platform.claude.com/docs/en/about-claude/models/migration-guide)：
-
-> 对 Opus 4.6 之后发布的模型，传 `temperature`（非 1.0）、`top_p`（小于 0.99）、`top_k`（任意值）会返回 400 错误。
-
-删掉那两行。
-
-### 第三步：删完之后仍然不稳
-
-代码能跑了，但输出**仍然不稳定** —— 同一段输入，两次调用可能给出不同措辞。
-
-**这时才意识到：「低温度换稳定」这条路本来就不成立。** 本节的实测已经证明了：`temperature=0` 三次里也有一次不同。
-
-参数从来不是稳定性的来源，它只是一个你无法预测效果的补偿旋钮。
-
-### 第四步：正确的做法
+对于 Claude API 与 Python SDK 1.x，**两层变更要分别处理**。若调用最新模型，移除该模型拒绝的采样参数，并查看模型迁移文档；若确实固定在仍支持采样参数的旧模型，且实验表明业务需要该设置，Anthropic SDK v1 迁移指南给出的方式是通过 `extra_body` 传递。该方式绕过 SDK 类型签名，不绕过服务端模型校验，不能把旧字段带到新模型上碰运气。
 
 ```python
-# 1. 删掉采样参数，改用 prompt 明确约束
-SYSTEM = """你是一个严谨的技术助手。
+# 迁移后的请求骨架：使用可配置的目标模型，默认不携带采样参数
+import json
+import os
 
-输出要求：
-- 只输出 JSON，不要任何解释文字
-- 字段：{"answer": string, "confidence": number}
-"""
+import anthropic
 
+client = anthropic.Anthropic()
+model = os.environ["VERIFY_MODEL"]
+system = "你是一个严谨的技术助手。只返回包含 answer 字段的 JSON 对象。"
 response = client.messages.create(
-    model="claude-sonnet-5",
+    model=model,
     max_tokens=2048,
-    output_config={"effort": "medium"},   # 用 effort 控制投入深度
-    system=SYSTEM,
-    messages=[{"role": "user", "content": question}],
+    system=system,
+    messages=[{"role": "user", "content": "用一句话解释幂等性"}],
+    output_config={"effort": "medium"},
 )
 
-# 2. 稳定性靠校验 + 重试，而不是靠参数
-data = validate_schema(response.content[0].text)   # 结构不符就重试
+if response.stop_reason != "end_turn":
+    raise RuntimeError(f"incomplete response: {response.stop_reason}")
+text = "".join(block.text for block in response.content if block.type == "text")
+value = json.loads(text)
+if not isinstance(value, dict) or not isinstance(value.get("answer"), str):
+    raise ValueError("response does not match the expected object shape")
+print(value["answer"])
 ```
 
-### 迁移对照表
+> **实跑状态**：本例展示 Anthropic Messages SDK 的调用形状；本轮没有使用 provider 凭据发送请求。语法与本地错误分支可离线检查，但 SDK 集成、目标模型对 effort 的支持和 JSON 输出都需在实际锁定版本及 endpoint 上验证。Prompt 要求 JSON 不等于结构化输出保证，正式应用应按第 5 章使用可用的 schema 能力并验证业务条件。
 
-| 旧做法 | 新做法 |
-|---|---|
-| `temperature=0.3` 求稳定 | prompt 明确约束 + schema 校验 |
-| `top_p=0.9` 控制多样性 | 用 prompt 描述风格 |
-| 相信「温度 0 = 可复现」 | 接受不确定性，改用统计指标衡量 |
-| 不显式设 effort | 显式设置（默认值已经变过一次） |
-| 写精确匹配的测试 | 断言结构属性 + 成功率阈值 |
+代码中故意将 `VERIFY_MODEL` 作为环境配置，避免教材把短期 model alias 写死。运行前在 `.env.local` 或当前 shell 设置目标环境变量；不要把密钥硬编码进教程或终端回显。确认 SDK 参数兼容后，再发最小探针请求并检查 response 的 `stop_reason`、内容块和 usage。
 
-## 从旧代码迁移的检查清单
+迁移验收不应以“请求不报错”为终点。至少建立一份按模型/endpoint 区分的契约检查：旧 SDK 接受的字段是否被 1.x 本地拒绝；目标 API 接受哪些参数和值；2xx 响应中的设置是否真实影响了行为；输出通过什么结构和任务判据；变化是否影响缓存、延迟与费用。若 provider 不支持固定模型快照，就把后端可能变化列为限制，记录请求日期与返回的 model 字段。
 
-1. 搜索代码里的 `temperature` / `top_p` / `top_k`，**全部删掉**
-2. 如果原本靠低温度追求稳定性，改为在 prompt 里明确约束输出格式，并加上结构化校验（第 5 章）
-3. **检查你对"确定性"的所有假设**。如果你写了依赖输出一致的测试，改成结构性断言 + 成功率统计
-4. 显式设置 `output_config.effort`，不要依赖默认值 —— 默认值已经变过一次了
-5. 检查有没有把 `thinking` 配置为手动模式（`type: "enabled"` + `budget_tokens`）：这套在 Opus 4.6 / Sonnet 4.6 上已废弃，之后的模型不接受
-6. 如果你在用 prompt caching，确认 effort 在整个会话里保持不变
+## 把参数实验做成可复核的验收
+
+一次迁移实验应留下可供他人复跑和审查的产物，而不只是一句“体感更稳定”。最小记录包括：数据集版本与每题输入、完整请求配置、SDK/provider/endpoint/model 标识、请求时间、响应正文或受控脱敏副本、`stop_reason`、usage、解析结果与逐题判分。凭据不得进入记录；如响应含用户数据，应先定义访问权限和保留期限。若服务端只返回浮动别名，记录响应中的 model 字段和日期，并把无法固定权重版本写进限制。
+
+比较时以同一批题目作为配对样本，对每道题分别运行基线与候选配置，并随机化两者的调用顺序，减少题目难度和时间顺序带来的混杂。先定义主指标，例如任务通过率或格式错误率，再把延迟、token usage 与账单字段作为成本指标；失败、拒答、截断和服务端错误必须各自分类，不能从均值里消失。若目标是判断“是否改善”，应事先定义最小有意义差异及置信区间；若区间仍同时覆盖有意义的正负效果，结果应报告为不确定，而不是挑较好的一次。
+
+一个可审查的结果表至少按题目列出基线/候选的判分、失败类别和成本，并汇总配对差值、样本范围、置信区间、排除规则及其理由。遇到 provider 限流、版本漂移或模型响应异常，保存原始事件并标记该次无效原因；不要只重跑失败组。这样的验收能回答“这个设置在这组任务上是否值得”，但不能自动推出其他模型、提示或生产流量也会得到同样结果。
+
+## 迁移检查清单
+
+1. 锁定并记录 SDK 版本、provider、base URL 和完整模型 ID，不把“兼容 Anthropic”当作行为等价。
+2. 根据目标模型文档逐项检查 `temperature`、`top_p`、`top_k` 及 thinking 配置。不要机械地全删，也不要跨模型复制。
+3. 若 Python SDK 1.0+ 因签名抛 `TypeError`，先判断目标旧模型和 API version 是否仍接受该参数；只有确有需要并已验证服务端支持时，才按 SDK 指南使用 `extra_body`，并将 SDK 与 API version 一起锁定。
+4. 用一组代表性任务评测变更前后质量、格式、失败率、延迟和账单字段。固定样本量应按期望检测的差异和评估设计推导，不使用“三次”“上百次”等通用门槛。
+5. 输出稳定性依靠明确判据、schema/业务校验和有版本的 eval；低温或固定 prompt 都不保证相同文本。
+6. 若使用 Anthropic prompt caching，评测 effort 或 thinking 配置变更对 cache prefix 的影响；beta 能力必须逐模型、逐平台核验。
 
 ## 常见坑
 
-**以为「参数被忽略」和「参数报错」是一回事。** 直连 API 报错，聚合层静默忽略。排查时先确认请求到底到了哪里、状态码是什么。
-
-**把 effort 当成"输出长度控制"。** 它控制的是投入的总工作量。在部分模型上，改变 effort 并不会可靠地缩短可见回复的长度 —— 那要用 prompt 控制。想控制长度就明说「用三句话回答」。
-
-**在缓存会话里动态调 effort。** 见上文，这会抵消缓存带来的节省。
-
-**拿几次样本的对比就下结论。** 三次里两次相同不能说明「稳定」，只能说明你跑的次数太少。
-
-**为 LLM 输出写精确匹配的测试。** 实测已经证明温度 0 也会变。断言要落在结构上。
+- **把 SDK 错误和 API 错误混为一谈。** `TypeError` 可能在请求发出前发生；服务端 400 则需要看错误体与 request ID。
+- **把一个发布时间当作全模型分界。** 参数支持随模型代际和接口版本变化，按具体目标模型查表。
+- **把 2xx 当作参数生效证据。** 兼容端点可能忽略字段，部分字段还会依模型或模式变化。
+- **把 `effort` 当成 temperature 的替代品。** 它控制的是响应投入行为，不提供采样多样性开关，也不是 token 上限。
+- **把 prompt 当作稳定性或格式保证。** Prompt 只能传达指令；用 schema、业务校验和按任务构建的评估判定结果。
+- **用几次样本声称因果或普遍规律。** 本节留下的温度与 thinking 数字都是无法独立复核的历史摘要；它们不能支撑模型行为结论。

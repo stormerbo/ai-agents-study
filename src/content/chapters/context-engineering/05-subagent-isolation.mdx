@@ -4,34 +4,34 @@ title: 子智能体：它首先是个上下文技巧
 status: drafting
 ---
 
-子智能体（subagent）通常被讲成「并行提速」的手段。但在生产系统里，用它最常见的理由其实是另一个：**上下文隔离**。
+子智能体（subagent）常被讲成「并行提速」的手段。它也可以用于**上下文隔离**：把探索过程留在一个独立运行中，只把需要的结果交回编排者。但隔离不是这个名词自动附带的性质，是否保留历史、转发哪些消息、是否共享状态，都由运行时与宿主配置决定。
 
-先把定义落下，不然后面全是反推。**子智能体是一次独立的模型调用序列**：它有自己的 system、自己的上下文、自己的工具循环和轮次上限。它对外只暴露一个最终结果 —— 中间那几十次工具往返留在它自己的上下文里，**不进主 agent**。对应地，**主 agent** 是那个派活、取回结果、决定下一步的编排者，它的上下文里只有子 agent 的结论，没有子 agent 看过的东西。
+先把本节的实现落下，避免把一种编排方式说成通用定义。**这里的子 agent 是由主 agent 调用的独立模型循环**：示例为它新建消息列表、设置 system 与工具循环，最后把摘要作为结果返回。只有当宿主不把子循环的原始历史附回主 agent 时，主上下文才与该段探索过程隔离。框架也可以用 agents-as-tools、handoff 或共享会话等其他形态；例如 OpenAI Agents SDK 的 handoff 默认仍会传递对话历史，可用 input filter 等配置改变接收内容。
 
-并行只是它的表亲 —— 而且只在子任务之间真正独立时才存在。隔离才是那个一直成立的收益。
+并行和隔离是不同的决策。依赖关系、共享状态、副作用与资源上限决定哪些子任务可以并行；创建独立 agent 本身不会自动并发。隔离是否有收益，也要看主任务是否会反复携带探索内容，以及结果压缩有没有丢掉验收所需的证据。
 
 不过「子智能体更贵」这个说法**不是无条件成立的**。本节测了两个方向相反的场景，它们共同指向一条统一的规律。
 
-## 实测一：和「把资料全留在上下文里」比，隔离更省
+## 历史观测一：与「把资料留在主上下文」的 token 量对照
 
 任务：在 20 篇文档里找出提到 `legacy_api` 的那几篇，然后连续回答 3 个追问。
 
-| 路线 | 做法 | 总 token | **主上下文峰值** |
+| 路线 | 做法 | 记录的总 token | **主 agent 最大请求输入** |
 |---|---|---:|---:|
 | A 单 agent | 20 篇全文留在主上下文，每轮追问都带着 | 25913 | **6816** |
 | B 子智能体 | 子 agent 扫描 20 篇，只回传「哪几篇 + 负责人」 | **9182** | **1258** |
 
-（实测数据，`deepseek-flash`，2026-10-08。总 token 为该路线所有调用之和。）
+（历史单次观测摘要，`deepseek-flash`，2026-10-08。逐次请求/响应、模型后端指纹、usage 原值、任务映射和答案 scorer 未归档；本轮不能独立复算。总量与峰值的缓存 usage 口径也不能从表格确认。）
 
-**「主上下文峰值」怎么量**：把主 agent 每一次请求的输入 token 数（system + 历史 + 本轮工具结果）记下来，取其中的最大值。它回答两个问题 —— 最坏一轮要付多少钱、离窗口上限还有多远。平均值会掩盖最坏情况，所以看峰值。
+**「主 agent 最大请求输入」怎么理解**：原文称其为主流程每次请求的输入 token 数最大值，但没有保存逐次 usage 与 endpoint 字段，无法确认是否包含缓存 token，也不能据它推算账单或准确的窗口占用。若复测，应按目标 endpoint 的 usage 定义重建完整输入，并将 token 体积、费用和上下文容量分开记录。
 
-**隔离在总 token 上也更省，而且主上下文小到只有 1/5。**
+这份摘要报告 B 的 token 量更低，主 agent 单次请求输入峰值约为 A 的五分之一；由于任务等价性、完成状态和评分过程未归档，不能据此判断两条路线质量相同或普遍更便宜。
 
-原因在于：A 每轮追问都要把 20 篇原文重发一遍（4 轮 × 约 4600 token），而 B 的主 agent 自始至终只携带一份约 200 token 的结论。子 agent 承受了那 20 篇的噪声，然后把原文**丢掉**。
+一种可能的解释是：A 的主请求反复包含 20 篇原文，而 B 把检索放在子循环，只回传短结果。但旧轨迹没有保存，无法核对实际每轮装载量、缓存读写、工具/输出 token 或答案完整性。架构上可以把原始轨迹留在子运行中，但是否丢弃、归档或提供证据引用应由数据保留、可审计性和主任务需要共同决定。
 
-这直接印证了那条判断：**主 agent 需要的是结论，不是探索过程。** 探索过程中的几十次读取与试错如果留在主上下文里，既占容量又稀释注意力 —— 而且会在每一轮追问里重复收费。
+这提示一个待验证的设计问题：主 agent 需要哪些发现、来源与失败信息才能可靠地完成任务？只回传结论会减少主上下文，但也可能丢失证据、约束或审计路径。探索过程是否保留在主上下文、日志或外部 artifact，应按复核需要决定；原始内容不必全部塞回主 prompt。
 
-## 实测二：和「共享背景只装载一次」比，隔离贵 8 倍
+## 历史观测二：共享背景重复装载时的 token 量
 
 换个场景，结论就反过来了。
 
@@ -42,74 +42,73 @@ status: drafting
 | A 单 agent | 背景装载 1 次，在同一上下文里逐个检查 8 项 | **8430** | 1 |
 | B 子智能体 | 每项一个子 agent，**各自装载背景** | **68548** | 8 |
 
-（实测数据，`deepseek-flash`，2026-10-08。）
+（历史单次观测摘要，`deepseek-flash`，2026-10-08；逐次请求/响应、精确 endpoint/model、缓存 usage、样本答案与 scorer 均未归档，不能独立复算。）
 
-**8.1 倍。** 差别全部来自一件事：同一份 3000 字符的背景，被装载了 1 次还是 8 次。
+**摘要中的 token 量比值为 8.1 倍。** 设计上两条路线计划让共享背景分别进入 1 次或 8 次调用；但没有逐次轨迹，不能证明结果差别全部由背景重复装载造成，也不能把 token 比值当成账单比值。
 
 ### 这里我又踩了一次同一个坑
 
 第一次跑这个实验时，A 的答案是**空的** —— 我差点得出「单 agent 在复杂检查任务上做不出来」。
 
-真实原因是：`max_tokens` 设的 2000 被模型的思考过程吃光了，返回的是**空文本 + `stop_reason=max_tokens`**（第 0 章「截断不报错」那条直觉的实例）。
+历史摘要记为**空文本 + `stop_reason=max_tokens`**。按 Anthropic Messages API 契约，这表示响应触及了输出上限；但当时的逐次响应、usage、模型版本与内容块未保存，无法确认是不是 thinking 消耗了预算，也无法排除其他差异。
 
-**这是本次写作里第三次撞上这个测量陷阱**（另两次在第 1 节）。把预算提到 6000 后，两条路线都给出了合理的检查结论 —— 差别只在成本上。
+后续记录称把上限调到 6000 后两条路线都产生了“合理”的检查结论，但没有保存原始输出、验收规则或逐项评分。因此这不能证明两路均完成了等价任务，也不能支持统一采用 6000 的建议。复测时应依据 endpoint 的 `stop_reason` 与独立任务验收器分类，不能把截断结果当成功或失败率样本。
 
-三次是同一个教训：**在没有确认 `stop_reason` 之前，不要解释任何「没答出来」的结果。**
+可复用的教训是：先看 `stop_reason`，再按 endpoint 契约分类；`max_tokens` 说明响应达到生成上限，不单独解释因果，也不能证明任务内容完成。
 
-## 统一规律：成本 = 内容 × 装载次数
+## 统一规律：重复输入只是总量的一部分
 
-两个实验方向相反，但可以用一句话统一：
+两个历史对照方向相反。对输入 token 的一部分，可以用下面的近似关系帮助列清变量：
 
-> **一份内容被装载了几次，决定了它是省钱还是费钱。**
+> **输入侧的重复内容量，近似取决于内容长度 × 请求中出现次数。**
 
-- 实测一里，20 篇原文在 A 路线上被装了 **4 次**（每轮一次），在 B 路线上只装了 **1 次**（子 agent 内部）
-- 实测二里，共享背景在 A 路线上装了 **1 次**，在 B 路线上装了 **8 次**
+- 历史观测一的设计中，A 路线计划在多轮中重复携带 20 篇原文，B 路线把扫描放入子循环；具体逐次装载次数无法从留存材料复核
+- 历史观测二的设计中，共享背景计划在 A 路线装载 1 次、在 B 路线装载 8 次；逐次请求和实际缓存命中未留存
 
-所以「子智能体省不省」不是它自身的属性 —— **取决于你的对照方案把同一份内容重复了几遍。**
+输入重复量不等于总 token、账单或系统成本。还要计入输出、工具定义和结果、编排调用、重试、并行开销、缓存读写价格、延迟以及任务质量；应在相同任务集和验收规则下对照。
 
 <Mermaid
   chart={`
 flowchart TB
-    Q{"同一份内容<br/>会被装载几次？"} -->|"单 agent 反复携带<br/>子 agent 只装一次"| A["隔离更省<br/>主上下文也小得多"]
-    Q -->|"共享背景在<br/>每个子 agent 里重装"| B["隔离更贵<br/>按子 agent 数线性放大"]
-    A --> R["统一的判断依据"]
-    B --> R
-    R --> R1["任务长、探索噪声大<br/>→ 用子 agent 隔离"]
-    R --> R2["子任务多、共享背景大<br/>→ 别用，或者把背景收窄"]
+    A["固定任务集、模型/端点与验收规则"] --> B["定义单 agent 与子 agent 的上下文传递方式"]
+    B --> C["记录完整 usage、缓存、输出、延迟与费用"]
+    C --> D["校验结果质量、来源覆盖与失败状态"]
+    D --> E{"达到相同质量门槛？"}
+    E -->|否| F["不能只按 token 少判优"]
+    E -->|是| G["按实际工作负载与预算选择编排方式"]
 `}
 />
 
 ## 一个直接的优化：别让共享背景重复装载
 
-实测二那 8 倍，**大部分是可以省掉的**。共享背景是每个子 agent 都要用的固定前缀 —— 这正是 **prompt caching** 的场景：把逐字相同的前缀在服务端存下来，后续请求命中就不必重算，只按更低的单价计费（机制见第 1 章第 5 节，成本影响见本章第 7 节）。同一份前缀重复出现时，它会被缓存，后续的命中成本远低于首次写入。
+缓存可能降低某些 provider/endpoint 上重复前缀的边际处理价格，但不能预先从 68548 这个历史总量中扣出固定比例。DeepSeek 当前文档描述的是自动、尽力而为缓存和其自身 usage 字段；Anthropic API 则有自己的 cache breakpoint 与 usage 口径。要估缓存后的账单，必须在目标 endpoint 上测实际命中并按对应费率计算；缓存也不减少逻辑上下文中需要提供的内容长度。
 
-缓存不会让「重复装载」在逻辑上消失，但会把上面那 68548 这个数字显著压低。**这也是为什么第 1 章要先讲缓存** —— 很多上下文工程的成本问题，最后的答案都落在它身上。
+缓存不会让「重复装载」在逻辑上消失，也不保证命中或普遍降低上面那组历史 token 数。它是需要单独验证的 endpoint 优化项，不是多 agent 成本结论的替代证据。
 
-另一半的省法更根本：**把共享背景收窄。** 8 个子 agent 各自携带 3000 字符的规范手册，其中大部分条目与当前这一项无关。给每个子 agent 只带**它需要的那几条**，总装载量立刻下降一个量级。
+另一半可测的优化是**把共享背景收窄**。历史例子里 8 个子 agent 各自携带约 3000 字符的规范手册，其中部分条目与当前检查项无关。按标签裁剪是一个待测方案；减少比例要用目标任务验证，不能从构造代码推断为固定幅度。
 
 ## 什么时候该用子智能体
 
 | 情况 | 选择 | 理由 |
 |---|---|---|
-| 任务需要在大量资料里探索，但结论很短 | **用** | 典型场景。噪声留在子 agent 里，主上下文只收结论 |
-| 主任务会持续很多轮（追问、多步执行） | **用** | 隔离的收益随轮次放大 —— 主上下文每轮都要重发 |
-| 子任务彼此高度依赖，要频繁共享中间状态 | **不用** | 每次共享都要跨上下文边界传递，协调成本超过隔离收益 |
-| 子任务数量多，且每个都要装载大段共享背景 | **不用**（或先收窄背景） | 成本按子 agent 数线性放大，实测 8 倍 |
-| 任务本身很短 | **不用** | 隔离的收益还没显现，协调开销就先付了 |
+| 任务需要在大量资料里探索，但交付内容短 | **评估隔离运行** | 可减少主 prompt 中的探索过程；必须保留必要来源和失败信息 |
+| 主任务会持续多轮 | **比较不同历史保留策略** | 若每轮重复带入长历史，可能增加输入；缓存、服务端状态和 compaction 会改变结果 |
+| 子任务彼此高度依赖或共享可变状态 | **先设计同步与状态边界** | 独立上下文会增加协调、合并与冲突处理，不能把它当成并行收益 |
+| 子任务数量多且每项都需要大段共享背景 | **先测背景裁剪与缓存** | 输入重复可能增加，但幅度与账单取决于 endpoint 和实际命中 |
+| 任务很短或结果容易直接校验 | **先比较单 agent** | 额外调度、调用和结果验证可能超过隔离收益 |
 
 ## 完整可运行代码
 
 ```python
 # subagent_cost.py
-"""算清「用子智能体」在你的场景里是省还是费，并给出一个真正的最小 subagent。
-
-核心公式：总成本 ≈ Σ(每份内容 × 它被装载的次数)
-把「同一份内容被装了几次」数清楚，结论就出来了。
+"""比较 Anthropic Messages endpoint 的 token 体积；不代表账单或质量。
 
 运行前需要三个环境变量（第 1 章讲过怎么拿）：
-  ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN —— 厂商控制台签发的密钥
+  ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN —— 二选一；前者是 API key，后者是 bearer token
   ANTHROPIC_BASE_URL                         —— 用兼容端点时填，官方端点可留空
   VERIFY_MODEL                               —— 要测的模型名
+
+安装依赖：python -m pip install anthropic
 """
 
 import json
@@ -117,18 +116,19 @@ import os
 
 import anthropic
 
+api_key = os.environ.get("ANTHROPIC_API_KEY") or None
+auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or None
+if (api_key is None) == (auth_token is None):
+    raise RuntimeError("请且仅配置 ANTHROPIC_API_KEY 或 ANTHROPIC_AUTH_TOKEN 其中一个")
 client = anthropic.Anthropic(
-    api_key=(
-        os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    ),
+    api_key=api_key,
+    auth_token=auth_token,
     base_url=os.environ.get("ANTHROPIC_BASE_URL"),
 )
 MODEL = os.environ["VERIFY_MODEL"]
 
-# ⚠️ 必须给足输出预算。设小了会得到空文本 + stop_reason=max_tokens，
-#    你会误判成「模型做不出来」（本文实测里踩过三次）。
-MAX_TOKENS = 6000
+# 输出预算应按目标 endpoint 和验收要求设置，没有通用固定值。
+MAX_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "4096"))
 MAX_ROUNDS = 4          # 子 agent 自己的轮次上限，与主循环无关
 
 # ── 待检查项与规则（示例：构造数据，未实跑）────────────────────
@@ -163,7 +163,7 @@ CHECK_TOOL = {
 
 
 def check_item(item_id: str) -> tuple[dict, bool]:
-    """返回 (回填内容, 是否失败)。区分「不存在」与「暂不可用」两种取不到。"""
+    """静态教学目录查询；真实存储层还需分别处理缺失、超时与权限拒绝。"""
     if item_id not in ITEMS:
         return {
             "error": "not_found",
@@ -175,13 +175,35 @@ def check_item(item_id: str) -> tuple[dict, bool]:
 
 
 def total_tokens(resp) -> int:
+    """按 Anthropic Messages usage 字段汇总；兼容端点须核对字段语义。"""
     u = resp.usage
-    # 四项之和 —— 只读 input_tokens 会被自动缓存误导（第 0 章的坑）
+    # 这是 token 体积口径，不等于费用、质量或所有 provider 的通用口径。
+    input_tokens = getattr(u, "input_tokens", None)
+    output_tokens = getattr(u, "output_tokens", None)
+
+    def is_count(value) -> bool:
+        return (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and value >= 0
+        )
+
+    if not is_count(input_tokens) or not is_count(output_tokens):
+        raise RuntimeError("endpoint 未返回有效的 Anthropic input/output usage")
+    optional_usage = (
+        getattr(u, "cache_read_input_tokens", 0),
+        getattr(u, "cache_creation_input_tokens", 0),
+    )
+    if any(
+        value is not None and not is_count(value)
+        for value in optional_usage
+    ):
+        raise RuntimeError("endpoint 返回了无效的缓存 usage")
     return (
-        (u.input_tokens or 0)
-        + (u.cache_read_input_tokens or 0)
-        + (u.cache_creation_input_tokens or 0)
-        + (u.output_tokens or 0)
+        input_tokens
+        + (optional_usage[0] or 0)
+        + (optional_usage[1] or 0)
+        + output_tokens
     )
 
 
@@ -190,8 +212,10 @@ def call(system: str, user: str):
         model=MODEL, max_tokens=MAX_TOKENS, system=system,
         messages=[{"role": "user", "content": user}],
     )
-    if resp.stop_reason == "max_tokens":
-        raise RuntimeError("输出被截断 —— 提高 MAX_TOKENS 后重跑，别解释这个空结果")
+    if resp.stop_reason != "end_turn":
+        raise RuntimeError(f"响应未正常完成：stop_reason={resp.stop_reason!r}")
+    if not any(b.type == "text" and b.text.strip() for b in resp.content):
+        raise RuntimeError("响应没有可验收的文本内容")
     return resp
 
 
@@ -204,7 +228,7 @@ def pick_relevant(item_id: str) -> str:
 
 
 # ── 一个真正的最小 subagent：独立上下文 + 自己的工具循环 + 结构化结论 ──
-def run_subagent(task: str, brief: str) -> tuple[dict, int]:
+def run_subagent(task: str, brief: str, expected_ids: set[str]) -> tuple[dict, int]:
     """一次独立的模型调用序列。它与「多调一次模型」的区别有三点：
 
       1. 有自己的 messages（独立上下文）和自己的工具循环；
@@ -216,6 +240,8 @@ def run_subagent(task: str, brief: str) -> tuple[dict, int]:
     used = 0
     not_found: list[str] = []
     failed: list[str] = []
+    checked: set[str] = set()
+    status = "incomplete"
 
     for _ in range(MAX_ROUNDS):
         resp = client.messages.create(
@@ -223,7 +249,28 @@ def run_subagent(task: str, brief: str) -> tuple[dict, int]:
             tools=[CHECK_TOOL], messages=sub_messages,
         )
         used += total_tokens(resp)
+        if resp.stop_reason == "end_turn":
+            status = "complete"
+            break
         if resp.stop_reason != "tool_use":
+            failed.append(f"unsupported_stop_reason:{resp.stop_reason}")
+            break
+
+        calls = [b for b in resp.content if b.type == "tool_use"]
+        if not calls:
+            failed.append("empty_tool_use")
+            break
+
+        # Anthropic correlates every tool_result to a unique tool_use id. Validate
+        # the whole batch before dispatch so malformed ids cannot cause ambiguous
+        # result routing or let earlier calls run before a later id defect is found.
+        tool_use_ids = [getattr(block, "id", None) for block in calls]
+        invalid_id = any(
+            not isinstance(tool_id, str) or not tool_id.strip()
+            for tool_id in tool_use_ids
+        )
+        if invalid_id or len(set(tool_use_ids)) != len(tool_use_ids):
+            failed.append("invalid_tool_use_ids")
             break
 
         sub_messages.append({"role": "assistant", "content": resp.content})
@@ -231,12 +278,23 @@ def run_subagent(task: str, brief: str) -> tuple[dict, int]:
         for b in resp.content:
             if b.type != "tool_use":
                 continue
-            content, is_error = check_item(**b.input)
-            if is_error:
-                if content.get("error") == "not_found":
-                    not_found.append(b.input.get("item_id", "?"))
+            args = b.input if isinstance(b.input, dict) else {}
+            item_id = args.get("item_id")
+            valid = (
+                b.name == CHECK_TOOL["name"]
+                and set(args) == {"item_id"}
+                and isinstance(item_id, str)
+                and item_id in expected_ids
+            )
+            if not valid:
+                content, is_error = {"error": "invalid_tool_request"}, True
+                failed.append(f"invalid_tool_request:{item_id or 'unknown'}")
+            else:
+                content, is_error = check_item(item_id)
+                if is_error:
+                    not_found.append(item_id)
                 else:
-                    failed.append(b.input.get("item_id", "?"))
+                    checked.add(item_id)
             results.append({
                 "type": "tool_result",
                 "tool_use_id": b.id,
@@ -245,24 +303,60 @@ def run_subagent(task: str, brief: str) -> tuple[dict, int]:
             })
         sub_messages.append({"role": "user", "content": results})
 
-    # 收尾：只要三段结论，不要过程。子 agent 的 messages 到此丢弃。
+    # 轮次耗尽或异常停止时不调用总结模型，也不伪装成完成。
+    if status != "complete":
+        return {
+            "status": status, "did": [], "failed": failed,
+            "not_found": not_found,
+            "pending": sorted(expected_ids - checked - set(not_found)),
+        }, used
+
+    # 总结文本仍需外部验收；状态、失败和缺项由宿主维护。
     final = client.messages.create(
         model=MODEL, max_tokens=MAX_TOKENS,
         system=(
-            "只输出 JSON，字段固定为 did / failed / not_found。"
-            "did 写检查结论；failed 写执行失败（超时、被拒绝等）；"
-            "not_found 写确实不存在的编号。不要复述过程。"
+            "只输出 JSON，字段固定为 did。did 是数组，每项包含 item_id 与 finding 两个字符串。"
+            "只报告实际检查过的编号；不要报告执行状态或不存在的编号。不要复述过程。"
         ),
         messages=[*sub_messages, {"role": "user", "content": "给出结论。"}],
     )
     used += total_tokens(final)
+    if final.stop_reason != "end_turn":
+        return {
+            "status": "incomplete", "did": [],
+            "failed": failed + ["summary_incomplete"], "not_found": not_found,
+            "pending": sorted(expected_ids - checked - set(not_found)),
+        }, used
     text = "".join(b.text for b in final.content if b.type == "text")
     try:
-        summary = json.loads(text[text.index("{"): text.rindex("}") + 1])
+        summary = json.loads(text)
+        if (
+            not isinstance(summary, dict)
+            or set(summary) != {"did"}
+            or not isinstance(summary["did"], list)
+            or any(
+                not isinstance(item, dict)
+                or set(item) != {"item_id", "finding"}
+                or not isinstance(item["item_id"], str)
+                or not isinstance(item["finding"], str)
+                or not item["finding"].strip()
+                for item in summary["did"]
+            )
+        ):
+            raise ValueError("summary schema mismatch")
     except (ValueError, json.JSONDecodeError):
-        summary = {"did": [], "failed": failed or ["unparseable_summary"],
-                   "not_found": not_found}
-    return summary, used
+        summary = {"did": []}
+        failed.append("unparseable_summary")
+    did = [item for item in summary["did"] if item["item_id"] in checked]
+    reported = {item["item_id"] for item in did}
+    pending = sorted(expected_ids - reported - set(not_found))
+    return {
+        "status": "complete" if not failed and not pending and not not_found else "partial",
+        "did": did,
+        "failed": sorted(set(failed)),
+        "not_found": sorted(set(not_found)),
+        "pending": pending,
+    }, used
 
 
 def single_agent() -> int:
@@ -277,7 +371,9 @@ def with_subagents(narrow: bool = False) -> int:
     summaries = []
     for item_id in ITEMS:
         brief = pick_relevant(item_id) if narrow else SHARED_BRIEF
-        summary, used = run_subagent(f"检查 {item_id} 是否符合规范。", brief)
+        summary, used = run_subagent(
+            f"检查 {item_id} 是否符合规范。", brief, expected_ids={item_id}
+        )
         total += used
         summaries.append(json.dumps(summary, ensure_ascii=False))
 
@@ -299,52 +395,62 @@ if __name__ == "__main__":
     print("上面的 c 用 pick_relevant 演示了这一步。")
 ```
 
-> **实跑状态**：本文表格里的**数据是实测的**（用直接 HTTP 请求采集）；上面这份 Python 脚本用的是 SDK 写法，字段与采集脚本一致，但**脚本本身未在官方端点验证**。其中 `run_subagent` 是可运行的最小实现（独立上下文 + 工具循环 + JSON 收尾），不是伪代码。
+> **实跑状态**：本文表格只保留 2026-10-08 的历史观测摘要，逐次原始轨迹无法恢复，因此本轮不能复算。下面是 Anthropic SDK 形态的可运行样例，但**未在官方端点验证**；API key 走 `api_key`，Bearer token 走 `auth_token`，不要把两类凭证混为一个请求头。`total_tokens` 只按 Anthropic Messages usage 字段算 token 体积。代码不测答案质量或费用，也不应把模型摘要当成独立验收结果。
+
+Anthropic 的每个 `tool_use` 块带有唯一 `id`，宿主用对应的 `tool_result.tool_use_id` 回填结果。示例先对整批 id 做非空和唯一性检查；发现歧义时整批停止，避免错误关联结果或先执行部分调用。这个预检不替代参数校验、授权或结果验收。
+
+`total_tokens` 只接受非负整数；Python 的 `bool` 是 `int` 子类，所以还要显式排除 `True/False`。代码把 Anthropic SDK 中缺省或为 `None` 的可选缓存计数字段按 0 处理；换用兼容端点前，必须确认该端点的 usage 字段和缺省语义相同，否则不要把这项汇总当成完整输入体积。
+
+示例的 `ITEMS` 是进程内构造数据，`check_item` 没有真实数据库、租户隔离或对象授权。生产工具必须在每次读取时按可信调用身份、租户和对象权限检查；模型给出的编号与参数只是请求数据，不能作为授权依据。
 
 ### 子 agent 交给主 agent 的那份东西
 
-下面是 `run_subagent` 返回的产物（示例：构造数据，未实跑）：
+下面是宿主整理后的返回产物协议示意（构造数据，未实跑；静态示例代码不会产生读取超时）。模型只负责提出 `did` 发现；`status`、`failed`、`not_found` 与 `pending` 由宿主根据工具执行和验收结果维护：
 
 ```json
 {
-  "did":       ["ITEM-01 未指定编码；ITEM-04 未设超时"],
-  "failed":    ["ITEM-03 读取超时，未能得出结论"],
-  "not_found": ["ITEM-99"]
+  "status": "partial",
+  "did": [{"item_id": "ITEM-01", "finding": "未指定编码"}],
+  "failed": ["ITEM-02 读取超时"],
+  "not_found": [],
+  "pending": ["ITEM-02"]
 }
 ```
 
-三个字段各有用途，缺一不可：
+这些字段各有用途，且不能由模型自行宣布执行状态：
 
 | 字段 | 含义 | 主 agent 该做什么 |
 |---|---|---|
-| did | 已完成的检查结论 | 直接采信，必要时再核对一处 |
-| failed | 执行失败（超时、被拒、解析失败） | 知道这是**查询失败**，可换方式或重试一次 |
-| not_found | 目标确实不存在 | 不要再派一次同样的活（这正是下面失败模式②的修法） |
+| status | 宿主流程状态；`complete` 仅表示预期编号都有非空、格式有效的发现 | 仍需业务/规则验收，不能当作正确性证明 |
+| did | 模型给出的检查结论 | 作为待验收的发现；必要时回查代码与规则 |
+| failed | 宿主或模型调用流程观察到的失败 | 知道这是**查询失败**，按错误类型决定重试或升级 |
+| not_found | 宿主查询确认目标不存在 | 不要把失败伪装成“没有发现问题” |
+| pending | 尚无可验收结论的预期编号 | 补查、重试或明确交给调用方 |
 
-主 agent 把这份 dict 作为一条消息追加进自己的上下文（如果子 agent 是被工具派出的，就作为那条 `tool_result` 的内容），**不追加子 agent 的原始轨迹**。隔离真正发生的位置就在这里 —— 如果连原始轨迹一起带回来，你只是把上下文搬了个家，没有任何节省。
+主 agent 可以把这份 dict 作为一条消息追加进自己的上下文（如果子 agent 是被工具派出的，就作为那条 `tool_result` 的内容）；只有宿主没有再附回原始轨迹时，才实现了主上下文隔离。保留轨迹、证据引用或审计记录应按复核需求另行设计。
 
-还有一个收尾细节：让子 agent 用一次**独立的收尾调用**输出 JSON，而不是要求它在工具循环里顺便说出来。工具循环里的回复容易被工具结果带偏；单独的收尾调用只做格式化，成功率高得多，也让「结论」和「过程」在结构上分开。
+示例用一次独立收尾调用输出 JSON，以便把格式化与工具交互分开；这会增加调用、token 和失败点。它不保证格式正确（仍需解析和校验），也不证明结论正确。是否值得应在任务质量、成本与可审计性上实测。
 
 ## 子智能体的失败模式
 
 前面算的都是成本。真要用它，还得知道它会怎么坏 —— 而且**它的坏法和单 agent 不一样**，因为主 agent 拿到的不是原始信息，而是子 agent 的摘要。
 
-**① 摘要丢信息，而主 agent 无从察觉。** 上一节实测过：压缩会丢掉关键约束，且丢掉之后在无指令时模型会直接给出确定结论。子智能体是同一机制的放大版 —— 子 agent 的摘要成了主 agent 的事实来源，一旦它漏掉那条硬约束，主 agent 连「原本有什么」都不知道。
+**① 摘要可能丢信息，而主 agent 未必察觉。** 上一节的一个历史样本曾记录关键约束丢失；该观察不能推出所有摘要都会如此。子 agent 的摘要若成为主 agent 唯一的信息来源，遗漏就可能不易察觉，因此应按任务要求保留来源、证据或复核入口。
 
-**② 子 agent 的失败会被压缩成一句「没找到」。** 子 agent 内部调了 5 次工具全部超时，到了摘要里往往只剩一句结论。主 agent 看到的是「无相关信息」，于是它会**再派一个子 agent 去做同一件事** —— 你付了两次钱，而且在监控上看不出这是重试。修法就是上面那个 `failed` 字段：让子 agent 把「查不动」和「确实没有」分成两栏上报，主 agent 才有依据决定要不要重试。
+**② 子 agent 的失败可能被误写成「没找到」。** 如果调用失败状态没有进入宿主维护的结果，主 agent 可能把它误读为无相关信息并重复派发。宿主应分别记录工具失败、确认不存在和待检查项，并由重试策略决定是否再执行。
 
 **③ 并行子 agent 之间无法协商。** 它们各自独立工作、各自写摘要，冲突要到主 agent 汇总时才暴露。两个子 agent 给出互相矛盾的结论时，主 agent 手里没有裁决依据，只能再花一次调用去核对。
 
-三条的共同点：**信息在边界处被有损压缩，而损失对调用方不可见。** 对应的做法也就很具体 —— 让子 agent 返回**结构化**结果（至少含「做了什么 / 失败什么 / 哪些没查到」三项），而不是一段散文摘要；主 agent 收到「没查到」时要能区分「确实没有」与「查询失败」。
+这些失败模式的共同点是：**边界压缩会隐藏来源或状态。** 让子 agent 返回带编号的结构化发现，并由宿主维护失败、缺项和执行状态；主 agent 收到空结果时要能区分「确实没有」与「查询失败」。发现本身仍要经过规则或业务验收。
 
 ## 常见坑
 
-**把子智能体当成纯并行手段。** 并行只在子任务真正独立时成立；隔离是那个一直有效、也更值钱的收益 —— 它让主上下文不被探索噪声淹没。
+**把子智能体当成天然并行或天然隔离。** 并行取决于依赖与宿主调度；上下文隔离取决于消息传递、会话和状态配置。两者都要检查实现。
 
-**以为「子智能体一定更贵」。** 实测两个方向都有：和「资料全程常驻主上下文」比，隔离**更省**（9182 vs 25913）；和「共享背景只装一次」比，隔离贵 8 倍。**判断依据是同一份内容被装载了几次。**
+**把历史 token 摘要当成可推广的费用结论。** 两个历史摘要方向相反，但缺少逐次 usage、endpoint 与答案评分，不能据此判断当前架构更省或质量相当。比较时同时记录 token、缓存 usage、费用、延迟和独立质量指标。
 
-**让每个子 agent 都带同一份大背景。** 这是最容易被忽略的成本放大器，按子 agent 数线性增长。先做两件事：用 prompt caching 处理重复前缀，再把背景**收窄到每个子任务真正需要的部分**。
+**让每个子 agent 都带同一份大背景。** 这可能增加输入量；缓存是否命中及其价格依赖 provider/endpoint。先测背景裁剪、缓存命中和端到端费用，再决定是否使用。
 
-**在任务很短时就上子智能体。** 隔离的收益要等主上下文积累起噪声才显现；任务短的时候，你只付了协调成本。
+**在任务很短时就上子智能体。** 任务短时，隔离带来的上下文收益可能小于额外调度、调用与验收成本；应按实际工作负载比较。
 
-**看到空输出就下结论。** 先查 `stop_reason`。输出预算被思考吃光是长上下文任务的常见故障，而不是「模型做不出来」。
+**把空输出归因于思考耗尽预算。** 先按 endpoint 契约检查 `stop_reason`、内容块和 usage；`max_tokens` 表示触及输出上限，单凭它无法证明因果或任务是否完成。

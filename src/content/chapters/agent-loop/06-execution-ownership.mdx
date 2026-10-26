@@ -1,0 +1,121 @@
+# 执行权与租约：过期 worker 不等于已停止
+
+## 本节要解决什么
+
+一个持久化 Agent 任务可能跨进程运行：worker A 领到任务，执行数分钟后网络卡住；调度器看不到心跳，租约过期，于是 worker B 接管。如果 A 只是变慢、并没有崩溃，它稍后仍可能恢复并继续写状态或调用工具。队列里的任务记录存在数据库，并不等于系统知道当前哪个 worker 有权推进它。
+
+本节交付物是把任务状态与执行权分开建模：任务有稳定 ID、检查点和状态；每次领取产生 owner、到期时间与单调递增 epoch。验收判据是：过期 worker 不能续租或提交 checkpoint；接管者拿到更高 epoch；构建/存储层拒绝旧 epoch 写入。失败形态必须能区分“worker 没有回应”“任务已被接管”“外部副作用结果未知”，不能把它们统统解释成普通重试。
+
+## 任务状态不等于 worker 存活状态
+
+**任务**是要完成的业务工作，可以排队、运行、等待审批、等待重试、已完成或需要对账。**执行权**是某一个具体 worker 在一段时间内被允许更新该任务的资格。worker 进程可能在任务运行中死亡；任务仍存在，但执行权应在租约规则允许后重新分配。反过来，心跳丢失也不能证明旧进程已经停止，它可能只是暂停、网络隔离或无法连接数据库。
+
+租约提供接管条件：在截止时刻之前，只有当前 owner 可以续租和写入；超过截止时间后，系统可以尝试把任务交给新 owner。租约不提供“旧 worker 已经死掉”的证明。epoch（fencing token）补上这个缺口：每次成功接管时递增，所有任务状态更新都要求同时匹配 task id、owner、epoch 与未过期的租约。旧 worker 恢复后持有的仍是旧 epoch，它的迟到写入会被拒绝。这里的“未过期”由存储实现定义检查时点；如果数据库事务已经锁住任务行，租约到期不会自动中止该事务。
+
+<Mermaid
+  chart={`
+sequenceDiagram
+    participant DB as 任务存储
+    participant A as worker A
+    participant B as worker B
+    participant X as 外部接收方
+    A->>DB: claim task-1 → owner=A, epoch=1
+    A->>DB: checkpoint(epoch=1)
+    Note over A,DB: A 心跳中断，租约到期
+    B->>DB: claim task-1 → owner=B, epoch=2
+    A->>DB: 迟到写入(epoch=1)
+    DB-->>A: 拒绝 StaleOwnership
+    B->>X: 副作用请求（稳定幂等键）
+    X-->>B: 结果或结果未知
+    B->>DB: checkpoint / reconcile(epoch=2)
+`}
+/>
+
+本地测试通过后的状态样例：
+
+```json
+{
+  "task_id": "task-1",
+  "status": "running",
+  "owner": "worker-b",
+  "epoch": 2,
+  "lease_until": 120,
+  "checkpoint_seq": 2,
+  "checkpoint": "step-2"
+}
+```
+
+租约到期后，如果 A 已经把邮件送到接收方、但还没写成功 checkpoint，B 可能再次调用邮件接口。epoch 只能保护**会验证 epoch 的存储端**；它不能撤销已发生的外部动作，也不能自动让不支持 fencing 的接收方拒绝 A。外部调用必须配合接收方幂等键、可查询的操作 ID、outbox/对账流程或人工处理不确定结果。不要把“数据库只允许一个 owner”写成“外部副作用只发生一次”。
+
+## 领取和续租的判据
+
+接管需要原子条件更新。候选任务应满足“仍在队列中”或“当前租约已过期”；事务中写入新 owner、`epoch + 1` 和新的 `lease_until`。两个 worker 同时尝试领取时，只能有一个更新成功。关系数据库可通过行锁、条件更新或 `SKIP LOCKED` 等方式完成，具体语义取决于数据库和隔离级别。PostgreSQL 明确说明 `SKIP LOCKED` 会给出不一致视图，因此适合多个消费者领取队列项，不适合通用一致性查询。不能先 `SELECT` 出过期任务，等一会儿再无条件 `UPDATE`——在这段窗口里另一个 worker 可能已经领取。
+
+心跳续租也必须带 `owner + epoch`，并检查旧租约在数据库当前时间下仍未过期。过期之后收到的迟到心跳不能复活旧执行权；worker 应重新 claim，接受新 epoch，或停止当前工作。租约时间要基于一个约定的时钟来源；多机部署时各机器时钟有偏差，若应用进程各自比较本地时间，可能出现 A 认为仍有效、B 认为已过期。生产实现需要选择数据库时钟或明确的时钟误差和安全余量，并测试暂停、网络分区与长 GC 停顿。
+
+检查点应和它代表的业务状态一起提交，并记录序号或版本。恢复时先读取最近确认的检查点，再从下一个可安全重放的动作继续；如果一个步骤可能产生外部副作用，就需要在状态机中把“请求已发出但结果未知”表示出来。只存一份对话历史并不一定足以恢复业务执行：还要知道动作是否开始、远端是否确认、用的参数版本和幂等键是什么。
+
+## 可运行的 SQLite 教学模型
+
+本节配套代码在 `examples/execution-ownership/`。它使用 SQLite 条件写入实现本地租约与 epoch 状态机，所有时间由测试显式传入，避免依赖真实等待。它不包含多进程调度器、PostgreSQL 行锁、外部副作用服务或真正的时钟同步。实跑状态：Python 标准库离线测试，4 个测试全部通过。
+
+```bash
+python3 -m unittest discover -s examples/execution-ownership -v
+```
+
+最小调用展示一次接管与旧 owner 被拒绝：
+
+```python
+from task_ownership import StaleOwnership, TaskStore
+
+store = TaskStore("tasks.db")
+store.enqueue("task-1")
+worker_a = store.claim_next("worker-a", now=100, lease_seconds=10)
+store.write_checkpoint(worker_a, now=101, value="step-1")
+
+# 到 110 后可接管；新 epoch 为 2。
+worker_b = store.claim_next("worker-b", now=110, lease_seconds=10)
+try:
+    store.write_checkpoint(worker_a, now=111, value="stale-result")
+except StaleOwnership:
+    pass
+store.write_checkpoint(worker_b, now=111, value="step-2")
+assert store.read_checkpoint("task-1") == (2, "step-2")
+store.close()
+```
+
+这里的时间参数只是确定性教学输入，不是生产 API 建议。真实任务存储应在一个原子数据库操作中比较租约并更新 epoch；如果用应用传入时间，需要确保时间来源可信且误差界限清楚。SQLite 的 `BEGIN IMMEDIATE` 也不等于 PostgreSQL 多实例 worker 在生产负载下的锁行为。
+
+### PostgreSQL 集成测试补充了什么证据
+
+本站的 P4 服务另有真实 PostgreSQL 集成测试，验证了存储层的 fencing 路径：`examples/p4-durable-support/tests/test_worker_ownership.py::test_takeover_fences_all_writes_and_dead_owner`。worker A 在独立 spawn 进程中领取 1 秒租约后被强制终止；等待租约过期后，另一个 OS 进程中的 worker B 接管，epoch 增加 1。测试再用 A 持有的旧 lease 凭据尝试续租、写 checkpoint、发事件、提议动作和授权动作；这些写入均被拒绝，checkpoint、待审批 action 与 approval 记录保持原样。执行命令 `cd examples/p4-durable-support && uv run --frozen pytest tests/test_worker_ownership.py -q`，本次 PostgreSQL 集成实跑 5 项通过。P4 的 `fence()` 先以 `SELECT ... FOR UPDATE` 锁住任务行，再用 `clock_timestamp()` 检查租约、deadline 和取消状态；调用方随后在同一事务里执行状态写入。检查发生在事务持锁期间，但并非数据库对事务内每条语句都重新检查墙钟时间；持锁事务会与接管串行化，因此事务应保持短小，绝不能跨模型调用或网络请求。
+
+这比 SQLite 模型多证明了一层：当前 P4 PostgreSQL 存储实现能在独立进程接管后拒绝旧 epoch 的数据库写入。测试是先 kill A 再由 B 接管，所以它不模拟存活中的网络隔离 worker 恢复；对时钟偏差、长时间 GC、真实外部服务以及副作用 exactly-once 也没有覆盖。它也没有验证“租约一到期就能立刻接管”：持有任务行锁的现存事务会先完成或回滚，后续 claim 才能继续。生产实现应把租约判断放在数据库事务里，并按数据库实际时钟语义比较。PostgreSQL 的 [`FOR UPDATE` / `SKIP LOCKED`](https://www.postgresql.org/docs/18/sql-select.html) 提供行级锁语义，其中 `SKIP LOCKED` 适合队列式并发消费者；[`clock_timestamp()` 与事务时间函数](https://www.postgresql.org/docs/18/functions-datetime.html) 返回语义不同，长事务中 `CURRENT_TIMESTAMP` / `now()` 仍表示事务开始时间。
+
+## 错误案例：旧 worker 恢复后覆盖新结果
+
+如果只用 `locked_by='worker-a'`，A 的租约到期后 B 可以把 `locked_by` 改成 B；但 A 恢复后若代码只检查 task id，仍能把旧结果写回去，覆盖 B 新生成的 checkpoint。日志里两次写入都返回成功，直到下一步读到互相矛盾的状态才发现。加一个 owner 字段仍不足以防止 A 的延迟请求：存储必须检查本次写入携带的 epoch。
+
+在本地模型里先由 A 领取 `epoch=1`，再让 B 于租约截止时接管得到 `epoch=2`；A 使用旧 claim 写入会得到原始异常：
+
+```text
+StaleOwnership: worker worker-a no longer owns task-1
+```
+
+紧邻上方的完整演示先写入 A 的 `step-1`，因此随后 B 的 checkpoint 序号为 `(2, 'step-2')`。这是离线 SQLite 模型复现的状态冲突，不是生产事故记录。单元测试 `test_reclaimed_task_increments_epoch_and_rejects_stale_checkpoint` 则省略了 A 的初始 checkpoint，所以它断言的是 `(1, 'current')`；两者都验证旧 epoch 写入被拒绝，只有演示包含前置 checkpoint。若不做 epoch 检查，重试可能表现成“偶发回滚”或“同一任务跑出两种结果”，而普通 happy-path 测试通常不会触发它。
+
+## 安全恢复步骤
+
+1. 先持久化 task id 与初始状态，再允许 worker 领取；不要让 HTTP 请求内存成为唯一任务记录。
+2. 使用原子 claim 更新 owner、过期时间和递增 epoch；没有领取成功的 worker 不得开始新动作。
+3. 心跳和 checkpoint 都带 task id、owner、epoch，并验证租约尚有效；数据库返回零行更新时，worker 立即停止推进。
+4. 在有边界的步骤间写 checkpoint；把可安全重放步骤与不可自动重放的外部动作区分开。
+5. 为外部动作生成稳定幂等键，并保存远端 operation id；同一逻辑动作的重试必须复用幂等键，不能每次生成新键。
+6. 对请求超时但结果未知的动作进入 `reconcile_required` 或等价状态；查询接收方或人工确认后再决定是否重试。
+7. 故障注入测试租约过期、旧 worker 迟到写入、重复领取、数据库断开和外部成功但 checkpoint 未提交；并分别说明离线模型与目标数据库的验证范围。
+
+验收看三类证据：任务有持久状态和最近确认检查点；存储能证明同一时刻只有当前 epoch 能修改状态；远端动作能用幂等键查询或进入显式对账流程。若第三项做不到，就必须把“结果未知”呈现给运维人员，不能用自动重试制造重复退款或重复消息。
+
+## 后端经验迁移
+
+可以直接迁移的是租约、条件更新、乐观版本、心跳、任务队列与数据库事务。会失效的直觉有三条：**租约到期不等于旧进程停止**；**checkpoint 成功不等于远端副作用恰好发生一次**；**持久化模型对话不等于持久化执行权**。把 owner、epoch、检查点和外部动作状态分开之后，才能对恢复行为给出可测试的保证，而不是依赖“进程大概已经挂了”的判断。

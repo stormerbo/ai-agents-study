@@ -12,8 +12,13 @@ status: drafting
 
 先在源码目录里找 `tool` 的定义：
 
-```text
-$ grep -n "^def tool" langchain_core/tools/convert.py
+```bash
+$ PY_FILE="$(python -c '
+import inspect
+from langchain_core.tools.convert import tool
+print(inspect.getsourcefile(tool))
+')"
+$ rg -n "^def tool" "$PY_FILE"
 16:def tool(
 29:def tool(
 44:def tool(
@@ -23,7 +28,7 @@ $ grep -n "^def tool" langchain_core/tools/convert.py
 
 **五个定义，都不是重复实现。** 那是 `@typing.overload` 的写法。
 
-`@typing.overload` 是 Python 的类型标注机制：同一个函数支持多种调用方式（只传函数、传字符串名、传名字加参数……），每种调用方式在类型检查器眼里是一个单独的签名。每个 overload 桩只有 `def ...: ...`（箭头后面是省略号，没有函数体），**它不会被运行**；真正执行的是最后一个没有 `@overload` 的完整定义 —— 这里就是第 71 行。**注释里那五个行号（16/29/44/58/71）就是这条命令的实际输出，它确实匹配到五行。**
+`@typing.overload` 是 Python 的类型标注机制：同一个函数支持多种调用方式（只传函数、传字符串名、传名字加参数……），每种调用方式在类型检查器眼里是一个单独的签名。每个 overload 桩只有 `def ...: ...`（箭头后面是省略号，没有函数体），**它不会被运行**；真正执行的是最后一个没有 `@overload` 的完整定义 —— 这里就是第 71 行。**这组行号是该固定版本的输出；升级版本后应重新定位，不能把行号当作稳定 API。**
 
 这条本身就是源码阅读的一个小教训：**看到多个同名定义时，先确认是不是 overload。** 直接读第一个会读到只用于类型检查的桩。
 
@@ -50,8 +55,8 @@ def tool(
 
 继续在 `convert.py` 里找它把工作交给了谁：
 
-```text
-$ grep -n "StructuredTool\|infer_schema" langchain_core/tools/convert.py
+```bash
+$ rg -n "StructuredTool|infer_schema" "$PY_FILE"
 219:    def _create_tool_factory(
 263:            if infer_schema or args_schema is not None:
 264:                return StructuredTool.from_function(
@@ -61,26 +66,26 @@ $ grep -n "StructuredTool\|infer_schema" langchain_core/tools/convert.py
 第 264 行交给了 `StructuredTool.from_function`。跟到 `structured.py`，再往下就进到 `base.py` 的 `create_schema_from_function`。**而 schema 真正被取出来的地方在这里：**
 
 ```python
-# langchain_core/tools/base.py:95 附近
-def _get_filtered_args(inferred_model, func, *, filter_args, include_injected=True):
-    """Get the arguments from a function's signature."""
-    schema = inferred_model.model_json_schema()["properties"]   # ← 就是这一行（第 103 行）
+# LangChain Core 0.3.63 的实际构造路径（精确行号以锁定源码为准）
+StructuredTool.from_function
+  ├─ args_schema is None and infer_schema=True
+  │    → create_schema_from_function（base.py:214）：由函数签名构造 Pydantic model
+  └─ args_schema 显式给定
+       → 复用调用方提供的 Pydantic model
+
+BaseTool.get_input_schema（base.py:487）
+  → 返回 args_schema；否则再调用 create_schema_from_function
+BaseTool.tool_call_schema（base.py:464）
+  → 过滤注入字段并构造模型可见的 schema
+tool_call_schema.model_json_schema()
+  → 导出 JSON Schema；不在此处创建字段约束
 ```
 
-**把两个行号分清楚，因为本节后面会同时用到它们**：`_get_filtered_args` 这个函数的定义在第 95 行；真正调 `model_json_schema()` 的那句在第 103 行。前者是「在哪找到这段逻辑」，后者是「约束在哪一行定下来」—— 第 5 节那套产出模板里的「位置」应该写后者。`["properties"]` 取出来的是 JSON Schema 里「参数名 → 参数 schema」的那张映射表，本节对照的全部内容都在它里面。
+`_get_filtered_args`（base.py:95）在这个版本中确实存在，但它在该追踪路径里只有定义，没有被 `create_schema_from_function` 或 `tool_call_schema` 调用。搜索到一个同名符号不能证明它属于本次调用链。检查模型实际看到的字段时，应查看 `tool_call_schema.model_json_schema()`；示例代码也据此读取最终 schema。
 
-**`model_json_schema()` 是 pydantic 的方法。** 到这里链路清楚了：
+**约束来源分两路**：默认推断时，LangChain 从函数签名构造 Pydantic model，`Literal` 等注解可形成字段约束；显式传入 `args_schema` 时，约束由调用者提供的模型定义。`model_json_schema()` 负责导出已经构造的模型。结果应以最终 tool-call schema 和构造来源共同判定，不能概括为「只能来自类型标注」。
 
-```text
-@tool（convert.py:71，parse_docstring 默认 False）
-  → _create_tool_factory（convert.py:219）
-      → StructuredTool.from_function（structured.py）
-          → create_schema_from_function（base.py:214）
-              → _get_filtered_args（base.py:95）
-                  → pydantic 的 model_json_schema()（base.py:103）   ← 约束在这里定下来
-```
-
-**关键结论：LangChain 只是一个"搬运工"。** 它把函数的类型标注交给 pydantic，再把 pydantic 生成的 schema 原样拿走。所以约束（enum、range、pattern）**只能来自类型标注** —— 那一层不产生它们，下一层就不会有。
+本节源码结论限定于 `langchain-core==0.3.63`：[convert.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/convert.py) 中 `parse_docstring` 默认为 False；[structured.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/structured.py) 与 [base.py](https://github.com/langchain-ai/langchain/blob/langchain-core%3D%3D0.3.63/libs/core/langchain_core/tools/base.py) 展示了 schema 构造与导出路径。固定版本复现分别见基础行为脚本 `experiments/scripts/verify_reading_source_tool_063.py` 与本节四组对照脚本 `experiments/scripts/verify_reading_source_trace_one_task_review_20261021.py`；依赖快照见 `experiments/locks/reading-source-compare-py314-macos-arm64-20261021.txt`。
 
 ## 第四步：写一个可验证的预测，然后跑
 
@@ -89,7 +94,7 @@ def _get_filtered_args(inferred_model, func, *, filter_args, include_injected=Tr
 - 打开 `parse_docstring=True` 之后，那句「只能是明天或后天」会进 `description`
 - 但它**仍然不会**变成 `enum`
 
-跑了一次（三种写法对照）：
+在固定版本中对照默认注解、解析文档、`Literal` 和显式 `args_schema` 四种写法，输出如下：
 
 ```text
 写法                                参数 schema
@@ -99,20 +104,25 @@ B day: str，parse_docstring=True     {"description": "只能是「明天」或�
 C day: Literal[...]，True            {"description": "查询的日期",
                                       "enum": ["明天", "后天"],
                                       "title": "Day", "type": "string"}
+D args_schema=Pydantic model         {"description": "显式 schema 的日期",
+                                      "enum": ["明天", "后天"],
+                                      "title": "Day", "type": "string"}
 ```
 
-（实跑数据，2026-10-09。langchain_core 0.3.63。）
+（langchain-core 0.3.63 固定环境的实测输出；已于 2026-10-21 重跑，包含显式 `args_schema` 对照，复现脚本和锁文件见下方。）
 
-**两个预测都对了。** 但有一个我**没预测到**的现象：看 A 组的工具级 description：
+**两个预测都对了。** 但有一个我**没预测到**的现象：A 组没有把参数说明解析进字段 schema；由于没有显式提供工具描述，完整函数文档字符串（包括 `Args:` 段）却进入了工具级 description：
 
 ```text
 A 组工具级 description：
     查天气。 /  /     Args: /         day: 只能是「明天」或「后天」
 ```
 
-**A 组把整段文档字符串（含 `Args:` 这个标题）原样当成了工具描述。** 也就是说：默认配置下，那段"Args:"不仅是没被解析，它还被**当成正文漏了出去** —— 模型会看到一段带着格式残骸的描述。
+同一固定版本下，D 组通过显式 `args_schema` 也生成了 enum；因此本例验证了约束既可以由 `Literal` 注解生成，也可以来自显式 Pydantic schema。
 
-这个发现是我预测之外的，而它比预测对的那两条更有用：**它说明默认值不只是"少做了一件事"，而是"把该做的事做错了"。**
+**A 组的参数 schema 没有 `description` 字段，而工具级 description 包含了 `Args:` 段。** 在这个固定示例中，未解析的参数说明不会因此消失，而是以文档字符串文本出现在工具描述里；这是 0.3.63 的具体行为，不应外推到其他版本或其他构造方式。
+
+这个发现是我预测之外的，而它比预测对的那两条更有用：**它说明默认值会影响说明如何呈现；是否采用此行为应根据工具描述契约决定。**
 
 ## 第五步：把结论收敛成一句可执行的话
 
@@ -120,26 +130,26 @@ A 组工具级 description：
 
 收敛过程：
 
-- "它默认不解析文档字符串" → 描述现象
-- "所以参数说明丢了" → 描述后果
-- **"所以约束要写在类型标注里，说明写在文档字符串里，并且打开 parse_docstring"** → 可执行
+- 「默认不解析参数文档」→ 描述默认行为
+- 「参数说明没有进入字段 schema」→ 描述这个示例里的结果
+- **「需要机器约束时，把它编码在类型标注或显式 `args_schema`；需要参数说明进入 schema 时，按版本契约配置 `parse_docstring`，并对最终 schema 写断言」** → 可执行
 
-**最后那句才是产出。** 前两句都对，但它们不能让你写出更好的代码 —— 而第 5 节会讲"产出什么"这件事。
+**最后那句才是产出。** 它区分了机器约束与自然语言说明，并把版本相关行为交给可执行断言验证 —— 而第 5 节会讲「产出什么」这件事。
 
 <Mermaid
   chart={`
 flowchart TB
-    A["问题：@tool 怎么生成 schema"] --> B["1 定位入口","grep ^def tool"]
-    B --> B1["五个同名定义 → 确认是 overload<br/>真正跑第 71 行"]
+    A["问题：@tool 怎么生成 schema"] --> B["1 定位入口<br/>rg 查找 tool 定义"]
+    B --> B1["同名定义？确认 @overload<br/>定位运行时实现"]
     B1 --> C["2 读签名"]
-    C --> C1["parse_docstring: bool = False ← 答案的一半"]
+    C --> C1["parse_docstring: bool = False"]
     C1 --> D["3 往下追调用链"]
-    D --> D1["convert.py:219 → structured.py → base.py:214 → base.py:95"]
-    D1 --> D2["base.py:95 调 pydantic 的 model_json_schema()"]
-    D2 --> E["4 写下预测，跑一次验证"]
-    E --> F["两个预测都对"]
-    E --> G["但发现没预测到的：<br/>整段 docstring 含 Args: 漏进了工具描述"]
-    F --> H["5 收敛成一句可执行的话"]
+    D --> D1["convert.py → structured.py → base.py"]
+    D1 --> D2["Pydantic model_json_schema()<br/>导出 schema，不创建约束"]
+    D2 --> E["4 写预测并运行四组对照"]
+    E --> F["预测得到支持：说明进入 description"]
+    E --> G["额外发现：默认 docstring 进入工具描述"]
+    F --> H["5 形成可执行建议"]
     G --> H
 `}
 />
@@ -150,31 +160,34 @@ flowchart TB
 
 **一，先确认重载。** 看到多个同名定义时，先看是不是 `@overload`。否则会读到类型桩。
 
-**二，用 grep 追调用，不要用眼睛翻。** 每一跳都是 `grep -n "下一个函数名" 当前文件`。这样每一跳都有 file:line，而且不会漏。
+**二，用 rg 找候选调用点。** 搜索结果给出 file:line，之后还要读上下文确认调用关系；不要把搜索命中本身当作完整调用链。
 
 **三，写下预测再跑。** 这次追踪里最有价值的信息来自"我预测之外的"那一条。**预测错了的地方，就是你和作者思路不同步的地方** —— 而那正是你要学的东西。
 
 
 ## 一个容易忽略的细节：追踪时要带着问题走
 
-第 3 节那条链有五跳。但**五跳不是目标** —— 目标是在链上找到"约束是在哪一层定下来的"。
+第 3 节展示的不是一条适用于所有构造方式的单一长链。**跳数不是目标** —— 目标是在链上找到「约束从哪里来、最终怎样进入模型可见 schema」。
 
 这个区别很实际：如果不带着问题走，你会在每一跳都想"这个函数还调用了什么"，然后扩散开去。带着问题走，每一跳只问一句：**"这里还能产生我要找的东西吗？"**
 
 用第 3 节那个例子看：
 
 ```text
-问题：约束（enum）是从哪一层产生的？
+默认推断路径：@tool → StructuredTool.from_function
+  → create_schema_from_function → 从函数签名构造 Pydantic model
+  → tool_call_schema → model_json_schema() 导出
 
-第 1 跳 convert.py:71   工具包装层 —— 不产生约束
-第 2 跳 convert.py:219  建工具 —— 不产生约束
-第 3 跳 structured.py  组装 —— 不产生约束
-第 4 跳 base.py:214    建 schema —— 交给 pydantic
-第 5 跳 base.py:95     取 properties —— 从 pydantic 的 model_json_schema() 拿
-                        ← 约束在"pydantic 从类型标注生成"这一步定下来
+显式 schema 路径：@tool(args_schema=...)
+  → 复用调用方的 Pydantic model
+  → tool_call_schema → model_json_schema() 导出
+
+约束来源：函数注解，或显式 args_schema
+导出位置：model_json_schema()（序列化已构造的约束）
+注：_get_filtered_args 在 0.3.63 中存在，但不在本次调用路径。
 ```
 
-**前四跳都只是透传，第五跳才见到机制。** 而这个判断只有在带着问题时才能做出来 —— 否则你不知道第 2 跳算不算"找到了"。
+**从最终输出回到构造来源，才是这次追踪的目标。** 判断链路时应逐段确认实际调用关系，不能从符号定义或搜索结果推断。
 
 ## 一个反过来的情况：追不到底怎么办
 
@@ -182,38 +195,36 @@ flowchart TB
 
 **一、继续追进 pydantic。** 适合"这个行为对我是关键"的情况。代价是可能很深（pydantic 用 Rust 实现核心）。
 
-**二、在这里停，用实验代替。** 上面三组对照做的就是这个 —— 不读 pydantic 内部，而是输入几种类型看输出。**对"行为边界"类的问题，这往往比读实现更快。**
+**二、在这里停，用实验代替。** 上面四组对照做的就是这个 —— 不读 pydantic 内部，而是输入几种 schema 构造方式看输出。**对"行为边界"类的问题，这往往比读实现更快。**
 
 **三、接受"这是它的约定"并记录下来。** 适合"我不需要改它，只需要知道边界在哪"的情况。
 
-第 3 节选的是第二种，理由是：**我的问题是"约束从哪来"，而这个问题用三组输入就能回答。** 追进 pydantic 会得到更精确的机制描述，但那对"我该怎么写代码"没有额外帮助。
+第 3 节选的是第二种，理由是：**四组构造对照能说明这些示例的最终 schema 来自哪条 LangChain 构造路线；它们不能单独证明 Pydantic 的全部内部机制。** 追进 pydantic 会得到更精确的机制描述，但那对"我该怎么写代码"没有额外帮助。
 
 **这是一个可以省很多时间的判断：问一句"知道到这个程度够不够我做出决定"。** 够了就停 —— 读源码不是越深越好。
 ## 完整可运行代码
 
-下面这段代码把这次追踪做成了可复现的脚本：用 `inspect` 取真实 file:line，并跑三种写法对照 schema。
+下面这段代码把这次追踪做成了可复现的脚本：用 `inspect` 取真实 file:line，并跑四种写法对照模型可见 schema。
 
 ```python
-"""沿一次任务读到底：@tool 是怎么把函数变成 JSON schema 的。
+"""沿一次任务读到底：@tool 是怎么把函数变成
+JSON schema 的。
 
-第 13 章测出一个现象：@tool 生成的 schema 里 day 只有 {"type": "string"}，没有 enum ——
-尽管文档字符串写了「只支持明天或后天」。当时我把它记成了「抽象泄漏」。
+第 13 章测出一个现象：@tool 生成的 schema 里，
+day 只有 {"type": "string"}，没有 enum ——
+尽管文档字符串写了「只支持明天或后天」。
+当时我把它记成了「抽象泄漏」。
 
 读了源码之后，结论要**修正**，而且比原来更具体。下面这组对照是这次读源码的产出。
 
-环境：langchain_core 0.3.63 / langchain 0.3.7。实跑状态：2026-10-09。
+环境：langchain-core 0.3.63。
+实跑状态：2026-10-22；版本与行为断言见复现脚本和依赖快照。
 """
 import inspect, json
 from typing import Literal
 
+from pydantic import BaseModel, Field
 from langchain_core.tools import tool
-
-DOC = """查天气。
-
-Args:
-    day: 只能是「明天」或「后天」
-"""
-
 
 @tool
 def a_default(day: str) -> str:
@@ -245,16 +256,31 @@ def c_literal(day: Literal["明天", "后天"]) -> str:
     return day
 
 
+class ExplicitDay(BaseModel):
+    day: Literal["明天", "后天"] = Field(description="显式 schema 的日期")
+
+
+@tool(args_schema=ExplicitDay)
+def d_explicit(day: str) -> str:
+    """查天气。"""
+    return day
+
+
 def summary(t):
-    return t.args_schema.model_json_schema()["properties"]["day"]
+    return t.tool_call_schema.model_json_schema()["properties"]["day"]
 
 
 if __name__ == "__main__":
     print("=== 一、调用链（file:line 由 inspect 取真实位置）===")
-    from langchain_core.tools import base as base_mod, convert as convert_mod
+    from langchain_core.tools import base as base_mod
+    from langchain_core.tools import convert as convert_mod
+    from langchain_core.tools import structured as structured_mod
     for label, fn in [("装饰器入口", convert_mod.tool),
-                      ("建 schema", base_mod.create_schema_from_function),
-                      ("取 properties", base_mod._get_filtered_args)]:
+                      ("StructuredTool.from_function",
+                       structured_mod.StructuredTool.from_function),
+                      ("推断 schema", base_mod.create_schema_from_function),
+                      ("get_input_schema", base_mod.BaseTool.get_input_schema),
+                      ("tool_call_schema", base_mod.BaseTool.tool_call_schema.fget)]:
         src = inspect.getsourcefile(fn).split("site-packages/")[-1]
         print("  %-14s %s:%d" % (label, src, inspect.getsourcelines(fn)[1]))
     print()
@@ -264,41 +290,53 @@ if __name__ == "__main__":
         ("A day: str，默认", a_default),
         ("B day: str，parse_docstring=True", b_parsed),
         ("C day: Literal[...]，True", c_literal),
+        ("D args_schema=Pydantic model", d_explicit),
     ]
     for label, t in rows:
         print("  %-32s %s" % (label, json.dumps(summary(t), ensure_ascii=False)))
 
-    # 行号会随版本变，断言不会 —— 所以把「结论」写成断言，而不是写进注释
-    assert summary(a_default) == {"title": "Day", "type": "string"}, "parse_docstring 的默认值可能变了"
+    # 固定版本后对关注行为写断言；断言覆盖不到的语义仍需重新核对
+    assert summary(a_default) == {"title": "Day", "type": "string"}, (
+        "parse_docstring 的默认值可能变了"
+    )
+    assert summary(b_parsed).get("description") == "只能是「明天」或「后天」"
     assert "enum" not in summary(b_parsed), "散文又开始生成 enum 了（说明约束来源变了）"
     assert summary(c_literal)["enum"] == ["明天", "后天"], "Literal 生成 enum 的行为变了"
+    assert summary(d_explicit)["enum"] == ["明天", "后天"], "显式 args_schema 的约束行为变了"
+    assert summary(d_explicit)["description"] == "显式 schema 的日期"
+    assert "Args:" in (a_default.description or ""), "默认 description 的来源行为变了"
+    assert "只能是「明天」或「后天」" in (a_default.description or ""), (
+        "默认工具描述未保留文档字符串正文"
+    )
+    assert "Args:" not in (b_parsed.description or ""), (
+        "parse_docstring 解析后的 description 行为变了"
+    )
     print()
 
-    print("=== 三、工具级 description（前 30 字）===")
+    print("=== 三、工具级 description（前 34 个字符）===")
     for label, t in rows:
         d = (t.description or "（空）").replace(chr(10), " / ")[:34]
         print("  %-32s %s" % (label, d))
     print()
 
     print("=== 结论 ===")
-    print("  1. parse_docstring 默认是 False（convert.py:23/38/52/66/80 五处重载）")
-    print("     → 写在 Args: 段里的参数说明**被静默丢弃**，而且原文还漏进了工具级 description。")
-    print("  2. 打开 parse_docstring 之后，那句「只能是明天或后天」进了 description ——")
-    print("     但**仍然没有变成 enum**。散文只能生成 description，生成不了约束。")
-    print("  3. 只有类型标注（Literal）能生成 enum。LangChain 在 base.py:103 用")
-    print("     pydantic 的 model_json_schema() 取 schema，约束完全由类型决定。")
+    print("  1. parse_docstring 默认是 False（0.3.63 的入口实现；overload 行号仅属该版本）")
+    print("     → 参数说明没有进入字段 schema；本例完整 docstring 出现在工具级 description。")
+    print("  2. 打开 parse_docstring 之后，那句「只能是明天或后天」进入字段 description ——")
+    print("     但**不会自动变成 enum**。自然语言说明与机器约束是不同契约。")
+    print("  3. 默认推断路径可从类型标注（如 Literal）生成 enum；D 组复用显式 args_schema")
+    print("     → tool_call_schema 汇总模型可见字段，model_json_schema() 负责导出。")
     print()
     print("  所以第 13 章那个现象更准确的解释是：")
-    print("    **约束写在散文里，就等于把它从「机器可校验」降级成了「模型可以忽略的提示」。**")
-    print("    这不是框架丢了信息 —— 是 prose 和 type 承载的东西不同：")
-    print("      description ← 文档字符串    enum/range/pattern ← 类型标注")
+    print("    **散文描述本身不构成机器校验约束。**")
+    print("    检查最终 tool-call schema，并确认约束来自函数注解还是显式 args_schema。")
 ```
 
 ## 常见坑
 
 - **读到 overload 的桩就停下。** 先确认同名定义是不是 `@typing.overload`。
-- **用眼睛翻代码追调用。** 用 `grep -n`，每一跳都有 file:line，而且不会漏。
+- **把搜索结果当成调用关系。** 用 `rg -n` 定位候选行后，继续读上下文确认谁调用谁。
 - **凭记忆写行号。** 一定用 `inspect.getsourcefile` / `getsourcelines` 取。
 - **不写预测就开始读。** 预测之外的发现最有价值 —— 那是你和作者思路不同步的地方。
-- **追到"它调了 X"就停。** 要追到"约束是在哪一层定下来的"—— 这次是 base.py:95 那行 `model_json_schema()`。
-- **产出停在描述现象。** "它默认不解析"是现象，"所以约束要写进类型标注"才是可执行的产出。
+- **追到"它调了 X"就停。** 要区分 schema 的构造与导出，并沿具体调用验证路径；本例的 `_get_filtered_args` 虽有定义，却不是实际调用链节点。
+- **产出停在描述现象。** "它默认不解析"是现象；还要指出 schema 可由类型推断或显式 args_schema 提供，并选择团队可维护的约束来源。

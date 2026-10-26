@@ -1,0 +1,291 @@
+# 多厂商 API 契约：兼容不等于等价
+
+## 本节要解决什么
+
+后端工程师很容易把多厂商模型接入理解成“换一个 base URL，再把 SDK 初始化参数改一下”。这在最初的文本请求上经常奏效，却会在工具调用、流式输出、拒绝、截断、用量统计和重试时暴露差异。SDK 能发出请求只证明传输层接通了，不证明应用层语义等价。
+
+本节的 API 字段与结束原因核对日期为 **2026-10-21**；模型和 SDK 版本可能增加新状态。本节的目标是建立一份可执行的 provider contract：明确每个“厂商 × endpoint × model”组合支持什么，把共享能力映射到稳定的内部类型，同时保留不能安全合并的原始语义。验收产物是一张能力矩阵、一组响应适配函数和契约测试。判据是：给定固定响应 fixture，系统能区分完成、工具请求、拒绝、截断、暂停和未知状态；未支持能力必须在请求前显式拒绝，不能静默降级成貌似成功。
+
+## 先把“兼容”拆开
+
+兼容至少有四层。传输兼容表示相同的 HTTP 客户端、认证头和基础请求能发出去；结构兼容表示 JSON 字段形状可以被解析；语义兼容表示字段含义、状态转换和错误条件一致；能力兼容表示目标模型确实支持请求中的工具、结构化输出或多模态能力。一个 OpenAI-compatible endpoint 通常只对其中若干层作出承诺，不能从“SDK 可以连上”推出其他三层成立。
+
+当前常见的三类接口展示了差异。OpenAI Responses API 把一次响应表示为有类型的 `output` items；函数调用是 `function_call` item，执行结果用 `function_call_output` 携带 `call_id` 回传，响应是否完整还要看状态及 `incomplete_details`。Anthropic Messages API 的响应主体是 `content` blocks，工具请求是 `tool_use` block，工具结果作为后续消息中的 `tool_result` 发送；结束原因由 `stop_reason` 表达。DeepSeek 当前分别列出 Chat Completions 与 Responses API；本段的分类器只针对 Chat Completions 形状。DeepSeek Chat Completions 的 `finish_reason` 还包括内容过滤与资源中断等非成功状态，不能只把 `stop`、`tool_calls` 和 `length` 当作完整枚举。工具调用关联 ID 也处在不同字段：Responses 的 `function_call.call_id` 对应 `function_call_output.call_id`；Anthropic 的 `tool_use.id` 对应 `tool_result.tool_use_id`；DeepSeek Chat 的 `message.tool_calls[].id` 对应后续 tool message 的 `tool_call_id`。适配器可映射为内部配对结构，但应保留 provider 原 ID 和原始 item，避免跨协议混用。DeepSeek 文档确实展示了使用 OpenAI SDK 访问 Chat Completions 的方式，但这不代表该 endpoint 的所有参数或模型能力都与 OpenAI 相同，也不能把 Chat Completions 响应当成 Responses 的 item 模型。[OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)、[OpenAI Responses API reference](https://developers.openai.com/api/reference/resources/responses/methods/create)、[Anthropic tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview)、[DeepSeek Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion/)、[DeepSeek Responses API](https://api-docs.deepseek.com/api/create-response/)
+
+<Mermaid
+  chart={`
+flowchart LR
+    A[业务请求] --> B[内部请求模型]
+    B --> C{能力矩阵检查}
+    C -->|支持| D[Provider Adapter]
+    C -->|不支持| X[明确拒绝]
+    D --> E[厂商 Endpoint]
+    E --> F[原始响应与原始错误]
+    F --> G[状态分类]
+    G --> H[稳定内部结果 + 原始语义]
+    H --> I[业务控制器]
+`}
+/>
+
+## 设计契约，而不是万能统一层
+
+先列出应用实际需要的能力，不要从某个 SDK 的全部参数开始。每行必须绑定厂商、endpoint、model alias 或可配置模型 ID、SDK 版本、核验日期、请求特性和证据。比如“支持工具”过于宽泛；更有用的声明是“这个 endpoint/model 支持工具定义、自动选择、强制选择、多个并行调用、流式参数分片，且错误工具结果可以在同一轮继续发送”。其中每一项都可能独立变化。
+
+适配层可以统一生命周期，却应把不可兼容的细节留在结果里。建议内部结果至少有 `kind`、可选的文本、工具调用列表、完成原因、usage、provider/model 识别信息和 `raw` 引用。以下代码里的 `completed` 只表示 provider 报告正常结束，不代表业务任务正确或已获准执行。完成原因使用有限集合，例如 `completed`、`tool_calls`、`refused`、`truncated`、`paused`、`context_limit`、`incomplete`、`failed`、`unknown`。不要把未知值当作 `completed`，也不要把所有非完成状态都压成一个空字符串。供应商原始响应应在有访问控制和保留期限的诊断链路中保存；不要把包含用户数据的原文无差别写入普通应用日志。
+
+字段归一化是有损转换。Anthropic 的 `pause_turn` 表示长轮次暂停，可按其接口约定将响应交回以继续；它不是普通的最终完成。OpenAI Responses 的 `incomplete` 带有不完整原因，例如输出 token 上限、消息上限或 `steered`；只看 `output_text` 可能得到部分文本或空文本。Anthropic 的 `max_tokens` 则用 `stop_reason` 表示截断。三者可以映射到内部 `truncated`、`paused` 或 `incomplete` 类别，但必须保留原始 reason 和原始响应，否则上层无法决定继续、缩短任务、提示用户或进入人工处理。[OpenAI Responses API reference](https://developers.openai.com/api/reference/resources/responses/methods/create)、[Anthropic Messages API](https://platform.claude.com/docs/en/api/messages)
+
+## 最小的可测试分类器
+
+OpenAI Responses 的 refusal 内容及 `incomplete_details.reason` 为 `content_filter` 的响应应分类为拒绝；输出 token 上限导致的不完整响应应分类为截断。Responses 的 function_call item 也有自己的 `status`；即使外层 response 报告 `completed`，item 明确为 `incomplete` 或仍在 `in_progress` 时，下面的分类器也将整条响应归为 `unknown`，不会把它作为可执行调用。DeepSeek Chat Completions 的 `finish_reason` 包括 `content_filter`、`insufficient_system_resource` 与 `aborted`；`length` 表示截断，即使消息带有部分工具调用也不能当作可执行完成。
+
+下面的代码不依赖供应商 SDK，输入是由官方字段形状构成的 fixture。只有返回 `kind == "tool_calls"` 时，`tool_calls` 字段才包含可供后续处理的调用；截断、拒绝、失败和未知状态中的部分调用只保留在 `raw`，不得派发。即使分类为 `tool_calls`，宿主仍须逐项校验 ID、名称、参数和授权。DeepSeek Chat Completions 分支按本例的单 choice 契约运行；若请求允许 `n > 1`，调用方必须先定义多 choice 聚合语义，当前实现会以 `unknown` 拒绝。这样可以先测试适配规则，再把真实 SDK 对象转换为普通字典。它不是三个厂商完整 SDK 的实现，也不验证网络、认证或具体模型能力。`failed` 是状态分类，不代表可以安全重试；重试仍需结合 HTTP/API 错误、幂等性、是否已触发副作用及 provider 契约判断。实跑状态：**本节代码以 Python 标准库编写，运行 `python -m unittest` 可离线测试；本节未发起在线 API 调用。**
+
+```python
+from __future__ import annotations
+
+import unittest
+from typing import Any
+
+
+def classify(provider: str, response: dict[str, Any]) -> dict[str, Any]:
+    """Classify a response without discarding provider-specific status."""
+    if provider == "openai-responses":
+        status = response.get("status")
+        reason = (response.get("incomplete_details") or {}).get("reason")
+        output = response.get("output", [])
+        tools = [item for item in output
+                 if item.get("type") == "function_call"]
+        refused = any(
+            item.get("type") == "refusal"
+            or any(part.get("type") == "refusal" for part in item.get("content", []))
+            for item in output
+        )
+        if refused:
+            kind = "refused"
+        elif status == "incomplete":
+            if reason == "content_filter":
+                kind = "refused"
+            elif reason == "max_output_tokens":
+                kind = "truncated"
+            else:
+                kind = "incomplete"
+        elif status == "completed":
+            item_states = [item.get("status") for item in tools]
+            if any(state not in (None, "completed") for state in item_states):
+                kind = "unknown"
+            else:
+                kind = "tool_calls" if tools else "completed"
+        elif status == "failed":
+            kind = "failed"
+        else:
+            kind = "unknown"
+        return {"kind": kind, "reason": reason or status,
+                "tool_calls": tools if kind == "tool_calls" else [], "raw": response}
+
+    if provider == "anthropic-messages":
+        stop = response.get("stop_reason")
+        mapping = {
+            "end_turn": "completed",
+            "tool_use": "tool_calls",
+            "max_tokens": "truncated",
+            "pause_turn": "paused",
+            "refusal": "refused",
+            "model_context_window_exceeded": "context_limit",
+        }
+        tools = [block for block in response.get("content", [])
+                 if block.get("type") == "tool_use"]
+        kind = mapping.get(stop, "unknown")
+        if stop == "tool_use" and not tools:
+            kind = "unknown"
+        return {"kind": kind, "reason": stop,
+                "tool_calls": tools if kind == "tool_calls" else [], "raw": response}
+
+    if provider == "deepseek-chat":
+        choices = response.get("choices", [])
+        if len(choices) != 1:
+            return {"kind": "unknown", "reason": "unexpected_choice_count",
+                    "tool_calls": [], "raw": response}
+        choice = choices[0]
+        message = choice.get("message") or {}
+        tools = message.get("tool_calls") or []
+        finish = choice.get("finish_reason")
+        if finish == "tool_calls":
+            kind = "tool_calls" if tools else "unknown"
+        elif finish == "stop":
+            kind = "unknown" if tools else "completed"
+        elif finish == "length":
+            kind = "truncated"
+        elif finish == "content_filter":
+            kind = "refused"
+        elif finish in {"insufficient_system_resource", "aborted"}:
+            kind = "failed"
+        else:
+            kind = "unknown"
+        return {"kind": kind, "reason": finish,
+                "tool_calls": tools if kind == "tool_calls" else [], "raw": response}
+
+    return {"kind": "unknown", "reason": "unregistered_provider",
+            "tool_calls": [], "raw": response}
+
+
+class ProviderContractTests(unittest.TestCase):
+    def test_anthropic_truncation_is_not_success(self) -> None:
+        result = classify("anthropic-messages", {"stop_reason": "max_tokens"})
+        self.assertEqual(result["kind"], "truncated")
+        self.assertEqual(result["reason"], "max_tokens")
+
+    def test_openai_tool_call_keeps_call_id(self) -> None:
+        call = {"type": "function_call", "call_id": "call-1", "name": "lookup"}
+        result = classify("openai-responses", {"status": "completed", "output": [call]})
+        self.assertEqual(result["kind"], "tool_calls")
+        self.assertEqual(result["tool_calls"][0]["call_id"], "call-1")
+
+    def test_unknown_reason_does_not_become_completed(self) -> None:
+        result = classify("anthropic-messages", {"stop_reason": "future_reason"})
+        self.assertEqual(result["kind"], "unknown")
+
+    def test_deepseek_length_is_truncation(self) -> None:
+        response = {"choices": [{"finish_reason": "length", "message": {}}]}
+        self.assertEqual(classify("deepseek-chat", response)["kind"], "truncated")
+
+    def test_openai_refusal_item_is_not_completed(self) -> None:
+        response = {"status": "completed", "output": [{
+            "type": "message", "content": [{"type": "refusal", "refusal": "不能处理"}]
+        }]}
+        self.assertEqual(classify("openai-responses", response)["kind"], "refused")
+
+    def test_openai_content_filtered_incomplete_is_refusal(self) -> None:
+        response = {"status": "incomplete", "incomplete_details": {"reason": "content_filter"}}
+        self.assertEqual(classify("openai-responses", response)["kind"], "refused")
+
+    def test_openai_incomplete_tool_call_is_not_runnable(self) -> None:
+        response = {
+            "status": "incomplete",
+            "incomplete_details": {"reason": "max_output_tokens"},
+            "output": [{"type": "function_call", "call_id": "call-partial"}],
+        }
+        result = classify("openai-responses", response)
+        self.assertEqual(result["kind"], "truncated")
+        self.assertEqual(result["tool_calls"], [])
+        self.assertEqual(result["raw"]["output"][0]["call_id"], "call-partial")
+
+    def test_deepseek_length_wins_over_partial_tool_calls(self) -> None:
+        response = {"choices": [{"finish_reason": "length", "message": {
+            "tool_calls": [{"id": "call-partial"}]
+        }}]}
+        self.assertEqual(classify("deepseek-chat", response)["kind"], "truncated")
+
+    def test_deepseek_filter_and_interruption_are_not_success(self) -> None:
+        expected = {"content_filter": "refused", "insufficient_system_resource": "failed", "aborted": "failed"}
+        for finish_reason, kind in expected.items():
+            with self.subTest(finish_reason=finish_reason):
+                response = {"choices": [{"finish_reason": finish_reason, "message": {}}]}
+                self.assertEqual(classify("deepseek-chat", response)["kind"], kind)
+
+    def test_openai_failed_status_is_failed(self) -> None:
+        result = classify("openai-responses", {"status": "failed", "error": {"code": "server_error"}})
+        self.assertEqual(result["kind"], "failed")
+
+    def test_openai_completed_response_rejects_incomplete_call_item(self) -> None:
+        response = {"status": "completed", "output": [{
+            "type": "function_call", "call_id": "call-partial", "status": "incomplete"
+        }]}
+        self.assertEqual(classify("openai-responses", response)["kind"], "unknown")
+
+    def test_anthropic_tool_use_without_block_is_unknown(self) -> None:
+        self.assertEqual(classify("anthropic-messages", {
+            "stop_reason": "tool_use", "content": []
+        })["kind"], "unknown")
+
+    def test_deepseek_stop_with_tools_is_inconsistent(self) -> None:
+        response = {"choices": [{"finish_reason": "stop", "message": {
+            "tool_calls": [{"id": "unexpected"}]
+        }}]}
+        self.assertEqual(classify("deepseek-chat", response)["kind"], "unknown")
+
+    def test_only_tool_call_state_exposes_dispatchable_calls(self) -> None:
+        cases = [
+            ("openai-responses", {"status": "failed", "output": [
+                {"type": "function_call", "call_id": "failed-call"}
+            ]}),
+            ("openai-responses", {"status": "completed", "output": [
+                {"type": "function_call", "call_id": "incomplete-call", "status": "incomplete"}
+            ]}),
+            ("anthropic-messages", {"stop_reason": "refusal", "content": [
+                {"type": "tool_use", "id": "refused-call", "name": "lookup", "input": {}}
+            ]}),
+            ("deepseek-chat", {"choices": [{"finish_reason": "length", "message": {
+                "tool_calls": [{"id": "truncated-call"}]
+            }}]}),
+            ("deepseek-chat", {"choices": [{"finish_reason": "stop", "message": {
+                "tool_calls": [{"id": "inconsistent-call"}]
+            }}]}),
+        ]
+        for provider, response in cases:
+            with self.subTest(provider=provider, response=response):
+                result = classify(provider, response)
+                self.assertNotEqual(result["kind"], "tool_calls")
+                self.assertEqual(result["tool_calls"], [])
+                self.assertTrue(result["raw"])
+
+    def test_unrecognized_openai_incomplete_reason_remains_incomplete(self) -> None:
+        result = classify("openai-responses", {
+            "status": "incomplete",
+            "incomplete_details": {"reason": "steered"},
+        })
+        self.assertEqual(result["kind"], "incomplete")
+        self.assertEqual(result["reason"], "steered")
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+这个最小切片故意没有把 OpenAI Responses、Anthropic Messages 与 DeepSeek Chat Completions 的请求体合成同一个结构。它只归一化控制流程真正需要的分类，同时保留 `reason` 和 `raw`。在生产代码里还需要按 SDK 版本显式写转换函数、限制 raw data 的留存与访问、解析 HTTP 错误类型，并覆盖每个受支持的 endpoint/model 组合。多工具调用还必须逐项执行授权和参数校验；模型返回合法 JSON 不等于用户有权执行该动作。
+
+## 能力矩阵与验收判据
+
+能力矩阵要以运行中的配置为准，而不是一张过期的博客表。可把它放进代码仓库或配置服务，并在启动时校验业务要求是否落在 provider 声明的能力范围内。模型 alias 指向哪个模型、SDK 允许传哪些字段、服务端实际接受哪些字段，属于三个不同事实；它们都应出现在升级记录中。不要在教程里把临时型号、价格或上下文上限写死，读者应在接入当天查官方模型目录与 endpoint 文档。
+
+一个最小矩阵至少记录：
+
+| 维度 | 记录内容 | 验收方式 |
+|---|---|---|
+| 请求形状 | endpoint、认证、消息字段、响应格式选项 | 脱敏请求快照与 schema 校验 |
+| 控制流 | tool call、多个调用、拒绝、截断、暂停、完成 | 各状态 fixture 必须有唯一分类 |
+| 流式 | 事件种类、分片字段、结束事件、断连后的状态 | 乱序/跨 chunk 解码与中断测试 |
+| 用量 | 输入、输出、缓存 token、缺字段的处理 | 账单字段与应用估算分开记录 |
+| 错误 | HTTP 状态、结构化 code、可否重试、request id | 认证/限流/超时/坏请求 fixture |
+| 能力 | tools、schema、图像/音频、上下文与输出限制 | 对具体 model 的探测或官方来源核对 |
+
+**定义**是 provider contract 的边界；**产物**是矩阵、适配器与 fixture；**判据**是所有已声明状态均有可重复测试，未知状态不能伪装成功；**步骤**是先登记 endpoint/model/SDK，再查文档，构造 fixture，写映射和负向测试，最后在测试环境小流量探测；**失败形态**包括参数静默丢弃、工具结果关联错 ID、截断被当成完成、暂停被重复执行、usage 口径不一致以及未知 reason 落入成功分支。
+
+## 错误案例：请求成功，语义却坏了
+
+常见事故不是 HTTP 500，而是 200 响应后错误地继续流程。比如适配器只检查 `response.output_text` 是否非空；某次 OpenAI Responses 因达到输出预算而返回 `status=incomplete`，下游却把部分自然语言当最终答案并提交工单。另一个版本把 Anthropic `tool_use` 当作普通文本，把 JSON 摘出来直接执行，绕过了工具授权；还有一种情况把 DeepSeek SDK 初始化成功视为所有 OpenAI 参数都受支持，服务端忽略一个控制字段，回归集并未覆盖这条行为。
+
+排查应沿着协议边界进行。第一步保留 request id、endpoint、SDK 版本和脱敏后的关键字段；第二步同时检查 HTTP 状态与响应状态字段，不要只看 SDK 是否抛异常；第三步核对工具调用 ID 与回传 ID 是否配对；第四步用原始响应建立固定 fixture，证明适配器会把截断/未知状态挡在成功路径外；第五步补充该“厂商 × endpoint × model × SDK”组合的能力矩阵和升级回归。对 SDK 能接受但服务端不识别的参数，要使用官方文档或安全的测试环境验证，不能通过成功的 HTTP 状态推断参数生效。
+
+作为错误形态示例，Responses 风格的部分输出可能伴随 `status: "incomplete"` 和 `incomplete_details.reason: "max_output_tokens"`；Anthropic 的相应边界可表现为 `stop_reason: "max_tokens"`。这里是协议字段示意，不是本站实测响应，也不代表所有错误都以 HTTP 200 返回。真正的判定依据是 endpoint 文档和你所用模型版本的契约测试。
+
+## 动手步骤与后端经验迁移
+
+1. 从一个真实业务动作出发，写出需要的 provider 能力，例如“只读订单查询、工具调用、明确区分截断、记录 usage”。
+2. 为每个候选 endpoint 和 model alias 记录当前 SDK 版本、认证方式、官方来源与核查日期。
+3. 从成功、工具调用、拒绝、截断、暂停、限流、超时和未知字段构造脱敏 fixture；fixture 不要冒充在线实测。
+4. 写 provider-specific parser，再将稳定控制流映射成内部结果；保留无法归一化的原始 reason 和诊断 ID。
+5. 增加能力门禁：配置声明不支持的行为时，在发请求前报清楚 endpoint/model/feature，而不是删除参数后继续。
+6. 在测试环境调用真实端点，只对许可的只读或无副作用请求做探测。对写操作用假执行器或 sandbox，禁止用模型回复模拟授权成功。
+7. SDK 或模型 alias 更新时重新跑同一套 contract suite；任何未知状态变化都先失败关闭，再经过评估决定映射。
+
+可以直接迁移的是 HTTP 超时、重试退避、连接池、密钥注入、版本锁定、schema 校验和契约测试。容易失效的直觉是“同名参数语义一样”“兼容端点等于功能等价”“200 就是任务完成”“usage 就是可见文本 token 数”。对普通数据库驱动，供应商通常实现共同 SQL/协议规范；模型厂商兼容层的承诺范围往往窄得多，模型行为和生成控制又会引入独有状态，因此必须把组合配置当成契约单元。
+
+## 自检
+
+- 你能指出 Responses、Messages 和 DeepSeek Chat Completions 的工具调用 ID 在哪一层吗？
+- 达到输出上限后，适配层如何阻止“部分答案被当作完成”？
+- endpoint 返回一个未见过的结束原因时，当前代码会完成、重试还是进入明确的未知状态？为什么？
+- 你的能力矩阵绑定到了 provider、endpoint、model 和 SDK 的哪些版本信息？
+
+如果这些问题只能用“SDK 处理了”回答，说明契约还没有被应用验证。将这些状态做成离线 fixture 后，基础回归不需要花费在线 token；在线探测用于确认厂商端变化，而不是替代确定性测试。
